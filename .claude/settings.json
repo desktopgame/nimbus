@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./debug.log)",
+
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./secrets/**)"
+    ],
+    "ask": [
+      "Bash(git push *)",
+      "Bash(git pull *)",
+      "WebFetch"
+    ],
+    "allow": [
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(git log -n *)",
+      "Bash(git add *)",
+      "Bash(git commit *)"
+    ]
+  },
+  "env": {
+    "EDITOR": "code --wait",
+    "VISUAL": "code --wait"
+  }
+}
