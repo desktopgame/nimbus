@@ -73,7 +73,11 @@
     .paths = .{
         "build.zig",
         "build.zig.zon",
-        "src",
+        "include",
+        "framework",
+        "awt",
+        "awt-c",
+        "examples",
         // For example...
         //"LICENSE",
         //"README.md",
