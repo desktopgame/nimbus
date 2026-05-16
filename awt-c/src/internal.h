@@ -1,7 +1,7 @@
 #pragma once
 
-/* awt-c の内部ヘッダー。translate-c 経由で awt (Zig) 層からのみ参照される。
- * libnimbus 利用者には露出しない。 */
+/* awt-c internal header. Only accessed from the awt (Zig) layer via translate-c.
+ * Never exposed to libnimbus consumers. */
 
 /* Global lifecycle. Returns 0 on success. */
 int nmInitAwt(void);
