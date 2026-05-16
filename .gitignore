@@ -1,6 +1,16 @@
 .DS_Store
 
 #
+# Vendor
+#
+
+vendor/**/build/
+vendor/**/CMakeFiles/
+vendor/**/CMakeCache.txt
+vendor/**/*.o
+vendor/**/*.obj
+
+#
 # Zig
 #
 

@@ -1,1 +1,3 @@
-glfw-*
+glfw-*/docs
+glfw-*/examples
+glfw-*/tests
