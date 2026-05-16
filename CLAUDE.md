@@ -77,6 +77,18 @@ typedef struct nmStruct;
 void nmInitStruct(nmStruct* self)
 ```
 
+公開 API（`internal.h` などのヘッダーで宣言され、Zig 層から参照されるもの）は `nm` + PascalCase。
+それに対し、モジュール内部や `.c` ファイル間でのみ共有される非公開のヘルパは `nm_` + snake_case にする。
+内部用であることがひと目で分かり、公開 API と混じらない。
+```c
+/* public API (declared in internal.h) */
+nmDevice* nmCreateDevice(void);
+
+/* internal helper (declared in dx12_internal.h, shared between dx12_*.c only) */
+void nm_log(nmLogLevel level, const char* category, const char* fmt, ...);
+void nm_transition(nmCommandBuffer* cb, nmRenderTarget* rt, D3D12_RESOURCE_STATES new_state);
+```
+
 引数を取らない関数は `(void)` を明示する。
 （C99/C11 では `foo()` は「引数情報なし」という古い意味になり引数チェックが効かないため。）
 ```h
