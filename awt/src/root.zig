@@ -8,32 +8,28 @@ pub const Window = @import("Window.zig");
 /// Initialize the AWT backend (GLFW). Must be called once before any
 /// other AWT call (apart from `backendVersion`).
 pub fn init() !void {
-    if (c.nimbus_awt_init() != 0) return error.AwtInitFailed;
+    if (c.nmInitAwt() != 0) return error.AwtInitFailed;
 }
 
 pub fn deinit() void {
-    c.nimbus_awt_terminate();
+    c.nmTerminateAwt();
 }
 
 /// Pump pending events without blocking.
 pub fn pollEvents() void {
-    c.nimbus_awt_poll_events();
+    c.nmPollEvents();
 }
 
 /// Block the calling thread until at least one event arrives.
 pub fn waitEvents() void {
-    c.nimbus_awt_wait_events();
+    c.nmWaitEvents();
 }
 
 /// Backend identification string (e.g. "3.4.0 Win32 WGL ...").
 /// Safe to call before `init`.
 pub fn backendVersion() [:0]const u8 {
-    const ptr: [*:0]const u8 = @ptrCast(c.nimbus_awt_backend_version());
+    const ptr: [*:0]const u8 = @ptrCast(c.nmGetBackendVersion());
     return std.mem.span(ptr);
-}
-
-test "awt-c build sanity" {
-    try std.testing.expectEqual(@as(c_int, 84), c.nimbus_awt_test_double(42));
 }
 
 test "backend version reports GLFW 3.4" {

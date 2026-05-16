@@ -18,7 +18,7 @@ pub fn build(b: *std.Build) void {
     awt_c_mod.addIncludePath(b.path(third_party.glfw_include));
     awt_c_mod.addCSourceFiles(.{
         .root = b.path("awt-c/src"),
-        .files = &.{ "core.c", "glfw_shim.c" },
+        .files = &.{"glfw_shim.c"},
         .flags = &.{ "-std=c11", "-Wall", "-Wextra" },
     });
     awt_c_mod.linkLibrary(glfw_lib);
