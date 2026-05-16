@@ -13,8 +13,7 @@ awtの内部で定義された抽象化済みの型については保持して�
 * ID3D12Device
 * ID3D12CommandQueue
 * ID3D12Fence
-* ID3D12CommandAllocator
-* ID3D12GraphicsCommandList
+* `nmCommandBuffer` のプール（`command_buffer.md` 参照）
 
 ## デバイスの生成
 nmDevice* nmCreateDevice(void);
