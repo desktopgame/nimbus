@@ -72,3 +72,14 @@ void nmClearRenderTarget(nmCommandBuffer* self, float r, float g, float b, float
 
 現在 bind されているレンダーターゲットを指定色でクリアする。
 ステンシルバッファのクリアはこの関数では行わない（必要になったら別 API を追加する）。
+
+## ウィンドウサイズ変更時の挙動
+
+### スワップチェイン由来のレンダーターゲット
+`nmResizeSwapchain` が呼ばれた時点で内部的に再作成される。
+利用者は何もする必要はない。
+ただし、`nmGetSwapchainTarget` で取得したポインタはリサイズで無効になるため、キャッシュせずに毎フレーム再取得すること。
+
+### オフスクリーンのレンダーターゲット
+ウィンドウサイズには追従しない。作成時のサイズで保持され続ける。
+ウィンドウサイズに合わせたい場合は、利用者が `nmDestroyRenderTarget` + `nmCreateRenderTarget` で作り直す。
