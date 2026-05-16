@@ -88,3 +88,130 @@ void nmBindRenderTarget(nmCommandBuffer* self, nmRenderTarget* target);
 void nmSetViewport(nmCommandBuffer* self, float x, float y, float width, float height);
 void nmClearRenderTarget(nmCommandBuffer* self, float r, float g, float b, float a);
 void nmClearStencil(nmCommandBuffer* self, uint8_t value);
+
+/* ─── Shader ──────────────────────────────────────────────────────────── */
+
+typedef enum nmShaderStage {
+    nmShaderStageVertex,
+    nmShaderStagePixel,
+} nmShaderStage;
+
+typedef struct nmShader nmShader;
+
+nmShader* nmCompileShader(nmShaderStage stage, const char* source);
+nmShader* nmLoadShader(nmShaderStage stage, const void* binary, size_t size);
+void nmDestroyShader(nmShader* self);
+
+/* ─── Buffer ──────────────────────────────────────────────────────────── */
+
+typedef enum nmBufferUsage {
+    nmBufferUsageVertex   = 1 << 0,
+    nmBufferUsageIndex    = 1 << 1,
+    nmBufferUsageConstant = 1 << 2,
+} nmBufferUsage;
+
+typedef enum nmIndexFormat {
+    nmIndexFormatU16,
+    nmIndexFormatU32,
+} nmIndexFormat;
+
+typedef struct nmBuffer nmBuffer;
+
+nmBuffer* nmCreateBuffer(nmDevice* device, size_t size, nmBufferUsage usage);
+void nmDestroyBuffer(nmBuffer* self);
+void nmUploadBuffer(nmBuffer* self, const void* data, size_t size, size_t offset);
+void nmBindVertexBuffer(nmCommandBuffer* self, nmBuffer* buf, int slot, size_t stride, size_t offset);
+void nmBindIndexBuffer(nmCommandBuffer* self, nmBuffer* buf, nmIndexFormat fmt, size_t offset);
+void nmBindConstantBuffer(nmCommandBuffer* self, nmBuffer* buf, int slot, size_t offset, size_t size);
+
+/* ─── Root signature ──────────────────────────────────────────────────── */
+
+typedef enum nmRootBindingType {
+    nmRootBindingTypeConstantBuffer,
+    nmRootBindingTypeTexture,
+} nmRootBindingType;
+
+typedef struct nmRootBinding {
+    nmRootBindingType type;
+    nmShaderStage stage;
+    int slot;
+} nmRootBinding;
+
+typedef struct nmRootSignature nmRootSignature;
+
+nmRootSignature* nmCreateRootSignature(nmDevice* device, const nmRootBinding* bindings, int count);
+void nmDestroyRootSignature(nmRootSignature* self);
+
+/* ─── Pipeline ────────────────────────────────────────────────────────── */
+
+typedef enum nmVertexLayout {
+    nmVertexLayoutVertex2D,         /* (x, y)             */
+    nmVertexLayoutVertexTexCoord2D, /* (x, y, u, v)       */
+} nmVertexLayout;
+
+typedef enum nmPrimitiveTopology {
+    nmPrimitiveTopologyTriangleList,
+    nmPrimitiveTopologyLineList,
+    nmPrimitiveTopologyPointList,
+} nmPrimitiveTopology;
+
+typedef enum nmBlendMode {
+    nmBlendModeNone,
+    nmBlendModeAlpha,
+    nmBlendModePremultipliedAlpha,
+} nmBlendMode;
+
+typedef enum nmStencilOp {
+    nmStencilOpKeep,
+    nmStencilOpZero,
+    nmStencilOpReplace,
+    nmStencilOpIncrementSat,
+    nmStencilOpDecrementSat,
+    nmStencilOpInvert,
+    nmStencilOpIncrementWrap,
+    nmStencilOpDecrementWrap,
+} nmStencilOp;
+
+typedef enum nmCompareFunc {
+    nmCompareFuncNever,
+    nmCompareFuncLess,
+    nmCompareFuncEqual,
+    nmCompareFuncLessEqual,
+    nmCompareFuncGreater,
+    nmCompareFuncNotEqual,
+    nmCompareFuncGreaterEqual,
+    nmCompareFuncAlways,
+} nmCompareFunc;
+
+typedef struct nmStencilState {
+    int enable;
+    nmStencilOp fail_op;
+    nmStencilOp depth_fail_op;
+    nmStencilOp pass_op;
+    nmCompareFunc compare_func;
+    uint8_t read_mask;
+    uint8_t write_mask;
+} nmStencilState;
+
+typedef struct nmPipelineDesc {
+    nmRootSignature* root_signature;
+    nmShader* vertex_shader;
+    nmShader* pixel_shader;
+    nmVertexLayout vertex_layout;
+    nmPrimitiveTopology topology;
+    nmBlendMode blend;
+    nmStencilState stencil;
+    int color_write_enable;
+} nmPipelineDesc;
+
+typedef struct nmPipeline nmPipeline;
+
+nmPipeline* nmCreatePipeline(nmDevice* device, const nmPipelineDesc* desc);
+void nmDestroyPipeline(nmPipeline* self);
+void nmBindPipeline(nmCommandBuffer* self, nmPipeline* pipeline);
+void nmSetStencilRef(nmCommandBuffer* self, uint32_t value);
+
+/* ─── Draw ────────────────────────────────────────────────────────────── */
+
+void nmDraw(nmCommandBuffer* self, int vertex_count, int start_vertex);
+void nmDrawIndexed(nmCommandBuffer* self, int index_count, int start_index, int base_vertex);

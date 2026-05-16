@@ -8,6 +8,10 @@ pub const Device = @import("Device.zig");
 pub const Swapchain = @import("Swapchain.zig");
 pub const CommandBuffer = @import("CommandBuffer.zig");
 pub const RenderTarget = @import("RenderTarget.zig");
+pub const Shader = @import("Shader.zig");
+pub const Buffer = @import("Buffer.zig");
+pub const RootSignature = @import("RootSignature.zig");
+pub const Pipeline = @import("Pipeline.zig");
 
 pub const LogLevel = c.nmLogLevel;
 pub const LogCallback = c.nmLogCallback;

@@ -29,6 +29,7 @@ nmCommandBuffer* nmAcquireCommandBuffer(nmDevice* device) {
         cb->in_use = 1;
         cb->recording = 0;
         cb->current_rt = NULL;
+        cb->current_pipeline = NULL;
         return cb;
     }
 
@@ -46,8 +47,18 @@ void nmBeginCommandBuffer(nmCommandBuffer* self) {
     if (!self) return;
     ID3D12CommandAllocator_Reset(self->allocator);
     ID3D12GraphicsCommandList_Reset(self->list, self->allocator, NULL);
+
+    /* The CBV/SRV/UAV and Sampler heaps are device-wide; binding them per CB
+     * Begin keeps texture-binding draws working uniformly. */
+    ID3D12DescriptorHeap* heaps[2] = {
+        self->owner->cbv_srv_uav_heap,
+        self->owner->sampler_heap,
+    };
+    ID3D12GraphicsCommandList_SetDescriptorHeaps(self->list, 2, heaps);
+
     self->recording = 1;
     self->current_rt = NULL;
+    self->current_pipeline = NULL;
 }
 
 void nmEndCommandBuffer(nmCommandBuffer* self) {
@@ -76,6 +87,20 @@ void nmSubmitCommandBuffer(nmCommandBuffer* self, nmDevice* device) {
 void nmWaitForCommandBuffer(nmCommandBuffer* self) {
     if (!self || self->submitted_fence_value == 0) return;
     wait_for_fence_value(self->owner, self->submitted_fence_value);
+}
+
+/* ─── Draw ────────────────────────────────────────────────────────────── */
+
+void nmDraw(nmCommandBuffer* self, int vertex_count, int start_vertex) {
+    if (!self) return;
+    ID3D12GraphicsCommandList_DrawInstanced(self->list,
+        (UINT)vertex_count, 1, (UINT)start_vertex, 0);
+}
+
+void nmDrawIndexed(nmCommandBuffer* self, int index_count, int start_index, int base_vertex) {
+    if (!self) return;
+    ID3D12GraphicsCommandList_DrawIndexedInstanced(self->list,
+        (UINT)index_count, 1, (UINT)start_index, base_vertex, 0);
 }
 
 #endif /* _WIN32 */

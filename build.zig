@@ -43,12 +43,17 @@ pub fn build(b: *std.Build) void {
                     "dx12_swapchain.c",
                     "dx12_command_buffer.c",
                     "dx12_render_target.c",
+                    "dx12_shader.c",
+                    "dx12_buffer.c",
+                    "dx12_root_signature.c",
+                    "dx12_pipeline.c",
                 },
                 .flags = c_flags,
             });
             awt_c_mod.linkSystemLibrary("d3d12", .{});
             awt_c_mod.linkSystemLibrary("dxgi", .{});
             awt_c_mod.linkSystemLibrary("dxguid", .{});
+            awt_c_mod.linkSystemLibrary("d3dcompiler_47", .{});
         },
         else => {
             awt_c_mod.addCSourceFiles(.{

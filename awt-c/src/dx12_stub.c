@@ -45,4 +45,54 @@ void nmClearStencil(nmCommandBuffer* self, uint8_t value) {
     (void)self; (void)value;
 }
 
+/* ─── Stage 2 stubs ───────────────────────────────────────────────────── */
+
+nmShader* nmCompileShader(nmShaderStage stage, const char* source) {
+    (void)stage; (void)source; return NULL;
+}
+nmShader* nmLoadShader(nmShaderStage stage, const void* binary, size_t size) {
+    (void)stage; (void)binary; (void)size; return NULL;
+}
+void nmDestroyShader(nmShader* self) { (void)self; }
+
+nmBuffer* nmCreateBuffer(nmDevice* device, size_t size, nmBufferUsage usage) {
+    (void)device; (void)size; (void)usage; return NULL;
+}
+void nmDestroyBuffer(nmBuffer* self) { (void)self; }
+void nmUploadBuffer(nmBuffer* self, const void* data, size_t size, size_t offset) {
+    (void)self; (void)data; (void)size; (void)offset;
+}
+void nmBindVertexBuffer(nmCommandBuffer* self, nmBuffer* buf, int slot, size_t stride, size_t offset) {
+    (void)self; (void)buf; (void)slot; (void)stride; (void)offset;
+}
+void nmBindIndexBuffer(nmCommandBuffer* self, nmBuffer* buf, nmIndexFormat fmt, size_t offset) {
+    (void)self; (void)buf; (void)fmt; (void)offset;
+}
+void nmBindConstantBuffer(nmCommandBuffer* self, nmBuffer* buf, int slot, size_t offset, size_t size) {
+    (void)self; (void)buf; (void)slot; (void)offset; (void)size;
+}
+
+nmRootSignature* nmCreateRootSignature(nmDevice* device, const nmRootBinding* bindings, int count) {
+    (void)device; (void)bindings; (void)count; return NULL;
+}
+void nmDestroyRootSignature(nmRootSignature* self) { (void)self; }
+
+nmPipeline* nmCreatePipeline(nmDevice* device, const nmPipelineDesc* desc) {
+    (void)device; (void)desc; return NULL;
+}
+void nmDestroyPipeline(nmPipeline* self) { (void)self; }
+void nmBindPipeline(nmCommandBuffer* self, nmPipeline* pipeline) {
+    (void)self; (void)pipeline;
+}
+void nmSetStencilRef(nmCommandBuffer* self, uint32_t value) {
+    (void)self; (void)value;
+}
+
+void nmDraw(nmCommandBuffer* self, int vertex_count, int start_vertex) {
+    (void)self; (void)vertex_count; (void)start_vertex;
+}
+void nmDrawIndexed(nmCommandBuffer* self, int index_count, int start_index, int base_vertex) {
+    (void)self; (void)index_count; (void)start_index; (void)base_vertex;
+}
+
 #endif /* !_WIN32 */

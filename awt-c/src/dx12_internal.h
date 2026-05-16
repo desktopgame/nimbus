@@ -59,8 +59,40 @@ struct nmCommandBuffer {
     ID3D12GraphicsCommandList*      list;
     uint64_t                        submitted_fence_value; /* 0 if never submitted */
     nmRenderTarget*                 current_rt;            /* last bound RT for end-time transition */
+    struct nmPipeline*              current_pipeline;      /* last bound pipeline (for CBV/SRV bind lookups) */
     int                             in_use;                /* pool occupancy flag */
     int                             recording;             /* between Begin and End */
+};
+
+#define NM_MAX_ROOT_PARAMS 16
+
+struct nmShader {
+    nmShaderStage           stage;
+    ID3DBlob*               blob;   /* bytecode, owned */
+};
+
+struct nmBuffer {
+    ID3D12Resource*           resource;
+    void*                     mapped_ptr;  /* persistent map (UPLOAD heap) */
+    D3D12_GPU_VIRTUAL_ADDRESS gpu_va;
+    size_t                    size;
+    nmBufferUsage             usage;
+};
+
+struct nmRootSignature {
+    ID3D12RootSignature* root_signature;
+    int                  param_count;
+    struct {
+        nmRootBindingType type;
+        int               slot;
+        int               root_param_index;
+    } params[NM_MAX_ROOT_PARAMS];
+};
+
+struct nmPipeline {
+    ID3D12PipelineState*       pso;
+    nmRootSignature*           root_signature;  /* borrowed; needed for bind */
+    D3D_PRIMITIVE_TOPOLOGY     topology;
 };
 
 struct nmDevice {
