@@ -34,9 +34,17 @@ int nmResizeSwapchain(nmSwapchain* self, int width, int height);
 
 通常は `nmSetWindowResizeCallback`（`window.md` 参照）で受けた通知に応じて呼ぶ。
 
+## 描画先の取得
+nmRenderTarget* nmGetSwapchainTarget(nmSwapchain* self);
+
+スワップチェインの現フレームの描画先となるレンダーターゲットを返す。
+返されたポインタはスワップチェインが所有しており、`nmDestroyRenderTarget` で破棄してはならない。
+寿命はスワップチェインに従う（スワップチェインのリサイズや破棄で無効になる）。
+詳細は `render_target.md` を参照。
+
 ## レンダリングに関する要請
 実装の詳細には踏み入らない。
 * デプスバッファは不要
 * ステンシルバッファは必要
-* レンダーターゲットは任意に作成、破棄、切り替えが可能
+* レンダーターゲットは任意に作成、破棄、切り替えが可能（`render_target.md` 参照）
 * ダブルバッファを提供する
