@@ -22,14 +22,14 @@ DirectX12では `D3DCompile()` にmainの関数名を要求されるが、nimbus
 - nmShaderStageVertex → vsMain
 - nmShaderStagePixel → psMain
 
-コンパイル時にエラーメッセージが得られる場合、それをログシステム（log.mdを参照）に流します。
+コンパイル時にエラーメッセージが得られる場合、それをログシステム（log.mdを参照）に流す。
 
 ## シェーダーのロード
 nmShader* nmLoadShader(nmShaderStage stage, const void* binary, size_t size);
 
 コンパイル済みのシェーダーバイナリからロードする。
 失敗時は `NULL` を返す。
-※当面はランタイムのコンパイルで実装するので、これは現時点での草案に過ぎません。
+※当面はランタイムのコンパイルで実装するので、これは現時点での草案に過ぎない。
 
 ## シェーダーの破棄
 void nmDestroyShader(nmShader* self);
