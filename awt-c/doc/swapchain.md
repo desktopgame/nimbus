@@ -42,6 +42,20 @@ nmRenderTarget* nmGetSwapchainTarget(nmSwapchain* self);
 寿命はスワップチェインに従う（スワップチェインのリサイズや破棄で無効になる）。
 詳細は `render_target.md` を参照。
 
+## 画面への表示
+void nmPresentSwapchain(nmSwapchain* self);
+
+記録済みコマンドの投入（`nmSubmitCommandBuffer`）後、現フレームのバックバッファを画面に提示する。
+内部的にはバックバッファのインデックスを次のフレーム分に進める。
+この関数自体は GPU の完了を待たない（ノンブロッキング）。
+
+呼び出し順序は次のとおり。
+1. `nmAcquireCommandBuffer` で記録用バッファを取得
+2. `nmBeginCommandBuffer` 〜 描画 〜 `nmEndCommandBuffer`
+3. `nmSubmitCommandBuffer` で GPU に投入
+4. `nmPresentSwapchain` で画面に提示
+5. `nmReleaseCommandBuffer` でバッファを返却
+
 ## レンダリングに関する要請
 実装の詳細には踏み入らない。
 * デプスバッファは不要

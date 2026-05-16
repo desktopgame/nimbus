@@ -26,3 +26,14 @@ pub fn shouldClose(self: Window) bool {
 pub fn swapBuffers(self: Window) void {
     c.nmSwapBuffers(self.handle);
 }
+
+pub const ResizeCallback = c.nmWindowResizeCallback;
+pub const RefreshCallback = c.nmWindowRefreshCallback;
+
+pub fn setResizeCallback(self: Window, cb: ResizeCallback, user_data: ?*anyopaque) void {
+    c.nmSetWindowResizeCallback(self.handle, cb, user_data);
+}
+
+pub fn setRefreshCallback(self: Window, cb: RefreshCallback, user_data: ?*anyopaque) void {
+    c.nmSetWindowRefreshCallback(self.handle, cb, user_data);
+}

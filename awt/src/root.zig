@@ -4,6 +4,13 @@ const std = @import("std");
 
 pub const c = @import("c");
 pub const Window = @import("Window.zig");
+pub const Device = @import("Device.zig");
+pub const Swapchain = @import("Swapchain.zig");
+pub const CommandBuffer = @import("CommandBuffer.zig");
+pub const RenderTarget = @import("RenderTarget.zig");
+
+pub const LogLevel = c.nmLogLevel;
+pub const LogCallback = c.nmLogCallback;
 
 /// Initialize the AWT backend (GLFW). Must be called once before any
 /// other AWT call (apart from `backendVersion`).
@@ -30,6 +37,11 @@ pub fn waitEvents() void {
 pub fn backendVersion() [:0]const u8 {
     const ptr: [*:0]const u8 = @ptrCast(c.nmGetBackendVersion());
     return std.mem.span(ptr);
+}
+
+/// Install a log callback. Pass null to restore the default stderr writer.
+pub fn setLogCallback(cb: LogCallback, user_data: ?*anyopaque) void {
+    c.nmSetLogCallback(cb, user_data);
 }
 
 test "backend version reports GLFW 3.4" {

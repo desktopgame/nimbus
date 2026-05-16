@@ -16,11 +16,49 @@ pub fn build(b: *std.Build) void {
     });
     awt_c_mod.addIncludePath(b.path("awt-c/src"));
     awt_c_mod.addIncludePath(b.path(third_party.glfw_include));
+
+    const c_flags = &.{ "-std=c11", "-Wall", "-Wextra" };
+
+    // Cross-platform sources.
     awt_c_mod.addCSourceFiles(.{
         .root = b.path("awt-c/src"),
-        .files = &.{"glfw_shim.c"},
-        .flags = &.{ "-std=c11", "-Wall", "-Wextra" },
+        .files = &.{ "glfw_shim.c", "nm_log.c" },
+        .flags = c_flags,
     });
+
+    // Platform-specific backend.
+    switch (target.result.os.tag) {
+        .windows => {
+            awt_c_mod.addCMacro("COBJMACROS", "");
+            awt_c_mod.addCMacro("CINTERFACE", "");
+            awt_c_mod.addCMacro("WIN32_LEAN_AND_MEAN", "");
+            awt_c_mod.addCMacro("UNICODE", "");
+            awt_c_mod.addCMacro("_UNICODE", "");
+            if (optimize == .Debug) awt_c_mod.addCMacro("NM_DX12_DEBUG", "1");
+
+            awt_c_mod.addCSourceFiles(.{
+                .root = b.path("awt-c/src"),
+                .files = &.{
+                    "dx12_device.c",
+                    "dx12_swapchain.c",
+                    "dx12_command_buffer.c",
+                    "dx12_render_target.c",
+                },
+                .flags = c_flags,
+            });
+            awt_c_mod.linkSystemLibrary("d3d12", .{});
+            awt_c_mod.linkSystemLibrary("dxgi", .{});
+            awt_c_mod.linkSystemLibrary("dxguid", .{});
+        },
+        else => {
+            awt_c_mod.addCSourceFiles(.{
+                .root = b.path("awt-c/src"),
+                .files = &.{"dx12_stub.c"},
+                .flags = c_flags,
+            });
+        },
+    }
+
     awt_c_mod.linkLibrary(glfw_lib);
 
     const awt_c_lib = b.addLibrary(.{
