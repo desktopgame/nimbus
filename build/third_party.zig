@@ -104,7 +104,8 @@ pub fn buildGlfw(
                     "src/cocoa_window.m",
                     "src/nsgl_context.m",
                 },
-                .flags = &.{ "-std=c99", "-fobjc-arc" },
+                // NOTE: GLFW is written with manual retain/release; do NOT enable ARC.
+                .flags = &.{"-std=c99"},
             });
 
             mod.linkFramework("Cocoa", .{});
