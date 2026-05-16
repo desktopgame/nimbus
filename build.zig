@@ -1,8 +1,12 @@
 const std = @import("std");
+const third_party = @import("build/third_party.zig");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+
+    // ── third-party: GLFW (vendored, built from source) ──────────
+    const glfw_lib = third_party.buildGlfw(b, target, optimize);
 
     // ── awt-c: C shim (internal only, not installed) ─────────────
     const awt_c_mod = b.createModule(.{
@@ -11,10 +15,13 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
     });
     awt_c_mod.addIncludePath(b.path("awt-c/src"));
-    awt_c_mod.addCSourceFile(.{
-        .file = b.path("awt-c/src/core.c"),
+    awt_c_mod.addIncludePath(b.path(third_party.glfw_include));
+    awt_c_mod.addCSourceFiles(.{
+        .root = b.path("awt-c/src"),
+        .files = &.{ "core.c", "glfw_shim.c" },
         .flags = &.{ "-std=c11", "-Wall", "-Wextra" },
     });
+    awt_c_mod.linkLibrary(glfw_lib);
 
     const awt_c_lib = b.addLibrary(.{
         .name = "nimbus_awt_c",
