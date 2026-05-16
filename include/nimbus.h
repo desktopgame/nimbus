@@ -9,6 +9,9 @@ extern "C" {
  * (windows, components, events) once the framework grows. */
 int nimbus_double(int x);
 
+/* Backend identification string (e.g. "3.4.0 Win32 WGL ..."). */
+const char* nimbus_backend_version(void);
+
 #ifdef __cplusplus
 }
 #endif
