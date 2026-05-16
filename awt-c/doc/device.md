@@ -14,6 +14,14 @@ awtの内部で定義された抽象化済みの型については保持して�
 * ID3D12CommandQueue
 * ID3D12Fence
 * `nmCommandBuffer` のプール（`command_buffer.md` 参照）
+* CBV/SRV/UAV descriptor heap（**全 texture の SRV を 1 つに集めて格納する**。利用者には露出しない）
+* Sampler descriptor heap（static sampler 4 種を格納。利用者には露出しない）
+* RTV descriptor heap（**全 render target の RTV を格納する**。利用者には露出しない）
+* DSV descriptor heap（**全 stencil view を格納する**。利用者には露出しない）
+
+descriptor heap の存在は API には出さない。
+テクスチャや render target の bind は device が内部で適切な heap 位置に解決する（`texture.md`, `render_target.md` 参照）。
+個々の texture や render target が「自分の slot 位置」を持っているのではなく、device が一元管理する不透明な slot 識別子を保持する形になる。
 
 ## デバイスの生成
 nmDevice* nmCreateDevice(void);

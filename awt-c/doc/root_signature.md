@@ -34,6 +34,20 @@ nimbus は static sampler 方式を採用しており、サンプラーは利用
 nimbus が生成する全ての root signature には、固定の 4 種のサンプラーが自動で組み込まれる。
 詳細は `sampler.md` を参照。
 
+### 内部実装方針
+`nmRootBindingType` の各種類は、内部で次のようにマップされる。
+利用者は意識する必要はない。
+
+| binding 種別 | DX12 実装 | Vulkan 実装 (将来) | Metal 実装 (将来) |
+|---|---|---|---|
+| ConstantBuffer | Root CBV (heap 経由しない) | Buffer Device Address または Dynamic Uniform Buffer | setBuffer:offset:atIndex: |
+| Texture | Descriptor Table (size 1、heap 経由) | descriptor set または bindless | setTexture:atIndex: |
+| (Sampler) | Static Sampler (root signature 内蔵) | immutable sampler | static MTLSamplerState |
+
+DX12 では texture の SRV を root に直接置けない（Root SRV は buffer SRV のみ）ため、descriptor heap が必須。
+descriptor heap は device が内部管理する（`device.md` 参照）。
+他のプラットフォームでは heap 概念自体がないため、より素直な実装になる。
+
 ## ルートシグネチャの生成
 nmRootSignature* nmCreateRootSignature(nmDevice* device, const nmRootBinding* bindings, int count);
 

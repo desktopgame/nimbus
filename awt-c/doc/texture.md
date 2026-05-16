@@ -65,3 +65,7 @@ void nmBindTexture(nmCommandBuffer* self, nmTexture* texture, int slot);
 
 記録中のコマンドバッファに対し、`texture` を `slot` 番に bind する。
 シェーダー側では `Texture2D` を `register(t<slot>)` で参照する。
+
+シェーダーリソースビューはテクスチャ生成時に device 内部の descriptor heap に登録されており、この関数はそのビューを root signature の `slot` 番から参照可能にする。
+descriptor heap の構造は API には出ない（利用者が heap や slot 位置を意識する必要はない）。
+同じシェーダーで draw ごとに異なるテクスチャを使い分けるために使う。
