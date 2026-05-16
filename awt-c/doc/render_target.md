@@ -71,7 +71,13 @@ void nmSetViewport(nmCommandBuffer* self, float x, float y, float width, float h
 void nmClearRenderTarget(nmCommandBuffer* self, float r, float g, float b, float a);
 
 現在 bind されているレンダーターゲットを指定色でクリアする。
-ステンシルバッファのクリアはこの関数では行わない（必要になったら別 API を追加する）。
+ステンシルバッファのクリアは `nmClearStencil` を使う。
+
+## ステンシルクリア
+void nmClearStencil(nmCommandBuffer* self, uint8_t value);
+
+現在 bind されているレンダーターゲットのステンシルバッファを指定値でクリアする。
+通常は `0` を渡してマスクをリセットする。
 
 ## ウィンドウサイズ変更時の挙動
 
