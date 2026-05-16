@@ -6,7 +6,6 @@
 typedef enum nmRootBindingType {
     nmRootBindingTypeConstantBuffer,
     nmRootBindingTypeTexture,
-    nmRootBindingTypeSampler,
 } nmRootBindingType;
 
 typedef struct nmRootBinding {
@@ -29,6 +28,11 @@ GUI 用途では binding パターンが少数に収まるので、ルートシ�
 
 ### 同じ slot を複数 stage から見る場合
 たとえば VS と PS から同じ constant buffer の slot 0 を参照したい場合、`bindings` 配列に同じ slot で stage 違いの `nmRootBinding` を 2 つ入れる。
+
+### サンプラーは binding に含めない
+nimbus は static sampler 方式を採用しており、サンプラーは利用者が個別に bind しない。
+nimbus が生成する全ての root signature には、固定の 4 種のサンプラーが自動で組み込まれる。
+詳細は `sampler.md` を参照。
 
 ## ルートシグネチャの生成
 nmRootSignature* nmCreateRootSignature(nmDevice* device, const nmRootBinding* bindings, int count);
