@@ -19,10 +19,11 @@ const triangle_hlsl =
     \\}
 ;
 
+// CCW order in NDC (Y up): top → bottom-left → bottom-right.
 const triangle_vertices = [_]f32{
      0.0,  0.5,
-     0.5, -0.5,
     -0.5, -0.5,
+     0.5, -0.5,
 };
 
 const Renderer = struct {

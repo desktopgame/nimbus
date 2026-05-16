@@ -157,10 +157,12 @@ nmPipeline* nmCreatePipeline(nmDevice* device, const nmPipelineDesc* desc) {
 
     pso.SampleMask = 0xFFFFFFFFu;
 
-    /* Rasterizer: GUI-friendly defaults — no culling, solid fill. */
+    /* Rasterizer: GUI-friendly defaults — no culling, solid fill.
+     * nimbus regards CCW as front face (matches GL / Vulkan / Metal); D3D12
+     * defaults to CW front, so flip via FrontCounterClockwise = TRUE. */
     pso.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
     pso.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
-    pso.RasterizerState.FrontCounterClockwise = FALSE;
+    pso.RasterizerState.FrontCounterClockwise = TRUE;
     pso.RasterizerState.DepthBias = 0;
     pso.RasterizerState.DepthBiasClamp = 0.0f;
     pso.RasterizerState.SlopeScaledDepthBias = 0.0f;

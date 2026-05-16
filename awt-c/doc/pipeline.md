@@ -77,6 +77,12 @@ awt の内部で定義された抽象化済みの型については保持して�
 利用者が任意の頂点フォーマットを定義することはできない。
 新しいレイアウトが必要になったら enum に追加する。
 
+### winding と culling
+front face は **CCW**（反時計回り）として規定する。
+back-face culling は行わない（`CullMode = NONE`）。
+winding は描画結果に影響しないが、規約として CCW を front とする。
+DX12 では `FrontCounterClockwise = TRUE` を指定して D3D デフォルト（CW front）を反転させる。
+
 ### depth_fail_op について
 現状の nimbus は深度バッファを持たないため、`depth_fail_op` は実際には発火しない。
 2D 描画で使う pipeline には常に `nmStencilOpKeep` を指定すること。

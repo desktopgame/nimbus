@@ -154,6 +154,12 @@ pub const Container = struct {
 
 int32 ではなく、 float で管理する。
 
+### 頂点の winding
+
+front face は CCW（反時計回り、OpenGL / Vulkan / Metal のデフォルトと同じ）として規定する。
+nimbus は GUI 用途で back-face culling を行わないので winding は描画結果に影響しないが、規約を明示しておくことで shader ユーティリティや将来のバックエンド設定に一貫性を持たせる。
+DX12 バックエンドは PSO の `FrontCounterClockwise = TRUE` を指定する（D3D12 のデフォルトは CW front なので明示反転が必要）。
+
 ### エラーのC_ABIでの表現
 
 NULLを返し、内部エラーを `GetLastError()` のように取得できるようにする。
