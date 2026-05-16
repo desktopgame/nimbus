@@ -58,3 +58,26 @@ void nmWaitForCommandBuffer(nmCommandBuffer* self);
 このバッファに含まれるコマンドが GPU 上で完了するまで呼び出しスレッドをブロックする。
 通常のフレームループでは呼ぶ必要はない（`nmAcquireCommandBuffer` が再取得時に内部で同期する）。
 ウィンドウのリサイズや終了処理など、明示的な GPU フラッシュが必要な場面で使う。
+
+## ドローコール（頂点バッファのみ）
+void nmDraw(nmCommandBuffer* self, int vertex_count, int start_vertex);
+
+bind 済みの pipeline・頂点バッファ・その他の状態を使い、`vertex_count` 個の頂点を描画する。
+`start_vertex` は頂点バッファ内の開始インデックス（バッファ先頭から描画するなら `0`）。
+
+## ドローコール（インデックスバッファ使用）
+void nmDrawIndexed(nmCommandBuffer* self, int index_count, int start_index, int base_vertex);
+
+bind 済みの pipeline・頂点バッファ・インデックスバッファ・その他の状態を使い、`index_count` 個のインデックスを描画する。
+`start_index` はインデックスバッファ内の開始位置。
+`base_vertex` は各インデックス値に加算される値。複数の mesh を 1 つの頂点バッファに詰めて部分描画する時に使う。
+
+## 描画前に必要な bind
+ドローコールを発行する前に、以下を必要に応じて bind する。
+* `nmBindPipeline` で pipeline
+* `nmBindRenderTarget` で出力先
+* `nmBindVertexBuffer` で頂点データ
+* `nmBindIndexBuffer` で（indexed の場合のみ）インデックス
+* `nmBindConstantBuffer` で必要な定数
+* `nmBindTexture` で必要なテクスチャ
+* `nmSetStencilRef` でステンシル参照値（ステンシル使う場合）
