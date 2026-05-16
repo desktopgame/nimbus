@@ -77,6 +77,12 @@ typedef struct nmStruct;
 void nmInitStruct(nmStruct* self)
 ```
 
+引数を取らない関数は `(void)` を明示する。
+（C99/C11 では `foo()` は「引数情報なし」という古い意味になり引数チェックが効かないため。）
+```h
+int nmInitAwt(void);
+```
+
 
 ### Zig
 Zigの一般的な規則に従う。このプロジェクト特有の方針はない。
