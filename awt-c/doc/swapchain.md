@@ -25,6 +25,15 @@ void nmDestroySwapchain(nmSwapchain* self);
 スワップチェインを破棄する。
 以後引数の `self` が使用可能であるかどうかは保証されない。
 
+## ウィンドウサイズの変更
+int nmResizeSwapchain(nmSwapchain* self, int width, int height);
+
+スワップチェインのサイズを変更する。
+内部的には GPU の完了待ち、バックバッファの解放、再確保、レンダーターゲットビューの再作成までを行う。
+成功時はゼロ、失敗時は非ゼロを返す。
+
+通常は `nmSetWindowResizeCallback`（`window.md` 参照）で受けた通知に応じて呼ぶ。
+
 ## レンダリングに関する要請
 実装の詳細には踏み入らない。
 * デプスバッファは不要
