@@ -9,6 +9,9 @@ const std = @import("std");
 pub const glfw_root = "vendor/glfw-3.4";
 pub const glfw_include = glfw_root ++ "/include";
 
+pub const freetype_root = "vendor/freetype-2.14.3";
+pub const freetype_include = freetype_root ++ "/include";
+
 /// Build GLFW 3.4 as a static library. Platform support:
 /// - Windows: Win32 backend
 /// - macOS:   Cocoa backend
@@ -156,6 +159,90 @@ pub fn buildGlfw(
 
     return b.addLibrary(.{
         .name = "glfw",
+        .linkage = .static,
+        .root_module = mod,
+    });
+}
+
+/// Build FreeType 2.14.3 as a static library.
+/// Uses the default `ftoption.h` / `ftmodule.h` (all standard modules enabled).
+/// Validation modules (`gxvalid`, `otvalid`) and the optional cache (`ftcache`)
+/// are excluded. SVG glyphs compile in but render as no-ops unless the user
+/// installs SVG hooks (FreeType design — no external SVG dependency required).
+pub fn buildFreeType(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+) *std.Build.Step.Compile {
+    const mod = b.createModule(.{
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+
+    mod.addIncludePath(b.path(freetype_include));
+    mod.addCMacro("FT2_BUILD_LIBRARY", "");
+
+    const flags: []const []const u8 = &.{"-std=c99"};
+
+    // Base components (cross-platform). ftmac.c is intentionally omitted
+    // because the default ftsystem.c works on macOS too; ftmac.c is for
+    // resource-fork font files which we don't need.
+    mod.addCSourceFiles(.{
+        .root = b.path(freetype_root),
+        .files = &.{
+            "src/base/ftbase.c",
+            "src/base/ftbbox.c",
+            "src/base/ftbdf.c",
+            "src/base/ftbitmap.c",
+            "src/base/ftcid.c",
+            "src/base/ftdebug.c",
+            "src/base/ftfstype.c",
+            "src/base/ftgasp.c",
+            "src/base/ftglyph.c",
+            "src/base/ftinit.c",
+            "src/base/ftmm.c",
+            "src/base/ftpatent.c",
+            "src/base/ftpfr.c",
+            "src/base/ftstroke.c",
+            "src/base/ftsynth.c",
+            "src/base/ftsystem.c",
+            "src/base/fttype1.c",
+            "src/base/ftwinfnt.c",
+        },
+        .flags = flags,
+    });
+
+    // Font drivers and rasterizers (one aggregator .c per module).
+    mod.addCSourceFiles(.{
+        .root = b.path(freetype_root),
+        .files = &.{
+            "src/autofit/autofit.c",
+            "src/bdf/bdf.c",
+            "src/cff/cff.c",
+            "src/cid/type1cid.c",
+            "src/gzip/ftgzip.c",
+            "src/lzw/ftlzw.c",
+            "src/pcf/pcf.c",
+            "src/pfr/pfr.c",
+            "src/psaux/psaux.c",
+            "src/pshinter/pshinter.c",
+            "src/psnames/psnames.c",
+            "src/raster/raster.c",
+            "src/sdf/sdf.c",
+            "src/sfnt/sfnt.c",
+            "src/smooth/smooth.c",
+            "src/svg/svg.c",
+            "src/truetype/truetype.c",
+            "src/type1/type1.c",
+            "src/type42/type42.c",
+            "src/winfonts/winfnt.c",
+        },
+        .flags = flags,
+    });
+
+    return b.addLibrary(.{
+        .name = "freetype",
         .linkage = .static,
         .root_module = mod,
     });

@@ -8,6 +8,9 @@ pub fn build(b: *std.Build) void {
     // ── third-party: GLFW (vendored, built from source) ──────────
     const glfw_lib = third_party.buildGlfw(b, target, optimize);
 
+    // ── third-party: FreeType (vendored, built from source) ──────
+    const freetype_lib = third_party.buildFreeType(b, target, optimize);
+
     // ── awt-c: C shim (internal only, not installed) ─────────────
     const awt_c_mod = b.createModule(.{
         .target = target,
@@ -16,6 +19,7 @@ pub fn build(b: *std.Build) void {
     });
     awt_c_mod.addIncludePath(b.path("awt-c/src"));
     awt_c_mod.addIncludePath(b.path(third_party.glfw_include));
+    awt_c_mod.addIncludePath(b.path(third_party.freetype_include));
 
     const c_flags = &.{ "-std=c11", "-Wall", "-Wextra" };
 
@@ -65,6 +69,7 @@ pub fn build(b: *std.Build) void {
     }
 
     awt_c_mod.linkLibrary(glfw_lib);
+    awt_c_mod.linkLibrary(freetype_lib);
 
     const awt_c_lib = b.addLibrary(.{
         .name = "nimbus_awt_c",
