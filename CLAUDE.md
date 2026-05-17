@@ -239,6 +239,33 @@ TextField の毎キーストロークでフル rebuild しても問題ない。T
 - glyph prewarming API（on-demand で十分。必要になったら `Font.prewarm(...)` を後付け）
 - フレーム全体のテキスト VB 統合（Skia 風の frame-level batcher）。v1 はコンポーネント単位の VB キャッシュで十分
 
+### 文字コード
+
+公開 API はすべて **UTF-8 一本**。内部表現も UTF-8 で持ち、freetype に渡す直前で 1 codepoint ずつデコードする。
+
+選定理由:
+* Zig の文字列リテラルが UTF-8
+* GLFW のクリップボード・タイトル・drag&drop が全部 UTF-8
+* ファイル I/O も UTF-8 が現代標準
+* freetype は最終的に UTF-32 codepoint しか見ないので、どの内部表現を選んでもデコードは要る
+
+プラットフォーム境界での変換:
+* **Windows Win32**: UTF-16 (wchar_t) のため UTF-8 ↔ UTF-16 変換が要る。GLFW が内部でやってくれるので、awt-c が直接 Win32 を触る箇所（ウィンドウタイトル、クリップボード、ファイルダイアログ）でだけ気にする
+* **Mac Cocoa**: NSString は UTF-8 を受け付けるので透過
+* **freetype**: `FT_ULong` (UTF-32 codepoint) を渡す
+
+#### v1 のスコープと将来計画
+
+| 問題 | v1 でやる? | 備考 |
+|---|---|---|
+| codepoint 境界での backspace / cursor 移動 | やる | UTF-8 を「直前の 1 codepoint」単位で扱う |
+| **書記素クラスタ (grapheme cluster) 単位の編集** | **v1 では codepoint 単位、将来 TextField で対応** | "é" = e + 結合アクセント、絵文字 + ZWJ + 絵文字、絵文字 + スキントーン等を 1 編集単位として扱う。UAX #29 のテーブル or libgrapheme 相当が要る |
+| Unicode 正規化 (NFC/NFD) | やらない | 入力バイト列をそのまま保持 |
+| BiDi (Hebrew/Arabic 右→左) | やらない | LTR 限定。後付けの余地は残す |
+| IME composition string | 受信のみ | GLFW の char callback は確定後しか来ない。変換中の inline 表示は v1 非対応 |
+
+**TextField の編集は最終的に書記素クラスタ単位を目指す**。 v1 は codepoint 単位で割り切るが、API 設計時から「将来 grapheme 単位に差し替える」前提で、`countCharacters` / `deleteBackward` 等は実装詳細を隠した抽象 API にしておく（バイト index を直接公開しない）。
+
 ### エラーのC_ABIでの表現
 
 NULLを返し、内部エラーを `GetLastError()` のように取得できるようにする。
