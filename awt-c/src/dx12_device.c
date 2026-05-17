@@ -8,6 +8,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef NM_DX12_DEBUG
+#include <dxgidebug.h>
+#endif
+
 /* ─── Internal helpers ────────────────────────────────────────────────── */
 
 static HRESULT create_heap(nmDevice* dev,
@@ -107,6 +111,76 @@ void nm_device_wait_idle(nmDevice* device) {
         WaitForSingleObject(device->fence_event, INFINITE);
     }
 }
+
+void nmWaitDeviceIdle(nmDevice* self) {
+    nm_device_wait_idle(self);
+}
+
+/* Cross-platform-callable entry point for leak detection. Implementation lives
+ * in dx12_stub.c for non-Windows and in the NM_DX12_DEBUG block below. */
+void nm_dxgi_report_live_objects(void);
+
+#ifdef NM_DX12_DEBUG
+void nm_dxgi_report_live_objects(void) {
+    /* Load dxgidebug.dll dynamically: the "Graphics Tools" optional Windows
+     * feature is required and may not be installed. Failure is non-fatal. */
+    HMODULE dll = LoadLibraryW(L"dxgidebug.dll");
+    if (!dll) {
+        nm_log(nmLogLevelWarn, "dxgi", "dxgidebug.dll not available — install \"Graphics Tools\" to enable leak detection");
+        return;
+    }
+
+    typedef HRESULT (WINAPI *PFN_DXGIGetDebugInterface)(REFIID riid, void** ppDebug);
+    PFN_DXGIGetDebugInterface fn = (PFN_DXGIGetDebugInterface)(void*)
+        GetProcAddress(dll, "DXGIGetDebugInterface");
+    if (!fn) {
+        FreeLibrary(dll);
+        return;
+    }
+
+    IDXGIDebug*      debug = NULL;
+    IDXGIInfoQueue*  info_queue = NULL;
+    if (FAILED(fn(&IID_IDXGIDebug, (void**)&debug))) {
+        FreeLibrary(dll);
+        return;
+    }
+    fn(&IID_IDXGIInfoQueue, (void**)&info_queue);
+
+    IDXGIDebug_ReportLiveObjects(debug, DXGI_DEBUG_ALL,
+        DXGI_DEBUG_RLO_DETAIL | DXGI_DEBUG_RLO_IGNORE_INTERNAL);
+
+    /* Drain the info queue and forward any messages to nm_log. */
+    if (info_queue) {
+        UINT64 n = IDXGIInfoQueue_GetNumStoredMessages(info_queue, DXGI_DEBUG_ALL);
+        for (UINT64 i = 0; i < n; i++) {
+            SIZE_T size = 0;
+            IDXGIInfoQueue_GetMessage(info_queue, DXGI_DEBUG_ALL, i, NULL, &size);
+            if (size == 0) continue;
+            DXGI_INFO_QUEUE_MESSAGE* msg = (DXGI_INFO_QUEUE_MESSAGE*)malloc(size);
+            if (!msg) continue;
+            if (SUCCEEDED(IDXGIInfoQueue_GetMessage(info_queue, DXGI_DEBUG_ALL, i, msg, &size))) {
+                nmLogLevel lvl = nmLogLevelInfo;
+                switch (msg->Severity) {
+                    case DXGI_INFO_QUEUE_MESSAGE_SEVERITY_CORRUPTION:
+                    case DXGI_INFO_QUEUE_MESSAGE_SEVERITY_ERROR:   lvl = nmLogLevelError; break;
+                    case DXGI_INFO_QUEUE_MESSAGE_SEVERITY_WARNING: lvl = nmLogLevelWarn;  break;
+                    case DXGI_INFO_QUEUE_MESSAGE_SEVERITY_INFO:    lvl = nmLogLevelInfo;  break;
+                    case DXGI_INFO_QUEUE_MESSAGE_SEVERITY_MESSAGE: lvl = nmLogLevelDebug; break;
+                }
+                nm_log(lvl, "dxgi", "%s", msg->pDescription);
+            }
+            free(msg);
+        }
+        IDXGIInfoQueue_ClearStoredMessages(info_queue, DXGI_DEBUG_ALL);
+        IDXGIInfoQueue_Release(info_queue);
+    }
+
+    IDXGIDebug_Release(debug);
+    FreeLibrary(dll);
+}
+#else
+void nm_dxgi_report_live_objects(void) {}
+#endif
 
 void nm_drain_info_queue(nmDevice* device) {
     if (!device || !device->info_queue) return;
@@ -214,10 +288,14 @@ nmDevice* nmCreateDevice(void) {
 #ifdef NM_DX12_DEBUG
     if (SUCCEEDED(ID3D12Device_QueryInterface(dev->device,
             &IID_ID3D12InfoQueue, (void**)&dev->info_queue))) {
+        /* Only break when a debugger is attached. Without one, the break
+         * turns into an opaque SEH exit (e.g. exit code 122) that hides the
+         * underlying error. Errors still get drained to nm_log either way. */
+        BOOL want_break = IsDebuggerPresent();
         ID3D12InfoQueue_SetBreakOnSeverity(dev->info_queue,
-            D3D12_MESSAGE_SEVERITY_CORRUPTION, TRUE);
+            D3D12_MESSAGE_SEVERITY_CORRUPTION, want_break);
         ID3D12InfoQueue_SetBreakOnSeverity(dev->info_queue,
-            D3D12_MESSAGE_SEVERITY_ERROR, TRUE);
+            D3D12_MESSAGE_SEVERITY_ERROR, want_break);
     }
 #endif
 
@@ -348,6 +426,13 @@ void nmDestroyDevice(nmDevice* self) {
     if (self->fence_event) { CloseHandle(self->fence_event); self->fence_event = NULL; }
     if (self->fence)       { ID3D12Fence_Release(self->fence); self->fence = NULL; }
     if (self->queue)       { ID3D12CommandQueue_Release(self->queue); self->queue = NULL; }
+
+    /* Drain any debug-layer messages accumulated during destruction before we
+     * release the info queue itself. Catches lifecycle errors (e.g. live refs
+     * at device release) that the break-on-severity guard would otherwise turn
+     * into an opaque process termination. */
+    nm_drain_info_queue(self);
+
     if (self->info_queue)  { ID3D12InfoQueue_Release(self->info_queue); self->info_queue = NULL; }
     if (self->device)      { ID3D12Device_Release(self->device); self->device = NULL; }
     if (self->adapter)     { IDXGIAdapter1_Release(self->adapter); self->adapter = NULL; }

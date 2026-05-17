@@ -14,6 +14,9 @@
 int  nm_font_internal_init(void);
 void nm_font_internal_terminate(void);
 
+/* Implemented in dx12_device.c (Windows) or dx12_stub.c (no-op elsewhere). */
+void nm_dxgi_report_live_objects(void);
+
 typedef struct nmWindowCallbacks {
     nmWindowResizeCallback  resize_cb;
     void*                   resize_user;
@@ -45,6 +48,9 @@ int nmInitAwt(void) {
 }
 
 void nmTerminateAwt(void) {
+    /* Run leak detection before tearing down anything else so we catch
+     * resources the caller forgot to release. No-op in non-debug builds. */
+    nm_dxgi_report_live_objects();
     nm_font_internal_terminate();
     glfwTerminate();
 }

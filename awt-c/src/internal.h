@@ -56,6 +56,7 @@ typedef struct nmDevice nmDevice;
 
 nmDevice* nmCreateDevice(void);
 void nmDestroyDevice(nmDevice* self);
+void nmWaitDeviceIdle(nmDevice* self);
 
 /* ─── Render target (forward decl needed by swapchain/command_buffer) ─── */
 

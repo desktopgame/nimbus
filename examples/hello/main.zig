@@ -195,5 +195,9 @@ pub fn main() !void {
         awt.pollEvents();
         renderFrame(&renderer);
     }
+
+    // Drain the GPU before defers tear down resources still referenced by
+    // the last submitted command list.
+    device.waitIdle();
     std.debug.print("Bye.\n", .{});
 }

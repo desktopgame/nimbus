@@ -8,6 +8,7 @@
 
 nmDevice* nmCreateDevice(void) { return NULL; }
 void nmDestroyDevice(nmDevice* self) { (void)self; }
+void nmWaitDeviceIdle(nmDevice* self) { (void)self; }
 
 nmSwapchain* nmCreateSwapchain(const nmDevice* device, const nmWindow* window) {
     (void)device; (void)window; return NULL;
@@ -111,5 +112,8 @@ void nmUploadTextureRegion(nmTexture* self, int x, int y, int width, int height,
 void nmBindTexture(nmCommandBuffer* self, nmTexture* texture, int slot) {
     (void)self; (void)texture; (void)slot;
 }
+
+/* Cross-platform-callable leak detection (no-op on non-Windows). */
+void nm_dxgi_report_live_objects(void) {}
 
 #endif /* !_WIN32 */
