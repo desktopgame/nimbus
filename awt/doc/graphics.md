@@ -38,7 +38,8 @@ pub const Color = struct {
 };
 
 pub const Font = struct {
-    face: *awt.Font,     // freetype face (already exists)
+    /// Borrow. Font は face を所有しない。寿命は呼び出し側 (Application 等) が管理。
+    face: *awt.Font,
     pixel_size: i32,
 
     pub fn measureString(self: Font, s: []const u8) Size;
@@ -59,11 +60,32 @@ g.drawString("Hello", 10, 40);
 
 ## 描画 API
 
-### Clipping
+### Clipping (子 paint への引き渡しを兼ねる)
 ```zig
-pub fn clip(self: *Graphics, r: Rect) void;
+pub fn clip(self: Graphics, r: Rect) Graphics;
 ```
-矩形クリップを設定。内部的には `nmSetScissor` を呼ぶ。
+**新しい Graphics を値で返す**。Java AWT の `Graphics.create(x, y, w, h)` 相当。返された Graphics は:
+
+* 描画範囲が `r` に制限される（内部的に `nmSetScissor` のクリップに反映）
+* **原点が `(r.x, r.y)` に平行移動** される。つまり子側は `(0, 0)` から始まるローカル座標で描ける
+* 自身のクリップは親のクリップとの **積集合**（絶対座標で計算）
+* color / font などその他の状態は親から copy-on-call
+
+呼び出し元 (親) の Graphics は変更されない。子の paint が終わったあと、親は元の Graphics でそのまま描画を続けられる。これで `save` / `restore` を持たずにネスト clip を実現する。
+
+```zig
+fn paintComponent(self: *Self, g: *Graphics) void {
+    g.setColor(.bg);
+    g.fillRect(.{ .x = 0, .y = 0, .width = self.bounds.width, .height = self.bounds.height });
+
+    for (self.children.items) |child| {
+        var cg = g.clip(child.bounds);
+        child.paintComponent(&cg);
+        // cg はスコープを抜けて消える。GPU リソースの解放は不要（値）。
+    }
+}
+```
+
 非矩形クリップ（角丸、任意形状）はステンシルマスクで実装するが、v1 のシグネチャは矩形のみ。
 
 ### 状態
@@ -93,25 +115,36 @@ Swing は `y = baseline`、現代的 UI ライブラリ (Cairo / Skia / Direct2D
 **nimbus は top-of-bounding-box 派** を採用する（layout で計算しやすい）。
 baseline 派の API が必要になったら `drawStringAtBaseline(s, x, baseline_y)` 等を別途追加。
 
-## 状態スタック（save / restore）
-**v1 は持たない**。
-`Component.paintComponent` の入り口で受け取った Graphics は、ネストせず 1 つの描画スコープで使い切る前提。
-ネストした paint（親 → 子 → 孫の clip 連鎖など）が出てきた段階で `save()` / `restore()` を導入する。
+## drawString の改行
+`\n` を含む文字列は **改行を無視（リテラル文字としても描かない）** する。複数行レンダリングが必要なら呼び出し側で行ごとに `drawString` を呼ぶ。
+将来 `drawText` のような自動レイアウト付き API を別途用意する想定。
+
+## 状態管理: save/restore は持たない
+`clip` が新しい Graphics を返す方式（[Clipping](#clipping-子-paint-への引き渡しを兼ねる) 参照）にしたことで、save/restore に相当するネストは clip 経由で表現できる。
+
+色やフォントは `setColor` / `setFont` で **現在の Graphics に対するミューテーション**。子の paint で setColor しても、親の Graphics は影響を受けない（clip で値コピーが行われているため）。
 
 ## 実装ストラテジ
-Graphics は内部で以下を持つ:
-- `*CommandBuffer`（呼び出し元から受け取る、毎フレーム新規取得）
-- `*Programs`（Text / Color / Image を束ねる Renderer 的なもの、Application or Window 寿命）
-- `*UniformBuffer`（共有リング、フレーム頭で reset 済み）
-- 現在の状態（`current_color`, `current_font`, `current_clip`）
+Graphics は **値型 (struct)**。`clip` で複製されるため alloc は発生しない。
+内部で以下を持つ:
+- `*CommandBuffer`（フレームごとに呼び出し元が acquire）— 借用
+- `*Renderer` or `*Programs` 集（Application / Window 寿命）— 借用
+- `*UniformBuffer`（共有リング、フレーム頭で reset 済み）— 借用
+- 状態（値）:
+  - `origin: struct { x: f32, y: f32 }` — clip により累積される平行移動
+  - `clip_rect: Rect` — 絶対座標。各 draw 呼び出し時に `nmSetScissor` に反映
+  - `current_color: Color`
+  - `current_font: Font`
 
 各 draw 呼び出しで:
-1. 必要な program を bind
-2. uniform を push して bindUniforms
-3. quad の頂点を組み立てて VB に upload
-4. draw
+1. clip_rect で `nmSetScissor` を毎回設定（変更検知でスキップしてもよいが v1 は素朴に）
+2. 必要な program を bind
+3. uniform を push して bindUniforms
+4. ローカル座標を `origin + local` で絶対座標に変換 → NDC へ
+5. quad の頂点を組み立てて VB に upload
+6. draw
 
-頻繁な program 切替が出るが、 GUI スケール（数十〜数百 draw / frame）なら問題なし。
+頻繁な program 切替が出るが、GUI スケール（数十〜数百 draw / frame）なら問題なし。
 将来バッチング（同 program ぶんを集めて 1 draw call にまとめる）の余地は残す。
 
 ## v1 の範囲外
@@ -146,9 +179,10 @@ pub const Image = struct {
 
 `awt.zigimg` の直接露出は `awt.Image` 実装と同時に外す。
 
-## 未決定事項
+## 決定済み（このセクションは記録用、新しい論点が出たら上に移す）
 
-- **Font の所有権**: `Font { face: *awt.Font, pixel_size }` で face を借用するか、Font が face を所有するか。複数 pixel_size の同 face を持ちたいので borrow が自然。誰が `awt.Font` を所有するかは framework `Application` の責務（default font 等を持つ）
-- **getFontMetrics() を Graphics に置くか**: Java は `Graphics.getFontMetrics()` で `FontMetrics` を返す。nimbus は `Font.measureString` だけで済むので不要。ascender/descender が必要になったら `Font.metrics() -> FontMetrics` を別に
-- **Color の `0..1 float` vs `0..255 u8`**: float 内部表現、コンストラクタで両対応（`Color.rgb(...)` と `Color.bytes(...)`）
-- **drawString の改行**: v1 は `\n` を含まない 1 行のみ受け付ける。`\n` を含む場合は実装定義（無視 / 文字として描く / panic のいずれか）
+- **Font の所有権**: `Font { face: *awt.Font, pixel_size }` で face を **borrow**。Font 自体は値型で軽量に複製可能。`awt.Font` (FT_Face) の所有は framework `Application` の責務（default font 等）
+- **measureString の置き場所**: `Font.measureString` に置く。Graphics 経由にしない理由は、レイアウト計算時など Graphics が手元に無い場面（paint コールバック外）でも文字幅を測りたいから
+- **drawString の改行**: `\n` は無視。複数行は呼び出し側で行ごとに分けて drawString
+- **clip の挙動**: 新しい Graphics を値で返す（origin 平行移動 + clip 積集合）。save/restore は持たない
+- **Color**: 内部 `f32 × 4`、コンストラクタで `rgba(f32)` / `rgb(f32)` / `bytes(u8)` 両対応
