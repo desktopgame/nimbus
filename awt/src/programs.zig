@@ -13,25 +13,41 @@ const Pipeline = @import("Pipeline.zig");
 const CommandBuffer = @import("CommandBuffer.zig");
 const UniformBuffer = @import("UniformBuffer.zig");
 
-// Re-exports for terse meta declarations below.
-const VertexLayout = Pipeline.VertexLayout;
-const Topology = Pipeline.Topology;
-const BlendMode = Pipeline.BlendMode;
-const Stage = Shader.Stage;
+// ── Meta types ───────────────────────────────────────────────────────────
+
+pub const UniformDecl = struct {
+    stage: Shader.Stage,
+    slot: i32,
+    /// CPU-side struct matching the shader's cbuffer layout. Held comptime.
+    type: type,
+};
+
+pub const TextureDecl = struct {
+    stage: Shader.Stage,
+    slot: i32,
+};
+
+pub const ShaderSources = struct {
+    hlsl_vs: [:0]const u8,
+    hlsl_ps: [:0]const u8,
+    msl_vs: [:0]const u8,
+    msl_ps: [:0]const u8,
+};
+
+pub const ProgramMeta = struct {
+    vertex_layout: Pipeline.VertexLayout,
+    topology: Pipeline.Topology = .triangle_list,
+    blend: Pipeline.BlendMode = .none,
+    color_write_enable: bool = true,
+    uniforms: []const UniformDecl = &.{},
+    textures: []const TextureDecl = &.{},
+    shaders: ShaderSources,
+};
+
+// ── Generator ────────────────────────────────────────────────────────────
 
 /// Generate a program type from comptime metadata.
-///
-/// Expected meta shape (all fields comptime-known):
-///   .vertex_layout      — Pipeline.VertexLayout
-///   .topology           — Pipeline.Topology (default: .triangle_list)
-///   .blend              — Pipeline.BlendMode (default: .none)
-///   .color_write_enable — bool (default: true)
-///   .uniforms           — tuple of { stage, slot, type } (CBV bindings; optional).
-///                         `type` is the CPU-side struct matching the shader's cbuffer.
-///                         The first entry is exposed as `Self.Uniforms` for convenience.
-///   .textures           — tuple of { stage, slot } (SRV bindings; optional)
-///   .shaders            — struct of { hlsl_vs, hlsl_ps, msl_vs, msl_ps } source strings
-pub fn ProgramFromMeta(comptime meta: anytype) type {
+pub fn ProgramFromMeta(comptime meta: ProgramMeta) type {
     return struct {
         vs: Shader,
         ps: Shader,
@@ -40,12 +56,9 @@ pub fn ProgramFromMeta(comptime meta: anytype) type {
 
         const Self = @This();
 
-        /// Convenience alias for the first uniform block's CPU-side type.
-        /// `void` if the program declares no uniforms.
-        pub const Uniforms = if (@hasField(@TypeOf(meta), "uniforms") and meta.uniforms.len > 0)
-            meta.uniforms[0].type
-        else
-            void;
+        /// CPU-side type matching the program's first uniform block.
+        /// `void` if no uniforms declared.
+        pub const Uniforms = if (meta.uniforms.len > 0) meta.uniforms[0].type else void;
 
         pub fn init(device: Device) !Self {
             const vs_src = comptime selectShader(meta.shaders, .vertex);
@@ -65,9 +78,9 @@ pub fn ProgramFromMeta(comptime meta: anytype) type {
                 .vertex_shader = vs,
                 .pixel_shader = ps,
                 .vertex_layout = meta.vertex_layout,
-                .topology = if (@hasField(@TypeOf(meta), "topology")) meta.topology else .triangle_list,
-                .blend = if (@hasField(@TypeOf(meta), "blend")) meta.blend else .none,
-                .color_write_enable = if (@hasField(@TypeOf(meta), "color_write_enable")) meta.color_write_enable else true,
+                .topology = meta.topology,
+                .blend = meta.blend,
+                .color_write_enable = meta.color_write_enable,
             });
             errdefer pipeline.deinit();
 
@@ -98,7 +111,7 @@ pub fn ProgramFromMeta(comptime meta: anytype) type {
         pub fn bindUniforms(self: Self, cb: CommandBuffer, ubuf: UniformBuffer, handle: UniformBuffer.Handle) void {
             _ = self;
             const slot: i32 = comptime blk: {
-                if (!@hasField(@TypeOf(meta), "uniforms") or meta.uniforms.len == 0) {
+                if (meta.uniforms.len == 0) {
                     @compileError("Program declares no uniforms");
                 }
                 break :blk meta.uniforms[0].slot;
@@ -108,7 +121,7 @@ pub fn ProgramFromMeta(comptime meta: anytype) type {
     };
 }
 
-fn selectShader(comptime shaders: anytype, comptime stage: Stage) [:0]const u8 {
+fn selectShader(comptime shaders: ShaderSources, comptime stage: Shader.Stage) [:0]const u8 {
     return switch (builtin.target.os.tag) {
         .macos => switch (stage) {
             .vertex => shaders.msl_vs,
@@ -121,29 +134,18 @@ fn selectShader(comptime shaders: anytype, comptime stage: Stage) [:0]const u8 {
     };
 }
 
-fn collectBindings(comptime meta: anytype) [bindingCount(meta)]RootSignature.Binding {
-    var bindings: [bindingCount(meta)]RootSignature.Binding = undefined;
+fn collectBindings(comptime meta: ProgramMeta) [meta.uniforms.len + meta.textures.len]RootSignature.Binding {
+    var bindings: [meta.uniforms.len + meta.textures.len]RootSignature.Binding = undefined;
     var i: usize = 0;
-    if (@hasField(@TypeOf(meta), "uniforms")) {
-        inline for (meta.uniforms) |u| {
-            bindings[i] = .{ .type = .constant_buffer, .stage = u.stage, .slot = u.slot };
-            i += 1;
-        }
+    inline for (meta.uniforms) |u| {
+        bindings[i] = .{ .type = .constant_buffer, .stage = u.stage, .slot = u.slot };
+        i += 1;
     }
-    if (@hasField(@TypeOf(meta), "textures")) {
-        inline for (meta.textures) |t| {
-            bindings[i] = .{ .type = .texture, .stage = t.stage, .slot = t.slot };
-            i += 1;
-        }
+    inline for (meta.textures) |t| {
+        bindings[i] = .{ .type = .texture, .stage = t.stage, .slot = t.slot };
+        i += 1;
     }
     return bindings;
-}
-
-fn bindingCount(comptime meta: anytype) usize {
-    var n: usize = 0;
-    if (@hasField(@TypeOf(meta), "uniforms")) n += meta.uniforms.len;
-    if (@hasField(@TypeOf(meta), "textures")) n += meta.textures.len;
-    return n;
 }
 
 // ── Built-in programs ────────────────────────────────────────────────────
@@ -151,24 +153,22 @@ fn bindingCount(comptime meta: anytype) usize {
 /// Text renders a single textured quad with the R channel of an R8 atlas
 /// modulated by a uniform color. Input vertices are 2D NDC + UV.
 pub const Text = ProgramFromMeta(.{
-    .vertex_layout = VertexLayout.vertex_texcoord_2d,
-    .topology = Topology.triangle_list,
-    .blend = BlendMode.alpha,
-    .color_write_enable = true,
-    .uniforms = .{
+    .vertex_layout = .vertex_texcoord_2d,
+    .blend = .alpha,
+    .uniforms = &.{
         .{
-            .stage = Stage.pixel,
+            .stage = .pixel,
             .slot = 0,
             .type = extern struct { color: [4]f32 },
         },
     },
-    .textures = .{
-        .{ .stage = Stage.pixel, .slot = 0 },
+    .textures = &.{
+        .{ .stage = .pixel, .slot = 0 },
     },
     .shaders = .{
         .hlsl_vs = @embedFile("shaders/Text/text.hlsl.vs"),
         .hlsl_ps = @embedFile("shaders/Text/text.hlsl.ps"),
-        .msl_vs  = @embedFile("shaders/Text/text.msl.vs"),
-        .msl_ps  = @embedFile("shaders/Text/text.msl.ps"),
+        .msl_vs = @embedFile("shaders/Text/text.msl.vs"),
+        .msl_ps = @embedFile("shaders/Text/text.msl.ps"),
     },
 });
