@@ -192,19 +192,33 @@ fn quadPosUv(out: *[16]f32, cx: f32, cy: f32, w: f32, h: f32) void {
     };
 }
 
-/// 4 unique vertices (x, y, u, v). UV in [-1, 1] centred on the quad —
-/// what the SDF RoundedRect shader expects so its pixel-space math has the
-/// origin at the shape center.
-fn quadPosUvCentered(out: *[16]f32, cx: f32, cy: f32, w: f32, h: f32) void {
-    const x0 = cx - w / 2.0;
-    const x1 = cx + w / 2.0;
-    const y0 = cy - h / 2.0;
-    const y1 = cy + h / 2.0;
+/// SDF quad: covers the shape's bounding box plus a margin so that outlines
+/// (which extend thickness/2 outside the nominal radius) and the 1px AA fade
+/// are not clipped at the cardinal edges. UV is scaled so `uv * half_size`
+/// in the shader still gives pixel coords with origin at the shape center —
+/// i.e., the nominal shape edge is at UV ±1, the quad corners go slightly past.
+fn quadSdf(
+    out: *[16]f32,
+    cx_ndc: f32, cy_ndc: f32,
+    half_w_px: f32, half_h_px: f32,
+    margin_px: f32,
+    window_w: i32, window_h: i32,
+) void {
+    const ww = @as(f32, @floatFromInt(window_w));
+    const wh = @as(f32, @floatFromInt(window_h));
+    const w_ndc = (half_w_px + margin_px) * 2.0 / ww;
+    const h_ndc = (half_h_px + margin_px) * 2.0 / wh;
+    const uv_x = (half_w_px + margin_px) / half_w_px;
+    const uv_y = (half_h_px + margin_px) / half_h_px;
+    const x0 = cx_ndc - w_ndc / 2.0;
+    const x1 = cx_ndc + w_ndc / 2.0;
+    const y0 = cy_ndc - h_ndc / 2.0;
+    const y1 = cy_ndc + h_ndc / 2.0;
     out.* = .{
-        x0, y1, -1.0, -1.0, // TL
-        x0, y0, -1.0,  1.0, // BL
-        x1, y0,  1.0,  1.0, // BR
-        x1, y1,  1.0, -1.0, // TR
+        x0, y1, -uv_x, -uv_y, // TL
+        x0, y0, -uv_x,  uv_y, // BL
+        x1, y0,  uv_x,  uv_y, // BR
+        x1, y1,  uv_x, -uv_y, // TR
     };
 }
 
@@ -315,31 +329,33 @@ pub fn main() !void {
     defer text_vbuf.deinit();
     text_vbuf.upload(std.mem.sliceAsBytes(text_quad[0..]), 0);
 
-    // ── Bottom row: 4 SDF shapes at y=-0.4, each 100x100 px ────────
+    // ── Bottom row: 4 SDF shapes at y=-0.4, each nominal 100x100 px ──
+    // Quad gets a 4px margin on each side so outlines (thickness/2 outside
+    // the nominal edge) plus AA fade aren't clipped at the cardinal points.
     const bot_y: f32 = -0.4;
-    const sdf_w_ndc: f32 = pxToNdc(100, window_w);
-    const sdf_h_ndc: f32 = pxToNdc(100, window_h);
+    const sdf_half_px: f32 = 50;
+    const sdf_margin_px: f32 = 4;
 
     var rrect_fill_quad: [16]f32 = undefined;
-    quadPosUvCentered(&rrect_fill_quad, -0.65, bot_y, sdf_w_ndc, sdf_h_ndc);
+    quadSdf(&rrect_fill_quad, -0.65, bot_y, sdf_half_px, sdf_half_px, sdf_margin_px, window_w, window_h);
     var rrect_fill_vbuf = try awt.Buffer.init(device, @sizeOf(@TypeOf(rrect_fill_quad)), .{ .vertex = true });
     defer rrect_fill_vbuf.deinit();
     rrect_fill_vbuf.upload(std.mem.sliceAsBytes(rrect_fill_quad[0..]), 0);
 
     var rrect_outline_quad: [16]f32 = undefined;
-    quadPosUvCentered(&rrect_outline_quad, -0.22, bot_y, sdf_w_ndc, sdf_h_ndc);
+    quadSdf(&rrect_outline_quad, -0.22, bot_y, sdf_half_px, sdf_half_px, sdf_margin_px, window_w, window_h);
     var rrect_outline_vbuf = try awt.Buffer.init(device, @sizeOf(@TypeOf(rrect_outline_quad)), .{ .vertex = true });
     defer rrect_outline_vbuf.deinit();
     rrect_outline_vbuf.upload(std.mem.sliceAsBytes(rrect_outline_quad[0..]), 0);
 
     var circle_fill_quad: [16]f32 = undefined;
-    quadPosUvCentered(&circle_fill_quad, 0.22, bot_y, sdf_w_ndc, sdf_h_ndc);
+    quadSdf(&circle_fill_quad, 0.22, bot_y, sdf_half_px, sdf_half_px, sdf_margin_px, window_w, window_h);
     var circle_fill_vbuf = try awt.Buffer.init(device, @sizeOf(@TypeOf(circle_fill_quad)), .{ .vertex = true });
     defer circle_fill_vbuf.deinit();
     circle_fill_vbuf.upload(std.mem.sliceAsBytes(circle_fill_quad[0..]), 0);
 
     var circle_outline_quad: [16]f32 = undefined;
-    quadPosUvCentered(&circle_outline_quad, 0.65, bot_y, sdf_w_ndc, sdf_h_ndc);
+    quadSdf(&circle_outline_quad, 0.65, bot_y, sdf_half_px, sdf_half_px, sdf_margin_px, window_w, window_h);
     var circle_outline_vbuf = try awt.Buffer.init(device, @sizeOf(@TypeOf(circle_outline_quad)), .{ .vertex = true });
     defer circle_outline_vbuf.deinit();
     circle_outline_vbuf.upload(std.mem.sliceAsBytes(circle_outline_quad[0..]), 0);
