@@ -1,0 +1,48 @@
+# component
+コンポーネントについての設計ノート。
+
+## 型定義
+```zig
+pub const Component = struct {
+    pub const VTable = struct {
+        ctor:         *const fn (*Component) void,
+        dtor:         *const fn (*Component) void,
+        paint:        *const fn (*Component, *awt.Graphics) void,
+        processEvent: *const fn (*Component, *const Event) bool,
+    };
+
+    vtable:     *const VTable,                  // ★ 書き換え可能 (個別差替 / 一斉差替)
+    position:   Point,
+    size:       Size,
+    parent:     ?*Component,
+    container:  ?*Container,                    // Container embed のみ self を指す
+    name:       ?[]const u8,                    // Java AWT 互換
+    properties: ?std.StringHashMap(Property),   // Swing putClientProperty 互換
+    allocator:  std.mem.Allocator,
+
+    // ... メソッド
+};
+```
+
+## プラッガブルな設計
+Component を継承した Button, Label などで VTable を独自に実装する。
+特にカスタマイズしないのであれば、ユーザーはそのまま Button や Label の機能を使える。
+カスタマイズしたいユーザーは自分で VTable を入れ替える必要がある。
+これはルックアンドフィールのような一斉に全てのコンポーネントの VTable を入れ替える処理も込みで設計されている。
+とはいえ、ルックアンドフィールそのものの設計は nimbus では提供しない。
+設計が難しいというのが理由の一つ、
+そしてルックアンドフィールそのものではなくルックアンドフィールを後付けできる程度にカスタマイズポイントを露出しておけば
+ユーザー側でそれは（必要なら）実装することができる、というのがもう一つの理由。
+
+Componentごとに以下のカスタマイズポイントがある。
+- 初期化
+- 破棄
+- 描画
+- イベント
+そしてこれを入れ替えられるなら、その上にルックアンドフィールを載せること自体は可能なはず。
+どんな形でやるかまではいまは判断できない。
+
+## プロパティ
+VTable によってユーザーが好きな処理を入れられるだけでは不十分な場合もある。
+例えばコンポーネントが追加で独自の状態を保持して、それがイベントで変化するような場合。
+このような場合のために、 `Component.properties` が存在している。
