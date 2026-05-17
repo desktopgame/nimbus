@@ -1,0 +1,17 @@
+// Fragment shader for the Text program (MSL / Metal).
+// Samples R channel of the glyph atlas and uses it as alpha against opaque white.
+
+#include <metal_stdlib>
+using namespace metal;
+
+struct VsOut {
+    float4 pos [[position]];
+    float2 uv;
+};
+
+fragment float4 psMain(VsOut in [[stage_in]],
+                       texture2d<float> tex [[texture(0)]],
+                       sampler samp [[sampler(0)]]) {
+    float a = tex.sample(samp, in.uv).r;
+    return float4(1.0, 1.0, 1.0, a);
+}

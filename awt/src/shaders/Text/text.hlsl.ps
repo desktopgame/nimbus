@@ -1,0 +1,16 @@
+// Pixel shader for the Text program (HLSL / DX12).
+// Samples R channel of the glyph atlas and uses it as alpha against opaque white.
+// Caller is expected to bind the static LinearClamp sampler at s0 (built-in).
+
+struct VsOut {
+    float4 pos : SV_Position;
+    float2 uv  : TEXCOORD0;
+};
+
+Texture2D    g_tex  : register(t0);
+SamplerState g_samp : register(s0);
+
+float4 psMain(VsOut i) : SV_Target {
+    float a = g_tex.Sample(g_samp, i.uv).r;
+    return float4(1.0, 1.0, 1.0, a);
+}

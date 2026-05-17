@@ -1,67 +1,14 @@
 const std = @import("std");
-const builtin = @import("builtin");
 const nimbus = @import("nimbus");
 const awt = nimbus.awt;
 const c = awt.c;
 
 const noto_sans_ttf = @embedFile("assets/noto-sans/NotoSansJP-Regular.ttf");
 
-const text_hlsl =
-    \\struct VsOut {
-    \\    float4 pos : SV_Position;
-    \\    float2 uv : TEXCOORD0;
-    \\};
-    \\
-    \\VsOut vsMain(float2 in_pos : POSITION, float2 in_uv : TEXCOORD0) {
-    \\    VsOut o;
-    \\    o.pos = float4(in_pos, 0.0, 1.0);
-    \\    o.uv = in_uv;
-    \\    return o;
-    \\}
-    \\
-    \\Texture2D    g_tex  : register(t0);
-    \\SamplerState g_samp : register(s0);  // s0 = LinearClamp (built-in)
-    \\
-    \\float4 psMain(VsOut i) : SV_Target {
-    \\    float a = g_tex.Sample(g_samp, i.uv).r;
-    \\    return float4(1.0, 1.0, 1.0, a);
-    \\}
-;
-
-const text_msl =
-    \\#include <metal_stdlib>
-    \\using namespace metal;
-    \\
-    \\struct VsIn {
-    \\    float2 pos [[attribute(0)]];
-    \\    float2 uv  [[attribute(1)]];
-    \\};
-    \\struct VsOut {
-    \\    float4 pos [[position]];
-    \\    float2 uv;
-    \\};
-    \\
-    \\vertex VsOut vsMain(VsIn in [[stage_in]]) {
-    \\    VsOut o;
-    \\    o.pos = float4(in.pos, 0.0, 1.0);
-    \\    o.uv = in.uv;
-    \\    return o;
-    \\}
-    \\
-    \\fragment float4 psMain(VsOut in [[stage_in]],
-    \\                       texture2d<float> tex [[texture(0)]],
-    \\                       sampler samp [[sampler(0)]]) {
-    \\    float a = tex.sample(samp, in.uv).r;
-    \\    return float4(1.0, 1.0, 1.0, a);
-    \\}
-;
-
-const text_shader = if (builtin.target.os.tag == .macos) text_msl else text_hlsl;
-
 const Renderer = struct {
     device: *awt.Device,
     swapchain: *awt.Swapchain,
-    pipeline: *awt.Pipeline,
+    program: *awt.programs.Text,
     texture: *awt.Texture,
     vbuf: *awt.Buffer,
     ibuf: *awt.Buffer,
@@ -76,7 +23,7 @@ fn renderFrame(r: *Renderer) void {
     cb.clearColor(0.1, 0.1, 0.15, 1.0);
     cb.clearStencil(0);
 
-    cb.bindPipeline(r.pipeline.*);
+    r.program.bind(cb);
     cb.bindTexture(r.texture.*, 0);
     cb.bindVertexBuffer(r.vbuf.*, 0, 4 * @sizeOf(f32), 0);
     cb.bindIndexBuffer(r.ibuf.*, .u16, 0);
@@ -182,27 +129,9 @@ pub fn main() !void {
         @intCast(glyph.metrics.bitmap_pitch),
     );
 
-    // ── Shaders + RootSig + Pipeline ────────────────────────────────
-    var vs = try awt.Shader.compile(.vertex, text_shader);
-    defer vs.deinit();
-    var ps = try awt.Shader.compile(.pixel, text_shader);
-    defer ps.deinit();
-
-    var root_sig = try awt.RootSignature.init(device, &.{
-        .{ .type = .texture, .stage = .pixel, .slot = 0 },
-    });
-    defer root_sig.deinit();
-
-    var pipeline = try awt.Pipeline.init(device, .{
-        .root_signature = root_sig,
-        .vertex_shader = vs,
-        .pixel_shader = ps,
-        .vertex_layout = .vertex_texcoord_2d,
-        .topology = .triangle_list,
-        .blend = .alpha,
-        .color_write_enable = true,
-    });
-    defer pipeline.deinit();
+    // ── Program (encapsulates shaders + root sig + pipeline) ───────
+    var program = try awt.programs.Text.init(device);
+    defer program.deinit();
 
     // ── Vertex / index buffers (one textured quad, indexed) ────────
     var quad: [16]f32 = undefined;
@@ -220,7 +149,7 @@ pub fn main() !void {
     var renderer = Renderer{
         .device = &device,
         .swapchain = &swapchain,
-        .pipeline = &pipeline,
+        .program = &program,
         .texture = &texture,
         .vbuf = &vbuf,
         .ibuf = &ibuf,
