@@ -137,7 +137,14 @@ void nmUploadTextureRegion(nmTexture* self, int x, int y, int w, int h,
 }
 
 void nmBindTexture(nmCommandBuffer* self, nmTexture* texture, int slot) {
-    if (!self || !texture || !self->current_pipeline) return;
+    if (!self || !texture) return;
+
+    if (!self->current_pipeline) {
+        nm_log(nmLogLevelError, "texture",
+            "nmBindTexture: no pipeline bound (call nmBindPipeline first)");
+        return;
+    }
+
     nm_cb_ensure_encoder(self);
     if (!self->encoder) return;
 

@@ -75,8 +75,20 @@ void nmBindIndexBuffer(nmCommandBuffer* self, nmBuffer* buf,
 
 void nmBindConstantBuffer(nmCommandBuffer* self, nmBuffer* buf, int slot,
                           size_t offset, size_t size) {
-    (void)size;
-    if (!self || !buf || !self->current_pipeline) return;
+    if (!self || !buf) return;
+
+    if (!self->current_pipeline) {
+        nm_log(nmLogLevelError, "buffer",
+            "nmBindConstantBuffer: no pipeline bound (call nmBindPipeline first)");
+        return;
+    }
+    if (offset + size > buf->size) {
+        nm_log(nmLogLevelError, "buffer",
+            "nmBindConstantBuffer: range out of bounds (offset=%zu size=%zu buf=%zu)",
+            offset, size, buf->size);
+        return;
+    }
+
     nm_cb_ensure_encoder(self);
     if (!self->encoder) return;
 
@@ -86,6 +98,8 @@ void nmBindConstantBuffer(nmCommandBuffer* self, nmBuffer* buf, int slot,
     for (int i = 0; i < sig->param_count; i++) {
         if (sig->params[i].type != nmRootBindingTypeConstantBuffer) continue;
         if (sig->params[i].slot != slot) continue;
+        /* size is validated above for caller intent; Metal binds the buffer
+         * with offset and infers extent from the MSL constant struct itself. */
         NSUInteger idx = (NSUInteger)slot;
         if (sig->params[i].stage == nmShaderStageVertex) {
             [self->encoder setVertexBuffer:buf->buffer
