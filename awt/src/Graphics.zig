@@ -85,21 +85,31 @@ pub const Context = struct {
 cb: CommandBuffer,
 ctx: *Context,
 
-// Window pixel dimensions, used for pixel → NDC conversion.
+// Logical window dimensions (points) used for pixel → NDC conversion. User
+// drawing coordinates are interpreted in these units, so a 100-pt rectangle
+// renders the same physical size regardless of display DPI.
 window_w: i32,
 window_h: i32,
+
+// Framebuffer pixel dimensions. Differs from `window_w/h` on HiDPI displays
+// (e.g. Retina 2x → 2× the logical dimensions). Only the scissor path uses
+// these — the GPU viewport spans the whole framebuffer, so NDC → pixel
+// mapping happens for free.
+fb_w: i32,
+fb_h: i32,
 
 // Translation accumulated through nested `clip` calls. local + origin = pixel.
 origin_x: f32,
 origin_y: f32,
 
-// Clip rect in absolute pixel coordinates. `nmSetScissor` takes integers.
+// Clip rect in absolute logical coordinates (points), matching user inputs.
+// `applyScissor` scales these to framebuffer pixels before binding.
 clip_rect: Rect,
 
 current_color: Color,
 current_font: ?TextFont,
 
-pub fn init(cb: CommandBuffer, ctx: *Context, window_w: i32, window_h: i32) Graphics {
+pub fn init(cb: CommandBuffer, ctx: *Context, window_w: i32, window_h: i32, fb_w: i32, fb_h: i32) Graphics {
     const ww: f32 = @floatFromInt(window_w);
     const wh: f32 = @floatFromInt(window_h);
     return .{
@@ -107,6 +117,8 @@ pub fn init(cb: CommandBuffer, ctx: *Context, window_w: i32, window_h: i32) Grap
         .ctx = ctx,
         .window_w = window_w,
         .window_h = window_h,
+        .fb_w = fb_w,
+        .fb_h = fb_h,
         .origin_x = 0,
         .origin_y = 0,
         .clip_rect = .{ .x = 0, .y = 0, .width = ww, .height = wh },
@@ -160,10 +172,12 @@ pub fn getFont(self: Graphics) ?TextFont {
 // ─────────────────────────── internal helpers ────────────────────────────
 
 fn applyScissor(self: Graphics) void {
-    const x: i32 = @intFromFloat(@floor(self.clip_rect.x));
-    const y: i32 = @intFromFloat(@floor(self.clip_rect.y));
-    const w: i32 = @intFromFloat(@ceil(self.clip_rect.width));
-    const h: i32 = @intFromFloat(@ceil(self.clip_rect.height));
+    const sx = @as(f32, @floatFromInt(self.fb_w)) / @as(f32, @floatFromInt(self.window_w));
+    const sy = @as(f32, @floatFromInt(self.fb_h)) / @as(f32, @floatFromInt(self.window_h));
+    const x: i32 = @intFromFloat(@floor(self.clip_rect.x * sx));
+    const y: i32 = @intFromFloat(@floor(self.clip_rect.y * sy));
+    const w: i32 = @intFromFloat(@ceil(self.clip_rect.width * sx));
+    const h: i32 = @intFromFloat(@ceil(self.clip_rect.height * sy));
     self.cb.setScissor(x, y, @max(0, w), @max(0, h));
 }
 

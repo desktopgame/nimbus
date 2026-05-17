@@ -126,6 +126,10 @@ double nmGetTime(void) {
     return glfwGetTime();
 }
 
+void nmGetWindowSize(const nmWindow* self, int* width, int* height) {
+    glfwGetWindowSize((GLFWwindow*)self, width, height);
+}
+
 void nmGetFramebufferSize(const nmWindow* self, int* width, int* height) {
     glfwGetFramebufferSize((GLFWwindow*)self, width, height);
 }

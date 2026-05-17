@@ -45,10 +45,16 @@ typedef void (*nmWindowRefreshCallback)(nmWindow* window, void* user_data);
 void nmSetWindowResizeCallback(nmWindow* self, nmWindowResizeCallback cb, void* user_data);
 void nmSetWindowRefreshCallback(nmWindow* self, nmWindowRefreshCallback cb, void* user_data);
 
+/* Window size in logical screen units (points). This is what the user
+ * requested in nmCreateWindow; on HiDPI displays it is smaller than the
+ * framebuffer size. Use these values for any DPI-independent coordinates
+ * exposed to user drawing code. */
+void nmGetWindowSize(const nmWindow* self, int* width, int* height);
+
 /* Framebuffer pixel size. On HiDPI displays (Retina) this can differ from the
- * requested window size — e.g. a 800x600 window has a 1600x1200 framebuffer.
- * Use these values, not the values passed to nmCreateWindow, for any pixel
- * arithmetic in drawing code. */
+ * window's logical size — e.g. a 800x600 window has a 1600x1200 framebuffer.
+ * Use these values for swapchain / scissor / viewport — anything that talks
+ * to the GPU in pixel units. */
 void nmGetFramebufferSize(const nmWindow* self, int* width, int* height);
 
 /* ─── Event pump ──────────────────────────────────────────────────────── */

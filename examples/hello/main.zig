@@ -9,11 +9,16 @@ const example_png = @embedFile("assets/example.png");
 const Renderer = struct {
     device: *awt.Device,
     swapchain: *awt.Swapchain,
+    window: *awt.Window,
     ctx: *awt.Graphics.Context,
     image: *awt.Image,
     font: awt.Font,
+    // Logical window size (points). User drawing coordinates are in these units.
     window_w: i32,
     window_h: i32,
+    // Framebuffer pixel size. Differs from window size on HiDPI displays.
+    fb_w: i32,
+    fb_h: i32,
 };
 
 fn renderFrame(r: *Renderer) void {
@@ -28,7 +33,7 @@ fn renderFrame(r: *Renderer) void {
     cb.clearColor(0.1, 0.1, 0.15, 1.0);
     cb.clearStencil(0);
 
-    var g = awt.Graphics.init(cb, r.ctx, r.window_w, r.window_h);
+    var g = awt.Graphics.init(cb, r.ctx, r.window_w, r.window_h, r.fb_w, r.fb_h);
     g.setFont(.{ .face = r.font, .pixel_size = 32 });
 
     const t: f32 = @floatCast(awt.time());
@@ -86,14 +91,17 @@ fn renderFrame(r: *Renderer) void {
 
 fn onResize(
     _: ?*c.struct_nmWindow,
-    width: c_int,
-    height: c_int,
+    fb_width: c_int,
+    fb_height: c_int,
     user_data: ?*anyopaque,
 ) callconv(.c) void {
     const r: *Renderer = @ptrCast(@alignCast(user_data.?));
-    r.swapchain.resize(@intCast(width), @intCast(height)) catch {};
-    r.window_w = @intCast(width);
-    r.window_h = @intCast(height);
+    r.swapchain.resize(@intCast(fb_width), @intCast(fb_height)) catch {};
+    r.fb_w = @intCast(fb_width);
+    r.fb_h = @intCast(fb_height);
+    const sz = r.window.size();
+    r.window_w = sz.width;
+    r.window_h = sz.height;
     renderFrame(r);
 }
 
@@ -120,12 +128,12 @@ pub fn main() !void {
     var swapchain = try awt.Swapchain.init(device, window);
     defer swapchain.deinit();
 
-    // Framebuffer can be larger than the requested window size (HiDPI / Retina).
-    // GLFW does not fire the framebuffer-size callback on initial creation, so
-    // we query and seed the renderer's dimensions explicitly.
-    const fb = window.framebufferSize();
-    const window_w: i32 = fb.width;
-    const window_h: i32 = fb.height;
+    // Seed both logical (points) and framebuffer (pixels) sizes — they differ
+    // on HiDPI displays (Retina 2x → fb is 2× logical). GLFW does not fire the
+    // framebuffer-size callback on creation, so the initial values are queried
+    // here; subsequent updates land in `onResize`.
+    const win_size = window.size();
+    const fb_size = window.framebufferSize();
 
     var font = try awt.Font.init(noto_sans_ttf, 0);
     defer font.deinit();
@@ -171,11 +179,14 @@ pub fn main() !void {
     var renderer = Renderer{
         .device = &device,
         .swapchain = &swapchain,
+        .window = &window,
         .ctx = &ctx,
         .image = &image,
         .font = font,
-        .window_w = window_w,
-        .window_h = window_h,
+        .window_w = win_size.width,
+        .window_h = win_size.height,
+        .fb_w = fb_size.width,
+        .fb_h = fb_size.height,
     };
     window.setResizeCallback(onResize, &renderer);
     window.setRefreshCallback(onRefresh, &renderer);

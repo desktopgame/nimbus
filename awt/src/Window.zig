@@ -23,12 +23,22 @@ pub fn shouldClose(self: Window) bool {
     return c.nmShouldClose(self.handle);
 }
 
-pub const FramebufferSize = struct { width: i32, height: i32 };
+pub const Size = struct { width: i32, height: i32 };
 
-/// Framebuffer pixel size. On HiDPI displays this is larger than the requested
-/// window size — drawing code that does pixel math must use this, not the
-/// size passed to `init`.
-pub fn framebufferSize(self: Window) FramebufferSize {
+/// Logical window size in points — what was requested at `init`. On HiDPI
+/// displays this is smaller than `framebufferSize`; user-facing drawing
+/// coordinates should be in these units.
+pub fn size(self: Window) Size {
+    var w: c_int = 0;
+    var h: c_int = 0;
+    c.nmGetWindowSize(self.handle, &w, &h);
+    return .{ .width = @intCast(w), .height = @intCast(h) };
+}
+
+/// Framebuffer pixel size — the actual drawable resolution. On HiDPI displays
+/// this is larger than `size`; viewport / scissor / swapchain arithmetic uses
+/// these units.
+pub fn framebufferSize(self: Window) Size {
     var w: c_int = 0;
     var h: c_int = 0;
     c.nmGetFramebufferSize(self.handle, &w, &h);
