@@ -31,10 +31,6 @@
 
 ## Later
 
-- [ ] Metal バックエンド（Mac）
-  - [ ] awt-c に Metal 版 shim 追加
-  - [ ] `awt/shaders/*.msl.*` を用意
-  - [ ] codegen が MSL も処理するよう拡張
 - [ ] FreeType 統合（テキスト描画）
 - [ ] framework 層: `Application` / `Container` / `Component` / `widget` 群（CLAUDE.md「その他の決定項目」参照）
 - [ ] ビルド時シェーダーコンパイル（DXC）へ移行
@@ -50,3 +46,4 @@
 - [x] GLFW 3.4 をベンダリング + 自前 `build.zig` ビルド
 - [x] awt-c ↔ awt ↔ framework の最小ループ（hello でウィンドウが出る）
 - [x] コーディング規約 (`nm` prefix, `#pragma once`, `self`, 英語コメント) 適用
+- [x] Metal バックエンド（Mac、`metal_*.m` 一式。hello で 'A' が出る）

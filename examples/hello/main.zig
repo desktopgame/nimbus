@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const nimbus = @import("nimbus");
 const awt = nimbus.awt;
 const c = awt.c;
@@ -26,6 +27,36 @@ const text_hlsl =
     \\    return float4(1.0, 1.0, 1.0, a);
     \\}
 ;
+
+const text_msl =
+    \\#include <metal_stdlib>
+    \\using namespace metal;
+    \\
+    \\struct VsIn {
+    \\    float2 pos [[attribute(0)]];
+    \\    float2 uv  [[attribute(1)]];
+    \\};
+    \\struct VsOut {
+    \\    float4 pos [[position]];
+    \\    float2 uv;
+    \\};
+    \\
+    \\vertex VsOut vsMain(VsIn in [[stage_in]]) {
+    \\    VsOut o;
+    \\    o.pos = float4(in.pos, 0.0, 1.0);
+    \\    o.uv = in.uv;
+    \\    return o;
+    \\}
+    \\
+    \\fragment float4 psMain(VsOut in [[stage_in]],
+    \\                       texture2d<float> tex [[texture(0)]],
+    \\                       sampler samp [[sampler(0)]]) {
+    \\    float a = tex.sample(samp, in.uv).r;
+    \\    return float4(1.0, 1.0, 1.0, a);
+    \\}
+;
+
+const text_shader = if (builtin.target.os.tag == .macos) text_msl else text_hlsl;
 
 const Renderer = struct {
     device: *awt.Device,
@@ -150,9 +181,9 @@ pub fn main() !void {
     );
 
     // ── Shaders + RootSig + Pipeline ────────────────────────────────
-    var vs = try awt.Shader.compile(.vertex, text_hlsl);
+    var vs = try awt.Shader.compile(.vertex, text_shader);
     defer vs.deinit();
-    var ps = try awt.Shader.compile(.pixel, text_hlsl);
+    var ps = try awt.Shader.compile(.pixel, text_shader);
     defer ps.deinit();
 
     var root_sig = try awt.RootSignature.init(device, &.{

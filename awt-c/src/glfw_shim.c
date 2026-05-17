@@ -6,6 +6,11 @@
 #include <windows.h>
 #endif
 
+#ifdef __APPLE__
+#define GLFW_EXPOSE_NATIVE_COCOA
+#include <GLFW/glfw3native.h>
+#endif
+
 #include <stdlib.h>
 
 #include "internal.h"
@@ -126,5 +131,13 @@ void nm_internal_get_framebuffer_size(const nmWindow* w, int* width, int* height
 #ifdef _WIN32
 HWND nm_internal_get_hwnd(const nmWindow* w) {
     return glfwGetWin32Window((GLFWwindow*)w);
+}
+#endif
+
+#ifdef __APPLE__
+/* Returns NSWindow* as a void* — caller (metal_swapchain.m) casts back. Kept
+ * untyped here so glfw_shim.c stays a pure-C translation unit. */
+void* nm_internal_get_nswindow(const nmWindow* w) {
+    return (void*)glfwGetCocoaWindow((GLFWwindow*)w);
 }
 #endif

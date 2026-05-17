@@ -60,6 +60,31 @@ pub fn build(b: *std.Build) void {
             awt_c_mod.linkSystemLibrary("dxguid", .{});
             awt_c_mod.linkSystemLibrary("d3dcompiler_47", .{});
         },
+        .macos => {
+            if (optimize == .Debug) awt_c_mod.addCMacro("NM_METAL_DEBUG", "1");
+
+            // Objective-C sources: ARC intentionally off (mirrors GLFW Cocoa).
+            awt_c_mod.addCSourceFiles(.{
+                .root = b.path("awt-c/src"),
+                .files = &.{
+                    "metal_device.m",
+                    "metal_swapchain.m",
+                    "metal_command_buffer.m",
+                    "metal_render_target.m",
+                    "metal_shader.m",
+                    "metal_buffer.m",
+                    "metal_texture.m",
+                    "metal_root_signature.m",
+                    "metal_pipeline.m",
+                },
+                .flags = &.{ "-fno-objc-arc", "-Wall", "-Wextra" },
+            });
+
+            awt_c_mod.linkFramework("Metal", .{});
+            awt_c_mod.linkFramework("QuartzCore", .{});
+            awt_c_mod.linkFramework("AppKit", .{});
+            awt_c_mod.linkFramework("Foundation", .{});
+        },
         else => {
             awt_c_mod.addCSourceFiles(.{
                 .root = b.path("awt-c/src"),
