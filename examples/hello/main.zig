@@ -133,7 +133,7 @@ pub fn main() !void {
     var device = try awt.Device.init();
     defer device.deinit();
 
-    var window = try awt.Window.init("hello nimbus", 800, 600);
+    var window = try awt.Window.init("hello nimbus", 800, 700);
     defer window.deinit();
 
     var swapchain = try awt.Swapchain.init(device, window);
@@ -188,7 +188,10 @@ pub fn main() !void {
     };
 
     // ── framework widgets ──────────────────────────────────────────
-    // Standalone Label: 黄色テキスト、ウィンドウ下端あたりに置く。
+    // 既存の awt 直叩き描画はウィンドウ上半分 (y < 600) を占有しているので、
+    // framework widget は底辺 100px のエリア (y = 600〜700) に配置する。
+
+    // Standalone Label: 黄色テキスト、左下に配置。
     const fw_label = try Label.create(
         gpa,
         "framework Label (direct paint)",
@@ -199,16 +202,13 @@ pub fn main() !void {
         fw_label.component.deinit();
         fw_label.component.vtable.destroy(&fw_label.component, gpa);
     }
-    fw_label.component.setBounds(.{ .x = 30, .y = 30, .width = 0, .height = 0 });
-    // size は (0, 0) のまま — Label は (0, 0) 起点で描くだけで size による clipping は不要。
-    // ただし paintAt の clip は size に依存するので、テキストが切れない大きさを与える。
-    fw_label.component.size = .{ .width = 400, .height = 32 };
+    fw_label.component.setBounds(.{ .x = 30, .y = 610, .width = 400, .height = 32 });
 
-    // Container + 子 Label 2 個。
+    // Container + 子 Label 2 個、右下に配置。
     const fw_container = try gpa.create(Container);
     fw_container.* = Container.init(gpa);
     Container.vtable.install(&fw_container.component);
-    fw_container.component.setBounds(.{ .x = 400, .y = 30, .width = 380, .height = 60 });
+    fw_container.component.setBounds(.{ .x = 430, .y = 605, .width = 350, .height = 60 });
     defer {
         fw_container.deinit();
         gpa.destroy(fw_container);
