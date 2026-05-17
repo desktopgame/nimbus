@@ -10,9 +10,13 @@ Java AWT の `java.awt.Graphics` 相当。
 
 ## 座標系
 - **原点は左上**、x は右、y は下（GUI 標準）
-- 単位は **ピクセル (float)**
+- 単位は **論理ポイント (float)** — 非 HiDPI なら 1pt = 1px、Retina 2x なら 1pt = 2px
+  - 同じ `100pt × 30pt` ボタンは表示密度に関わらず物理的に同じ大きさで描かれる
+  - Graphics に渡す座標はすべてこのポイント単位
 - 内部で NDC (y up) への変換は Graphics が行う
-- 整数ピクセル値で指定すれば pixel-perfect、float の小数部は AA を持つ widget でだけ意味を持つ
+  - viewport は framebuffer 全体に張る（NDC → pixel は GPU 任せ）
+  - **scissor だけ** framebuffer pixel 単位なので、Graphics が `fb_size / window_size` のスケール比を持って clip_rect を変換する
+- 整数ポイント値で指定すれば pixel-perfect (HiDPI でも整数 pt は整数 fb pixel 境界に乗る)、float の小数部は AA を持つ widget でだけ意味を持つ
 
 ## 型定義
 
@@ -141,22 +145,24 @@ baseline 派の API が必要になったら `drawStringAtBaseline(s, x, baselin
 ## 実装ストラテジ
 Graphics は **値型 (struct)**。`clip` で複製されるため alloc は発生しない。
 内部で以下を持つ:
-- `*CommandBuffer`（フレームごとに呼び出し元が acquire）— 借用
-- `*Renderer` or `*Programs` 集（Application / Window 寿命）— 借用
-- `*UniformBuffer`（共有リング、フレーム頭で reset 済み）— 借用
+- `CommandBuffer`（フレームごとに呼び出し元が acquire）— 値（薄いハンドル）
+- `*Context`（programs / vertex_ring / uniforms / quad_index / atlas を束ねた共有資源）— 借用
+- 寸法状態:
+  - `window_w / window_h: i32` — 論理ポイント、ユーザー座標 → NDC 変換に使う
+  - `fb_w / fb_h: i32` — framebuffer pixel、scissor 変換にだけ使う
 - 状態（値）:
-  - `origin: struct { x: f32, y: f32 }` — clip により累積される平行移動
-  - `clip_rect: Rect` — 絶対座標。各 draw 呼び出し時に `nmSetScissor` に反映
+  - `origin: struct { x: f32, y: f32 }` — clip により累積される平行移動（論理ポイント）
+  - `clip_rect: Rect` — 絶対論理ポイント座標。`applyScissor` で `fb / window` 比を掛けて pixel 化して `nmSetScissor` へ
   - `current_color: Color`
-  - `current_font: Font`
+  - `current_font: ?TextFont`
 
 各 draw 呼び出しで:
-1. clip_rect で `nmSetScissor` を毎回設定（変更検知でスキップしてもよいが v1 は素朴に）
+1. clip_rect を fb pixel にスケール変換して `nmSetScissor`（毎回。変更検知最適化は v2 以降）
 2. 必要な program を bind
 3. uniform を push して bindUniforms
-4. ローカル座標を `origin + local` で絶対座標に変換 → NDC へ
-5. quad の頂点を組み立てて VB に upload
-6. draw
+4. ローカル座標を `origin + local` で絶対論理ポイントに変換 → `pxToNdc` で NDC へ
+5. quad の頂点を組み立てて VertexRing に push
+6. drawIndexed（quad_index の static IB を使う、`N quad → drawIndexed(N*6, 0, 0)`）
 
 頻繁な program 切替が出るが、GUI スケール（数十〜数百 draw / frame）なら問題なし。
 将来バッチング（同 program ぶんを集めて 1 draw call にまとめる）の余地は残す。
