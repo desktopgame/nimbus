@@ -150,6 +150,38 @@ pub const Container = struct {
 単一UIスレッド。別スレッドからUIを操作することはできない。（その場合の動作は保証されない）
 描画スレッドとUIスレッドは分けない。
 
+### イベントループ / 複数ウィンドウ
+
+イベントループは Application が一本だけ所有する。GLFW のイベントキューはプロセスにひとつなので、「ウィンドウごとのループ」は持たない。
+Application はすべての Window をトラッキングし、`run()` の中で次を繰り返す:
+
+1. `waitEvents` でブロック（イベント or `glfwPostEmptyEvent` で起きる）
+2. EventQueue に溜まった task を drain
+3. dirty フラグの立った Window だけ redraw
+4. 全ウィンドウが閉じたら exit
+
+描画は retained UI / invalidation 駆動。`Window.invalidate()` で dirty フラグを立てた窓だけが次のループで再描画される。毎フレーム常時 redraw はしない（immediate GUI と同じ CPU 消費になってしまう）。
+resize / refresh コールバックは内部で自動的に invalidate を呼ぶ。
+アニメーション等で連続描画したい場合は、redraw 中に再度自分自身を invalidate するか、専用 API（`requestAnimationFrame` 相当）でループを回し続ける。
+
+### EventQueue / invokeLater
+
+`java.awt.EventQueue` + `SwingUtilities.invokeLater` 相当を露出する。
+別スレッドから UI を触る唯一の正規の手段。これが無いとバックグラウンド処理の結果を画面に反映できない。
+
+awt 層に `EventQueue` を置き、framework の `Application` がそれを所有して `invokeLater` / `invokeAndWait` を生やす二段構成。
+内部実装は GLFW の `glfwPostEmptyEvent()` で UI スレッドを起こすパターン:
+
+* awt-c に thread-safe な task queue（mutex + 連結リスト）
+* `nmEventQueuePost(fn, user_data)` で enqueue + `glfwPostEmptyEvent()`
+* メインループが events のあとに queue を drain して task を実行
+* `invokeAndWait` は condition variable で完了待ち
+
+`invokeAndWait` は **別スレッドから呼ぶ前提**。UI スレッド自身から呼ぶと「自分の完了を自分で待つ」＝デッドロックなので、Swing / Qt と同様に assert / error で弾く。
+用途は SwingWorker 相当（バックグラウンドで計算 → 結果を UI に反映して呼び出し元はその完了を待つ）。
+
+task の所有権: C ABI 層では `void*` をそのまま渡す。Zig 側では closure を Application の allocator に確保して、実行後に解放するラッパーで隠す。
+
 ### 座標系
 
 int32 ではなく、 float で管理する。
