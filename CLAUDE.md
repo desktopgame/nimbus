@@ -192,6 +192,31 @@ front face は CCW（反時計回り、OpenGL / Vulkan / Metal のデフォル�
 nimbus は GUI 用途で back-face culling を行わないので winding は描画結果に影響しないが、規約を明示しておくことで shader ユーティリティや将来のバックエンド設定に一貫性を持たせる。
 DX12 バックエンドは PSO の `FrontCounterClockwise = TRUE` を指定する（D3D12 のデフォルトは CW front なので明示反転が必要）。
 
+### 画像 / テクスチャ
+
+GUI 用途なので DXT/ASTC/BCn のような GPU 圧縮形式はサポートしない。
+サポートする形式は **PNG / JPEG / GIF(静止画) / BMP** の4つで、デコーダは **stb_image**（シングルヘッダ public domain）を vendored する。
+アニメ GIF / SVG / WebP は v1 では対応しない。必要になったら追加で考える。
+
+ビルトインアイコン（チェックボックス、ラジオボタン背景、スクロール矢印 等）は Zig の `@embedFile` で `.rodata` に焼き込む。
+生 PNG のまま埋め込み、初回参照時に stb_image でデコード → GPU upload → キャッシュ。L&F 切替時はキャッシュをクリアする（or L&F ごとに別キャッシュ）。
+
+ユーザー提供画像（`Image.fromFile("foo.png")` 相当）は別系統で、こちらは普通のランタイム読み込み。
+
+### フォント
+
+freetype でレンダリング。フォントファイルは `framework/assets/fonts/` 配下に vendored して `@embedFile` で埋め込む。
+
+デフォルトフォントは **Noto Sans (Latin) + Noto Sans CJK JP (日本語)** を採用。両方 **OFL 1.1** ライセンス。
+Swing と違ってシステムフォントを使わず埋め込みにする理由は、システムフォント列挙を Windows (DirectWrite) / Mac (Core Text) / Linux (fontconfig) の 3 バックエンドで実装するのが「そこまで頑張りたくない」領域だから。代わりに **「何もしなくても日本語が出る」Swing 体験** を維持する。
+
+OFL 1.1 は再配布物にライセンス文を含めることを要求するので、`framework/assets/fonts/OFL.txt` も一緒に vendored する。
+パワーユーザー向けには `Application.setDefaultFont(path)` でファイル差し替えを許可する（"C:\Windows\Fonts\meiryo.ttc" 等を渡せる）。
+
+ライセンス露出は **`nimbus.licenses()`** API で、組込み資産の attribution 文字列を返す設計にする。アプリ側で About ダイアログ等から表示する想定。
+
+システムフォント列挙 API（`getAvailableFontFamilyNames` 相当）は v1 のスコープ外。将来必要になったら DirectWrite / Core Text / fontconfig を後付けする余地は残す。
+
 ### エラーのC_ABIでの表現
 
 NULLを返し、内部エラーを `GetLastError()` のように取得できるようにする。
