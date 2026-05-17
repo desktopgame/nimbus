@@ -117,7 +117,7 @@ nmSwapchain* nmCreateSwapchain(const nmDevice* device_const, const nmWindow* win
         nm_log(nmLogLevelError, "swapchain", "could not obtain HWND from window");
         goto fail;
     }
-    nm_internal_get_framebuffer_size(window, &sc->width, &sc->height);
+    nmGetFramebufferSize(window, &sc->width, &sc->height);
     if (sc->width <= 0 || sc->height <= 0) {
         /* Treat 0x0 as 1x1 to avoid DXGI failure; will be resized on first WM_SIZE. */
         sc->width = sc->width > 0 ? sc->width : 1;

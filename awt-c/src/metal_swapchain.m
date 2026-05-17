@@ -72,7 +72,7 @@ nmSwapchain* nmCreateSwapchain(const nmDevice* device_const, const nmWindow* win
     sc->owner = device;
 
     @autoreleasepool {
-        nm_internal_get_framebuffer_size(window, &sc->width, &sc->height);
+        nmGetFramebufferSize(window, &sc->width, &sc->height);
         if (sc->width <= 0)  sc->width = 1;
         if (sc->height <= 0) sc->height = 1;
 

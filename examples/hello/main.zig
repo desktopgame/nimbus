@@ -114,13 +114,18 @@ pub fn main() !void {
     var device = try awt.Device.init();
     defer device.deinit();
 
-    const window_w: i32 = 800;
-    const window_h: i32 = 600;
-    var window = try awt.Window.init("hello nimbus", window_w, window_h);
+    var window = try awt.Window.init("hello nimbus", 800, 600);
     defer window.deinit();
 
     var swapchain = try awt.Swapchain.init(device, window);
     defer swapchain.deinit();
+
+    // Framebuffer can be larger than the requested window size (HiDPI / Retina).
+    // GLFW does not fire the framebuffer-size callback on initial creation, so
+    // we query and seed the renderer's dimensions explicitly.
+    const fb = window.framebufferSize();
+    const window_w: i32 = fb.width;
+    const window_h: i32 = fb.height;
 
     var font = try awt.Font.init(noto_sans_ttf, 0);
     defer font.deinit();

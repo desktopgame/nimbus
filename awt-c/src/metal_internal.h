@@ -143,9 +143,6 @@ void nm_log(nmLogLevel level, const char* category, const char* fmt, ...);
 /* NSWindow access (implemented in glfw_shim.c). Returns id<NSWindow> via void*. */
 void* nm_internal_get_nswindow(const nmWindow* w);
 
-/* Window framebuffer size in pixels (implemented in glfw_shim.c). */
-void nm_internal_get_framebuffer_size(const nmWindow* w, int* width, int* height);
-
 /* Swapchain back buffer (re)allocation (implemented in metal_swapchain.m). */
 int  nm_swapchain_allocate_stencil(nmSwapchain* self);
 void nm_swapchain_release_stencil(nmSwapchain* self);

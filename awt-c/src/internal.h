@@ -45,6 +45,12 @@ typedef void (*nmWindowRefreshCallback)(nmWindow* window, void* user_data);
 void nmSetWindowResizeCallback(nmWindow* self, nmWindowResizeCallback cb, void* user_data);
 void nmSetWindowRefreshCallback(nmWindow* self, nmWindowRefreshCallback cb, void* user_data);
 
+/* Framebuffer pixel size. On HiDPI displays (Retina) this can differ from the
+ * requested window size — e.g. a 800x600 window has a 1600x1200 framebuffer.
+ * Use these values, not the values passed to nmCreateWindow, for any pixel
+ * arithmetic in drawing code. */
+void nmGetFramebufferSize(const nmWindow* self, int* width, int* height);
+
 /* ─── Event pump ──────────────────────────────────────────────────────── */
 
 void nmPollEvents(void);

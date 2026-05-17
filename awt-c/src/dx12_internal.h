@@ -161,9 +161,6 @@ void nm_log(nmLogLevel level, const char* category, const char* fmt, ...);
 /* HWND access (implemented in glfw_shim.c). */
 HWND nm_internal_get_hwnd(const nmWindow* w);
 
-/* Window framebuffer size in pixels (implemented in glfw_shim.c). */
-void nm_internal_get_framebuffer_size(const nmWindow* w, int* width, int* height);
-
 /* Resource state transitions (implemented in dx12_render_target.c). */
 void nm_transition(nmCommandBuffer* cb, nmRenderTarget* rt, D3D12_RESOURCE_STATES new_state);
 

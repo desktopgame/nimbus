@@ -126,11 +126,11 @@ double nmGetTime(void) {
     return glfwGetTime();
 }
 
-/* ─── Internal accessors used by backend C files ──────────────────────── */
-
-void nm_internal_get_framebuffer_size(const nmWindow* w, int* width, int* height) {
-    glfwGetFramebufferSize((GLFWwindow*)w, width, height);
+void nmGetFramebufferSize(const nmWindow* self, int* width, int* height) {
+    glfwGetFramebufferSize((GLFWwindow*)self, width, height);
 }
+
+/* ─── Internal accessors used by backend C files ──────────────────────── */
 
 #ifdef _WIN32
 HWND nm_internal_get_hwnd(const nmWindow* w) {
