@@ -24,6 +24,8 @@ pub const Component = struct {
 };
 ```
 
+※Event は framework/doc/event.md に記載予定。
+
 ## プラッガブルな設計
 Component を継承した Button, Label などで VTable を独自に実装する。
 特にカスタマイズしないのであれば、ユーザーはそのまま Button や Label の機能を使える。
