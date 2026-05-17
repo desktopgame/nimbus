@@ -17,7 +17,9 @@
       "Bash(git diff *)",
       "Bash(git log -n *)",
       "Bash(git add *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+
+      "Bash(zig build *)"
     ]
   },
   "env": {
