@@ -18,7 +18,7 @@ const Renderer = struct {
 
     // Textures.
     glyph_texture: *awt.Texture,
-    image_texture: *awt.Texture,
+    image: *awt.Image,
 
     // Top-row vertex buffers (Color / Image / Text).
     color_vbuf: *awt.Buffer,
@@ -104,7 +104,7 @@ fn renderFrame(r: *Renderer) void {
 
     r.image_program.bind(cb);
     r.image_program.bindUniforms(cb, r.uniforms.*, image_h);
-    cb.bindTexture(r.image_texture.*, 0);
+    cb.bindTexture(r.image.texture, 0);
     cb.bindVertexBuffer(r.image_vbuf.*, 0, 4 * @sizeOf(f32), 0);
     cb.bindIndexBuffer(r.ibuf.*, .u16, 0);
     cb.drawIndexed(6, 0, 0);
@@ -274,22 +274,10 @@ pub fn main() !void {
         @intCast(glyph.metrics.bitmap_pitch),
     );
 
-    // ── Decode example.png via zigimg → RGBA8 texture ──────────────
-    const png_allocator = std.heap.page_allocator;
-    var img = try awt.zigimg.Image.fromMemory(png_allocator, example_png);
-    defer img.deinit(png_allocator);
-    try img.convert(png_allocator, .rgba32);
-    std.debug.print("example.png: {d}x{d}, pixel_format={}\n",
-        .{ img.width, img.height, img.pixelFormat() });
-
-    var image_texture = try awt.Texture.init(
-        device,
-        @intCast(img.width),
-        @intCast(img.height),
-        .rgba8,
-    );
-    defer image_texture.deinit();
-    image_texture.upload(img.rawBytes());
+    // ── Decode example.png → RGBA8 image (texture-backed) ──────────
+    var image = try awt.Image.fromMemory(std.heap.page_allocator, device, example_png);
+    defer image.deinit();
+    std.debug.print("example.png: {d}x{d}\n", .{ image.width, image.height });
 
     // ── Programs ───────────────────────────────────────────────────
     var text_program = try awt.programs.Text.init(device);
@@ -377,7 +365,7 @@ pub fn main() !void {
         .image_program = &image_program,
         .rrect_program = &rrect_program,
         .glyph_texture = &glyph_texture,
-        .image_texture = &image_texture,
+        .image = &image,
         .color_vbuf = &color_vbuf,
         .image_vbuf = &image_vbuf,
         .text_vbuf = &text_vbuf,

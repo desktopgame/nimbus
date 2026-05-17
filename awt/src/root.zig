@@ -13,14 +13,10 @@ pub const Buffer = @import("Buffer.zig");
 pub const RootSignature = @import("RootSignature.zig");
 pub const Pipeline = @import("Pipeline.zig");
 pub const Texture = @import("Texture.zig");
+pub const Image = @import("Image.zig");
 pub const Font = @import("Font.zig");
 pub const UniformBuffer = @import("UniformBuffer.zig");
 pub const programs = @import("programs.zig");
-
-/// Vendored image decoder. Temporarily re-exported until a higher-level
-/// `awt.Image` abstraction lands. Users typically only need this for
-/// decoding embedded / file-loaded PNG/JPEG bytes into an `awt.Texture`.
-pub const zigimg = @import("zigimg");
 
 pub const LogLevel = c.nmLogLevel;
 pub const LogCallback = c.nmLogCallback;
@@ -67,8 +63,8 @@ test "backend version reports GLFW 3.4" {
     try std.testing.expect(std.mem.indexOf(u8, ver, "3.4") != null);
 }
 
-test "zigimg module is reachable" {
-    _ = zigimg.Image;
+test "Image module is reachable" {
+    _ = Image;
 }
 
 test "built-in programs type-check" {

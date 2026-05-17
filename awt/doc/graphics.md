@@ -176,21 +176,29 @@ Graphics は **値型 (struct)**。`clip` で複製されるため alloc は発�
 | グラデーション塗り | 当面 image / texture で代用 |
 
 ## Image との関係
-`awt.Image` はまだ存在しない（hello は `awt.Texture` + zigimg 直叩き）。
-Graphics の `drawImage` を実装するタイミングで以下のような awt.Image を作る:
+`awt.Image` は実装済み。zigimg の存在を隠して RGBA8 デコード + GPU upload まで一発でやる:
 
 ```zig
 pub const Image = struct {
     texture: Texture,
     width: i32, height: i32,
 
-    pub fn fromMemory(device: Device, bytes: []const u8) !Image; // zigimg + texture upload
-    pub fn fromEmbedded(device: Device, comptime path: []const u8) !Image; // @embedFile + 上記
+    pub fn fromMemory(allocator: std.mem.Allocator, device: Device, bytes: []const u8) !Image;
     pub fn deinit(self: *Image) void;
 };
 ```
 
-`awt.zigimg` の直接露出は `awt.Image` 実装と同時に外す。
+`fromMemory` はデコードと format 変換に `allocator` を一時的に使うだけで、戻り値の `Image` には GPU テクスチャしか残らない。
+
+`@embedFile` 相当を `Image.fromEmbedded(comptime path)` 形式で提供しようとしたが、Zig の `@embedFile` は **call-site の相対 path** で解決される comptime 機構のため、library 関数の中に隠せない。代わりに利用側で:
+
+```zig
+const png_bytes = @embedFile("assets/example.png");
+var image = try awt.Image.fromMemory(allocator, device, png_bytes);
+defer image.deinit();
+```
+
+と書いてもらう方針。
 
 ## 決定済み（このセクションは記録用、新しい論点が出たら上に移す）
 
