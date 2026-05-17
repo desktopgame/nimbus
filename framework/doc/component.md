@@ -46,3 +46,20 @@ Componentごとに以下のカスタマイズポイントがある。
 VTable によってユーザーが好きな処理を入れられるだけでは不十分な場合もある。
 例えばコンポーネントが追加で独自の状態を保持して、それがイベントで変化するような場合。
 このような場合のために、 `Component.properties` が存在している。
+
+## ライフサイクル
+アロケーターで Component を確保、initしたのち、呼び出し側で VTable.install() まで実行すること。
+ただし、ファクトリー経由で Component を生成する場合、内部で必要な処理を実行してくれる。
+なので、一般的なユースケースにおいてはユーザーが気にすることはない。
+
+factory コード例 (内部):
+
+```zig
+pub fn label(self: *Application, text: []const u8) !*Label {
+    const lbl = try self.allocator.create(Label);
+    lbl.* = Label.init(self.allocator, text);            // ← フィールド初期化
+    lbl.component.vtable = &Label.vtable;                // ← デフォルト vtable
+    lbl.component.vtable.install(&lbl.component);        // ← 必ず install
+    return lbl;
+}
+```
