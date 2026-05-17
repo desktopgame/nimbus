@@ -5,8 +5,8 @@
 ```zig
 pub const Component = struct {
     pub const VTable = struct {
-        ctor:         *const fn (*Component) void,
-        dtor:         *const fn (*Component) void,
+        install:      *const fn (*Component) void,
+        uninstall:    *const fn (*Component) void,
         paint:        *const fn (*Component, *awt.Graphics) void,
         processEvent: *const fn (*Component, *const Event) bool,
     };
