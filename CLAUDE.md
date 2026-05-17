@@ -312,3 +312,13 @@ fn errorToCode(err: anyerror) c_int {
     };
 }
 ```
+
+#### Create 関数の失敗時セマンティクス
+
+`nmCreateXxx` 系の関数が NULL を返した場合、**その関数内で確保したリソースはすべて関数内で解放されている**。利用者は失敗時に何も後片付けする必要はない（NULL に対して `nmDestroyXxx` を呼ぶ必要も無いし、呼んではいけない）。
+
+これは「強い例外保証 (strong exception guarantee)」相当で、`nmCreateXxx` は **all-or-nothing**:
+* 成功 → 有効な non-NULL ポインタを返す。利用者は `nmDestroyXxx` を呼んで解放する責任を負う。
+* 失敗 → NULL を返す。関数呼び出しの前後でリソース状態は実質変わらない。
+
+ただし「システム全体の完全な状態リストア」は保証しない。たとえば device の初期化中に debug layer の有効化に成功した後で別の段階が失敗した場合、debug layer の有効化を取り消すような巻き戻しはしない。あくまで **この関数呼び出しが新規に確保したオブジェクトのみ** 解放する。
