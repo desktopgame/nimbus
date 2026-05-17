@@ -95,6 +95,18 @@ struct nmPipeline {
     D3D_PRIMITIVE_TOPOLOGY     topology;
 };
 
+struct nmTexture {
+    struct nmDevice*         owner;
+    ID3D12Resource*          resource;
+    ID3D12Resource*          upload;        /* persistent UPLOAD heap staging */
+    int                      srv_index;     /* slot in device cbv_srv_uav heap, -1 if none */
+    int                      width;
+    int                      height;
+    nmTextureFormat          format;
+    UINT                     bytes_per_pixel;
+    D3D12_RESOURCE_STATES    state;
+};
+
 struct nmDevice {
     IDXGIFactory6*           factory;
     IDXGIAdapter1*           adapter;
@@ -114,12 +126,15 @@ struct nmDevice {
     ID3D12DescriptorHeap*    dsv_heap;
     UINT                     rtv_descriptor_size;
     UINT                     dsv_descriptor_size;
+    UINT                     cbv_srv_uav_descriptor_size;
 
-    /* RTV / DSV slot free-stacks. */
+    /* RTV / DSV / SRV slot free-stacks. */
     int                      rtv_free[NM_RTV_HEAP_SIZE];
     int                      rtv_top;
     int                      dsv_free[NM_DSV_HEAP_SIZE];
     int                      dsv_top;
+    int                      srv_free[NM_CBV_SRV_UAV_HEAP_SIZE];
+    int                      srv_top;
 
     /* Command buffer pool. */
     struct nmCommandBuffer   cb_pool[NM_CB_POOL_SIZE];
@@ -158,8 +173,12 @@ int  nm_alloc_rtv_slot(nmDevice* device);
 void nm_free_rtv_slot(nmDevice* device, int slot);
 int  nm_alloc_dsv_slot(nmDevice* device);
 void nm_free_dsv_slot(nmDevice* device, int slot);
+int  nm_alloc_srv_slot(nmDevice* device);
+void nm_free_srv_slot(nmDevice* device, int slot);
 D3D12_CPU_DESCRIPTOR_HANDLE nm_rtv_cpu_handle(nmDevice* device, int slot);
 D3D12_CPU_DESCRIPTOR_HANDLE nm_dsv_cpu_handle(nmDevice* device, int slot);
+D3D12_CPU_DESCRIPTOR_HANDLE nm_srv_cpu_handle(nmDevice* device, int slot);
+D3D12_GPU_DESCRIPTOR_HANDLE nm_srv_gpu_handle(nmDevice* device, int slot);
 
 /* Drain DX12 debug layer messages and forward to nm_log. No-op if no InfoQueue. */
 void nm_drain_info_queue(nmDevice* device);

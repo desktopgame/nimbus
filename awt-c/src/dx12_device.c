@@ -53,6 +53,20 @@ void nm_free_dsv_slot(nmDevice* device, int slot) {
     device->dsv_free[device->dsv_top++] = slot;
 }
 
+int nm_alloc_srv_slot(nmDevice* device) {
+    if (device->srv_top == 0) {
+        nm_log(nmLogLevelError, "device",
+            "CBV/SRV/UAV heap exhausted (%d slots)", NM_CBV_SRV_UAV_HEAP_SIZE);
+        return -1;
+    }
+    return device->srv_free[--device->srv_top];
+}
+
+void nm_free_srv_slot(nmDevice* device, int slot) {
+    if (slot < 0) return;
+    device->srv_free[device->srv_top++] = slot;
+}
+
 D3D12_CPU_DESCRIPTOR_HANDLE nm_rtv_cpu_handle(nmDevice* device, int slot) {
     /* Call via lpVtbl directly: MinGW's COBJMACROS expansion for this
      * aggregate-returning method is intentionally broken to force callers to
@@ -67,6 +81,20 @@ D3D12_CPU_DESCRIPTOR_HANDLE nm_dsv_cpu_handle(nmDevice* device, int slot) {
     D3D12_CPU_DESCRIPTOR_HANDLE h;
     device->dsv_heap->lpVtbl->GetCPUDescriptorHandleForHeapStart(device->dsv_heap, &h);
     h.ptr += (SIZE_T)slot * device->dsv_descriptor_size;
+    return h;
+}
+
+D3D12_CPU_DESCRIPTOR_HANDLE nm_srv_cpu_handle(nmDevice* device, int slot) {
+    D3D12_CPU_DESCRIPTOR_HANDLE h;
+    device->cbv_srv_uav_heap->lpVtbl->GetCPUDescriptorHandleForHeapStart(device->cbv_srv_uav_heap, &h);
+    h.ptr += (SIZE_T)slot * device->cbv_srv_uav_descriptor_size;
+    return h;
+}
+
+D3D12_GPU_DESCRIPTOR_HANDLE nm_srv_gpu_handle(nmDevice* device, int slot) {
+    D3D12_GPU_DESCRIPTOR_HANDLE h;
+    device->cbv_srv_uav_heap->lpVtbl->GetGPUDescriptorHandleForHeapStart(device->cbv_srv_uav_heap, &h);
+    h.ptr += (UINT64)slot * device->cbv_srv_uav_descriptor_size;
     return h;
 }
 
@@ -248,8 +276,10 @@ nmDevice* nmCreateDevice(void) {
         dev->device, D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
     dev->dsv_descriptor_size = ID3D12Device_GetDescriptorHandleIncrementSize(
         dev->device, D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+    dev->cbv_srv_uav_descriptor_size = ID3D12Device_GetDescriptorHandleIncrementSize(
+        dev->device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-    /* 8. RTV / DSV free stacks (alloc returns 0, 1, 2, ... in order). */
+    /* 8. RTV / DSV / SRV free stacks (alloc returns 0, 1, 2, ... in order). */
     dev->rtv_top = NM_RTV_HEAP_SIZE;
     for (int i = 0; i < NM_RTV_HEAP_SIZE; i++) {
         dev->rtv_free[i] = NM_RTV_HEAP_SIZE - 1 - i;
@@ -257,6 +287,10 @@ nmDevice* nmCreateDevice(void) {
     dev->dsv_top = NM_DSV_HEAP_SIZE;
     for (int i = 0; i < NM_DSV_HEAP_SIZE; i++) {
         dev->dsv_free[i] = NM_DSV_HEAP_SIZE - 1 - i;
+    }
+    dev->srv_top = NM_CBV_SRV_UAV_HEAP_SIZE;
+    for (int i = 0; i < NM_CBV_SRV_UAV_HEAP_SIZE; i++) {
+        dev->srv_free[i] = NM_CBV_SRV_UAV_HEAP_SIZE - 1 - i;
     }
 
     /* 9. Command buffer pool (N=1 for stage 1). */

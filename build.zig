@@ -26,7 +26,7 @@ pub fn build(b: *std.Build) void {
     // Cross-platform sources.
     awt_c_mod.addCSourceFiles(.{
         .root = b.path("awt-c/src"),
-        .files = &.{ "glfw_shim.c", "nm_log.c" },
+        .files = &.{ "glfw_shim.c", "nm_log.c", "nm_font.c" },
         .flags = c_flags,
     });
 
@@ -49,6 +49,7 @@ pub fn build(b: *std.Build) void {
                     "dx12_render_target.c",
                     "dx12_shader.c",
                     "dx12_buffer.c",
+                    "dx12_texture.c",
                     "dx12_root_signature.c",
                     "dx12_pipeline.c",
                 },

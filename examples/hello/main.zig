@@ -3,33 +3,35 @@ const nimbus = @import("nimbus");
 const awt = nimbus.awt;
 const c = awt.c;
 
-const triangle_hlsl =
+const noto_sans_ttf = @embedFile("assets/noto-sans/NotoSansJP-Regular.ttf");
+
+const text_hlsl =
     \\struct VsOut {
     \\    float4 pos : SV_Position;
+    \\    float2 uv : TEXCOORD0;
     \\};
     \\
-    \\VsOut vsMain(float2 in_pos : POSITION) {
+    \\VsOut vsMain(float2 in_pos : POSITION, float2 in_uv : TEXCOORD0) {
     \\    VsOut o;
     \\    o.pos = float4(in_pos, 0.0, 1.0);
+    \\    o.uv = in_uv;
     \\    return o;
     \\}
     \\
-    \\float4 psMain() : SV_Target {
-    \\    return float4(1.0, 0.5, 0.2, 1.0);
+    \\Texture2D    g_tex  : register(t0);
+    \\SamplerState g_samp : register(s0);  // s0 = LinearClamp (built-in)
+    \\
+    \\float4 psMain(VsOut i) : SV_Target {
+    \\    float a = g_tex.Sample(g_samp, i.uv).r;
+    \\    return float4(1.0, 1.0, 1.0, a);
     \\}
 ;
-
-// CCW order in NDC (Y up): top → bottom-left → bottom-right.
-const triangle_vertices = [_]f32{
-     0.0,  0.5,
-    -0.5, -0.5,
-     0.5, -0.5,
-};
 
 const Renderer = struct {
     device: *awt.Device,
     swapchain: *awt.Swapchain,
     pipeline: *awt.Pipeline,
+    texture: *awt.Texture,
     vbuf: *awt.Buffer,
 };
 
@@ -39,12 +41,13 @@ fn renderFrame(r: *Renderer) void {
 
     cb.begin();
     cb.bindRenderTarget(r.swapchain.getTarget());
-    cb.clearColor(0.5, 0.7, 1.0, 1.0);
+    cb.clearColor(0.1, 0.1, 0.15, 1.0);
     cb.clearStencil(0);
 
     cb.bindPipeline(r.pipeline.*);
-    cb.bindVertexBuffer(r.vbuf.*, 0, 2 * @sizeOf(f32), 0);
-    cb.draw(3, 0);
+    cb.bindTexture(r.texture.*, 0);
+    cb.bindVertexBuffer(r.vbuf.*, 0, 4 * @sizeOf(f32), 0);
+    cb.draw(6, 0);
 
     cb.end();
     cb.submit(r.device.*);
@@ -70,6 +73,33 @@ fn onRefresh(
     renderFrame(r);
 }
 
+/// Build a CCW quad of the glyph at the window center.
+/// 6 vertices (triangle list), each = (x, y, u, v) in NDC + texture UV.
+fn buildQuad(
+    out: *[24]f32,
+    glyph_w: i32,
+    glyph_h: i32,
+    window_w: i32,
+    window_h: i32,
+) void {
+    const w_ndc: f32 = @as(f32, @floatFromInt(glyph_w)) / @as(f32, @floatFromInt(window_w)) * 2.0;
+    const h_ndc: f32 = @as(f32, @floatFromInt(glyph_h)) / @as(f32, @floatFromInt(window_h)) * 2.0;
+    const x0 = -w_ndc / 2.0;
+    const x1 = w_ndc / 2.0;
+    const y0 = -h_ndc / 2.0; // bottom
+    const y1 = h_ndc / 2.0;  // top
+    // Top-left = (x0, y1, 0, 0); Bottom-right = (x1, y0, 1, 1)
+    // CCW in NDC (y up): TL → BL → BR, then TL → BR → TR.
+    out.* = .{
+        x0, y1, 0.0, 0.0, // TL
+        x0, y0, 0.0, 1.0, // BL
+        x1, y0, 1.0, 1.0, // BR
+        x0, y1, 0.0, 0.0, // TL
+        x1, y0, 1.0, 1.0, // BR
+        x1, y1, 1.0, 0.0, // TR
+    };
+}
+
 pub fn main() !void {
     std.debug.print("AWT backend: {s}\n", .{awt.backendVersion()});
 
@@ -79,39 +109,82 @@ pub fn main() !void {
     var device = try awt.Device.init();
     defer device.deinit();
 
-    var window = try awt.Window.init("hello nimbus", 800, 600);
+    const window_w: i32 = 800;
+    const window_h: i32 = 600;
+    var window = try awt.Window.init("hello nimbus", window_w, window_h);
     defer window.deinit();
 
     var swapchain = try awt.Swapchain.init(device, window);
     defer swapchain.deinit();
 
-    var vs = try awt.Shader.compile(.vertex, triangle_hlsl);
+    // ── Font ────────────────────────────────────────────────────────
+    var font = try awt.Font.init(noto_sans_ttf, 0);
+    defer font.deinit();
+    font.setPixelSize(128);
+
+    const glyph = try font.rasterize('A');
+    std.debug.print(
+        "Glyph 'A': {d}x{d}, bearing=({d}, {d}), advance={d:.2}\n",
+        .{
+            glyph.metrics.bitmap_width,
+            glyph.metrics.bitmap_height,
+            glyph.metrics.bearing_x,
+            glyph.metrics.bearing_y,
+            glyph.metrics.advance_x,
+        },
+    );
+
+    // ── Texture (R8, glyph-sized) ──────────────────────────────────
+    var texture = try awt.Texture.init(
+        device,
+        glyph.metrics.bitmap_width,
+        glyph.metrics.bitmap_height,
+        .r8,
+    );
+    defer texture.deinit();
+    texture.uploadRegion(
+        0, 0,
+        glyph.metrics.bitmap_width, glyph.metrics.bitmap_height,
+        glyph.bitmap,
+        @intCast(glyph.metrics.bitmap_pitch),
+    );
+
+    // ── Shaders + RootSig + Pipeline ────────────────────────────────
+    var vs = try awt.Shader.compile(.vertex, text_hlsl);
     defer vs.deinit();
-    var ps = try awt.Shader.compile(.pixel, triangle_hlsl);
+    var ps = try awt.Shader.compile(.pixel, text_hlsl);
     defer ps.deinit();
 
-    var root_sig = try awt.RootSignature.init(device, &.{});
+    var root_sig = try awt.RootSignature.init(device, &.{
+        .{ .type = .texture, .stage = .pixel, .slot = 0 },
+    });
     defer root_sig.deinit();
 
     var pipeline = try awt.Pipeline.init(device, .{
         .root_signature = root_sig,
         .vertex_shader = vs,
         .pixel_shader = ps,
-        .vertex_layout = .vertex_2d,
+        .vertex_layout = .vertex_texcoord_2d,
         .topology = .triangle_list,
-        .blend = .none,
+        .blend = .alpha,
         .color_write_enable = true,
     });
     defer pipeline.deinit();
 
-    var vbuf = try awt.Buffer.init(device, @sizeOf(@TypeOf(triangle_vertices)), .{ .vertex = true });
+    // ── Vertex buffer (a single textured quad) ──────────────────────
+    var quad: [24]f32 = undefined;
+    buildQuad(&quad, glyph.metrics.bitmap_width, glyph.metrics.bitmap_height,
+              window_w, window_h);
+
+    var vbuf = try awt.Buffer.init(device, @sizeOf(@TypeOf(quad)), .{ .vertex = true });
     defer vbuf.deinit();
-    vbuf.upload(std.mem.sliceAsBytes(triangle_vertices[0..]), 0);
+    vbuf.upload(std.mem.sliceAsBytes(quad[0..]), 0);
 
     var renderer = Renderer{
         .device = &device,
         .swapchain = &swapchain,
         .pipeline = &pipeline,
+        .texture = &texture,
         .vbuf = &vbuf,
     };
     window.setResizeCallback(onResize, &renderer);

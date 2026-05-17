@@ -6,6 +6,7 @@ const Device = @import("Device.zig");
 const RenderTarget = @import("RenderTarget.zig");
 const Buffer = @import("Buffer.zig");
 const Pipeline = @import("Pipeline.zig");
+const Texture = @import("Texture.zig");
 
 const CommandBuffer = @This();
 
@@ -71,6 +72,10 @@ pub fn bindIndexBuffer(self: CommandBuffer, buf: Buffer, fmt: Buffer.IndexFormat
 
 pub fn bindConstantBuffer(self: CommandBuffer, buf: Buffer, slot: i32, offset: usize, size: usize) void {
     c.nmBindConstantBuffer(self.handle, buf.handle, slot, offset, size);
+}
+
+pub fn bindTexture(self: CommandBuffer, texture: Texture, slot: i32) void {
+    c.nmBindTexture(self.handle, texture.handle, slot);
 }
 
 pub fn draw(self: CommandBuffer, vertex_count: i32, start_vertex: i32) void {

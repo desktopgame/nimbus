@@ -12,6 +12,8 @@ pub const Shader = @import("Shader.zig");
 pub const Buffer = @import("Buffer.zig");
 pub const RootSignature = @import("RootSignature.zig");
 pub const Pipeline = @import("Pipeline.zig");
+pub const Texture = @import("Texture.zig");
+pub const Font = @import("Font.zig");
 
 pub const LogLevel = c.nmLogLevel;
 pub const LogCallback = c.nmLogCallback;

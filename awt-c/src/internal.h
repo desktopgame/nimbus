@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <stddef.h>
 
 /* awt-c internal header. Only accessed from the awt (Zig) layer via translate-c.
  * Never exposed to libnimbus consumers. */
@@ -210,6 +211,53 @@ nmPipeline* nmCreatePipeline(nmDevice* device, const nmPipelineDesc* desc);
 void nmDestroyPipeline(nmPipeline* self);
 void nmBindPipeline(nmCommandBuffer* self, nmPipeline* pipeline);
 void nmSetStencilRef(nmCommandBuffer* self, uint32_t value);
+
+/* ─── Texture ─────────────────────────────────────────────────────────── */
+
+typedef enum nmTextureFormat {
+    nmTextureFormatRGBA8,
+    nmTextureFormatBGRA8,
+    nmTextureFormatR8,
+} nmTextureFormat;
+
+typedef struct nmTexture nmTexture;
+
+nmTexture* nmCreateTexture(nmDevice* device, int width, int height, nmTextureFormat format);
+void nmDestroyTexture(nmTexture* self);
+void nmUploadTexture(nmTexture* self, const void* data, size_t size);
+void nmUploadTextureRegion(nmTexture* self, int x, int y, int width, int height,
+                           const void* data, size_t row_pitch);
+void nmBindTexture(nmCommandBuffer* self, nmTexture* texture, int slot);
+
+/* ─── Font ────────────────────────────────────────────────────────────── */
+
+typedef struct nmGlyphMetrics {
+    int   bitmap_width;
+    int   bitmap_height;
+    int   bitmap_pitch;       /* row stride in bytes; may exceed bitmap_width due to padding */
+    int   bearing_x;
+    int   bearing_y;
+    float advance_x;
+} nmGlyphMetrics;
+
+typedef struct nmFontMetrics {
+    float ascender;
+    float descender;
+    float line_gap;
+    float line_height;
+} nmFontMetrics;
+
+typedef struct nmFont nmFont;
+
+nmFont* nmCreateFont(const void* data, size_t size, int face_index);
+void nmDestroyFont(nmFont* self);
+void nmSetFontPixelSize(nmFont* self, int pixel_size);
+void nmGetFontMetrics(nmFont* self, nmFontMetrics* out);
+int  nmRasterizeGlyph(nmFont* self, uint32_t codepoint,
+                      nmGlyphMetrics* out_metrics,
+                      const uint8_t** out_bitmap);
+float nmGetGlyphAdvance(nmFont* self, uint32_t codepoint);
+int  nmFontHasGlyph(nmFont* self, uint32_t codepoint);
 
 /* ─── Draw ────────────────────────────────────────────────────────────── */
 

@@ -95,4 +95,21 @@ void nmDrawIndexed(nmCommandBuffer* self, int index_count, int start_index, int 
     (void)self; (void)index_count; (void)start_index; (void)base_vertex;
 }
 
+/* ─── Texture stubs ───────────────────────────────────────────────────── */
+
+nmTexture* nmCreateTexture(nmDevice* device, int width, int height, nmTextureFormat format) {
+    (void)device; (void)width; (void)height; (void)format; return NULL;
+}
+void nmDestroyTexture(nmTexture* self) { (void)self; }
+void nmUploadTexture(nmTexture* self, const void* data, size_t size) {
+    (void)self; (void)data; (void)size;
+}
+void nmUploadTextureRegion(nmTexture* self, int x, int y, int width, int height,
+                           const void* data, size_t row_pitch) {
+    (void)self; (void)x; (void)y; (void)width; (void)height; (void)data; (void)row_pitch;
+}
+void nmBindTexture(nmCommandBuffer* self, nmTexture* texture, int slot) {
+    (void)self; (void)texture; (void)slot;
+}
+
 #endif /* !_WIN32 */

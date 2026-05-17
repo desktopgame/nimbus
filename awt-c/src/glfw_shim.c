@@ -10,6 +10,10 @@
 
 #include "internal.h"
 
+/* Implemented in nm_font.c (cross-platform). */
+int  nm_font_internal_init(void);
+void nm_font_internal_terminate(void);
+
 typedef struct nmWindowCallbacks {
     nmWindowResizeCallback  resize_cb;
     void*                   resize_user;
@@ -32,10 +36,16 @@ static void on_window_refresh(GLFWwindow* gw) {
 }
 
 int nmInitAwt(void) {
-    return glfwInit() == GLFW_TRUE ? 0 : -1;
+    if (glfwInit() != GLFW_TRUE) return -1;
+    if (nm_font_internal_init() != 0) {
+        glfwTerminate();
+        return -1;
+    }
+    return 0;
 }
 
 void nmTerminateAwt(void) {
+    nm_font_internal_terminate();
     glfwTerminate();
 }
 
