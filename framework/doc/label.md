@@ -16,6 +16,7 @@ pub const Label = struct {
         .uninstall    = uninstall,
         .paint        = paint,
         .processEvent = noopEvent,
+        .destroy      = destroy,
     };
 
     // ... メソッド
@@ -114,6 +115,21 @@ deinit では:
 2. `allocator.free(self.text)` で text の dup を解放
 
 順序は `component.deinit` が先 (vtable.uninstall がプロパティを参照する可能性があるため)。
+
+Label 自身のメモリ解放は `vtable.destroy` が担当する (component.md「メモリ解放」参照)。
+`Label.destroy` は `@fieldParentPtr` で外側に戻し、`label.deinit()` + `allocator.destroy(label)` を呼ぶ:
+
+```zig
+fn destroy(self: *Component, allocator: std.mem.Allocator) void {
+    const label: *Label = @fieldParentPtr("component", self);
+    label.deinit();
+    allocator.destroy(label);
+}
+```
+
+Container が子として保持している Label については、Container.deinit が
+`elem.component.vtable.destroy(elem.component, self.allocator)` を呼ぶことで
+この経路を通って free される。
 
 ## v1 のスコープ
 

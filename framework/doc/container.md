@@ -73,16 +73,20 @@ pub fn remove(self: *Container, child: *Component) void {
 
 pub fn deinit(self: *Container) void {
     for (self.children.items) |elem| {
-        if (elem.hint_destroy) |destroy| destroy(elem.hint.?, self.allocator);
-        elem.component.deinit();                    // vtable.uninstall + properties cleanup
-        self.allocator.destroy(elem.component);     // メモリ free
+        if (elem.hint_destroy) |destroy_hint| destroy_hint(elem.hint.?, self.allocator);
+        elem.component.deinit();                                       // uninstall + properties cleanup
+        elem.component.vtable.destroy(elem.component, self.allocator); // 正しい widget サイズで free
     }
     self.children.deinit(self.allocator);
-    self.component.deinit();                        // 自分の Component の uninstall
+    self.component.deinit();                                            // 自分の Component の uninstall
 }
 ```
 
 remove と destroy は分離している。Swing の `Container.remove` も解放はしない。
+
+`elem.component.vtable.destroy` を経由しているのが要点。
+`allocator.destroy(elem.component)` を直接呼ぶと sizeof Component しか free できず、
+Label / Button の余剰メモリが leak する (component.md「メモリ解放」参照)。
 
 ## 描画
 デフォルト vtable.paint は子を順番に描画する:

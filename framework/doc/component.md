@@ -9,6 +9,7 @@ pub const Component = struct {
         uninstall:    *const fn (*Component) void,
         paint:        *const fn (*Component, *awt.Graphics) void,
         processEvent: *const fn (*Component, *const Event) bool,
+        destroy:      *const fn (*Component, std.mem.Allocator) void,
     };
 
     vtable:     *const VTable,                  // ★ 書き換え可能 (個別差替 / 一斉差替)
@@ -41,8 +42,11 @@ Componentごとに以下のカスタマイズポイントがある。
 - uninstall
 - paint
 - processEvent
+- destroy
 そしてこれを入れ替えられるなら、その上にルックアンドフィールを載せること自体は可能なはず。
 どんな形でやるかまではいまは判断できない。
+
+(`destroy` は L&F カスタマイズというよりは内部的な責務分担。後述「メモリ解放」を参照。)
 
 ## プロパティ
 VTable によってユーザーが好きな処理を入れられるだけでは不十分な場合もある。
@@ -67,6 +71,29 @@ pub fn label(self: *Application, text: []const u8) !*Label {
 ```
 
 deinit の前に uninstall を呼び出すのを忘れずに。
+
+## メモリ解放
+Container が子を解放するとき、 `allocator.destroy(child)` で素直に free できないのが Zig の制約。
+`child` の型は `*Component` だが、実体は外側の widget (Label, Button など) で、
+`allocator.destroy` は引数の静的サイズ (sizeof Component) しか free しない。
+このままだと Label 固有のフィールドぶんが leak する。
+
+そのため VTable に `destroy` を持ち、各 widget が自前で `@fieldParentPtr` を使って
+外側のサイズで free する責務を負う。
+
+```zig
+// Label.destroy 例
+fn destroy(self: *Component, allocator: std.mem.Allocator) void {
+    const label: *Label = @fieldParentPtr("component", self);
+    label.deinit();                  // text の free 等、widget 固有の cleanup
+    allocator.destroy(label);        // 正しいサイズで free
+}
+```
+
+`Component.deinit` 自体はメモリ解放を行わない (uninstall + properties cleanup まで)。
+メモリ解放は `vtable.destroy` の責務。Container.deinit はこれを順番に呼ぶ。
+ファクトリー経由で生成された widget をユーザーが自分で free する場合も
+`component.vtable.destroy(&comp, allocator)` を呼ぶのが正規ルート。
 
 ## コンポーネントの列挙
 コンポーネントを再帰的に辿るとき、コンポーネントかコンテナーか判別できる手段が必要になる。

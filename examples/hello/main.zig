@@ -2,6 +2,8 @@ const std = @import("std");
 const nimbus = @import("nimbus");
 const awt = nimbus.awt;
 const c = awt.c;
+const Label = nimbus.Label;
+const Container = nimbus.Container;
 
 const noto_sans_ttf = @embedFile("assets/noto-sans/NotoSansJP-Regular.ttf");
 const example_png = @embedFile("assets/example.png");
@@ -19,6 +21,9 @@ const Renderer = struct {
     // Framebuffer pixel size. Differs from window size on HiDPI displays.
     fb_w: i32,
     fb_h: i32,
+    // Framework widgets driven through Component / Container / Label vtable.
+    fw_label: *Label,
+    fw_container: *Container,
 };
 
 fn renderFrame(r: *Renderer) void {
@@ -83,6 +88,12 @@ fn renderFrame(r: *Renderer) void {
     inner.setColor(awt.Graphics.Color.rgb(1, 1, 1));
     inner.setFont(.{ .face = r.font, .pixel_size = 24 });
     inner.drawString("clip()されたGraphicsで子コンテナを描画", 10, 10);
+
+    // ── framework Component / Container / Label の動作確認 ───────────
+    // 直接 paint (Container を介さない leaf Label)。
+    r.fw_label.component.paintAt(&g);
+    // Container 経由で paint (子 2 個を再帰描画)。
+    r.fw_container.component.paintAt(&g);
 
     cb.end();
     cb.submit(r.device.*);
@@ -176,6 +187,51 @@ pub fn main() !void {
         .text_program = &text_program,
     };
 
+    // ── framework widgets ──────────────────────────────────────────
+    // Standalone Label: 黄色テキスト、ウィンドウ下端あたりに置く。
+    const fw_label = try Label.create(
+        gpa,
+        "framework Label (direct paint)",
+        .{ .face = font, .pixel_size = 24 },
+        awt.Graphics.Color.rgb(1, 1, 0),
+    );
+    defer {
+        fw_label.component.deinit();
+        fw_label.component.vtable.destroy(&fw_label.component, gpa);
+    }
+    fw_label.component.setBounds(.{ .x = 30, .y = 30, .width = 0, .height = 0 });
+    // size は (0, 0) のまま — Label は (0, 0) 起点で描くだけで size による clipping は不要。
+    // ただし paintAt の clip は size に依存するので、テキストが切れない大きさを与える。
+    fw_label.component.size = .{ .width = 400, .height = 32 };
+
+    // Container + 子 Label 2 個。
+    const fw_container = try gpa.create(Container);
+    fw_container.* = Container.init(gpa);
+    Container.vtable.install(&fw_container.component);
+    fw_container.component.setBounds(.{ .x = 400, .y = 30, .width = 380, .height = 60 });
+    defer {
+        fw_container.deinit();
+        gpa.destroy(fw_container);
+    }
+
+    const child_a = try Label.create(
+        gpa,
+        "container child A (green)",
+        .{ .face = font, .pixel_size = 20 },
+        awt.Graphics.Color.rgb(0, 1, 0),
+    );
+    child_a.component.setBounds(.{ .x = 0, .y = 0, .width = 380, .height = 24 });
+    try fw_container.add(&child_a.component);
+
+    const child_b = try Label.create(
+        gpa,
+        "container child B (cyan)",
+        .{ .face = font, .pixel_size = 20 },
+        awt.Graphics.Color.rgb(0, 1, 1),
+    );
+    child_b.component.setBounds(.{ .x = 0, .y = 28, .width = 380, .height = 24 });
+    try fw_container.add(&child_b.component);
+
     var renderer = Renderer{
         .device = &device,
         .swapchain = &swapchain,
@@ -187,6 +243,8 @@ pub fn main() !void {
         .window_h = win_size.height,
         .fb_w = fb_size.width,
         .fb_h = fb_size.height,
+        .fw_label = fw_label,
+        .fw_container = fw_container,
     };
     window.setResizeCallback(onResize, &renderer);
     window.setRefreshCallback(onRefresh, &renderer);
