@@ -17,7 +17,10 @@ pub const Image = @import("Image.zig");
 pub const Font = @import("Font.zig");
 pub const GlyphAtlas = @import("GlyphAtlas.zig");
 pub const UniformBuffer = @import("UniformBuffer.zig");
+pub const VertexRing = @import("VertexRing.zig");
+pub const QuadIndexBuffer = @import("QuadIndexBuffer.zig");
 pub const programs = @import("programs.zig");
+pub const Graphics = @import("Graphics.zig");
 
 pub const LogLevel = c.nmLogLevel;
 pub const LogCallback = c.nmLogCallback;
