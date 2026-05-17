@@ -217,6 +217,28 @@ OFL 1.1 は再配布物にライセンス文を含めることを要求するの
 
 システムフォント列挙 API（`getAvailableFontFamilyNames` 相当）は v1 のスコープ外。将来必要になったら DirectWrite / Core Text / fontconfig を後付けする余地は残す。
 
+### フォントのラスタライズと描画
+
+テキスト描画は **グリフアトラス + バッチドロー** で実装する。
+awt-c 層に専用プリミティブは持たない（`nmDrawFont` のような API は作らない）。awt-c は freetype ラッパとして「指定 codepoint をビットマップにラスタライズする API」だけを提供し、アトラス管理・テキスト VB 構築・描画は awt 層が `nmBuffer` / `nmPipeline` / `nmDraw` を組み合わせて実現する。
+
+**アトラス**: R8 (8bit grayscale) 単一テクスチャ（例: 2048×2048）。
+新しい `(font, size, codepoint)` を見た時だけ freetype でラスタライズ → shelf packing でアトラスに配置 → glyph cache に `{uv_rect, bearing_x, bearing_y, advance_x}` を記録。一度焼いたグリフは使い回す。
+アトラスが満杯になったら **全クリアして再構築** で十分（GUI なら同じグリフを使い回すので定常状態に落ちる）。フラグメンテーション対策は v1 では不要。
+
+**描画**: テキスト文字列 → glyph 列 → 各 glyph を quad（2 三角形）として一つの VB に積む → 1 draw call で出す。
+頂点ごとに「絶対画面座標」と「アトラス内 UV」を焼くので、シェーダーは固定の「アトラスから R 値サンプル → カラー uniform と乗算」で済む。テクスチャ切替も不要（アトラス bind しっぱなし）。
+
+**VB の更新方針**: テキスト変更時は **フル rebuild**。partial update は実装しない。
+理由は、典型 GUI スケール（label 数文字 〜 textfield 数百文字）なら memcpy + cursor 累積で **サブマイクロ秒〜数マイクロ秒** で済むため。UPLOAD heap + persistent mapping を使えば「mapped ポインタへの memcpy」だけで更新できる。
+TextField の毎キーストロークでフル rebuild しても問題ない。TextArea のような長文ケースは行 chunk 分割 + viewport カリングが要るが、v1 では考えない。
+
+**スコープ外（v1）**:
+- LCD subpixel AA（grayscale 一択。回転やアニメに弱く、現代の Web/モバイルも grayscale に倒れている）
+- HarfBuzz による complex script shaping（CJK は codepoint→glyph がほぼ 1:1 で動く。アラビア・インド系・絵文字結合等は v1 非対応）
+- glyph prewarming API（on-demand で十分。必要になったら `Font.prewarm(...)` を後付け）
+- フレーム全体のテキスト VB 統合（Skia 風の frame-level batcher）。v1 はコンポーネント単位の VB キャッシュで十分
+
 ### エラーのC_ABIでの表現
 
 NULLを返し、内部エラーを `GetLastError()` のように取得できるようにする。
