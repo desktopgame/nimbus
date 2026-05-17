@@ -103,6 +103,44 @@ fn destroy(self: *Component, allocator: std.mem.Allocator) void {
 コンポーネントに名前をつけることができる。
 ルックアップに使えないこともないが、基本的にはダンプ用を想定している。
 
+## 派生型から Component メソッドへのアクセス
+Zig は継承を持たないので、 派生 widget (Label / Container / ...) からの Component メソッド呼び出しは
+**親フィールド直接アクセス** で書く。委譲メソッドは生やさない。
+
+```zig
+label.component.setBounds(.{ ... });
+label.component.repaint();
+label.component.setName("submit");
+```
+
+これは Zig 慣用 (`std.ArrayList` の field 直接アクセスと同じスタンス)。 階層が見える、 ボイラープレートゼロ。
+
+### なぜ委譲メソッドを置かないか
+Java の感覚だと `setBounds` / `repaint` あたりは「ユーザーが頻繁に呼ぶ」気がするが、 nimbus の API
+設計だと実際にはそうならない:
+
+| メソッド | 実際の呼び出し主 |
+|---|---|
+| `setBounds` / `getBounds` | **LayoutManager (v2〜)**。 ユーザーは設定しない |
+| `repaint` | **setter が内部で呼ぶ** (`setText` 等)。 ユーザーが直接呼ぶ機会は稀 |
+| `setName` / `getName` | デバッグ用。 出番少 |
+| `setVTable` / properties | 上級者用、 明示的でいい |
+
+ユーザーが頻繁に呼ぶのは widget 固有 setter (`label.setText`, `label.setColor`) であり、
+親 Component メソッドはほぼ呼ばない。 委譲を生やしても普段使われない上にボイラープレートになる。
+
+将来「本当に頻出と判明したメソッド」が出てきたら、 その時に派生型に委譲を生やす。 デフォルトは **ゼロ**。
+
+### アップキャスト用 helper
+`asComponent()` (Container にある) は「親型へのアップキャスト」の明示的 helper:
+
+```zig
+try container.add(label.asComponent());
+```
+
+これは「親型を期待する API への引数」として使うので別物。 Label 等の leaf widget には asComponent はないが、
+`&label.component` で同等。
+
 ## setter / getter の方針
 書き換え可能なプロパティは **setter / getter をペアで提供する** (Swing 流の対称性)。
 

@@ -86,6 +86,10 @@ pub fn setColor(self: *Label, color: awt.Graphics.Color) void {
 pub fn getColor(self: Label) awt.Graphics.Color { return self.color; }
 ```
 
+Component メソッド (setBounds / repaint / setName 等) は委譲しない。
+親フィールド経由で `label.component.setBounds(...)` のように書く
+(詳細は component.md「派生型から Component メソッドへのアクセス」)。
+
 初期値は Application のデフォルト (default_font + 黒) を factory で注入する。
 
 ## preferredSize
