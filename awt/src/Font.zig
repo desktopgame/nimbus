@@ -2,6 +2,7 @@
 //! rasterization and metrics. Atlas / text layout / drawing is the caller's
 //! responsibility.
 
+const std = @import("std");
 const c = @import("c");
 
 const Font = @This();
@@ -20,6 +21,11 @@ pub const FontMetrics = struct {
     descender: f32,
     line_gap: f32,
     line_height: f32,
+};
+
+pub const TextSize = struct {
+    width: f32,
+    height: f32,
 };
 
 handle: *c.struct_nmFont,
@@ -86,4 +92,27 @@ pub fn glyphAdvance(self: Font, codepoint: u32) f32 {
 
 pub fn hasGlyph(self: Font, codepoint: u32) bool {
     return c.nmFontHasGlyph(self.handle, codepoint);
+}
+
+/// Single-line width + font line_height. `\n` is ignored (CLAUDE.md: text
+/// layout / wrapping lives above this layer). Bytes must be valid UTF-8;
+/// invalid sequences are skipped.
+pub fn measureString(self: Font, s: []const u8, pixel_size: i32) TextSize {
+    self.setPixelSize(pixel_size);
+    var width: f32 = 0;
+    var i: usize = 0;
+    while (i < s.len) {
+        const byte_len = std.unicode.utf8ByteSequenceLength(s[i]) catch {
+            i += 1;
+            continue;
+        };
+        if (i + byte_len > s.len) break;
+        const cp = std.unicode.utf8Decode(s[i .. i + byte_len]) catch {
+            i += byte_len;
+            continue;
+        };
+        if (cp != '\n') width += self.glyphAdvance(cp);
+        i += byte_len;
+    }
+    return .{ .width = width, .height = self.metrics().line_height };
 }

@@ -16,14 +16,16 @@ const Renderer = struct {
     image_program: *awt.programs.Image,
     rrect_program: *awt.programs.RoundedRect,
 
-    // Textures.
-    glyph_texture: *awt.Texture,
+    // Resources.
+    atlas: *awt.GlyphAtlas,
     image: *awt.Image,
 
     // Top-row vertex buffers (Color / Image / Text).
     color_vbuf: *awt.Buffer,
     image_vbuf: *awt.Buffer,
     text_vbuf: *awt.Buffer,
+    text_ibuf: *awt.Buffer,
+    text_index_count: i32,
     // Bottom-row vertex buffers (SDF shapes — all 100x100 px).
     rrect_fill_vbuf: *awt.Buffer,
     rrect_outline_vbuf: *awt.Buffer,
@@ -111,10 +113,10 @@ fn renderFrame(r: *Renderer) void {
 
     r.text_program.bind(cb);
     r.text_program.bindUniforms(cb, r.uniforms.*, text_h);
-    cb.bindTexture(r.glyph_texture.*, 0);
+    cb.bindTexture(r.atlas.texture, 0);
     cb.bindVertexBuffer(r.text_vbuf.*, 0, 4 * @sizeOf(f32), 0);
-    cb.bindIndexBuffer(r.ibuf.*, .u16, 0);
-    cb.drawIndexed(6, 0, 0);
+    cb.bindIndexBuffer(r.text_ibuf.*, .u16, 0);
+    cb.drawIndexed(r.text_index_count, 0, 0);
 
     // ── Bottom row: SDF rounded rects + circles (fill + outline each) ──
     r.rrect_program.bind(cb);
@@ -226,6 +228,98 @@ fn pxToNdc(px: i32, window_px: i32) f32 {
     return @as(f32, @floatFromInt(px)) / @as(f32, @floatFromInt(window_px)) * 2.0;
 }
 
+const TEXT_MAX_GLYPHS: u32 = 64;
+
+/// Build a quad-per-glyph vertex stream + index stream for one UTF-8 line.
+/// Positions are emitted directly in NDC (y up). UVs sample from the shared
+/// glyph atlas. Returns the number of emitted glyphs.
+fn buildText(
+    out_verts: []f32,
+    out_inds: []u16,
+    s: []const u8,
+    font: awt.Font,
+    pixel_size: i32,
+    atlas: *awt.GlyphAtlas,
+    top_x_px: f32,
+    top_y_px: f32,
+    window_w: i32,
+    window_h: i32,
+) !u32 {
+    font.setPixelSize(pixel_size);
+    const ascender = font.metrics().ascender;
+    const baseline_y_px = top_y_px + ascender;
+    const ww: f32 = @floatFromInt(window_w);
+    const wh: f32 = @floatFromInt(window_h);
+
+    var x_pen_px: f32 = top_x_px;
+    var n: u32 = 0;
+    var i: usize = 0;
+    while (i < s.len) {
+        const byte_len = std.unicode.utf8ByteSequenceLength(s[i]) catch {
+            i += 1;
+            continue;
+        };
+        if (i + byte_len > s.len) break;
+        const cp = std.unicode.utf8Decode(s[i .. i + byte_len]) catch {
+            i += byte_len;
+            continue;
+        };
+        i += byte_len;
+        if (cp == '\n') continue;
+
+        const info = try atlas.getOrRasterize(font, pixel_size, cp);
+
+        // Skip empties (e.g. ' ') — advance only.
+        if (info.bitmap_width > 0 and info.bitmap_height > 0) {
+            if (n >= TEXT_MAX_GLYPHS) break;
+            const w_f: f32 = @floatFromInt(info.bitmap_width);
+            const h_f: f32 = @floatFromInt(info.bitmap_height);
+            const left = x_pen_px + info.bearing_x;
+            const top = baseline_y_px - info.bearing_y;
+            // pixel → NDC (y down → y up).
+            const x0 = left / ww * 2.0 - 1.0;
+            const x1 = (left + w_f) / ww * 2.0 - 1.0;
+            const y0 = 1.0 - top / wh * 2.0;
+            const y1 = 1.0 - (top + h_f) / wh * 2.0;
+
+            const v = n * 16;
+            // TL
+            out_verts[v + 0] = x0;
+            out_verts[v + 1] = y0;
+            out_verts[v + 2] = info.u0;
+            out_verts[v + 3] = info.v0;
+            // BL
+            out_verts[v + 4] = x0;
+            out_verts[v + 5] = y1;
+            out_verts[v + 6] = info.u0;
+            out_verts[v + 7] = info.v1;
+            // BR
+            out_verts[v + 8] = x1;
+            out_verts[v + 9] = y1;
+            out_verts[v + 10] = info.u1;
+            out_verts[v + 11] = info.v1;
+            // TR
+            out_verts[v + 12] = x1;
+            out_verts[v + 13] = y0;
+            out_verts[v + 14] = info.u1;
+            out_verts[v + 15] = info.v0;
+
+            const base: u16 = @intCast(n * 4);
+            const idx = n * 6;
+            out_inds[idx + 0] = base + 0;
+            out_inds[idx + 1] = base + 1;
+            out_inds[idx + 2] = base + 2;
+            out_inds[idx + 3] = base + 0;
+            out_inds[idx + 4] = base + 2;
+            out_inds[idx + 5] = base + 3;
+            n += 1;
+        }
+
+        x_pen_px += info.advance_x;
+    }
+    return n;
+}
+
 pub fn main() !void {
     std.debug.print("AWT backend: {s}\n", .{awt.backendVersion()});
 
@@ -243,39 +337,16 @@ pub fn main() !void {
     var swapchain = try awt.Swapchain.init(device, window);
     defer swapchain.deinit();
 
-    // ── Font + glyph texture (R8) ──────────────────────────────────
+    // ── Font + shared glyph atlas (R8 2048×2048) ───────────────────
     var font = try awt.Font.init(noto_sans_ttf, 0);
     defer font.deinit();
-    font.setPixelSize(128);
 
-    const glyph = try font.rasterize('A');
-    std.debug.print(
-        "Glyph 'A': {d}x{d}, bearing=({d}, {d}), advance={d:.2}\n",
-        .{
-            glyph.metrics.bitmap_width,
-            glyph.metrics.bitmap_height,
-            glyph.metrics.bearing_x,
-            glyph.metrics.bearing_y,
-            glyph.metrics.advance_x,
-        },
-    );
-
-    var glyph_texture = try awt.Texture.init(
-        device,
-        glyph.metrics.bitmap_width,
-        glyph.metrics.bitmap_height,
-        .r8,
-    );
-    defer glyph_texture.deinit();
-    glyph_texture.uploadRegion(
-        0, 0,
-        glyph.metrics.bitmap_width, glyph.metrics.bitmap_height,
-        glyph.bitmap,
-        @intCast(glyph.metrics.bitmap_pitch),
-    );
+    const gpa = std.heap.page_allocator;
+    var atlas = try awt.GlyphAtlas.init(gpa, device, 2048);
+    defer atlas.deinit();
 
     // ── Decode example.png → RGBA8 image (texture-backed) ──────────
-    var image = try awt.Image.fromMemory(std.heap.page_allocator, device, example_png);
+    var image = try awt.Image.fromMemory(gpa, device, example_png);
     defer image.deinit();
     std.debug.print("example.png: {d}x{d}\n", .{ image.width, image.height });
 
@@ -306,16 +377,43 @@ pub fn main() !void {
     defer image_vbuf.deinit();
     image_vbuf.upload(std.mem.sliceAsBytes(image_quad[0..]), 0);
 
-    var text_quad: [16]f32 = undefined;
-    quadPosUv(
-        &text_quad,
-        0.5, top_y,
-        pxToNdc(glyph.metrics.bitmap_width, window_w),
-        pxToNdc(glyph.metrics.bitmap_height, window_h),
+    // Build a multi-codepoint string into a single VB / IB via the atlas.
+    // Position the baseline so the text sits near the top row's y center.
+    const text_string = "Hello こんにちは!";
+    const text_pixel_size: i32 = 32;
+    var text_verts: [TEXT_MAX_GLYPHS * 16]f32 = undefined;
+    var text_inds: [TEXT_MAX_GLYPHS * 6]u16 = undefined;
+    // Top-left of the text bounding box, in pixels.
+    const text_size = font.measureString(text_string, text_pixel_size);
+    const ww_f: f32 = @floatFromInt(window_w);
+    const wh_f: f32 = @floatFromInt(window_h);
+    // Place text centered on the top row's right panel (NDC x=+0.5, y=top_y).
+    const text_center_x_px = (0.5 + 1.0) / 2.0 * ww_f; // NDC x=+0.5 → 0.75 * w
+    const text_center_y_px = (1.0 - top_y) / 2.0 * wh_f;
+    const text_top_x_px = text_center_x_px - text_size.width / 2.0;
+    const text_top_y_px = text_center_y_px - text_size.height / 2.0;
+    const text_glyph_count = try buildText(
+        &text_verts,
+        &text_inds,
+        text_string,
+        font,
+        text_pixel_size,
+        &atlas,
+        text_top_x_px,
+        text_top_y_px,
+        window_w,
+        window_h,
     );
-    var text_vbuf = try awt.Buffer.init(device, @sizeOf(@TypeOf(text_quad)), .{ .vertex = true });
+    const text_index_count: i32 = @intCast(text_glyph_count * 6);
+    std.debug.print("Text: {d} glyphs ({d} indices)\n", .{ text_glyph_count, text_index_count });
+
+    var text_vbuf = try awt.Buffer.init(device, @sizeOf(@TypeOf(text_verts)), .{ .vertex = true });
     defer text_vbuf.deinit();
-    text_vbuf.upload(std.mem.sliceAsBytes(text_quad[0..]), 0);
+    text_vbuf.upload(std.mem.sliceAsBytes(text_verts[0 .. text_glyph_count * 16]), 0);
+
+    var text_ibuf = try awt.Buffer.init(device, @sizeOf(@TypeOf(text_inds)), .{ .index = true });
+    defer text_ibuf.deinit();
+    text_ibuf.upload(std.mem.sliceAsBytes(text_inds[0 .. text_glyph_count * 6]), 0);
 
     // ── Bottom row: 4 SDF shapes at y=-0.4, each nominal 100x100 px ──
     // Quad gets a 4px margin on each side so outlines (thickness/2 outside
@@ -364,11 +462,13 @@ pub fn main() !void {
         .color_program = &color_program,
         .image_program = &image_program,
         .rrect_program = &rrect_program,
-        .glyph_texture = &glyph_texture,
+        .atlas = &atlas,
         .image = &image,
         .color_vbuf = &color_vbuf,
         .image_vbuf = &image_vbuf,
         .text_vbuf = &text_vbuf,
+        .text_ibuf = &text_ibuf,
+        .text_index_count = text_index_count,
         .rrect_fill_vbuf = &rrect_fill_vbuf,
         .rrect_outline_vbuf = &rrect_outline_vbuf,
         .circle_fill_vbuf = &circle_fill_vbuf,

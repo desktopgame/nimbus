@@ -15,6 +15,7 @@ pub const Pipeline = @import("Pipeline.zig");
 pub const Texture = @import("Texture.zig");
 pub const Image = @import("Image.zig");
 pub const Font = @import("Font.zig");
+pub const GlyphAtlas = @import("GlyphAtlas.zig");
 pub const UniformBuffer = @import("UniformBuffer.zig");
 pub const programs = @import("programs.zig");
 
