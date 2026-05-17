@@ -62,14 +62,26 @@ pub fn setText(self: *Label, text: []const u8) !void {
     self.component.repaint();
 }
 
+pub fn getText(self: Label) []const u8 {
+    return self.text;
+}
+
 pub fn setFont(self: *Label, font: awt.Graphics.TextFont) void {
     self.font = font;
     self.component.repaint();
 }
 
+pub fn getFont(self: Label) awt.Graphics.TextFont {
+    return self.font;
+}
+
 pub fn setColor(self: *Label, color: awt.Graphics.Color) void {
     self.color = color;
     self.component.repaint();
+}
+
+pub fn getColor(self: Label) awt.Graphics.Color {
+    return self.color;
 }
 
 // ── vtable impl ──────────────────────────────────────────────────────────

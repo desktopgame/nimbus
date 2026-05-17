@@ -71,15 +71,19 @@ font は値型 `awt.Graphics.TextFont = { face: *awt.Font, pixel_size: i32 }`。
 Label は値で持ち、`face` ポインタは Application 寿命の `default_font` を借用する。
 
 ```zig
+pub fn getText(self: Label) []const u8 { return self.text; }
+
 pub fn setFont(self: *Label, font: awt.Graphics.TextFont) void {
     self.font = font;
     self.component.repaint();
 }
+pub fn getFont(self: Label) awt.Graphics.TextFont { return self.font; }
 
 pub fn setColor(self: *Label, color: awt.Graphics.Color) void {
     self.color = color;
     self.component.repaint();
 }
+pub fn getColor(self: Label) awt.Graphics.Color { return self.color; }
 ```
 
 初期値は Application のデフォルト (default_font + 黒) を factory で注入する。

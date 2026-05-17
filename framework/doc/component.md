@@ -103,6 +103,24 @@ fn destroy(self: *Component, allocator: std.mem.Allocator) void {
 コンポーネントに名前をつけることができる。
 ルックアップに使えないこともないが、基本的にはダンプ用を想定している。
 
+## setter / getter の方針
+書き換え可能なプロパティは **setter / getter をペアで提供する** (Swing 流の対称性)。
+
+| 用途 | 方法 |
+|---|---|
+| 書き換え (副作用あり) | `setXxx(...)` 必須。内部で dup / repaint / (将来) PropertyChangeEvent 等を行う |
+| 読み (副作用なし) | `getXxx()` が公式。フィールド直接 read もショートカットとして許容 (Zig 慣用) |
+
+Zig はフィールド単位の private 修飾子を持たないので、 言語レベルでフィールド直接 write を禁止することはできない。
+しかし「副作用を必要とする書き換え」は setter 経由しないと壊れる (例: text の単純代入は旧 text が leak)。
+このため:
+
+- **read**: getter 経由 / 直接 read どちらも可
+- **write**: setter 必須 (直接 write は禁止 — doc / レビューでカバー)
+
+将来 PropertyChangeListener (Swing の PCE 相当) を v2 で導入する余地を残している。
+入った時に setter が listener 通知を担う。
+
 ## VTableの差し替え
 差し替え時は必ず uninstall/install が必要。
 ```zig
