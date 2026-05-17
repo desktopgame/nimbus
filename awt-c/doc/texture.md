@@ -69,3 +69,12 @@ void nmBindTexture(nmCommandBuffer* self, nmTexture* texture, int slot);
 シェーダーリソースビューはテクスチャ生成時に device 内部の descriptor heap に登録されており、この関数はそのビューを root signature の `slot` 番から参照可能にする。
 descriptor heap の構造は API には出ない（利用者が heap や slot 位置を意識する必要はない）。
 同じシェーダーで draw ごとに異なるテクスチャを使い分けるために使う。
+
+### 事前条件
+* この呼び出しの前に `nmBindPipeline` でパイプラインが bind されていること
+  （bind された pipeline の root signature を参照して slot を解決するため）
+
+### 失敗時のログ
+* `nmBindPipeline` 未呼び出しの状態で呼ぶと `[ERROR] [texture] nmBindTexture: no pipeline bound` を出して何もしない
+* `slot` が現在の pipeline の root signature に存在しない場合（型違いを含む）は `[WARN] [texture] no Texture binding for slot N ...` を出して何もしない
+  → このときシェーダー側がその slot を参照すると undefined behavior になるので、debug layer が draw call 時にさらに警告を出すはず

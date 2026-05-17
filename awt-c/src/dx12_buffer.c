@@ -99,14 +99,28 @@ void nmBindIndexBuffer(nmCommandBuffer* self, nmBuffer* buf,
 
 void nmBindConstantBuffer(nmCommandBuffer* self, nmBuffer* buf, int slot,
                           size_t offset, size_t size) {
-    (void)size;  /* Root CBV uses 64 KiB max from the address; no explicit size. */
-    if (!self || !buf || !self->current_pipeline) return;
+    if (!self || !buf) return;
+
+    if (!self->current_pipeline) {
+        nm_log(nmLogLevelError, "buffer",
+            "nmBindConstantBuffer: no pipeline bound (call nmBindPipeline first)");
+        return;
+    }
+    if (offset + size > buf->size) {
+        nm_log(nmLogLevelError, "buffer",
+            "nmBindConstantBuffer: range out of bounds (offset=%zu size=%zu buf=%zu)",
+            offset, size, buf->size);
+        return;
+    }
+
     nmRootSignature* sig = self->current_pipeline->root_signature;
     if (!sig) return;
 
     for (int i = 0; i < sig->param_count; i++) {
         if (sig->params[i].type == nmRootBindingTypeConstantBuffer
                 && sig->params[i].slot == slot) {
+            /* Root CBV uses 64 KiB max from the address with no explicit size;
+             * size is validated above for caller intent but not passed to D3D12. */
             ID3D12GraphicsCommandList_SetGraphicsRootConstantBufferView(
                 self->list, (UINT)sig->params[i].root_param_index,
                 buf->gpu_va + (UINT64)offset);

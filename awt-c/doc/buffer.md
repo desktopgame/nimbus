@@ -84,3 +84,13 @@ void nmBindConstantBuffer(nmCommandBuffer* self, nmBuffer* buf, int slot, size_t
 記録中のコマンドバッファに対し、`buf` のうち `offset` から `size` バイトの領域を、コンスタントバッファとして `slot` 番に bind する。
 buffer 全体を bind したい場合は `offset = 0`、`size = バッファ全体のサイズ` を渡す。
 `offset` には 256 バイト境界に揃った値を渡す必要がある (DX12 の要件)。
+
+### 事前条件
+* この呼び出しの前に `nmBindPipeline` でパイプラインが bind されていること
+  （bind された pipeline の root signature を参照して slot を解決するため）
+
+### 失敗時のログ
+* `nmBindPipeline` 未呼び出しの状態で呼ぶと `[ERROR] [buffer] nmBindConstantBuffer: no pipeline bound` を出して何もしない
+* `offset + size` がバッファサイズを超える場合は `[ERROR] [buffer] ... range out of bounds ...` を出して何もしない
+* `slot` が現在の pipeline の root signature に存在しない場合（型違いを含む）は `[WARN] [buffer] no ConstantBuffer binding for slot N ...` を出して何もしない
+  → このときシェーダー側がその slot を参照すると undefined behavior になるので、debug layer が draw call 時にさらに警告を出すはず
