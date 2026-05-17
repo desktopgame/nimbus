@@ -35,10 +35,10 @@ Component を継承した Button, Label などで VTable を独自に実装す�
 ユーザー側でそれは（必要なら）実装することができる、というのがもう一つの理由。
 
 Componentごとに以下のカスタマイズポイントがある。
-- 初期化
-- 破棄
-- 描画
-- イベント
+- install
+- uninstall
+- paint
+- processEvent
 そしてこれを入れ替えられるなら、その上にルックアンドフィールを載せること自体は可能なはず。
 どんな形でやるかまではいまは判断できない。
 
@@ -63,3 +63,30 @@ pub fn label(self: *Application, text: []const u8) !*Label {
     return lbl;
 }
 ```
+
+deinit の前に uninstall を呼び出すのを忘れずに。
+
+## コンポーネントの列挙
+コンポーネントを再帰的に辿るとき、コンポーネントかコンテナーか判別できる手段が必要になる。
+そのために `Component.container` を使う。
+
+## コンポーネントのデバッグ
+コンポーネントに名前をつけることができる。
+ルックアップに使えないこともないが、基本的にはダンプ用を想定している。
+
+## VTableの差し替え
+差し替え時は必ず uinstall/install が必要。
+```zig
+pub fn setVTable(self: *Component, new_vt: *const VTable) void {
+    self.vtable.uninstall(self);
+    self.vtable = new_vt;
+    self.vtable.install(self);
+}
+```
+
+## ルックアンドフィールの想定実装
+コンポーネントを再帰的に列挙して、 `setVTable` を行う、というのが想定ではある。
+とはいえユーザーの実装なので自由。
+
+## install/uninstall
+install を呼んだら必ず uninstall も呼び出さなければならない。
