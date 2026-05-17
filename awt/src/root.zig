@@ -39,6 +39,11 @@ pub fn waitEvents() void {
     c.nmWaitEvents();
 }
 
+/// Seconds since `init`. Monotonic; suitable for animation / timing.
+pub fn time() f64 {
+    return c.nmGetTime();
+}
+
 /// Backend identification string (e.g. "3.4.0 Win32 WGL ...").
 /// Safe to call before `init`.
 pub fn backendVersion() [:0]const u8 {

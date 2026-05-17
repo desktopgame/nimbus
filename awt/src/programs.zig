@@ -25,7 +25,9 @@ const Stage = Shader.Stage;
 ///   .topology           — Pipeline.Topology (default: .triangle_list)
 ///   .blend              — Pipeline.BlendMode (default: .none)
 ///   .color_write_enable — bool (default: true)
-///   .uniforms           — tuple of { stage, slot } (CBV bindings; optional)
+///   .uniforms           — tuple of { stage, slot, type } (CBV bindings; optional).
+///                         `type` is the CPU-side struct matching the shader's cbuffer.
+///                         The first entry is exposed as `Self.Uniforms` for convenience.
 ///   .textures           — tuple of { stage, slot } (SRV bindings; optional)
 ///   .shaders            — struct of { hlsl_vs, hlsl_ps, msl_vs, msl_ps } source strings
 pub fn ProgramFromMeta(comptime meta: anytype) type {
@@ -36,6 +38,13 @@ pub fn ProgramFromMeta(comptime meta: anytype) type {
         pipeline: Pipeline,
 
         const Self = @This();
+
+        /// Convenience alias for the first uniform block's CPU-side type.
+        /// `void` if the program declares no uniforms.
+        pub const Uniforms = if (@hasField(@TypeOf(meta), "uniforms") and meta.uniforms.len > 0)
+            meta.uniforms[0].type
+        else
+            void;
 
         pub fn init(device: Device) !Self {
             const vs_src = comptime selectShader(meta.shaders, .vertex);
@@ -124,13 +133,20 @@ fn bindingCount(comptime meta: anytype) usize {
 
 // ── Built-in programs ────────────────────────────────────────────────────
 
-/// Text renders a single textured quad with the R channel of an R8 atlas used
-/// as alpha against opaque white. Input vertices are 2D NDC + UV.
+/// Text renders a single textured quad with the R channel of an R8 atlas
+/// modulated by a uniform color. Input vertices are 2D NDC + UV.
 pub const Text = ProgramFromMeta(.{
     .vertex_layout = VertexLayout.vertex_texcoord_2d,
     .topology = Topology.triangle_list,
     .blend = BlendMode.alpha,
     .color_write_enable = true,
+    .uniforms = .{
+        .{
+            .stage = Stage.pixel,
+            .slot = 0,
+            .type = extern struct { color: [4]f32 },
+        },
+    },
     .textures = .{
         .{ .stage = Stage.pixel, .slot = 0 },
     },

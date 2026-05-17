@@ -122,6 +122,10 @@ void nmWaitEvents(void) {
     glfwWaitEvents();
 }
 
+double nmGetTime(void) {
+    return glfwGetTime();
+}
+
 /* ─── Internal accessors used by backend C files ──────────────────────── */
 
 void nm_internal_get_framebuffer_size(const nmWindow* w, int* width, int* height) {

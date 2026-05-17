@@ -50,6 +50,9 @@ void nmSetWindowRefreshCallback(nmWindow* self, nmWindowRefreshCallback cb, void
 void nmPollEvents(void);
 void nmWaitEvents(void);
 
+/* Seconds since nmInitAwt; monotonic. */
+double nmGetTime(void);
+
 /* ─── Device ──────────────────────────────────────────────────────────── */
 
 typedef struct nmDevice nmDevice;

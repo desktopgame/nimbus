@@ -12,9 +12,18 @@ const Renderer = struct {
     texture: *awt.Texture,
     vbuf: *awt.Buffer,
     ibuf: *awt.Buffer,
+    ubuf: *awt.Buffer,
 };
 
 fn renderFrame(r: *Renderer) void {
+    // Alternate the glyph color between red and black every second.
+    const elapsed_s: u64 = @intFromFloat(awt.time());
+    const is_red = (elapsed_s & 1) == 0;
+    const uniforms = awt.programs.Text.Uniforms{
+        .color = if (is_red) .{ 1.0, 0.0, 0.0, 1.0 } else .{ 0.0, 0.0, 0.0, 1.0 },
+    };
+    r.ubuf.upload(std.mem.asBytes(&uniforms), 0);
+
     const cb = awt.CommandBuffer.acquire(r.device.*) catch return;
     defer cb.release();
 
@@ -24,6 +33,7 @@ fn renderFrame(r: *Renderer) void {
     cb.clearStencil(0);
 
     r.program.bind(cb);
+    cb.bindConstantBuffer(r.ubuf.*, 0, 0, @sizeOf(@TypeOf(uniforms)));
     cb.bindTexture(r.texture.*, 0);
     cb.bindVertexBuffer(r.vbuf.*, 0, 4 * @sizeOf(f32), 0);
     cb.bindIndexBuffer(r.ibuf.*, .u16, 0);
@@ -146,6 +156,14 @@ pub fn main() !void {
     defer ibuf.deinit();
     ibuf.upload(std.mem.sliceAsBytes(quad_indices[0..]), 0);
 
+    // ── Uniform buffer (per-frame color) ───────────────────────────
+    var ubuf = try awt.Buffer.init(
+        device,
+        @sizeOf(awt.programs.Text.Uniforms),
+        .{ .constant = true },
+    );
+    defer ubuf.deinit();
+
     var renderer = Renderer{
         .device = &device,
         .swapchain = &swapchain,
@@ -153,6 +171,7 @@ pub fn main() !void {
         .texture = &texture,
         .vbuf = &vbuf,
         .ibuf = &ibuf,
+        .ubuf = &ubuf,
     };
     window.setResizeCallback(onResize, &renderer);
     window.setRefreshCallback(onRefresh, &renderer);
