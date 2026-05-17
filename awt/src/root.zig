@@ -17,6 +17,11 @@ pub const Font = @import("Font.zig");
 pub const UniformBuffer = @import("UniformBuffer.zig");
 pub const programs = @import("programs.zig");
 
+/// Vendored image decoder. Temporarily re-exported until a higher-level
+/// `awt.Image` abstraction lands. Users typically only need this for
+/// decoding embedded / file-loaded PNG/JPEG bytes into an `awt.Texture`.
+pub const zigimg = @import("zigimg");
+
 pub const LogLevel = c.nmLogLevel;
 pub const LogCallback = c.nmLogCallback;
 
@@ -63,7 +68,6 @@ test "backend version reports GLFW 3.4" {
 }
 
 test "zigimg module is reachable" {
-    const zigimg = @import("zigimg");
     _ = zigimg.Image;
 }
 
