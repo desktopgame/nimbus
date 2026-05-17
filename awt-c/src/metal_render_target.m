@@ -109,6 +109,21 @@ void nmSetViewport(nmCommandBuffer* self, float x, float y, float width, float h
     [self->encoder setScissorRect:sr];
 }
 
+void nmSetScissor(nmCommandBuffer* self, int x, int y, int width, int height) {
+    if (!self) return;
+    nm_cb_ensure_encoder(self);
+    if (!self->encoder) return;
+    /* Clamp negative origins to 0 — MTLScissorRect uses NSUInteger so it
+     * can't represent negatives, and Metal validation rejects rects that
+     * extend outside the attachment. */
+    MTLScissorRect sr;
+    sr.x = (NSUInteger)(x > 0 ? x : 0);
+    sr.y = (NSUInteger)(y > 0 ? y : 0);
+    sr.width  = (NSUInteger)(width  > 0 ? width  : 0);
+    sr.height = (NSUInteger)(height > 0 ? height : 0);
+    [self->encoder setScissorRect:sr];
+}
+
 void nmClearRenderTarget(nmCommandBuffer* self, float r, float g, float b, float a) {
     if (!self || !self->pass_pending) return;
     self->pending_color_load = MTLLoadActionClear;
