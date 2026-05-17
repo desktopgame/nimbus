@@ -10,18 +10,27 @@ const Renderer = struct {
     device: *awt.Device,
     swapchain: *awt.Swapchain,
 
+    // Programs.
     text_program: *awt.programs.Text,
     color_program: *awt.programs.Color,
     image_program: *awt.programs.Image,
+    rrect_program: *awt.programs.RoundedRect,
 
+    // Textures.
     glyph_texture: *awt.Texture,
     image_texture: *awt.Texture,
 
+    // Top-row vertex buffers (Color / Image / Text).
     color_vbuf: *awt.Buffer,
     image_vbuf: *awt.Buffer,
     text_vbuf: *awt.Buffer,
-    ibuf: *awt.Buffer,
+    // Bottom-row vertex buffers (SDF shapes — all 100x100 px).
+    rrect_fill_vbuf: *awt.Buffer,
+    rrect_outline_vbuf: *awt.Buffer,
+    circle_fill_vbuf: *awt.Buffer,
+    circle_outline_vbuf: *awt.Buffer,
 
+    ibuf: *awt.Buffer,
     uniforms: *awt.UniformBuffer,
 };
 
@@ -44,25 +53,55 @@ fn renderFrame(r: *Renderer) void {
         1.0,
     };
 
-    // Push all uniform blocks into the shared ring buffer.
+    // ── Push uniforms for all draws this frame. ─────────────────────
     r.uniforms.reset();
     const color_h = r.uniforms.push(awt.programs.Color.Uniforms{ .color = cycling_color }) catch return;
     const image_h = r.uniforms.push(awt.programs.Image.Uniforms{ .tint = .{ 1, 1, 1, 1 } }) catch return;
     const text_h = r.uniforms.push(awt.programs.Text.Uniforms{ .color = text_color }) catch return;
+
+    // SDF shape uniforms (all 100x100 px → half_size = 50).
+    const orange = [4]f32{ 0.95, 0.55, 0.20, 1.0 };
+    const cyan   = [4]f32{ 0.20, 0.75, 0.95, 1.0 };
+    const magenta = [4]f32{ 0.90, 0.30, 0.70, 1.0 };
+    const yellow = [4]f32{ 0.95, 0.85, 0.20, 1.0 };
+
+    const rrect_fill_h = r.uniforms.push(awt.programs.RoundedRect.Uniforms{
+        .color = orange,
+        .half_size = .{ 50, 50 },
+        .corner_radius = 20,
+        .thickness = 0,
+    }) catch return;
+    const rrect_outline_h = r.uniforms.push(awt.programs.RoundedRect.Uniforms{
+        .color = cyan,
+        .half_size = .{ 50, 50 },
+        .corner_radius = 20,
+        .thickness = 3,
+    }) catch return;
+    const circle_fill_h = r.uniforms.push(awt.programs.RoundedRect.Uniforms{
+        .color = magenta,
+        .half_size = .{ 50, 50 },
+        .corner_radius = 50, // = half side → full circle
+        .thickness = 0,
+    }) catch return;
+    const circle_outline_h = r.uniforms.push(awt.programs.RoundedRect.Uniforms{
+        .color = yellow,
+        .half_size = .{ 50, 50 },
+        .corner_radius = 50,
+        .thickness = 3,
+    }) catch return;
 
     cb.begin();
     cb.bindRenderTarget(r.swapchain.getTarget());
     cb.clearColor(0.1, 0.1, 0.15, 1.0);
     cb.clearStencil(0);
 
-    // 1. Color quad (left): solid cycling color, no texture.
+    // ── Top row: Color / Image / Text ───────────────────────────────
     r.color_program.bind(cb);
     r.color_program.bindUniforms(cb, r.uniforms.*, color_h);
     cb.bindVertexBuffer(r.color_vbuf.*, 0, 2 * @sizeOf(f32), 0);
     cb.bindIndexBuffer(r.ibuf.*, .u16, 0);
     cb.drawIndexed(6, 0, 0);
 
-    // 2. Image quad (middle): example.png with no tint.
     r.image_program.bind(cb);
     r.image_program.bindUniforms(cb, r.uniforms.*, image_h);
     cb.bindTexture(r.image_texture.*, 0);
@@ -70,12 +109,31 @@ fn renderFrame(r: *Renderer) void {
     cb.bindIndexBuffer(r.ibuf.*, .u16, 0);
     cb.drawIndexed(6, 0, 0);
 
-    // 3. Text glyph (right): 'A' in red/black, alternating every second.
     r.text_program.bind(cb);
     r.text_program.bindUniforms(cb, r.uniforms.*, text_h);
     cb.bindTexture(r.glyph_texture.*, 0);
     cb.bindVertexBuffer(r.text_vbuf.*, 0, 4 * @sizeOf(f32), 0);
     cb.bindIndexBuffer(r.ibuf.*, .u16, 0);
+    cb.drawIndexed(6, 0, 0);
+
+    // ── Bottom row: SDF rounded rects + circles (fill + outline each) ──
+    r.rrect_program.bind(cb);
+    cb.bindIndexBuffer(r.ibuf.*, .u16, 0);
+
+    r.rrect_program.bindUniforms(cb, r.uniforms.*, rrect_fill_h);
+    cb.bindVertexBuffer(r.rrect_fill_vbuf.*, 0, 4 * @sizeOf(f32), 0);
+    cb.drawIndexed(6, 0, 0);
+
+    r.rrect_program.bindUniforms(cb, r.uniforms.*, rrect_outline_h);
+    cb.bindVertexBuffer(r.rrect_outline_vbuf.*, 0, 4 * @sizeOf(f32), 0);
+    cb.drawIndexed(6, 0, 0);
+
+    r.rrect_program.bindUniforms(cb, r.uniforms.*, circle_fill_h);
+    cb.bindVertexBuffer(r.circle_fill_vbuf.*, 0, 4 * @sizeOf(f32), 0);
+    cb.drawIndexed(6, 0, 0);
+
+    r.rrect_program.bindUniforms(cb, r.uniforms.*, circle_outline_h);
+    cb.bindVertexBuffer(r.circle_outline_vbuf.*, 0, 4 * @sizeOf(f32), 0);
     cb.drawIndexed(6, 0, 0);
 
     cb.end();
@@ -119,7 +177,8 @@ fn quadPos(out: *[8]f32, cx: f32, cy: f32, w: f32, h: f32) void {
     };
 }
 
-/// 4 unique vertices (x, y, u, v). Used by Text and Image programs.
+/// 4 unique vertices (x, y, u, v). UV is in [0, 1] over the quad — what
+/// Text/Image want.
 fn quadPosUv(out: *[16]f32, cx: f32, cy: f32, w: f32, h: f32) void {
     const x0 = cx - w / 2.0;
     const x1 = cx + w / 2.0;
@@ -130,6 +189,22 @@ fn quadPosUv(out: *[16]f32, cx: f32, cy: f32, w: f32, h: f32) void {
         x0, y0, 0.0, 1.0, // BL
         x1, y0, 1.0, 1.0, // BR
         x1, y1, 1.0, 0.0, // TR
+    };
+}
+
+/// 4 unique vertices (x, y, u, v). UV in [-1, 1] centred on the quad —
+/// what the SDF RoundedRect shader expects so its pixel-space math has the
+/// origin at the shape center.
+fn quadPosUvCentered(out: *[16]f32, cx: f32, cy: f32, w: f32, h: f32) void {
+    const x0 = cx - w / 2.0;
+    const x1 = cx + w / 2.0;
+    const y0 = cy - h / 2.0;
+    const y1 = cy + h / 2.0;
+    out.* = .{
+        x0, y1, -1.0, -1.0, // TL
+        x0, y0, -1.0,  1.0, // BL
+        x1, y0,  1.0,  1.0, // BR
+        x1, y1,  1.0, -1.0, // TR
     };
 }
 
@@ -209,29 +284,30 @@ pub fn main() !void {
     defer color_program.deinit();
     var image_program = try awt.programs.Image.init(device);
     defer image_program.deinit();
+    var rrect_program = try awt.programs.RoundedRect.init(device);
+    defer rrect_program.deinit();
 
-    // ── Vertex buffers (3 quads, side by side) ─────────────────────
-    // Each panel ~200px wide, ~300px tall, centered horizontally at -0.6 / 0 / +0.6 NDC.
-    const panel_w_ndc: f32 = pxToNdc(200, window_w);
-    const panel_h_ndc: f32 = pxToNdc(300, window_h);
+    // ── Top row: 3 panels at y=+0.4, each 150x200 px ───────────────
+    const top_y: f32 = 0.4;
+    const top_w_ndc: f32 = pxToNdc(150, window_w);
+    const top_h_ndc: f32 = pxToNdc(200, window_h);
 
     var color_quad: [8]f32 = undefined;
-    quadPos(&color_quad, -0.6, 0.0, panel_w_ndc, panel_h_ndc);
+    quadPos(&color_quad, -0.5, top_y, top_w_ndc, top_h_ndc);
     var color_vbuf = try awt.Buffer.init(device, @sizeOf(@TypeOf(color_quad)), .{ .vertex = true });
     defer color_vbuf.deinit();
     color_vbuf.upload(std.mem.sliceAsBytes(color_quad[0..]), 0);
 
     var image_quad: [16]f32 = undefined;
-    quadPosUv(&image_quad, 0.0, 0.0, panel_w_ndc, panel_h_ndc);
+    quadPosUv(&image_quad, 0.0, top_y, top_w_ndc, top_h_ndc);
     var image_vbuf = try awt.Buffer.init(device, @sizeOf(@TypeOf(image_quad)), .{ .vertex = true });
     defer image_vbuf.deinit();
     image_vbuf.upload(std.mem.sliceAsBytes(image_quad[0..]), 0);
 
-    // Text quad sized to the actual glyph metrics, centered at +0.6 NDC.
     var text_quad: [16]f32 = undefined;
     quadPosUv(
         &text_quad,
-        0.6, 0.0,
+        0.5, top_y,
         pxToNdc(glyph.metrics.bitmap_width, window_w),
         pxToNdc(glyph.metrics.bitmap_height, window_h),
     );
@@ -239,7 +315,36 @@ pub fn main() !void {
     defer text_vbuf.deinit();
     text_vbuf.upload(std.mem.sliceAsBytes(text_quad[0..]), 0);
 
-    // Shared index buffer (same 6-index quad pattern for all three).
+    // ── Bottom row: 4 SDF shapes at y=-0.4, each 100x100 px ────────
+    const bot_y: f32 = -0.4;
+    const sdf_w_ndc: f32 = pxToNdc(100, window_w);
+    const sdf_h_ndc: f32 = pxToNdc(100, window_h);
+
+    var rrect_fill_quad: [16]f32 = undefined;
+    quadPosUvCentered(&rrect_fill_quad, -0.65, bot_y, sdf_w_ndc, sdf_h_ndc);
+    var rrect_fill_vbuf = try awt.Buffer.init(device, @sizeOf(@TypeOf(rrect_fill_quad)), .{ .vertex = true });
+    defer rrect_fill_vbuf.deinit();
+    rrect_fill_vbuf.upload(std.mem.sliceAsBytes(rrect_fill_quad[0..]), 0);
+
+    var rrect_outline_quad: [16]f32 = undefined;
+    quadPosUvCentered(&rrect_outline_quad, -0.22, bot_y, sdf_w_ndc, sdf_h_ndc);
+    var rrect_outline_vbuf = try awt.Buffer.init(device, @sizeOf(@TypeOf(rrect_outline_quad)), .{ .vertex = true });
+    defer rrect_outline_vbuf.deinit();
+    rrect_outline_vbuf.upload(std.mem.sliceAsBytes(rrect_outline_quad[0..]), 0);
+
+    var circle_fill_quad: [16]f32 = undefined;
+    quadPosUvCentered(&circle_fill_quad, 0.22, bot_y, sdf_w_ndc, sdf_h_ndc);
+    var circle_fill_vbuf = try awt.Buffer.init(device, @sizeOf(@TypeOf(circle_fill_quad)), .{ .vertex = true });
+    defer circle_fill_vbuf.deinit();
+    circle_fill_vbuf.upload(std.mem.sliceAsBytes(circle_fill_quad[0..]), 0);
+
+    var circle_outline_quad: [16]f32 = undefined;
+    quadPosUvCentered(&circle_outline_quad, 0.65, bot_y, sdf_w_ndc, sdf_h_ndc);
+    var circle_outline_vbuf = try awt.Buffer.init(device, @sizeOf(@TypeOf(circle_outline_quad)), .{ .vertex = true });
+    defer circle_outline_vbuf.deinit();
+    circle_outline_vbuf.upload(std.mem.sliceAsBytes(circle_outline_quad[0..]), 0);
+
+    // Shared index buffer (same 6-index quad pattern for all draws).
     var ibuf = try awt.Buffer.init(device, @sizeOf(@TypeOf(quad_indices)), .{ .index = true });
     defer ibuf.deinit();
     ibuf.upload(std.mem.sliceAsBytes(quad_indices[0..]), 0);
@@ -254,11 +359,16 @@ pub fn main() !void {
         .text_program = &text_program,
         .color_program = &color_program,
         .image_program = &image_program,
+        .rrect_program = &rrect_program,
         .glyph_texture = &glyph_texture,
         .image_texture = &image_texture,
         .color_vbuf = &color_vbuf,
         .image_vbuf = &image_vbuf,
         .text_vbuf = &text_vbuf,
+        .rrect_fill_vbuf = &rrect_fill_vbuf,
+        .rrect_outline_vbuf = &rrect_outline_vbuf,
+        .circle_fill_vbuf = &circle_fill_vbuf,
+        .circle_outline_vbuf = &circle_outline_vbuf,
         .ibuf = &ibuf,
         .uniforms = &uniforms,
     };

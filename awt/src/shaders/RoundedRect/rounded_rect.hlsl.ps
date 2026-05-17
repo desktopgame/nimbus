@@ -1,0 +1,36 @@
+// Pixel shader for the RoundedRect program (HLSL / DX12).
+// Renders rounded rectangles, circles, and their outlines via a signed
+// distance field. One shader covers four logical operations:
+//
+//   corner_radius=0, thickness=0           → filled axis-aligned rect (rare)
+//   corner_radius=0, thickness>0           → rect outline
+//   corner_radius>0, thickness=0           → filled rounded rect (circle if r = min(w,h)/2)
+//   corner_radius>0, thickness>0           → outlined rounded rect (or circle)
+//
+// The 1-pixel smoothstep band gives clean anti-aliasing at any size.
+
+struct VsOut {
+    float4 pos : SV_Position;
+    float2 uv  : TEXCOORD0;
+};
+
+cbuffer Uniforms : register(b0) {
+    float4 color;
+    float2 half_size;     // bounding box half-extent in PIXELS
+    float corner_radius;  // PIXELS; 0 = sharp corners
+    float thickness;      // PIXELS; 0 = filled, >0 = outline of that width
+};
+
+float sdRoundedRect(float2 p, float2 size, float r) {
+    float2 q = abs(p) - size + r;
+    return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
+}
+
+float4 psMain(VsOut i) : SV_Target {
+    // uv ∈ [-1, 1] over the quad. Scale to pixel-space local coordinates.
+    float2 p = i.uv * half_size;
+    float d = sdRoundedRect(p, half_size, corner_radius);
+    if (thickness > 0.0) d = abs(d) - thickness * 0.5;
+    float alpha = 1.0 - smoothstep(-0.5, 0.5, d);
+    return float4(color.rgb, color.a * alpha);
+}

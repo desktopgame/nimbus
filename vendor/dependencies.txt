@@ -6,3 +6,6 @@ https://freetype.org/
 
 zigimg
 https://github.com/zigimg/zigimg
+# When re-vendoring: delete the upstream build.zig and build.zig.zon.
+# Otherwise Zig auto-discovers them and runs zigimg's own test suite
+# (which depends on test fixtures we don't ship).

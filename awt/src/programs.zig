@@ -216,3 +216,37 @@ pub const Image = ProgramFromMeta(.{
         .msl_ps  = @embedFile("shaders/Image/image.msl.ps"),
     },
 });
+
+/// RoundedRect is a signed-distance-field shape program. One pipeline covers
+/// rounded rectangles, circles, and their outlines:
+///
+///   filled rounded rect → corner_radius > 0, thickness = 0
+///   rect outline         → corner_radius = 0, thickness > 0
+///   filled circle        → corner_radius = min(half_size.x, half_size.y), thickness = 0
+///   circle outline       → same as filled circle, thickness > 0
+///
+/// Quad vertices are positioned at the shape's bounding box in NDC, with UV
+/// spanning [-1, 1]. The shader does the SDF math in pixel space, so AA is
+/// resolution-independent within a 1-pixel transition band.
+pub const RoundedRect = ProgramFromMeta(.{
+    .vertex_layout = .vertex_texcoord_2d,
+    .blend = .alpha,
+    .uniforms = &.{
+        .{
+            .stage = .pixel,
+            .slot = 0,
+            .type = extern struct {
+                color: [4]f32,
+                half_size: [2]f32,
+                corner_radius: f32,
+                thickness: f32,
+            },
+        },
+    },
+    .shaders = .{
+        .hlsl_vs = @embedFile("shaders/RoundedRect/rounded_rect.hlsl.vs"),
+        .hlsl_ps = @embedFile("shaders/RoundedRect/rounded_rect.hlsl.ps"),
+        .msl_vs  = @embedFile("shaders/RoundedRect/rounded_rect.msl.vs"),
+        .msl_ps  = @embedFile("shaders/RoundedRect/rounded_rect.msl.ps"),
+    },
+});

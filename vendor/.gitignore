@@ -9,4 +9,10 @@ freetype-*/devel
 freetype-*/objs
 freetype-*/subprojects
 
+# zigimg's own build.zig auto-runs its test suite via Zig's package
+# discovery (build.zig.zon adjacency triggers it). We use createModule
+# directly, so remove these to keep `zig build test` clean.
+zigimg-*/build.zig
+zigimg-*/build.zig.zon
+
 **/.gitattributes

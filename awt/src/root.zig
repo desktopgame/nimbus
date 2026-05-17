@@ -79,4 +79,6 @@ test "built-in programs type-check" {
     _ = programs.Color.Uniforms;
     _ = programs.Image;
     _ = programs.Image.Uniforms;
+    _ = programs.RoundedRect;
+    _ = programs.RoundedRect.Uniforms;
 }

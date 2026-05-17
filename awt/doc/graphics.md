@@ -104,11 +104,25 @@ pub fn drawString(self: *Graphics, s: []const u8, x: f32, y: f32) void;
 pub fn drawRect(self: *Graphics, r: Rect) void;  // 矩形のアウトラインを 1px
 pub fn fillRect(self: *Graphics, r: Rect) void;  // 矩形塗り
 
-pub fn drawCircle(self: *Graphics, r: Rect) void;  // bounding box r、アウトライン
-pub fn fillCircle(self: *Graphics, r: Rect) void;  // bounding box r、塗り
+pub fn drawRoundRect(self: *Graphics, r: Rect, corner_radius: f32) void;  // 角丸のアウトライン (1px)
+pub fn fillRoundRect(self: *Graphics, r: Rect, corner_radius: f32) void;  // 角丸塗り
+
+pub fn drawCircle(self: *Graphics, r: Rect) void;  // bounding box r のアウトライン (1px)
+pub fn fillCircle(self: *Graphics, r: Rect) void;  // bounding box r 塗り
 
 pub fn drawImage(self: *Graphics, image: awt.Image, x: f32, y: f32) void;
 ```
+
+### 描画 API の実装方針
+
+| API | 実装 |
+|---|---|
+| `fillRect` | Color program で塗り。pixel-perfect、AA 不要 |
+| `drawRect` | **4 つの細い fillRect**（top / bottom / left / right、各 1px）。axis-aligned なので AA 不要、pixel-perfect |
+| `fillRoundRect` / `drawRoundRect` | **RoundedRect program**（SDF）。`corner_radius > 0` を指定、1px smoothstep で AA |
+| `fillCircle` / `drawCircle` | **RoundedRect program** に `corner_radius = min(w, h) / 2` を渡すだけ。内部的には rounded rect と同じパス |
+| `drawString` | Text program + freetype アトラス。色は current color、フォントは current font |
+| `drawImage` | Image program、tint は (1,1,1,1) 固定。texture は `image.texture` |
 
 ## drawString の y 基準について
 Swing は `y = baseline`、現代的 UI ライブラリ (Cairo / Skia / Direct2D / CoreGraphics) は `y = bounding box の top`。
@@ -151,13 +165,12 @@ Graphics は **値型 (struct)**。`clip` で複製されるため alloc は発�
 
 | 機能 | 理由 |
 |---|---|
-| drawLine | GUI で実用上少ない |
-| drawPolygon / fillPolygon | 任意形状、SDF program 必要 |
-| drawRoundRect / fillRoundRect | 角丸、SDF program 必要 |
-| setStroke (線幅・破線) | drawRect は 1px 固定 |
+| drawLine | GUI で実用上少ない（線が要るなら axis-aligned は thin fillRect で代用） |
+| drawPolygon / fillPolygon | 任意形状、専用 SDF or テッセレーションが必要 |
+| setStroke (線幅・破線) | drawRect / drawRoundRect の thickness は 1px 固定 |
 | setTransform (rotate / translate / scale) | アニメ時に必要だが v1 不要 |
-| setAntiAlias | 暗黙対応（rect は AA 不要、円は将来 SDF で対応） |
-| save / restore | 状態スタック |
+| setAntiAlias | 暗黙対応（rect は AA 不要、SDF 形状は常時 1px AA） |
+| save / restore | 状態スタック（clip で値返しすることで不要） |
 | drawImage の scale / subimage 指定 | 元サイズで貼るのみ |
 | 複数行 drawString（`\n` の自動レイアウト） | テキストレイアウトは別レイヤー |
 | グラデーション塗り | 当面 image / texture で代用 |
