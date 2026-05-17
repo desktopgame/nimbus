@@ -5,7 +5,10 @@
 int nmInitAwt(void);
 
 内部的なシステムを初期化する。
-GLFWを使用しますが、その知識は外部に漏らさない。
+* GLFW の初期化 (`glfwInit`)
+* freetype の初期化 (`FT_Init_FreeType`) — FT_Library は単一インスタンスを内部保持する
+
+GLFW / freetype を使用する知識は外部に漏らさない。
 戻り値として終了ステータス（成功ならゼロ）を返す。
 リエントラントであることは保証しない。
 
@@ -13,7 +16,11 @@ GLFWを使用しますが、その知識は外部に漏らさない。
 void nmTerminateAwt(void);
 
 内部的なシステムを終了する。
-GLFWを使用しますが、その知識は外部に漏らさない。
+* freetype の終了 (`FT_Done_FreeType`)
+* GLFW の終了 (`glfwTerminate`)
+
+GLFW / freetype を使用する知識は外部に漏らさない。
+利用者が生成した nmFont 等のリソースは、この呼び出し前に破棄しておくこと。
 リエントラントであることは保証しない。
 
 ## awtのバージョン
