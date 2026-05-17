@@ -65,6 +65,15 @@ struct nmCommandBuffer {
 
     nmRenderTarget*                current_rt;            /* last bound RT (for present at end) */
     struct nmPipeline*             current_pipeline;      /* needed for slot->index lookups */
+
+    /* Index buffer state. Metal's drawIndexedPrimitives: takes the index
+     * buffer as a draw-call argument (not encoder state), so we stash the
+     * binding here at nmBindIndexBuffer time and replay it at draw time.
+     * The MTLBuffer is borrowed — the owning nmBuffer keeps the retain. */
+    id<MTLBuffer>                  index_buffer;
+    MTLIndexType                   index_type;
+    NSUInteger                     index_offset;
+
     uint32_t                       stencil_ref;
     bool                           in_use;
     bool                           recording;

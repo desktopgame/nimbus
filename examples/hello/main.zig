@@ -64,6 +64,7 @@ const Renderer = struct {
     pipeline: *awt.Pipeline,
     texture: *awt.Texture,
     vbuf: *awt.Buffer,
+    ibuf: *awt.Buffer,
 };
 
 fn renderFrame(r: *Renderer) void {
@@ -78,7 +79,8 @@ fn renderFrame(r: *Renderer) void {
     cb.bindPipeline(r.pipeline.*);
     cb.bindTexture(r.texture.*, 0);
     cb.bindVertexBuffer(r.vbuf.*, 0, 4 * @sizeOf(f32), 0);
-    cb.draw(6, 0);
+    cb.bindIndexBuffer(r.ibuf.*, .u16, 0);
+    cb.drawIndexed(6, 0, 0);
 
     cb.end();
     cb.submit(r.device.*);
@@ -105,9 +107,10 @@ fn onRefresh(
 }
 
 /// Build a CCW quad of the glyph at the window center.
-/// 6 vertices (triangle list), each = (x, y, u, v) in NDC + texture UV.
+/// 4 unique vertices (TL, BL, BR, TR), each = (x, y, u, v) in NDC + texture UV.
+/// Paired with `quad_indices` to form two CCW triangles.
 fn buildQuad(
-    out: *[24]f32,
+    out: *[16]f32,
     glyph_w: i32,
     glyph_h: i32,
     window_w: i32,
@@ -119,17 +122,16 @@ fn buildQuad(
     const x1 = w_ndc / 2.0;
     const y0 = -h_ndc / 2.0; // bottom
     const y1 = h_ndc / 2.0;  // top
-    // Top-left = (x0, y1, 0, 0); Bottom-right = (x1, y0, 1, 1)
-    // CCW in NDC (y up): TL → BL → BR, then TL → BR → TR.
     out.* = .{
-        x0, y1, 0.0, 0.0, // TL
-        x0, y0, 0.0, 1.0, // BL
-        x1, y0, 1.0, 1.0, // BR
-        x0, y1, 0.0, 0.0, // TL
-        x1, y0, 1.0, 1.0, // BR
-        x1, y1, 1.0, 0.0, // TR
+        x0, y1, 0.0, 0.0, // 0: TL
+        x0, y0, 0.0, 1.0, // 1: BL
+        x1, y0, 1.0, 1.0, // 2: BR
+        x1, y1, 1.0, 0.0, // 3: TR
     };
 }
+
+/// CCW in NDC (y up): triangle 1 = TL→BL→BR, triangle 2 = TL→BR→TR.
+const quad_indices: [6]u16 = .{ 0, 1, 2, 0, 2, 3 };
 
 pub fn main() !void {
     std.debug.print("AWT backend: {s}\n", .{awt.backendVersion()});
@@ -202,8 +204,8 @@ pub fn main() !void {
     });
     defer pipeline.deinit();
 
-    // ── Vertex buffer (a single textured quad) ──────────────────────
-    var quad: [24]f32 = undefined;
+    // ── Vertex / index buffers (one textured quad, indexed) ────────
+    var quad: [16]f32 = undefined;
     buildQuad(&quad, glyph.metrics.bitmap_width, glyph.metrics.bitmap_height,
               window_w, window_h);
 
@@ -211,12 +213,17 @@ pub fn main() !void {
     defer vbuf.deinit();
     vbuf.upload(std.mem.sliceAsBytes(quad[0..]), 0);
 
+    var ibuf = try awt.Buffer.init(device, @sizeOf(@TypeOf(quad_indices)), .{ .index = true });
+    defer ibuf.deinit();
+    ibuf.upload(std.mem.sliceAsBytes(quad_indices[0..]), 0);
+
     var renderer = Renderer{
         .device = &device,
         .swapchain = &swapchain,
         .pipeline = &pipeline,
         .texture = &texture,
         .vbuf = &vbuf,
+        .ibuf = &ibuf,
     };
     window.setResizeCallback(onResize, &renderer);
     window.setRefreshCallback(onRefresh, &renderer);

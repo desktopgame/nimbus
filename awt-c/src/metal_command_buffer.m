@@ -95,6 +95,8 @@ nmCommandBuffer* nmAcquireCommandBuffer(nmDevice* device) {
         cb->pending_rt = NULL;
         cb->pass_pending = false;
         cb->stencil_ref = 0;
+        cb->index_buffer = nil;
+        cb->index_offset = 0;
         return cb;
     }
 
@@ -127,6 +129,8 @@ void nmBeginCommandBuffer(nmCommandBuffer* self) {
     self->current_pipeline = NULL;
     self->pending_rt = NULL;
     self->pass_pending = false;
+    self->index_buffer = nil;
+    self->index_offset = 0;
 }
 
 void nmEndCommandBuffer(nmCommandBuffer* self) {
@@ -174,12 +178,22 @@ void nmDraw(nmCommandBuffer* self, int vertex_count, int start_vertex) {
 }
 
 void nmDrawIndexed(nmCommandBuffer* self, int index_count, int start_index, int base_vertex) {
-    (void)self; (void)index_count; (void)start_index; (void)base_vertex;
-    /* Not exercised by hello; left intentionally unimplemented for now to
-     * avoid encoding an index-buffer reference we don't yet thread through
-     * the binder. Add when needed. */
-    nm_log(nmLogLevelWarn, "command_buffer",
-        "nmDrawIndexed: not yet implemented in Metal backend");
+    if (!self) return;
+    nm_cb_ensure_encoder(self);
+    if (!self->encoder || !self->current_pipeline || !self->index_buffer) return;
+
+    /* Metal's drawIndexedPrimitives: has no start_index parameter; we fold it
+     * into indexBufferOffset by advancing the offset by start_index * stride. */
+    NSUInteger stride = (self->index_type == MTLIndexTypeUInt16) ? 2 : 4;
+    NSUInteger offset = self->index_offset + (NSUInteger)start_index * stride;
+    [self->encoder drawIndexedPrimitives:self->current_pipeline->primitive_type
+                              indexCount:(NSUInteger)index_count
+                               indexType:self->index_type
+                             indexBuffer:self->index_buffer
+                       indexBufferOffset:offset
+                           instanceCount:1
+                              baseVertex:(NSInteger)base_vertex
+                            baseInstance:0];
 }
 
 #endif /* __APPLE__ */

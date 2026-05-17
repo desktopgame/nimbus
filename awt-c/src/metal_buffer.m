@@ -65,12 +65,12 @@ void nmBindVertexBuffer(nmCommandBuffer* self, nmBuffer* buf, int slot,
 
 void nmBindIndexBuffer(nmCommandBuffer* self, nmBuffer* buf,
                        nmIndexFormat fmt, size_t offset) {
-    (void)self; (void)buf; (void)fmt; (void)offset;
-    /* Indexed draw is wired up via drawIndexedPrimitives at draw time, which
-     * takes the index buffer directly. Stashing it on the cb is the natural
-     * place, but we leave this as a no-op until nmDrawIndexed is implemented. */
-    nm_log(nmLogLevelWarn, "buffer",
-        "nmBindIndexBuffer: index draws not yet wired in Metal backend");
+    if (!self || !buf) return;
+    /* Metal has no "set index buffer" encoder state — the buffer is passed
+     * to drawIndexedPrimitives: directly. Stash here, replay at draw time. */
+    self->index_buffer = buf->buffer;
+    self->index_type = (fmt == nmIndexFormatU16) ? MTLIndexTypeUInt16 : MTLIndexTypeUInt32;
+    self->index_offset = (NSUInteger)offset;
 }
 
 void nmBindConstantBuffer(nmCommandBuffer* self, nmBuffer* buf, int slot,
