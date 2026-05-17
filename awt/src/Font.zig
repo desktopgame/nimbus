@@ -85,5 +85,5 @@ pub fn glyphAdvance(self: Font, codepoint: u32) f32 {
 }
 
 pub fn hasGlyph(self: Font, codepoint: u32) bool {
-    return c.nmFontHasGlyph(self.handle, codepoint) != 0;
+    return c.nmFontHasGlyph(self.handle, codepoint);
 }

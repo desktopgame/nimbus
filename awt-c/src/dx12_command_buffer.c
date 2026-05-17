@@ -26,8 +26,8 @@ nmCommandBuffer* nmAcquireCommandBuffer(nmDevice* device) {
             wait_for_fence_value(device, cb->submitted_fence_value);
         }
 
-        cb->in_use = 1;
-        cb->recording = 0;
+        cb->in_use = true;
+        cb->recording = false;
         cb->current_rt = NULL;
         cb->current_pipeline = NULL;
         return cb;
@@ -40,7 +40,7 @@ nmCommandBuffer* nmAcquireCommandBuffer(nmDevice* device) {
 
 void nmReleaseCommandBuffer(nmCommandBuffer* self) {
     if (!self) return;
-    self->in_use = 0;
+    self->in_use = false;
 }
 
 void nmBeginCommandBuffer(nmCommandBuffer* self) {
@@ -56,7 +56,7 @@ void nmBeginCommandBuffer(nmCommandBuffer* self) {
     };
     ID3D12GraphicsCommandList_SetDescriptorHeaps(self->list, 2, heaps);
 
-    self->recording = 1;
+    self->recording = true;
     self->current_rt = NULL;
     self->current_pipeline = NULL;
 }
@@ -71,7 +71,7 @@ void nmEndCommandBuffer(nmCommandBuffer* self) {
     }
 
     ID3D12GraphicsCommandList_Close(self->list);
-    self->recording = 0;
+    self->recording = false;
 }
 
 void nmSubmitCommandBuffer(nmCommandBuffer* self, nmDevice* device) {

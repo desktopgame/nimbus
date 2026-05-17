@@ -37,7 +37,7 @@ nmRenderTarget* nmCreateRenderTarget(nmDevice* device, int width, int height) {
     rt->owner = device;
     rt->width = width;
     rt->height = height;
-    rt->is_swapchain_owned = 0;
+    rt->is_swapchain_owned = false;
     rt->rtv_index = -1;
     rt->dsv_index = -1;
 

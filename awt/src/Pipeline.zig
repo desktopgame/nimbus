@@ -79,7 +79,7 @@ pub fn init(device: Device, desc: Desc) !Pipeline {
         .topology = @intFromEnum(desc.topology),
         .blend = @intFromEnum(desc.blend),
         .stencil = .{
-            .enable = if (desc.stencil.enable) 1 else 0,
+            .enable = desc.stencil.enable,
             .fail_op = @intFromEnum(desc.stencil.fail_op),
             .depth_fail_op = @intFromEnum(desc.stencil.depth_fail_op),
             .pass_op = @intFromEnum(desc.stencil.pass_op),
@@ -87,7 +87,7 @@ pub fn init(device: Device, desc: Desc) !Pipeline {
             .read_mask = desc.stencil.read_mask,
             .write_mask = desc.stencil.write_mask,
         },
-        .color_write_enable = if (desc.color_write_enable) 1 else 0,
+        .color_write_enable = desc.color_write_enable,
     };
     const h = c.nmCreatePipeline(device.handle, &c_desc)
         orelse return error.PipelineCreateFailed;

@@ -116,7 +116,7 @@ float nmGetGlyphAdvance(nmFont* self, uint32_t codepoint) {
     return (float)self->face->glyph->advance.x / 64.0f;
 }
 
-int nmFontHasGlyph(nmFont* self, uint32_t codepoint) {
-    if (!self || !self->face) return 0;
+bool nmFontHasGlyph(nmFont* self, uint32_t codepoint) {
+    if (!self || !self->face) return false;
     return FT_Get_Char_Index(self->face, (FT_ULong)codepoint) != 0;
 }

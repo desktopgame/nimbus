@@ -52,7 +52,7 @@ struct nmRenderTarget {
     int                      width;
     int                      height;
     D3D12_RESOURCE_STATES    color_state;        /* tracked for auto-transitions */
-    int                      is_swapchain_owned; /* skip color_resource release if true */
+    bool                     is_swapchain_owned; /* skip color_resource release if true */
 };
 
 struct nmCommandBuffer {
@@ -62,8 +62,8 @@ struct nmCommandBuffer {
     uint64_t                        submitted_fence_value; /* 0 if never submitted */
     nmRenderTarget*                 current_rt;            /* last bound RT for end-time transition */
     struct nmPipeline*              current_pipeline;      /* last bound pipeline (for CBV/SRV bind lookups) */
-    int                             in_use;                /* pool occupancy flag */
-    int                             recording;             /* between Begin and End */
+    bool                            in_use;                /* pool occupancy flag */
+    bool                            recording;             /* between Begin and End */
 };
 
 #define NM_MAX_ROOT_PARAMS 16

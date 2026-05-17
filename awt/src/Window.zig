@@ -20,7 +20,7 @@ pub fn deinit(self: *Window) void {
 }
 
 pub fn shouldClose(self: Window) bool {
-    return c.nmShouldClose(self.handle) != 0;
+    return c.nmShouldClose(self.handle);
 }
 
 pub fn swapBuffers(self: Window) void {

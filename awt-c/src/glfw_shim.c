@@ -79,8 +79,8 @@ void nmDestroyWindow(nmWindow* self) {
     free(cb);
 }
 
-int nmShouldClose(nmWindow* self) {
-    return glfwWindowShouldClose((GLFWwindow*)self);
+bool nmShouldClose(nmWindow* self) {
+    return glfwWindowShouldClose((GLFWwindow*)self) != 0;
 }
 
 void nmSwapBuffers(nmWindow* self) {

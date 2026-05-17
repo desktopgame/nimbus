@@ -85,7 +85,7 @@ static D3D12_COMPARISON_FUNC compare_func(nmCompareFunc f) {
 }
 
 static void fill_blend_rt(D3D12_RENDER_TARGET_BLEND_DESC* out,
-                          nmBlendMode mode, int color_write_enable) {
+                          nmBlendMode mode, bool color_write_enable) {
     memset(out, 0, sizeof(*out));
     out->LogicOpEnable = FALSE;
     out->LogicOp = D3D12_LOGIC_OP_NOOP;

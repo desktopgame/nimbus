@@ -62,7 +62,7 @@ int nm_swapchain_allocate_targets(nmSwapchain* self) {
         t->owner = device;
         t->width = self->width;
         t->height = self->height;
-        t->is_swapchain_owned = 1;
+        t->is_swapchain_owned = true;
         t->color_state = D3D12_RESOURCE_STATE_PRESENT;
         t->rtv_index = -1;
         t->dsv_index = -1;

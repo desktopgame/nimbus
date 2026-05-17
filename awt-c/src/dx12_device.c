@@ -297,8 +297,8 @@ nmDevice* nmCreateDevice(void) {
     for (int i = 0; i < NM_CB_POOL_SIZE; i++) {
         nmCommandBuffer* cb = &dev->cb_pool[i];
         cb->owner = dev;
-        cb->in_use = 0;
-        cb->recording = 0;
+        cb->in_use = false;
+        cb->recording = false;
         cb->current_rt = NULL;
         cb->submitted_fence_value = 0;
         if (FAILED(ID3D12Device_CreateCommandAllocator(dev->device,

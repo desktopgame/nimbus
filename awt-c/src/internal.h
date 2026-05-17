@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
 
 /* awt-c internal header. Only accessed from the awt (Zig) layer via translate-c.
  * Never exposed to libnimbus consumers. */
@@ -35,7 +36,7 @@ typedef struct nmWindow nmWindow;
 
 nmWindow* nmCreateWindow(const char* title, int width, int height);
 void nmDestroyWindow(nmWindow* self);
-int nmShouldClose(nmWindow* self);
+bool nmShouldClose(nmWindow* self);
 void nmSwapBuffers(nmWindow* self);
 
 typedef void (*nmWindowResizeCallback)(nmWindow* window, int width, int height, void* user_data);
@@ -185,7 +186,7 @@ typedef enum nmCompareFunc {
 } nmCompareFunc;
 
 typedef struct nmStencilState {
-    int enable;
+    bool enable;
     nmStencilOp fail_op;
     nmStencilOp depth_fail_op;
     nmStencilOp pass_op;
@@ -202,7 +203,7 @@ typedef struct nmPipelineDesc {
     nmPrimitiveTopology topology;
     nmBlendMode blend;
     nmStencilState stencil;
-    int color_write_enable;
+    bool color_write_enable;
 } nmPipelineDesc;
 
 typedef struct nmPipeline nmPipeline;
@@ -257,7 +258,7 @@ int  nmRasterizeGlyph(nmFont* self, uint32_t codepoint,
                       nmGlyphMetrics* out_metrics,
                       const uint8_t** out_bitmap);
 float nmGetGlyphAdvance(nmFont* self, uint32_t codepoint);
-int  nmFontHasGlyph(nmFont* self, uint32_t codepoint);
+bool nmFontHasGlyph(nmFont* self, uint32_t codepoint);
 
 /* ─── Draw ────────────────────────────────────────────────────────────── */
 

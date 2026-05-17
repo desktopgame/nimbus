@@ -101,6 +101,18 @@ int nmInitAwt(void);
 * メモリレイアウトが契約に含まれる (シリアライズ等): `int32_t` 等
 * DX12 等の外部 API がそうなっている場合
 
+真偽値は `<stdbool.h>` の `bool` を使う。`int` で代用しない。
+公開 API の引数・戻り値・構造体メンバ、内部の状態フラグも同様。
+代入には `true` / `false` を使い、`0` / `1` リテラルでの代入は避ける。
+```c
+typedef struct nmStencilState {
+    bool enable;
+    /* ... */
+} nmStencilState;
+
+bool nmFontHasGlyph(nmFont* self, uint32_t codepoint);
+```
+
 
 ### Zig
 Zigの一般的な規則に従う。このプロジェクト特有の方針はない。
