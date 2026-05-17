@@ -196,6 +196,16 @@ void nmSetViewport(nmCommandBuffer* self, float x, float y, float width, float h
     ID3D12GraphicsCommandList_RSSetScissorRects(self->list, 1, &sc);
 }
 
+void nmSetScissor(nmCommandBuffer* self, int x, int y, int width, int height) {
+    if (!self) return;
+    D3D12_RECT sc;
+    sc.left = (LONG)x;
+    sc.top = (LONG)y;
+    sc.right = (LONG)(x + width);
+    sc.bottom = (LONG)(y + height);
+    ID3D12GraphicsCommandList_RSSetScissorRects(self->list, 1, &sc);
+}
+
 void nmClearRenderTarget(nmCommandBuffer* self, float r, float g, float b, float a) {
     if (!self || !self->current_rt) return;
     const FLOAT color[4] = { r, g, b, a };

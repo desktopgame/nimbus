@@ -46,6 +46,10 @@ pub fn setViewport(self: CommandBuffer, x: f32, y: f32, width: f32, height: f32)
     c.nmSetViewport(self.handle, x, y, width, height);
 }
 
+pub fn setScissor(self: CommandBuffer, x: i32, y: i32, width: i32, height: i32) void {
+    c.nmSetScissor(self.handle, x, y, width, height);
+}
+
 pub fn clearColor(self: CommandBuffer, r: f32, g: f32, b: f32, a: f32) void {
     c.nmClearRenderTarget(self.handle, r, g, b, a);
 }

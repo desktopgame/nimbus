@@ -66,6 +66,25 @@ void nmSetViewport(nmCommandBuffer* self, float x, float y, float width, float h
 
 現在 bind されているレンダーターゲットへの描画範囲を設定する。
 `nmBindRenderTarget` 直後の全域設定を上書きする場合に使う。
+内部的に scissor も同じ矩形に設定される（`nmSetScissor` で個別に上書き可能）。
+
+## シザー矩形の設定
+void nmSetScissor(nmCommandBuffer* self, int x, int y, int width, int height);
+
+現在 bind されているレンダーターゲットのシザー矩形（描画を制限する矩形クリップ）を設定する。
+viewport とは独立に上書きできる。
+
+GUI で widget 単位のクリッピングを実装する典型用途:
+* `nmBindRenderTarget` → viewport と scissor がレンダーターゲット全域に設定される
+* `nmSetScissor(widget の rect)` → 以後の描画はその範囲に切り取られる
+* draw → widget が描画される
+* `nmSetScissor(...)` → 次の widget 用に scissor 切替
+
+scissor とステンシルマスクの使い分け:
+* 矩形クリップ → `nmSetScissor`（軽量、GPU 機能の直叩き）
+* 任意形状クリップ（角丸 / 曲線等） → ステンシルマスク
+
+`nmSetViewport` を呼ぶと scissor が viewport と同じ矩形にリセットされるため、scissor を独立に保ちたい場合は **`nmSetViewport` の後** で `nmSetScissor` を呼ぶこと。
 
 ## クリア
 void nmClearRenderTarget(nmCommandBuffer* self, float r, float g, float b, float a);

@@ -39,6 +39,9 @@ void nmBindRenderTarget(nmCommandBuffer* self, nmRenderTarget* target) {
 void nmSetViewport(nmCommandBuffer* self, float x, float y, float width, float height) {
     (void)self; (void)x; (void)y; (void)width; (void)height;
 }
+void nmSetScissor(nmCommandBuffer* self, int x, int y, int width, int height) {
+    (void)self; (void)x; (void)y; (void)width; (void)height;
+}
 void nmClearRenderTarget(nmCommandBuffer* self, float r, float g, float b, float a) {
     (void)self; (void)r; (void)g; (void)b; (void)a;
 }

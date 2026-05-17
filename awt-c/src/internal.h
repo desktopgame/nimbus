@@ -92,6 +92,7 @@ nmRenderTarget* nmCreateRenderTarget(nmDevice* device, int width, int height);
 void nmDestroyRenderTarget(nmRenderTarget* self);
 void nmBindRenderTarget(nmCommandBuffer* self, nmRenderTarget* target);
 void nmSetViewport(nmCommandBuffer* self, float x, float y, float width, float height);
+void nmSetScissor(nmCommandBuffer* self, int x, int y, int width, int height);
 void nmClearRenderTarget(nmCommandBuffer* self, float r, float g, float b, float a);
 void nmClearStencil(nmCommandBuffer* self, uint8_t value);
 
