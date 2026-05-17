@@ -30,8 +30,10 @@
 
 #define NM_CBV_SRV_UAV_HEAP_SIZE 4096
 #define NM_SAMPLER_HEAP_SIZE     16
+/* RTV and DSV are kept the same size: every nmRenderTarget allocates one of
+ * each (color + stencil), so the tighter of the two would cap RT count. */
 #define NM_RTV_HEAP_SIZE         64
-#define NM_DSV_HEAP_SIZE         16
+#define NM_DSV_HEAP_SIZE         64
 
 #define NM_CB_POOL_SIZE          1
 #define NM_SWAPCHAIN_BUFFER_COUNT 2
