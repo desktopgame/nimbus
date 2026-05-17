@@ -75,7 +75,7 @@ deinit の前に uninstall を呼び出すのを忘れずに。
 ルックアップに使えないこともないが、基本的にはダンプ用を想定している。
 
 ## VTableの差し替え
-差し替え時は必ず uinstall/install が必要。
+差し替え時は必ず uninstall/install が必要。
 ```zig
 pub fn setVTable(self: *Component, new_vt: *const VTable) void {
     self.vtable.uninstall(self);
