@@ -3,9 +3,16 @@
 
 ## 型定義
 ```zig
+pub const LayoutElement = struct {
+    component:    *Component,
+    hint:         ?*anyopaque = null,                                       // LayoutManager 用 hint (v2〜)
+    hint_destroy: ?*const fn (*anyopaque, std.mem.Allocator) void = null,   // 任意の destroy hook
+};
+
 pub const Container = struct {
     component: Component,
-    children:  std.ArrayList(*Component),
+    children:  std.ArrayList(LayoutElement),
+    layout:    ?*LayoutManager,                                             // v1 は null 固定
     allocator: std.mem.Allocator,
 
     pub const vtable = Component.VTable{
@@ -36,23 +43,42 @@ framework としては Container を特別扱いしているわけではない�
 CLAUDE.md「所有権」セクションのとおり、Container が children を所有し、
 deinit で再帰的に開放する。アロケーターは Application から借用したものを使う。
 
+各子は `LayoutElement { component, hint, hint_destroy }` でラップして保持する。
+hint は LayoutManager (v2〜) が解釈するためのフィールドで、v1 では常に null。
+
 ```zig
 pub fn add(self: *Container, child: *Component) !void {
-    try self.children.append(self.allocator, child);
+    try self.children.append(self.allocator, .{ .component = child });
+    child.parent = &self.component;
+}
+
+pub fn addWithHint(
+    self: *Container,
+    child: *Component,
+    hint: *anyopaque,
+    hint_destroy: ?*const fn (*anyopaque, std.mem.Allocator) void,
+) !void {
+    try self.children.append(self.allocator, .{
+        .component    = child,
+        .hint         = hint,
+        .hint_destroy = hint_destroy,
+    });
     child.parent = &self.component;
 }
 
 pub fn remove(self: *Container, child: *Component) void {
-    // children から外すだけ。解放はしない (付け替え用)
+    // children から該当要素を外すだけ。component 本体の解放はしない (付け替え用)。
+    // hint_destroy が設定されていれば hint の destroy だけは呼ぶ。
 }
 
 pub fn deinit(self: *Container) void {
-    for (self.children.items) |child| {
-        child.deinit();                     // vtable.uninstall + properties cleanup
-        self.allocator.destroy(child);      // メモリ free
+    for (self.children.items) |elem| {
+        if (elem.hint_destroy) |destroy| destroy(elem.hint.?, self.allocator);
+        elem.component.deinit();                    // vtable.uninstall + properties cleanup
+        self.allocator.destroy(elem.component);     // メモリ free
     }
     self.children.deinit(self.allocator);
-    self.component.deinit();                // 自分の Component の uninstall
+    self.component.deinit();                        // 自分の Component の uninstall
 }
 ```
 
@@ -64,9 +90,9 @@ remove と destroy は分離している。Swing の `Container.remove` も解�
 ```zig
 fn paint(self: *Component, g: *awt.Graphics) void {
     const container = self.container.?;
-    for (container.children.items) |child| {
-        var child_g = g.clip(child.getBounds());
-        child.vtable.paint(child, &child_g);
+    for (container.children.items) |elem| {
+        var child_g = g.clip(elem.component.getBounds());
+        elem.component.vtable.paint(elem.component, &child_g);
     }
 }
 ```
@@ -88,6 +114,28 @@ Container は init で `self.component.container = self` をセットする。
 これにより Application などからツリーを再帰的に辿れる。詳細は
 component.md「コンポーネントの列挙」を参照。
 
+## レイアウトと hint
+v1 では LayoutManager は未実装で、子の位置・サイズはユーザーが `child.setBounds(...)` で手動指定する。
+このとき `LayoutElement.hint` は使われない (常に null)。
+
+v2 以降で LayoutManager (BorderLayout / BoxLayout 等) が導入された時、
+各 LayoutManager が hint を解釈して `child.setBounds(...)` を内部で呼ぶ:
+
+```zig
+// v2 想定: BorderLayout が hint を見て位置決め
+const BorderRegion = enum { north, south, east, west, center };
+const north_hint: BorderRegion = .north;
+try container.addWithHint(&label.component, @ptrCast(&north_hint), null);
+
+// BorderLayout.layoutContainer(container) が elem.hint を見て setBounds
+```
+
+hint の所有モデルは Component.properties と同じく **opt-in destroy hook**:
+- `hint_destroy = null` (デフォルト): caller 所有、framework は触らない (上記 `&local_enum` 等)
+- `hint_destroy = fn` を渡せば Container.remove / deinit で自動 free (動的 alloc した GridBagConstraints 等)
+
+LayoutManager 本体の設計は別 doc で扱う。
+
 ## ライフサイクル
 factory コード例 (内部):
 
@@ -103,7 +151,8 @@ pub fn container(self: *Application) !*Container {
 ```
 
 deinit は子から先、自分が後。Container.deinit は内部で全 children に対して
-`child.deinit()` + `allocator.destroy(child)` を実行する。
+`elem.component.deinit()` + `allocator.destroy(elem.component)` を実行し、
+hint_destroy が設定されていれば hint の destroy も呼ぶ。
 そのため、Container を deinit した後にユーザーが children のポインタを保持していると dangling になる。
 
 ## ユーザーが直接使うか
