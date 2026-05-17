@@ -1,0 +1,21 @@
+// Fragment shader for the Image program (MSL / Metal).
+// Samples an RGBA texture and modulates by a uniform tint.
+
+#include <metal_stdlib>
+using namespace metal;
+
+struct VsOut {
+    float4 pos [[position]];
+    float2 uv;
+};
+
+struct Uniforms {
+    float4 tint;
+};
+
+fragment float4 psMain(VsOut in [[stage_in]],
+                       constant Uniforms& u [[buffer(0)]],
+                       texture2d<float> tex [[texture(0)]],
+                       sampler samp [[sampler(0)]]) {
+    return tex.sample(samp, in.uv) * u.tint;
+}

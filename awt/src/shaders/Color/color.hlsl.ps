@@ -1,0 +1,15 @@
+// Pixel shader for the Color program (HLSL / DX12).
+// Emits a single uniform color for every fragment. Alpha blending in the
+// pipeline handles translucent fills.
+
+struct VsOut {
+    float4 pos : SV_Position;
+};
+
+cbuffer Uniforms : register(b0) {
+    float4 color;
+};
+
+float4 psMain(VsOut i) : SV_Target {
+    return color;
+}

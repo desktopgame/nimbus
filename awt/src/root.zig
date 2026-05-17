@@ -66,3 +66,13 @@ test "zigimg module is reachable" {
     const zigimg = @import("zigimg");
     _ = zigimg.Image;
 }
+
+test "built-in programs type-check" {
+    // Force comptime generation of each program type and its Uniforms alias.
+    _ = programs.Text;
+    _ = programs.Text.Uniforms;
+    _ = programs.Color;
+    _ = programs.Color.Uniforms;
+    _ = programs.Image;
+    _ = programs.Image.Uniforms;
+}

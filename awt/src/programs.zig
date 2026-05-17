@@ -172,3 +172,47 @@ pub const Text = ProgramFromMeta(.{
         .msl_ps = @embedFile("shaders/Text/text.msl.ps"),
     },
 });
+
+/// Color renders flat-filled quads in a uniform RGBA color. No texture.
+/// Used for widget backgrounds, panels, separators, scrollbar tracks, etc.
+pub const Color = ProgramFromMeta(.{
+    .vertex_layout = .vertex_2d,
+    .blend = .alpha,
+    .uniforms = &.{
+        .{
+            .stage = .pixel,
+            .slot = 0,
+            .type = extern struct { color: [4]f32 },
+        },
+    },
+    .shaders = .{
+        .hlsl_vs = @embedFile("shaders/Color/color.hlsl.vs"),
+        .hlsl_ps = @embedFile("shaders/Color/color.hlsl.ps"),
+        .msl_vs  = @embedFile("shaders/Color/color.msl.vs"),
+        .msl_ps  = @embedFile("shaders/Color/color.msl.ps"),
+    },
+});
+
+/// Image renders an RGBA texture onto a 2D quad, modulated by a uniform tint.
+/// For untinted display pass tint = (1, 1, 1, 1). Used for icons (checkbox,
+/// radio, arrows), user-provided images, and photos.
+pub const Image = ProgramFromMeta(.{
+    .vertex_layout = .vertex_texcoord_2d,
+    .blend = .alpha,
+    .uniforms = &.{
+        .{
+            .stage = .pixel,
+            .slot = 0,
+            .type = extern struct { tint: [4]f32 },
+        },
+    },
+    .textures = &.{
+        .{ .stage = .pixel, .slot = 0 },
+    },
+    .shaders = .{
+        .hlsl_vs = @embedFile("shaders/Image/image.hlsl.vs"),
+        .hlsl_ps = @embedFile("shaders/Image/image.hlsl.ps"),
+        .msl_vs  = @embedFile("shaders/Image/image.msl.vs"),
+        .msl_ps  = @embedFile("shaders/Image/image.msl.ps"),
+    },
+});

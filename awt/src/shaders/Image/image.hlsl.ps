@@ -1,0 +1,20 @@
+// Pixel shader for the Image program (HLSL / DX12).
+// Samples an RGBA texture and modulates by a uniform tint. For untinted
+// rendering pass tint = (1, 1, 1, 1).
+// Caller binds the static LinearClamp sampler at s0 (built-in).
+
+struct VsOut {
+    float4 pos : SV_Position;
+    float2 uv  : TEXCOORD0;
+};
+
+cbuffer Uniforms : register(b0) {
+    float4 tint;
+};
+
+Texture2D    g_tex  : register(t0);
+SamplerState g_samp : register(s0);
+
+float4 psMain(VsOut i) : SV_Target {
+    return g_tex.Sample(g_samp, i.uv) * tint;
+}

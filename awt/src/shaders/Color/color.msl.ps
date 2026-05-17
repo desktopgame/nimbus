@@ -1,0 +1,18 @@
+// Fragment shader for the Color program (MSL / Metal).
+// Emits a single uniform color for every fragment.
+
+#include <metal_stdlib>
+using namespace metal;
+
+struct VsOut {
+    float4 pos [[position]];
+};
+
+struct Uniforms {
+    float4 color;
+};
+
+fragment float4 psMain(VsOut in [[stage_in]],
+                       constant Uniforms& u [[buffer(0)]]) {
+    return u.color;
+}
