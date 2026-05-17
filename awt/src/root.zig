@@ -61,3 +61,8 @@ test "backend version reports GLFW 3.4" {
     const ver = backendVersion();
     try std.testing.expect(std.mem.indexOf(u8, ver, "3.4") != null);
 }
+
+test "zigimg module is reachable" {
+    const zigimg = @import("zigimg");
+    _ = zigimg.Image;
+}

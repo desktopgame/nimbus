@@ -208,11 +208,16 @@ DX12 バックエンドは PSO の `FrontCounterClockwise = TRUE` を指定す�
 ### 画像 / テクスチャ
 
 GUI 用途なので DXT/ASTC/BCn のような GPU 圧縮形式はサポートしない。
-サポートする形式は **PNG / JPEG / GIF(静止画) / BMP** の4つで、デコーダは **stb_image**（シングルヘッダ public domain）を vendored する。
+サポートする形式は **PNG / JPEG / GIF(静止画) / BMP** で、デコーダは **zigimg**（純 Zig）を `vendor/zigimg/` に subtree で展開する。
 アニメ GIF / SVG / WebP は v1 では対応しない。必要になったら追加で考える。
 
+zigimg を選ぶ理由:
+* 純 Zig 実装で C 依存なし → クロスコンパイル制約と相性 ◎（awt-c の C ビルドに同居させる必要がない）
+* 画像デコードは GPU と無関係 → **awt 層で完結** すべき責務。awt-c に decode 関数を生やさない
+* `@embedFile` で得たバイト列を `std.io.fixedBufferStream` 経由で直接 decode する API になじむ
+
 ビルトインアイコン（チェックボックス、ラジオボタン背景、スクロール矢印 等）は Zig の `@embedFile` で `.rodata` に焼き込む。
-生 PNG のまま埋め込み、初回参照時に stb_image でデコード → GPU upload → キャッシュ。L&F 切替時はキャッシュをクリアする（or L&F ごとに別キャッシュ）。
+生 PNG のまま埋め込み、初回参照時に zigimg でデコード → GPU upload → キャッシュ。L&F 切替時はキャッシュをクリアする（or L&F ごとに別キャッシュ）。
 
 ユーザー提供画像（`Image.fromFile("foo.png")` 相当）は別系統で、こちらは普通のランタイム読み込み。
 

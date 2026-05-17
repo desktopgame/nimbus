@@ -12,6 +12,9 @@ pub const glfw_include = glfw_root ++ "/include";
 pub const freetype_root = "vendor/freetype-2.14.3";
 pub const freetype_include = freetype_root ++ "/include";
 
+pub const zigimg_root = "vendor/zigimg-zigimg_zig_0.16.0";
+pub const zigimg_source = zigimg_root ++ "/zigimg.zig";
+
 /// Build GLFW 3.4 as a static library. Platform support:
 /// - Windows: Win32 backend
 /// - macOS:   Cocoa backend
@@ -246,4 +249,21 @@ pub fn buildFreeType(
         .linkage = .static,
         .root_module = mod,
     });
+}
+
+/// Create the zigimg Zig module. Pure Zig — no C compile or link step needed,
+/// consumers just add the returned module to their `imports`.
+pub fn buildZigimg(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+) *std.Build.Module {
+    const mod = b.createModule(.{
+        .root_source_file = b.path(zigimg_source),
+        .target = target,
+        .optimize = optimize,
+    });
+    // zigimg's own code does `@import("zigimg")` for some cross-module refs.
+    mod.addImport("zigimg", mod);
+    return mod;
 }

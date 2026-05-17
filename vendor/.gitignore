@@ -8,3 +8,6 @@ freetype-*/tests
 freetype-*/devel
 freetype-*/objs
 freetype-*/subprojects
+
+zigimg-*/tests
+**/.gitattributes

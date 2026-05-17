@@ -11,6 +11,9 @@ pub fn build(b: *std.Build) void {
     // ── third-party: FreeType (vendored, built from source) ──────
     const freetype_lib = third_party.buildFreeType(b, target, optimize);
 
+    // ── third-party: zigimg (pure-Zig image decoder, module-only) ─
+    const zigimg_mod = third_party.buildZigimg(b, target, optimize);
+
     // ── awt-c: C shim (internal only, not installed) ─────────────
     const awt_c_mod = b.createModule(.{
         .target = target,
@@ -119,6 +122,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{
             .{ .name = "c", .module = c_bindings },
+            .{ .name = "zigimg", .module = zigimg_mod },
         },
     });
     awt_mod.linkLibrary(awt_c_lib);
