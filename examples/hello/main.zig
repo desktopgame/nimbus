@@ -12,20 +12,22 @@ const Renderer = struct {
     texture: *awt.Texture,
     vbuf: *awt.Buffer,
     ibuf: *awt.Buffer,
-    ubuf: *awt.Buffer,
+    uniforms: *awt.UniformBuffer,
 };
 
 fn renderFrame(r: *Renderer) void {
-    // Alternate the glyph color between red and black every second.
-    const elapsed_s: u64 = @intFromFloat(awt.time());
-    const is_red = (elapsed_s & 1) == 0;
-    const uniforms = awt.programs.Text.Uniforms{
-        .color = if (is_red) .{ 1.0, 0.0, 0.0, 1.0 } else .{ 0.0, 0.0, 0.0, 1.0 },
-    };
-    r.ubuf.upload(std.mem.asBytes(&uniforms), 0);
-
+    // Acquire first: this blocks until the previous frame's GPU work has
+    // completed, which is what makes it safe to overwrite uniform memory.
     const cb = awt.CommandBuffer.acquire(r.device.*) catch return;
     defer cb.release();
+
+    // Rewind and push this frame's uniform blocks.
+    r.uniforms.reset();
+    const elapsed_s: u64 = @intFromFloat(awt.time());
+    const is_red = (elapsed_s & 1) == 0;
+    const color_handle = r.uniforms.push(awt.programs.Text.Uniforms{
+        .color = if (is_red) .{ 1.0, 0.0, 0.0, 1.0 } else .{ 0.0, 0.0, 0.0, 1.0 },
+    }) catch return;
 
     cb.begin();
     cb.bindRenderTarget(r.swapchain.getTarget());
@@ -33,7 +35,7 @@ fn renderFrame(r: *Renderer) void {
     cb.clearStencil(0);
 
     r.program.bind(cb);
-    cb.bindConstantBuffer(r.ubuf.*, 0, 0, @sizeOf(@TypeOf(uniforms)));
+    r.program.bindUniforms(cb, r.uniforms.*, color_handle);
     cb.bindTexture(r.texture.*, 0);
     cb.bindVertexBuffer(r.vbuf.*, 0, 4 * @sizeOf(f32), 0);
     cb.bindIndexBuffer(r.ibuf.*, .u16, 0);
@@ -156,13 +158,9 @@ pub fn main() !void {
     defer ibuf.deinit();
     ibuf.upload(std.mem.sliceAsBytes(quad_indices[0..]), 0);
 
-    // ── Uniform buffer (per-frame color) ───────────────────────────
-    var ubuf = try awt.Buffer.init(
-        device,
-        @sizeOf(awt.programs.Text.Uniforms),
-        .{ .constant = true },
-    );
-    defer ubuf.deinit();
+    // ── Shared uniform buffer (single ring allocator for all programs) ──
+    var uniforms = try awt.UniformBuffer.init(device, 4096);
+    defer uniforms.deinit();
 
     var renderer = Renderer{
         .device = &device,
@@ -171,7 +169,7 @@ pub fn main() !void {
         .texture = &texture,
         .vbuf = &vbuf,
         .ibuf = &ibuf,
-        .ubuf = &ubuf,
+        .uniforms = &uniforms,
     };
     window.setResizeCallback(onResize, &renderer);
     window.setRefreshCallback(onRefresh, &renderer);

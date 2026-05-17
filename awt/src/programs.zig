@@ -11,6 +11,7 @@ const Shader = @import("Shader.zig");
 const RootSignature = @import("RootSignature.zig");
 const Pipeline = @import("Pipeline.zig");
 const CommandBuffer = @import("CommandBuffer.zig");
+const UniformBuffer = @import("UniformBuffer.zig");
 
 // Re-exports for terse meta declarations below.
 const VertexLayout = Pipeline.VertexLayout;
@@ -86,9 +87,23 @@ pub fn ProgramFromMeta(comptime meta: anytype) type {
         }
 
         /// Bind the pipeline. Textures and uniforms still need to be bound
-        /// separately via CommandBuffer.bindTexture / .bindConstantBuffer.
+        /// separately via CommandBuffer.bindTexture / .bindConstantBuffer or
+        /// via the program-aware helpers `bindUniforms`.
         pub fn bind(self: Self, cb: CommandBuffer) void {
             cb.bindPipeline(self.pipeline);
+        }
+
+        /// Bind a uniform block from a shared UniformBuffer at the slot this
+        /// program declared in its metadata.
+        pub fn bindUniforms(self: Self, cb: CommandBuffer, ubuf: UniformBuffer, handle: UniformBuffer.Handle) void {
+            _ = self;
+            const slot: i32 = comptime blk: {
+                if (!@hasField(@TypeOf(meta), "uniforms") or meta.uniforms.len == 0) {
+                    @compileError("Program declares no uniforms");
+                }
+                break :blk meta.uniforms[0].slot;
+            };
+            cb.bindConstantBuffer(ubuf.buffer, slot, handle.offset, handle.size);
         }
     };
 }
