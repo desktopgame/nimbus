@@ -3,6 +3,18 @@
 実装には c, zig を使う予定です。
 将来的には python や js 向けのバインディングも提供したいです。
 
+## 用語
+現在以下用語が awt/doc, awt-c/doc, framework/docで適切に使用されていないため、修正予定。
+
+### 作者
+nimbus の開発者を指す。
+
+### 利用者
+nimbus を使ってGUIアプリを開発する者を指す。
+
+### エンドユーザー
+利用者が開発したGUIアプリを実行する者を指す。
+
 ## 目指すゴール
 Swing の次の特徴を引き継いだものにしたいと思っています。
 * 非即時UI（Retained UI）
@@ -45,11 +57,10 @@ zig 向けに公開されるヘッダーではそれらを直接露出しない�
 
 ## プラットフォーム
 Windows(DirectX12), Mac(Metal)をまずはサポートする。
-両方とも動作確認済み（hello でウィンドウに 'A' が表示される）。
 Linuxはあとまわし。
 
 また、シェーダーコードはそれぞれの言語ごとに用意する。
-ユーザー定義のシェーダーは存在せず、ビルトインのみ。
+利用者定義のシェーダーは存在せず、ビルトインのみ。
 
 ## コーディング規約
 
@@ -118,6 +129,24 @@ bool nmFontHasGlyph(nmFont* self, uint32_t codepoint);
 ### Zig
 Zigの一般的な規則に従う。このプロジェクト特有の方針はない。
 
+## 開発方針
+作者は基本的にソースコードを直接編集しない。
+作者がハンドリングしたいのは以下です。
+* やりたいこと
+* データ構造
+* シグネチャ（関数の引数と戻り値）
+* ライフタイム
+
+上記は以下ドキュメントで作者によってメンテナンスされます。
+※常に全ての内容を作者が書くとは限りません。
+* awt/doc
+* awt-c/doc
+* framework/doc
+* CLAUDE.md
+
+実装の詳細やアルゴリズムについては私は深く踏み込みませんが、
+あなた自身が将来のためにソースコード中にコメントを残すことはOKです。
+
 ## ドキュメントに関する共通ルール
 
 ### 改行に関する規則
@@ -136,171 +165,113 @@ Zigの一般的な規則に従う。このプロジェクト特有の方針は�
 ## その他の決定項目
 
 ### アロケーター
+zig は GC の無いプログラム言語なので自分で寿命を管理する必要が生じる。
+実装の簡易さを考えるとシングルトンやグローバルに直接依存した書き方をしがちだが、
+nimbus では明確にそれを**選ばない**。
 
-Application が allocator を持ち、ウィジェット工場として振る舞う。
-
-```.zig
-pub const Application = struct {
-    allocator: std.mem.Allocator,
-    // ...
-
-    pub fn init(allocator: std.mem.Allocator) !Application { ... }
-    pub fn window(self: *Application, opts: Window.InitOptions) !*Window { ... }
-    pub fn button(self: *Application, label: []const u8) !*Button { ... }
-};
-```
+以下の理由による。
+* グローバルは安易に循環依存を作り出せる
+* ひとつのインスタンスを毎回クリアしないとテストが書けない
 
 ### 所有権
+コンポーネントは典型的には階層構造で表現されることがある。
+中でも、子コンポーネントを保持するコンポーネントのことはコンテナーと呼称されることがある。
+nimbus でもこの呼称を採用する。
 
-Containerが子Componentを所有し、開放の責任を持つ。
-
-```.zig
-pub const Container = struct {
-    children: std.ArrayList(*Component),
-
-    pub fn add(self: *Container, child: *Component) !void {
-        try self.children.append(self.allocator, child);
-        child.parent = self.asComponent();
-    }
-
-    pub fn deinit(self: *Container) void {
-        for (self.children.items) |child| {
-            child.deinit();       // 再帰
-            self.allocator.destroy(child);
-        }
-        self.children.deinit(self.allocator);
-    }
-};
-```
+また、コンテナーは子コンポーネントを借用ではなく所有するので、
+コンテナー自身が子コンポーネントの寿命について責任を持ち、開放処理を実行する。
 
 ### スレッドモデル
-
 単一UIスレッド。別スレッドからUIを操作することはできない。（その場合の動作は保証されない）
 描画スレッドとUIスレッドは分けない。
+別スレッドからUIに反映したい場合は 『非同期処理』 を参照。
 
-### イベントループ / 複数ウィンドウ
+### イベントループ
+イベントループとは、利用者の入力を受け取ってからそれをコールバックに渡し、画面を再描画するまでの一連の流れを指す。
+これも「アロケーター」と同様の理由により、シングルトンやグローバルによる実装はしない。
 
-イベントループは Application が一本だけ所有する。GLFW のイベントキューはプロセスにひとつなので、「ウィンドウごとのループ」は持たない。
-Application はすべての Window をトラッキングし、`run()` の中で次を繰り返す:
+イベントループは以下の要請を守って実装する。
+* 毎フレーム画面全体を描画しないこと。（不要なCPU消費を抑える）
+* 複数のウィンドウを単一のイベントループで処理する。
+* モーダルダイアログはセカンダリーループとして実装される。（呼び出し側はブロッキングされる）
 
-1. `waitEvents` でブロック（イベント or `glfwPostEmptyEvent` で起きる）
-2. EventQueue に溜まった task を drain
-3. dirty フラグの立った Window だけ redraw
-4. 全ウィンドウが閉じたら exit
+### 非同期処理
+イベントループは典型的にはイベントキューと呼ばれるものを使って実装される。
+ここにキーイベントやマウスイベントが入ってきて、それを順番に取り出すというものである。
+このことの問題点は、イベントを処理するスレッドで時間のかかる処理を実行するとUIが反応しなくなることにある。
 
-描画は retained UI / invalidation 駆動。`Window.invalidate()` で dirty フラグを立てた窓だけが次のループで再描画される。毎フレーム常時 redraw はしない（immediate GUI と同じ CPU 消費になってしまう）。
-resize / refresh コールバックは内部で自動的に invalidate を呼ぶ。
-アニメーション等で連続描画したい場合は、redraw 中に再度自分自身を invalidate するか、専用 API（`requestAnimationFrame` 相当）でループを回し続ける。
+現代では async/await などで対処されることが多いし、実際それが望ましい。
+この機能を利用者や nimbus を利用するサードパーティのライブラリが実装するためには、
+いくつかイベントキューに関するプリミティブを提供しなければならない。
 
-### EventQueue / invokeLater
+#### イベントキューへのポスト
+任意の関数オブジェクトをイベントキューへポストし、イベントループを一回駆動させる。
+時間のかかる処理を別のスレッドに逃がしてUIを軽くするのはよくある手段だが、
+結果をUI側にフィードバックできないと意味がない。
+しかし nimbus を含む多くのUIフレームワークはUIスレッド以外からのアクセスを想定していない。
+そこでフィードバックするための関数オブジェクトをイベントキューにポストし、UIスレッドで実行させることになる。
+呼び出し側はこの処理を一瞬で実行するが、ポストされた関数オブジェクトが実際にいつ実行されるかは分からない。
 
-`java.awt.EventQueue` + `SwingUtilities.invokeLater` 相当を露出する。
-別スレッドから UI を触る唯一の正規の手段。これが無いとバックグラウンド処理の結果を画面に反映できない。
+本来の使い方ではないが、そのイベントループの最後に処理を実行しなければならないときにも使える。
+（なので、この処理はUIスレッドから呼ばれても動作するように実装される必要がある）
 
-awt 層に `EventQueue` を置き、framework の `Application` がそれを所有して `invokeLater` / `invokeAndWait` を生やす二段構成。
-内部実装は GLFW の `glfwPostEmptyEvent()` で UI スレッドを起こすパターン:
-
-* awt-c に thread-safe な task queue（mutex + 連結リスト）
-* `nmEventQueuePost(fn, user_data)` で enqueue + `glfwPostEmptyEvent()`
-* メインループが events のあとに queue を drain して task を実行
-* `invokeAndWait` は condition variable で完了待ち
-
-`invokeAndWait` は **別スレッドから呼ぶ前提**。UI スレッド自身から呼ぶと「自分の完了を自分で待つ」＝デッドロックなので、Swing / Qt と同様に assert / error で弾く。
-用途は SwingWorker 相当（バックグラウンドで計算 → 結果を UI に反映して呼び出し元はその完了を待つ）。
-
-task の所有権: C ABI 層では `void*` をそのまま渡す。Zig 側では closure を Application の allocator に確保して、実行後に解放するラッパーで隠す。
+#### イベントキューへのポストと同期
+「イベントキューへのポスト」に加えて、実際にそのイベントが処理されるまで呼び出し側をブロックさせたいこともある。
+この処理はUIスレッドで実行してはいけない。
 
 ### 座標系
-
 int32 ではなく、 float で管理する。
 
-### 頂点の winding
-
-front face は CCW（反時計回り、OpenGL / Vulkan / Metal のデフォルトと同じ）として規定する。
-nimbus は GUI 用途で back-face culling を行わないので winding は描画結果に影響しないが、規約を明示しておくことで shader ユーティリティや将来のバックエンド設定に一貫性を持たせる。
-DX12 バックエンドは PSO の `FrontCounterClockwise = TRUE` を指定する（D3D12 のデフォルトは CW front なので明示反転が必要）。
+### 頂点の巻き方
+頂点は反時計回りで並べる。
+どの描画バックエンドでもこの規則に従う。
 
 ### 画像 / テクスチャ
-
-GUI 用途なので DXT/ASTC/BCn のような GPU 圧縮形式はサポートしない。
-サポートする形式は **PNG / JPEG / GIF(静止画) / BMP** で、デコーダは **zigimg**（純 Zig）を `vendor/zigimg/` に subtree で展開する。
-アニメ GIF / SVG / WebP は v1 では対応しない。必要になったら追加で考える。
-
-zigimg を選ぶ理由:
-* 純 Zig 実装で C 依存なし → クロスコンパイル制約と相性 ◎（awt-c の C ビルドに同居させる必要がない）
-* 画像デコードは GPU と無関係 → **awt 層で完結** すべき責務。awt-c に decode 関数を生やさない
-* `@embedFile` で得たバイト列を `std.io.fixedBufferStream` 経由で直接 decode する API になじむ
-
-ビルトインアイコン（チェックボックス、ラジオボタン背景、スクロール矢印 等）は Zig の `@embedFile` で `.rodata` に焼き込む。
-生 PNG のまま埋め込み、初回参照時に zigimg でデコード → GPU upload → キャッシュ。L&F 切替時はキャッシュをクリアする（or L&F ごとに別キャッシュ）。
-
-ユーザー提供画像（`Image.fromFile("foo.png")` 相当）は別系統で、こちらは普通のランタイム読み込み。
+以下の形式をサポートする。
+* PNG
+* JPEG
+* GIF(静止画)
+* BMP
 
 ### フォント
+少なくとも以下の形式をサポートする。
+* ttf
 
-freetype でレンダリング。フォントファイルは `framework/assets/fonts/` 配下に vendored して `@embedFile` で埋め込む。
+システムに存在するフォントの読み込みのサポートは必須ではない。（してもいいが、優先度低い）
 
-デフォルトフォントは **Noto Sans (Latin) + Noto Sans CJK JP (日本語)** を採用。両方 **OFL 1.1** ライセンス。
-Swing と違ってシステムフォントを使わず埋め込みにする理由は、システムフォント列挙を Windows (DirectWrite) / Mac (Core Text) / Linux (fontconfig) の 3 バックエンドで実装するのが「そこまで頑張りたくない」領域だから。代わりに **「何もしなくても日本語が出る」Swing 体験** を維持する。
+### ビルトインアセット
+以下のような主要なテクスチャをビルトインでサポートする。
+バイナリに埋め込むなどして、利用者がすぐ使えるような状態で提供する。
+* Open
+* Save
+* SaveAs
+* Undo
+* Redo
+* Cut
+* Copy
+* Paste
 
-OFL 1.1 は再配布物にライセンス文を含めることを要求するので、`framework/assets/fonts/OFL.txt` も一緒に vendored する。
-パワーユーザー向けには `Application.setDefaultFont(path)` でファイル差し替えを許可する（"C:\Windows\Fonts\meiryo.ttc" 等を渡せる）。
+まだどれにするか決まっていないが、主要な言語をサポートするフォントをビルトインで組み込みたい。
+ただし、できればライセンスには注意が必要。
+nimbus はビルトインフォントを埋め込み、 アプリ起動時に何もしなくても主要言語が表示される状態が理想。
+※ちなみに、NotoSansなどはライセンスが厳しくなく、日本語にも対応しているので、現時点での採用候補。
 
-ライセンス露出は **`nimbus.licenses()`** API で、組込み資産の attribution 文字列を返す設計にする。アプリ側で About ダイアログ等から表示する想定。
-
-システムフォント列挙 API（`getAvailableFontFamilyNames` 相当）は v1 のスコープ外。将来必要になったら DirectWrite / Core Text / fontconfig を後付けする余地は残す。
-
-### フォントのラスタライズと描画
-
-テキスト描画は **グリフアトラス + バッチドロー** で実装する。
-awt-c 層に専用プリミティブは持たない（`nmDrawFont` のような API は作らない）。awt-c は freetype ラッパとして「指定 codepoint をビットマップにラスタライズする API」だけを提供し、アトラス管理・テキスト VB 構築・描画は awt 層が `nmBuffer` / `nmPipeline` / `nmDraw` を組み合わせて実現する。
-
-**アトラス**: R8 (8bit grayscale) 単一テクスチャ（例: 2048×2048）。
-新しい `(font, size, codepoint)` を見た時だけ freetype でラスタライズ → shelf packing でアトラスに配置 → glyph cache に `{uv_rect, bearing_x, bearing_y, advance_x}` を記録。一度焼いたグリフは使い回す。
-アトラスが満杯になったら **全クリアして再構築** で十分（GUI なら同じグリフを使い回すので定常状態に落ちる）。フラグメンテーション対策は v1 では不要。
-
-**描画**: テキスト文字列 → glyph 列 → 各 glyph を quad（2 三角形）として一つの VB に積む → 1 draw call で出す。
-頂点ごとに「絶対画面座標」と「アトラス内 UV」を焼くので、シェーダーは固定の「アトラスから R 値サンプル → カラー uniform と乗算」で済む。テクスチャ切替も不要（アトラス bind しっぱなし）。
-
-**VB の更新方針**: テキスト変更時は **フル rebuild**。partial update は実装しない。
-理由は、典型 GUI スケール（label 数文字 〜 textfield 数百文字）なら memcpy + cursor 累積で **サブマイクロ秒〜数マイクロ秒** で済むため。UPLOAD heap + persistent mapping を使えば「mapped ポインタへの memcpy」だけで更新できる。
-TextField の毎キーストロークでフル rebuild しても問題ない。TextArea のような長文ケースは行 chunk 分割 + viewport カリングが要るが、v1 では考えない。
-
-**スコープ外（v1）**:
-- LCD subpixel AA（grayscale 一択。回転やアニメに弱く、現代の Web/モバイルも grayscale に倒れている）
-- HarfBuzz による complex script shaping（CJK は codepoint→glyph がほぼ 1:1 で動く。アラビア・インド系・絵文字結合等は v1 非対応）
-- glyph prewarming API（on-demand で十分。必要になったら `Font.prewarm(...)` を後付け）
-- フレーム全体のテキスト VB 統合（Skia 風の frame-level batcher）。v1 はコンポーネント単位の VB キャッシュで十分
+その場合はフォント自体のライセンスも nimbus で作られたアプリを配布する際同梱しなければならない。
+ライセンス一覧を列挙するためのAPIがあると便利かもしれない。
 
 ### 文字コード
+公開APIでは UTF-8 に統一する。
 
-公開 API はすべて **UTF-8 一本**。内部表現も UTF-8 で持ち、freetype に渡す直前で 1 codepoint ずつデコードする。
+#### 書記素クラスタ
+テキストフィールド、テキストエリアでは書記素クラスタ単位の挿入、削除、カーソル移動が必須。
+ただし、初版ではコードポイント単位でよしとする。
+（書記素クラスタ単位に簡単に移行できるよう、直接バイト位置に依存しない実装をしたい）
 
-選定理由:
-* Zig の文字列リテラルが UTF-8
-* GLFW のクリップボード・タイトル・drag&drop が全部 UTF-8
-* ファイル I/O も UTF-8 が現代標準
-* freetype は最終的に UTF-32 codepoint しか見ないので、どの内部表現を選んでもデコードは要る
-
-プラットフォーム境界での変換:
-* **Windows Win32**: UTF-16 (wchar_t) のため UTF-8 ↔ UTF-16 変換が要る。GLFW が内部でやってくれるので、awt-c が直接 Win32 を触る箇所（ウィンドウタイトル、クリップボード、ファイルダイアログ）でだけ気にする
-* **Mac Cocoa**: NSString は UTF-8 を受け付けるので透過
-* **freetype**: `FT_ULong` (UTF-32 codepoint) を渡す
-
-#### v1 のスコープと将来計画
-
-| 問題 | v1 でやる? | 備考 |
-|---|---|---|
-| codepoint 境界での backspace / cursor 移動 | やる | UTF-8 を「直前の 1 codepoint」単位で扱う |
-| **書記素クラスタ (grapheme cluster) 単位の編集** | **v1 では codepoint 単位、将来 TextField で対応** | "é" = e + 結合アクセント、絵文字 + ZWJ + 絵文字、絵文字 + スキントーン等を 1 編集単位として扱う。UAX #29 のテーブル or libgrapheme 相当が要る |
-| Unicode 正規化 (NFC/NFD) | やらない | 入力バイト列をそのまま保持 |
-| BiDi (Hebrew/Arabic 右→左) | やらない | LTR 限定。後付けの余地は残す |
-| IME composition string | 受信のみ | GLFW の char callback は確定後しか来ない。変換中の inline 表示は v1 非対応 |
-
-**TextField の編集は最終的に書記素クラスタ単位を目指す**。 v1 は codepoint 単位で割り切るが、API 設計時から「将来 grapheme 単位に差し替える」前提で、`countCharacters` / `deleteBackward` 等は実装詳細を隠した抽象 API にしておく（バイト index を直接公開しない）。
+左から右に書く言語だけをサポートする。
+IME対応も必須だが、これも初版では完全でなくてもよしとする。
+特に composition string の inline 表示 (TextField 内に変換中の文字を直接表示する挙動) は、 Swing も対応していることから優先度高で取り組みたい。
 
 ### エラーのC_ABIでの表現
-
 NULLを返し、内部エラーを `GetLastError()` のように取得できるようにする。
 
 ```.zig
@@ -346,12 +317,11 @@ fn errorToCode(err: anyerror) c_int {
 }
 ```
 
-#### Create 関数の失敗時セマンティクス
+#### 関数の失敗時の保証
+`nmCreateXxx` 系の関数が NULL を返した場合、その関数内で確保したリソースはすべて関数内で解放されている。
+利用者は失敗時に何も後片付けする必要はない（NULL に対して `nmDestroyXxx` を呼ぶ必要も無いし、呼んではいけない）。
 
-`nmCreateXxx` 系の関数が NULL を返した場合、**その関数内で確保したリソースはすべて関数内で解放されている**。利用者は失敗時に何も後片付けする必要はない（NULL に対して `nmDestroyXxx` を呼ぶ必要も無いし、呼んではいけない）。
-
-これは「強い例外保証 (strong exception guarantee)」相当で、`nmCreateXxx` は **all-or-nothing**:
-* 成功 → 有効な non-NULL ポインタを返す。利用者は `nmDestroyXxx` を呼んで解放する責任を負う。
-* 失敗 → NULL を返す。関数呼び出しの前後でリソース状態は実質変わらない。
-
-ただし「システム全体の完全な状態リストア」は保証しない。たとえば device の初期化中に debug layer の有効化に成功した後で別の段階が失敗した場合、debug layer の有効化を取り消すような巻き戻しはしない。あくまで **この関数呼び出しが新規に確保したオブジェクトのみ** 解放する。
+ただし「システム全体の完全な状態リストア」は保証しない。
+たとえばデバイスの初期化中にデバッグレイヤーの有効化に成功した後で別の段階が失敗した場合、
+デバッグレイヤーの有効化を取り消すような巻き戻しはしない。
+あくまで この関数呼び出しが新規に確保したオブジェクトのみ解放する。
