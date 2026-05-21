@@ -3,9 +3,10 @@
 シェーダー、ルートシグネチャ、頂点入力レイアウト、各種ステートを束ねた描画パイプライン。
 
 ## 型定義
+```c
 typedef enum nmVertexLayout {
-    nmVertexLayoutVertex2D,           /* (x, y) */
-    nmVertexLayoutVertexTexCoord2D,   /* (x, y, u, v) */
+    nmVertexLayoutVertex2D,
+    nmVertexLayoutVertexTexCoord2D,
 } nmVertexLayout;
 
 typedef enum nmPrimitiveTopology {
@@ -15,20 +16,20 @@ typedef enum nmPrimitiveTopology {
 } nmPrimitiveTopology;
 
 typedef enum nmBlendMode {
-    nmBlendModeNone,                  /* 不透明描画 */
-    nmBlendModeAlpha,                 /* 通常のアルファ合成 */
-    nmBlendModePremultipliedAlpha,    /* 事前乗算アルファ */
+    nmBlendModeNone,
+    nmBlendModeAlpha,
+    nmBlendModePremultipliedAlpha,
 } nmBlendMode;
 
 typedef enum nmStencilOp {
-    nmStencilOpKeep,                  /* 値を保持 */
-    nmStencilOpZero,                  /* 0 にする */
-    nmStencilOpReplace,               /* 参照値で上書き */
-    nmStencilOpIncrementSat,          /* +1 (オーバーフロー時は飽和) */
-    nmStencilOpDecrementSat,          /* -1 (アンダーフロー時は飽和) */
-    nmStencilOpInvert,                /* ビット反転 */
-    nmStencilOpIncrementWrap,         /* +1 (オーバーフロー時は wrap) */
-    nmStencilOpDecrementWrap,         /* -1 (アンダーフロー時は wrap) */
+    nmStencilOpKeep,
+    nmStencilOpZero,
+    nmStencilOpReplace,
+    nmStencilOpIncrementSat,
+    nmStencilOpDecrementSat,
+    nmStencilOpInvert,
+    nmStencilOpIncrementWrap,
+    nmStencilOpDecrementWrap,
 } nmStencilOp;
 
 typedef enum nmCompareFunc {
@@ -43,82 +44,102 @@ typedef enum nmCompareFunc {
 } nmCompareFunc;
 
 typedef struct nmStencilState {
-    int enable;                       /* 0 ならステンシルテスト無効 */
-    nmStencilOp fail_op;              /* ステンシルテスト失敗時の操作 */
-    nmStencilOp depth_fail_op;        /* 深度テスト失敗時の操作 (深度バッファ無いので常に Keep) */
-    nmStencilOp pass_op;              /* 両方成功時の操作 */
-    nmCompareFunc compare_func;       /* 比較関数 */
-    uint8_t read_mask;                /* 比較時の AND マスク */
-    uint8_t write_mask;               /* 書き込み時の AND マスク */
+    bool          enable;
+    nmStencilOp   fail_op;
+    nmStencilOp   depth_fail_op;
+    nmStencilOp   pass_op;
+    nmCompareFunc compare_func;
+    uint8_t       read_mask;
+    uint8_t       write_mask;
 } nmStencilState;
 
 typedef struct nmPipelineDesc {
-    nmRootSignature* root_signature;
-    nmShader* vertex_shader;
-    nmShader* pixel_shader;
-    nmVertexLayout vertex_layout;
+    nmRootSignature*    root_signature;
+    nmShader*           vertex_shader;
+    nmShader*           pixel_shader;
+    nmVertexLayout      vertex_layout;
     nmPrimitiveTopology topology;
-    nmBlendMode blend;
-    nmStencilState stencil;
-    int color_write_enable;           /* 0 ならカラー書き込み無効 (マスク書き込み用) */
+    nmBlendMode         blend;
+    nmStencilState      stencil;
+    bool                color_write_enable;
 } nmPipelineDesc;
 
 typedef struct nmPipeline nmPipeline;
+```
 
-内部実装に関する知識は外部に漏らさない。
-awt の内部で定義された抽象化済みの型については保持しても構わない。
+`nmVertexLayout` の各値は以下の頂点フォーマットを表す。
+* `nmVertexLayoutVertex2D`: `(x, y)`
+* `nmVertexLayoutVertexTexCoord2D`: `(x, y, u, v)`
 
-ここには、コンパイル済みのパイプラインステートを保持する。
-たとえば、以下のようなものです。
-* ID3D12PipelineState
-
-### 頂点フォーマットについて
-`nmVertexLayout` は決め打ちの 2 種類のみ。
 利用者が任意の頂点フォーマットを定義することはできない。
 新しいレイアウトが必要になったら enum に追加する。
 
-### winding と culling
-front face は **CCW**（反時計回り）として規定する。
-back-face culling は行わない（`CullMode = NONE`）。
-winding は描画結果に影響しないが、規約として CCW を front とする。
-DX12 では `FrontCounterClockwise = TRUE` を指定して D3D デフォルト（CW front）を反転させる。
+`nmBlendMode` の各値の用途は以下。
+* `nmBlendModeNone`: 不透明描画
+* `nmBlendModeAlpha`: 通常のアルファ合成
+* `nmBlendModePremultipliedAlpha`: 事前乗算アルファ
 
-### depth_fail_op について
-現状の nimbus は深度バッファを持たないため、`depth_fail_op` は実際には発火しない。
-2D 描画で使う pipeline には常に `nmStencilOpKeep` を指定すること。
-将来 depth サポートを入れる時に意味を持つ。
+`nmStencilOp` の各値の意味は以下。
+* `nmStencilOpKeep`: 値を保持
+* `nmStencilOpZero`: 0 にする
+* `nmStencilOpReplace`: 参照値で上書き
+* `nmStencilOpIncrementSat` / `nmStencilOpDecrementSat`: ±1 (オーバー・アンダーフロー時は飽和)
+* `nmStencilOpInvert`: ビット反転
+* `nmStencilOpIncrementWrap` / `nmStencilOpDecrementWrap`: ±1 (オーバー・アンダーフロー時は wrap)
 
-### color_write_enable について
-ステンシルマスクを書く pipeline では、カラーを画面に出さずステンシルだけ更新したい。
-このとき `color_write_enable = 0` にして、カラー書き込みを無効化する。
-通常の描画 pipeline では `color_write_enable = 1`。
+`nmStencilState` の各メンバの意味は以下。
+* `enable`: `false` ならステンシルテスト無効
+* `fail_op`: ステンシルテスト失敗時の操作
+* `depth_fail_op`: 深度テスト失敗時の操作 (現状は深度バッファ無いため常に `nmStencilOpKeep` を指定)
+* `pass_op`: 両方成功時の操作
+* `compare_func`: 比較関数
+* `read_mask`: 比較時の AND マスク
+* `write_mask`: 書き込み時の AND マスク
 
-### マスク描画の典型パターン
-ステンシルマスクを使ったクリッピングは、次の 2 つの pipeline を用意することで実現する。
+`nmPipelineDesc` の `color_write_enable` は、`false` でカラー書き込みを無効化する (ステンシルマスク書き込み用)。
+通常の描画では `true` を指定する。
 
-**Write 用 pipeline**: マスク形状を描いてステンシルに書き込む（カラーは出さない）。
-* `stencil.enable = 1`
+`nmPipeline` の内部実装に関する知識は外部に漏らさない。
+ここには、コンパイル済みのパイプラインステートを保持する。
+たとえば、以下のようなもの。
+* ID3D12PipelineState
+
+## 巻き方とカリング
+頂点の巻き方は CCW (反時計回り) を front として規定する (CLAUDE.md 参照)。
+back-face culling は行わない (`CullMode = NONE`)。
+巻き方は描画結果に影響しないが、規約として CCW を front とする。
+DX12 では `FrontCounterClockwise = TRUE` を指定して D3D デフォルト (CW front) を反転させる。
+
+## マスク描画の典型パターン
+ステンシルマスクを使ったクリッピングは、次の 2 つのパイプラインを用意することで実現する。
+
+**Write 用パイプライン**: マスク形状を描いてステンシルに書き込む (カラーは出さない)。
+* `stencil.enable = true`
 * `stencil.compare_func = nmCompareFuncAlways`
 * `stencil.pass_op = nmStencilOpReplace`
 * `stencil.fail_op = nmStencilOpKeep`
 * `stencil.depth_fail_op = nmStencilOpKeep`
-* `color_write_enable = 0`
+* `color_write_enable = false`
 
-**Read 用 pipeline**: ステンシルが参照値と一致する場所だけにカラーを描く。
-* `stencil.enable = 1`
+**Read 用パイプライン**: ステンシルが参照値と一致する場所だけにカラーを描く。
+* `stencil.enable = true`
 * `stencil.compare_func = nmCompareFuncEqual`
 * `stencil.pass_op = nmStencilOpKeep`
 * `stencil.fail_op = nmStencilOpKeep`
 * `stencil.depth_fail_op = nmStencilOpKeep`
-* `color_write_enable = 1`
+* `color_write_enable = true`
 
 参照値は `nmSetStencilRef` で per-draw で設定する。
 
 ## パイプラインの生成
 nmPipeline* nmCreatePipeline(nmDevice* device, const nmPipelineDesc* desc);
 
-descriptor からパイプラインを生成する。
+`desc` の内容からパイプラインを生成する。
 失敗時は `NULL` を返す。
+
+### 事前条件
+* `desc->root_signature` / `desc->vertex_shader` / `desc->pixel_shader` がいずれも有効な (破棄されていない) オブジェクトであること。違反した場合の動作は UB。
+* `desc->vertex_shader` の入力レイアウトが `desc->vertex_layout` と一致していること。違反した場合の動作は UB。
 
 ## パイプラインの破棄
 void nmDestroyPipeline(nmPipeline* self);
@@ -126,15 +147,28 @@ void nmDestroyPipeline(nmPipeline* self);
 パイプラインを破棄する。
 以後引数の `self` が使用可能であるかどうかは保証されない。
 
-## パイプラインの bind
+### 事前条件
+* `self` が NULL のとき、なにも実行せずに終了する。
+
+## パイプラインのバインド
 void nmBindPipeline(nmCommandBuffer* self, nmPipeline* pipeline);
 
-記録中のコマンドバッファに対し、`pipeline` を bind する。
-以降のドローコールは bind された pipeline で描画される。
+記録中のコマンドバッファに対し、`pipeline` をバインドする。
+以降のドローコールはバインドされたパイプラインで描画される。
+
+### 事前条件
+* `self` に対して `nmBeginCommandBuffer` が呼ばれていること。違反した場合の動作は UB。
 
 ## ステンシル参照値の設定
 void nmSetStencilRef(nmCommandBuffer* self, uint32_t value);
 
 記録中のコマンドバッファに対し、ステンシル参照値を設定する。
 `nmStencilOpReplace` で書き込む値、`nmCompareFuncEqual` 等で比較される値として使われる。
-draw の前に毎回呼べる（per-draw）。
+draw の前に毎回呼べる (per-draw)。
+
+### 事前条件
+* `self` に対して `nmBeginCommandBuffer` が呼ばれていること。違反した場合の動作は UB。
+
+## 機能要望
+* 新しい頂点レイアウトの追加 (現状は 2 種類固定)。
+* 深度バッファのサポート (現状は深度テストが無いため `nmStencilState.depth_fail_op` は実質発火しない)。
