@@ -108,6 +108,13 @@ void nmSetScissor(nmCommandBuffer* self, int x, int y, int width, int height);
 void nmClearRenderTarget(nmCommandBuffer* self, float r, float g, float b, float a);
 void nmClearStencil(nmCommandBuffer* self, uint8_t value);
 
+/* Read back the current contents of an offscreen render target into a
+ * caller-supplied buffer as tightly-packed RGBA8 (channel order normalized
+ * regardless of the underlying GPU format). Blocking: synchronizes with the
+ * GPU. Intended for tests / snapshots; not for the render hot path. Returns 0
+ * on success, non-zero on failure. */
+int nmReadbackRenderTarget(nmRenderTarget* self, void* out_rgba, size_t out_size);
+
 /* ─── Shader ──────────────────────────────────────────────────────────── */
 
 typedef enum nmShaderStage {

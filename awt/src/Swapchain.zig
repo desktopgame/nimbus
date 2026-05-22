@@ -29,7 +29,7 @@ pub fn resize(self: Swapchain, width: i32, height: i32) !void {
 
 pub fn getTarget(self: Swapchain) RenderTarget {
     const h = c.nmGetSwapchainTarget(self.handle).?;
-    return .{ .handle = h };
+    return RenderTarget.fromBorrowed(h);
 }
 
 pub fn present(self: Swapchain) void {

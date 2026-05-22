@@ -48,6 +48,9 @@ void nmClearRenderTarget(nmCommandBuffer* self, float r, float g, float b, float
 void nmClearStencil(nmCommandBuffer* self, uint8_t value) {
     (void)self; (void)value;
 }
+int nmReadbackRenderTarget(nmRenderTarget* self, void* out_rgba, size_t out_size) {
+    (void)self; (void)out_rgba; (void)out_size; return -1;
+}
 
 /* ─── Stage 2 stubs ───────────────────────────────────────────────────── */
 

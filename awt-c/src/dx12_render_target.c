@@ -220,4 +220,131 @@ void nmClearStencil(nmCommandBuffer* self, uint8_t value) {
         D3D12_CLEAR_FLAG_STENCIL, 1.0f, value, 0, NULL);
 }
 
+int nmReadbackRenderTarget(nmRenderTarget* self, void* out_rgba, size_t out_size) {
+    if (!self || !out_rgba || !self->owner || !self->color_resource) {
+        nm_log(nmLogLevelError, "render_target",
+            "nmReadbackRenderTarget: invalid argument");
+        return -1;
+    }
+    if (self->is_swapchain_owned) {
+        nm_log(nmLogLevelError, "render_target",
+            "nmReadbackRenderTarget: swapchain-owned target is not supported");
+        return -1;
+    }
+
+    nmDevice* dev = self->owner;
+    const UINT width = (UINT)self->width;
+    const UINT height = (UINT)self->height;
+    const size_t required = (size_t)width * (size_t)height * 4u;
+    if (out_size < required) {
+        nm_log(nmLogLevelError, "render_target",
+            "nmReadbackRenderTarget: out_size %zu < required %zu",
+            out_size, required);
+        return -1;
+    }
+
+    /* Query the copyable layout (placed footprint) of subresource 0. The row
+     * pitch returned here is rounded up to D3D12_TEXTURE_DATA_PITCH_ALIGNMENT
+     * (256), which we must use when copying out of the readback heap. */
+    D3D12_RESOURCE_DESC src_desc;
+    self->color_resource->lpVtbl->GetDesc(self->color_resource, &src_desc);
+
+    D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint;
+    UINT   num_rows = 0;
+    UINT64 row_size_bytes = 0;
+    UINT64 total_bytes = 0;
+    ID3D12Device_GetCopyableFootprints(dev->device, &src_desc,
+        0, 1, 0, &footprint, &num_rows, &row_size_bytes, &total_bytes);
+
+    /* Allocate a one-shot readback heap buffer sized to the placed footprint. */
+    D3D12_HEAP_PROPERTIES hp;
+    memset(&hp, 0, sizeof(hp));
+    hp.Type = D3D12_HEAP_TYPE_READBACK;
+
+    D3D12_RESOURCE_DESC bd;
+    memset(&bd, 0, sizeof(bd));
+    bd.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+    bd.Width = total_bytes;
+    bd.Height = 1;
+    bd.DepthOrArraySize = 1;
+    bd.MipLevels = 1;
+    bd.Format = DXGI_FORMAT_UNKNOWN;
+    bd.SampleDesc.Count = 1;
+    bd.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    bd.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+    ID3D12Resource* readback = NULL;
+    if (FAILED(ID3D12Device_CreateCommittedResource(dev->device, &hp,
+            D3D12_HEAP_FLAG_NONE, &bd,
+            D3D12_RESOURCE_STATE_COPY_DEST, NULL,
+            &IID_ID3D12Resource, (void**)&readback))) {
+        nm_log(nmLogLevelError, "render_target",
+            "nmReadbackRenderTarget: readback heap allocation failed");
+        return -1;
+    }
+
+    /* Acquire a CB from the pool, transition RT -> COPY_SOURCE, copy, then
+     * transition back so subsequent paints find the RT in its prior state. */
+    nmCommandBuffer* cb = nmAcquireCommandBuffer(dev);
+    if (!cb) {
+        ID3D12Resource_Release(readback);
+        return -1;
+    }
+    nmBeginCommandBuffer(cb);
+
+    const D3D12_RESOURCE_STATES prev_state = self->color_state;
+    nm_transition(cb, self, D3D12_RESOURCE_STATE_COPY_SOURCE);
+
+    D3D12_TEXTURE_COPY_LOCATION src;
+    memset(&src, 0, sizeof(src));
+    src.pResource = self->color_resource;
+    src.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+    src.SubresourceIndex = 0;
+
+    D3D12_TEXTURE_COPY_LOCATION dst;
+    memset(&dst, 0, sizeof(dst));
+    dst.pResource = readback;
+    dst.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+    dst.PlacedFootprint = footprint;
+
+    ID3D12GraphicsCommandList_CopyTextureRegion(cb->list, &dst, 0, 0, 0, &src, NULL);
+
+    nm_transition(cb, self, prev_state);
+
+    nmEndCommandBuffer(cb);
+    nmSubmitCommandBuffer(cb, dev);
+    nmWaitForCommandBuffer(cb);
+    nmReleaseCommandBuffer(cb);
+
+    /* Map and copy out row-by-row, dropping the per-row pitch padding. The
+     * underlying format is NM_COLOR_FORMAT (R8G8B8A8_UNORM) so the channel
+     * order already matches the public RGBA8 contract — no swizzle needed. */
+    void* mapped = NULL;
+    D3D12_RANGE read_range;
+    read_range.Begin = 0;
+    read_range.End = (SIZE_T)total_bytes;
+    if (FAILED(ID3D12Resource_Map(readback, 0, &read_range, &mapped))) {
+        nm_log(nmLogLevelError, "render_target",
+            "nmReadbackRenderTarget: readback Map failed");
+        ID3D12Resource_Release(readback);
+        return -1;
+    }
+
+    const uint8_t* src_bytes = (const uint8_t*)mapped + (size_t)footprint.Offset;
+    uint8_t* dst_bytes = (uint8_t*)out_rgba;
+    const size_t row_bytes = (size_t)width * 4u;
+    const size_t src_pitch = (size_t)footprint.Footprint.RowPitch;
+    for (UINT y = 0; y < height; y++) {
+        memcpy(dst_bytes + (size_t)y * row_bytes,
+               src_bytes + (size_t)y * src_pitch,
+               row_bytes);
+    }
+
+    D3D12_RANGE write_range = { 0, 0 };
+    ID3D12Resource_Unmap(readback, 0, &write_range);
+    ID3D12Resource_Release(readback);
+
+    return 0;
+}
+
 #endif /* _WIN32 */

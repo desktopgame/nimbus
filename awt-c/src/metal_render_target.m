@@ -139,4 +139,86 @@ void nmClearStencil(nmCommandBuffer* self, uint8_t value) {
     self->pending_clear_stencil = (uint32_t)value;
 }
 
+int nmReadbackRenderTarget(nmRenderTarget* self, void* out_rgba, size_t out_size) {
+    if (!self || !out_rgba || !self->owner || !self->color) {
+        nm_log(nmLogLevelError, "render_target",
+            "nmReadbackRenderTarget: invalid argument");
+        return -1;
+    }
+    if (self->is_swapchain_owned) {
+        nm_log(nmLogLevelError, "render_target",
+            "nmReadbackRenderTarget: swapchain-owned target is not supported");
+        return -1;
+    }
+
+    nmDevice* dev = self->owner;
+    const NSUInteger width = (NSUInteger)self->width;
+    const NSUInteger height = (NSUInteger)self->height;
+    const size_t required = (size_t)width * (size_t)height * 4u;
+    if (out_size < required) {
+        nm_log(nmLogLevelError, "render_target",
+            "nmReadbackRenderTarget: out_size %zu < required %zu",
+            out_size, required);
+        return -1;
+    }
+
+    int result = -1;
+    @autoreleasepool {
+        const NSUInteger row_bytes = width * 4u;
+        const NSUInteger total = row_bytes * height;
+
+        /* Shared staging so the CPU can read the bytes after the blit. */
+        id<MTLBuffer> staging = [dev->device newBufferWithLength:total
+                                                         options:MTLResourceStorageModeShared];
+        if (!staging) {
+            nm_log(nmLogLevelError, "render_target",
+                "nmReadbackRenderTarget: staging buffer allocation failed");
+            return -1;
+        }
+
+        id<MTLCommandBuffer> cb = [dev->queue commandBuffer];
+        if (!cb) {
+            nm_log(nmLogLevelError, "render_target",
+                "nmReadbackRenderTarget: command buffer allocation failed");
+            [staging release];
+            return -1;
+        }
+
+        id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
+        [blit copyFromTexture:self->color
+                  sourceSlice:0
+                  sourceLevel:0
+                 sourceOrigin:MTLOriginMake(0, 0, 0)
+                   sourceSize:MTLSizeMake(width, height, 1)
+                     toBuffer:staging
+            destinationOffset:0
+       destinationBytesPerRow:row_bytes
+     destinationBytesPerImage:total];
+        [blit endEncoding];
+
+        [cb commit];
+        [cb waitUntilCompleted];
+
+        /* NM_COLOR_FORMAT is BGRA8Unorm; the public contract is RGBA8 so we
+         * swizzle R<->B on copy. */
+        const uint8_t* src = (const uint8_t*)[staging contents];
+        uint8_t* dst = (uint8_t*)out_rgba;
+        const size_t pixel_count = (size_t)width * (size_t)height;
+        for (size_t i = 0; i < pixel_count; i++) {
+            const uint8_t b = src[i * 4 + 0];
+            const uint8_t g = src[i * 4 + 1];
+            const uint8_t r = src[i * 4 + 2];
+            const uint8_t a = src[i * 4 + 3];
+            dst[i * 4 + 0] = r;
+            dst[i * 4 + 1] = g;
+            dst[i * 4 + 2] = b;
+            dst[i * 4 + 3] = a;
+        }
+
+        [staging release];
+        result = 0;
+    }
+    return result;
+}
+
 #endif /* __APPLE__ */
