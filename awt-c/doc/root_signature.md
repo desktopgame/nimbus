@@ -39,19 +39,15 @@ nimbus は static sampler 方式を採用しており、サンプラーは利用
 nimbus が生成する全てのルートシグネチャには、固定の 4 種のサンプラーが自動で組み込まれる。
 詳細は `sampler.md` を参照。
 
-## 内部実装方針
-`nmRootBindingType` の各種類は、内部で次のようにマップされる。
-利用者は意識する必要はない。
+## 設計要件
+ルートシグネチャの API 形状とバインディングの抽象は、以下を満たすように設計する。
+内部の具体的な実装方針 (各バックエンドでどの構文を採用するか等) は、これらの要件から自然に導けるようにする。
 
-| バインディング種別 | DX12 実装 | Vulkan 実装 (将来) | Metal 実装 (将来) |
-|---|---|---|---|
-| ConstantBuffer | Root CBV (heap 経由しない) | Buffer Device Address または Dynamic Uniform Buffer | setBuffer:offset:atIndex: |
-| Texture | Descriptor Table (size 1、heap 経由) | descriptor set または bindless | setTexture:atIndex: |
-| (Sampler) | Static Sampler (root signature 内蔵) | immutable sampler | static MTLSamplerState |
-
-DX12 ではテクスチャの SRV を root に直接置けない (Root SRV は buffer SRV のみ) ため、descriptor heap が必須。
-descriptor heap は device が内部管理する (`device.md` 参照)。
-他のプラットフォームでは heap 概念自体がないため、より素直な実装になる。
+* **GUI 用途に十分**: バインディングパターンの種類は少数で足り、汎用 3D シーン向けの複雑な descriptor 抽象は不要。バインディングは「定数バッファ」「テクスチャ」「static sampler (固定)」の 3 種で打ち止め。
+* **定数バッファはホットパス**: 定数バッファは draw ごとに更新 / 差し替えされる前提で、間接層を最小化したい。
+* **テクスチャの少数バインド**: 1 つの draw で参照するテクスチャは少数 (典型 1 枚) で、descriptor の動的更新は限定的でよい。
+* **サンプラーは利用者の関心外**: 静的に固定する設計 (`sampler.md` 参照) のため、ルートシグネチャの API にサンプラー種別は登場しない。
+* **複数バックエンドへのマップが平易**: DX12 / Metal / Vulkan などにそのまま流せる粒度に留め、各バックエンドが持つ最も素直な構文 (定数バッファの直接バインド、テクスチャのインデックス指定) に対応できるようにする。複雑な descriptor pool / set / 動的 indexing 等の機能には踏み込まない。
 
 ## ルートシグネチャの生成
 nmRootSignature* nmCreateRootSignature(nmDevice* device, const nmRootBinding* bindings, int count);
