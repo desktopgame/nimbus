@@ -76,7 +76,26 @@ void nmUploadTextureRegion(nmTexture* self, int x, int y, int width, int height,
 void nmBindTexture(nmCommandBuffer* self, nmTexture* texture, int slot);
 
 記録中のコマンドバッファに対し、`texture` を `slot` 番にバインドする。
-シェーダー側では `Texture2D` を `register(t<slot>)` で参照する。
+
+バインドされたテクスチャは、DX12 ではシェーダー中の以下に対応するリソースである。
+サンプラーは `sampler.md` で説明している通り static sampler として組み込まれているので、利用者が個別にバインドする必要はない。
+```hlsl
+Texture2D    g_tex   : register(t0);
+SamplerState g_samp  : register(s0);
+
+float4 psMain(VsOut in) : SV_TARGET {
+    return g_tex.Sample(g_samp, in.uv);
+}
+```
+
+Metal では以下のように表現される。
+```metal
+fragment float4 psMain(VsOut in [[stage_in]],
+                       texture2d<float> tex [[texture(0)]],
+                       sampler samp        [[sampler(0)]]) {
+    return tex.sample(samp, in.uv);
+}
+```
 
 シェーダーリソースビューはテクスチャ生成時に device 内部の descriptor heap に登録されており、この関数はそのビューをルートシグネチャの `slot` 番から参照可能にする。
 descriptor heap の構造は API には出ない (利用者が heap やスロット位置を意識する必要はない)。
