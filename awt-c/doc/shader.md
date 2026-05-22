@@ -1,38 +1,58 @@
 # shader
 シェーダーに関する設計ノート。
+頂点シェーダーとピクセルシェーダーをコンパイル / 保持する仕組みを提供する。
 
 ## 型定義
-typedef enum nmShaderStage { nmShaderStageVertex, nmShaderStagePixel } nmShaderStage;
-typedef struct nmShader nmShader;
+```c
+typedef enum nmShaderStage {
+    nmShaderStageVertex,
+    nmShaderStagePixel,
+} nmShaderStage;
 
-内部実装に関する知識は外部に漏らさない。
-awtの内部で定義された抽象化済みの型については保持しても構わない。
-シェーダー種別について、頂点シェーダー、ピクセルシェーダー以外はサポートしない。
+typedef struct nmShader nmShader;
+```
+
+`nmShaderStage` でサポートする種別は頂点シェーダーとピクセルシェーダーのみ。
+ジオメトリ / ハル / ドメイン / コンピュートはサポートしない。
+
+`nmShader` の内部実装に関する知識は外部に漏らさない。
+awt の内部で定義された抽象化済みの型については保持しても構わない。
+ここには、コンパイル済みのシェーダーバイトコードを保持する。
+たとえば、以下のようなもの。
+* DX12 における DXBC バイトコードバッファ
+
+シェーダーソースの言語は現在のプラットフォームに依存する (Windows なら HLSL、macOS なら MSL)。
+複数言語の管理は呼び出し側 (awt 層) の責務。
+
+## エントリ関数名の規約
+シェーダーのエントリ関数名は `stage` ごとに固定し、呼び出し側で指定しない。
+* `nmShaderStageVertex` → `vsMain`
+* `nmShaderStagePixel` → `psMain`
+
+DX12 では `D3DCompile()` にエントリ関数名を要求されるが、nimbus 内部で上記名に固定して隠蔽する。
 
 ## シェーダーのコンパイル
 nmShader* nmCompileShader(nmShaderStage stage, const char* source);
 
-シェーダーをランタイムにコンパイルして生成する。
+`source` のシェーダーをランタイムにコンパイルして生成する。
 失敗時は `NULL` を返す。
-`source` は現在のプラットフォームに対応するシェーダー言語の文字列（Windows なら HLSL、macOS なら MSL）。
-複数言語の管理は呼び出し側（awt 層）の責務。
 
-DirectX12では `D3DCompile()` にmainの関数名を要求されるが、nimbusではこれを統一するので呼び出し側で区別しない。
-シェーダーのエントリ関数名は stage ごとに固定。
-- nmShaderStageVertex → vsMain
-- nmShaderStagePixel → psMain
+### 事前条件
+* `source` が NUL 終端された UTF-8 文字列であること。違反した場合の動作は UB。
 
-コンパイル時にエラーメッセージが得られる場合、それをログシステム（log.mdを参照）に流す。
-
-## シェーダーのロード
-nmShader* nmLoadShader(nmShaderStage stage, const void* binary, size_t size);
-
-コンパイル済みのシェーダーバイナリからロードする。
-失敗時は `NULL` を返す。
-※当面はランタイムのコンパイルで実装するので、これは現時点での草案に過ぎない。
+### 診断情報
+コンパイルに失敗した場合、コンパイラから得られたエラーメッセージを `nmLogLevelError` でログに流す (詳細は `log.md` を参照)。
 
 ## シェーダーの破棄
 void nmDestroyShader(nmShader* self);
 
 シェーダーを破棄する。
 以後引数の `self` が使用可能であるかどうかは保証されない。
+
+### 事前条件
+* `self` が NULL のとき、なにも実行せずに終了する。
+* `self` に依存するパイプラインが残っていないこと。違反した場合の動作は UB。
+
+## 機能要望
+* コンパイル済みバイナリからのロード API: `nmShader* nmLoadShader(nmShaderStage stage, const void* binary, size_t size);`
+  起動時間の短縮や、配布バイナリの実行環境からシェーダーコンパイラ依存を切るためにあると望ましい。
