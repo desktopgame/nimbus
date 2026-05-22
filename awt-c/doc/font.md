@@ -10,6 +10,7 @@ awt-c はグリフ単体のラスタライズと、フォント・グリフの�
 typedef struct nmGlyphMetrics {
     int   bitmap_width;
     int   bitmap_height;
+    int   bitmap_pitch;
     int   bearing_x;
     int   bearing_y;
     float advance_x;
@@ -27,6 +28,7 @@ typedef struct nmFont nmFont;
 
 `nmGlyphMetrics` の各メンバの意味は以下。
 * `bitmap_width` / `bitmap_height`: 出力ビットマップの幅・高さ (pixel)
+* `bitmap_pitch`: ビットマップの行ストライド (バイト)。freetype の都合で `bitmap_width` より大きくなる (行末にパディングが入る) 場合があるため、行間移動には必ずこちらを使う
 * `bearing_x`: pen 位置からビットマップ左端までのオフセット
 * `bearing_y`: baseline からビットマップ上端までのオフセット (上方向が正)
 * `advance_x`: このグリフ描画後の pen 進行量
@@ -93,14 +95,15 @@ void nmGetFontMetrics(nmFont* self, nmFontMetrics* out);
 int nmRasterizeGlyph(nmFont* self, uint32_t codepoint, nmGlyphMetrics* out_metrics, const uint8_t** out_bitmap);
 
 指定 codepoint を現在のピクセルサイズでラスタライズする。
-* `out_metrics`: グリフのメトリクス (ビットマップサイズ・bearing・advance)
-* `out_bitmap`: 8bit grayscale ビットマップへのポインタ (R8 配列、row major、row pitch = `bitmap_width`)
+* `out_metrics`: グリフのメトリクス (ビットマップサイズ・行ストライド・bearing・advance)
+* `out_bitmap`: 8bit grayscale ビットマップへのポインタ (R8 配列、row major)。バッファ全長は `bitmap_pitch * bitmap_height` バイト
 
 成功時は 0 を返す。失敗時 (フォントに glyph が無い等) は非ゼロ。
 
 `*out_bitmap` は freetype 内部のスクラッチバッファを指す。
 同じ `nmFont` に対する次の `nmRasterizeGlyph` 呼び出しで上書きされる。
 利用者は呼び出し直後にアトラスへコピーすること。
+コピーや行間移動の際は `bitmap_width` ではなく `bitmap_pitch` をストライドに使うこと (freetype が行末にパディングを入れる場合がある)。
 
 ### 事前条件
 * `self` に対して `nmSetFontPixelSize` が事前に呼ばれていること。違反した場合の動作は UB。
