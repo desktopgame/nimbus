@@ -29,34 +29,35 @@ pub const Component = struct {
 
 ## プラッガブルな設計
 Component を継承した Button, Label などで VTable を独自に実装する。
-特にカスタマイズしないのであれば、ユーザーはそのまま Button や Label の機能を使える。
-カスタマイズしたいユーザーは自分で VTable を入れ替える必要がある。
+特にカスタマイズしないのであれば、利用者はそのまま Button や Label の機能を使える。
+カスタマイズしたい利用者は自分で VTable を入れ替える必要がある。
 これはルックアンドフィールのような一斉に全てのコンポーネントの VTable を入れ替える処理も想定して設計されている。
 とはいえ、ルックアンドフィールそのものの設計は nimbus では提供しない。
 設計が難しいというのが理由の一つ、
 そしてルックアンドフィールそのものではなくルックアンドフィールを後付けできる程度にカスタマイズポイントを露出しておけば
-ユーザー側でそれは（必要なら）実装することができる、というのがもう一つの理由。
+利用者側でそれは（必要なら）実装することができる、というのがもう一つの理由。
 
-Componentごとに以下のカスタマイズポイントがある。
-- install
-- uninstall
-- paint
-- processEvent
-- destroy
+Component ごとに以下のカスタマイズポイントがある。
+* install
+* uninstall
+* paint
+* processEvent
+* destroy
+
 そしてこれを入れ替えられるなら、その上にルックアンドフィールを載せること自体は可能なはず。
 どんな形でやるかまではいまは判断できない。
 
 (`destroy` は L&F カスタマイズというよりは内部的な責務分担。後述「メモリ解放」を参照。)
 
 ## プロパティ
-VTable によってユーザーが好きな処理を入れられるだけでは不十分な場合もある。
+VTable によって利用者が好きな処理を入れられるだけでは不十分な場合もある。
 例えばコンポーネントが追加で独自の状態を保持して、それがイベントで変化するような場合。
 このような場合のために、 `Component.properties` が存在している。
 
 ## ライフサイクル
 アロケーターで Component を確保、initしたのち、呼び出し側で VTable.install() まで実行すること。
 ただし、ファクトリー経由で Component を生成する場合、内部で必要な処理を実行してくれる。
-なので、一般的なユースケースにおいてはユーザーが気にすることはない。
+なので、一般的なユースケースにおいては利用者が気にすることはない。
 
 factory コード例 (内部):
 
@@ -92,7 +93,7 @@ fn destroy(self: *Component, allocator: std.mem.Allocator) void {
 
 `Component.deinit` 自体はメモリ解放を行わない (uninstall + properties cleanup まで)。
 メモリ解放は `vtable.destroy` の責務。Container.deinit はこれを順番に呼ぶ。
-ファクトリー経由で生成された widget をユーザーが自分で free する場合も
+ファクトリー経由で生成された widget を利用者が自分で free する場合も
 `component.vtable.destroy(&comp, allocator)` を呼ぶのが正規ルート。
 
 ## コンポーネントの列挙
@@ -116,17 +117,17 @@ label.component.setName("submit");
 これは Zig 慣用 (`std.ArrayList` の field 直接アクセスと同じスタンス)。 階層が見える、 ボイラープレートゼロ。
 
 ### なぜ委譲メソッドを置かないか
-Java の感覚だと `setBounds` / `repaint` あたりは「ユーザーが頻繁に呼ぶ」気がするが、 nimbus の API
+Java の感覚だと `setBounds` / `repaint` あたりは「利用者が頻繁に呼ぶ」気がするが、 nimbus の API
 設計だと実際にはそうならない:
 
 | メソッド | 実際の呼び出し主 |
 |---|---|
-| `setBounds` / `getBounds` | **LayoutManager (v2〜)**。 ユーザーは設定しない |
-| `repaint` | **setter が内部で呼ぶ** (`setText` 等)。 ユーザーが直接呼ぶ機会は稀 |
+| `setBounds` / `getBounds` | **LayoutManager (v2〜)**。 利用者は設定しない |
+| `repaint` | **setter が内部で呼ぶ** (`setText` 等)。 利用者が直接呼ぶ機会は稀 |
 | `setName` / `getName` | デバッグ用。 出番少 |
 | `setVTable` / properties | 上級者用、 明示的でいい |
 
-ユーザーが頻繁に呼ぶのは widget 固有 setter (`label.setText`, `label.setColor`) であり、
+利用者が頻繁に呼ぶのは widget 固有 setter (`label.setText`, `label.setColor`) であり、
 親 Component メソッドはほぼ呼ばない。 委譲を生やしても普段使われない上にボイラープレートになる。
 
 将来「本当に頻出と判明したメソッド」が出てきたら、 その時に派生型に委譲を生やす。 デフォルトは **ゼロ**。
@@ -153,8 +154,8 @@ Zig はフィールド単位の private 修飾子を持たないので、 言語
 しかし「副作用を必要とする書き換え」は setter 経由しないと壊れる (例: text の単純代入は旧 text が leak)。
 このため:
 
-- **read**: getter 経由 / 直接 read どちらも可
-- **write**: setter 必須 (直接 write は禁止 — doc / レビューでカバー)
+* **read**: getter 経由 / 直接 read どちらも可
+* **write**: setter 必須 (直接 write は禁止 — doc / レビューでカバー)
 
 将来 PropertyChangeListener (Swing の PCE 相当) を v2 で導入する余地を残している。
 入った時に setter が listener 通知を担う。
@@ -171,7 +172,7 @@ pub fn setVTable(self: *Component, new_vt: *const VTable) void {
 
 ## ルックアンドフィールの想定実装
 コンポーネントを再帰的に列挙して、 `setVTable` を行う、というのが想定ではある。
-とはいえユーザーの実装なので自由。
+とはいえ利用者の実装なので自由。
 
 ## install/uninstall
 install を呼んだら必ず uninstall も呼び出さなければならない。

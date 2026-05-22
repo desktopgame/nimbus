@@ -24,9 +24,9 @@ pub const Label = struct {
 ```
 
 ## 役割
-- テキスト 1 行を `(0, 0)` (component ローカル) を起点に描画
-- フォント・色は setter で動的変更可能
-- `preferredSize` でテキストの自然なサイズを返す (将来 LayoutManager 用)
+* テキスト 1 行を `(0, 0)` (component ローカル) を起点に描画
+* フォント・色は setter で動的変更可能
+* `preferredSize` でテキストの自然なサイズを返す (将来 LayoutManager 用)
 
 ## 描画
 vtable.paint は単純に Graphics の API を叩く:
@@ -60,10 +60,10 @@ pub fn setText(self: *Label, text: []const u8) !void {
 }
 ```
 
-理由: Swing JLabel の String と同じ「Label が持つ」セマンティクス。ユーザーは文字列の寿命を
+理由: Swing JLabel の String と同じ「Label が持つ」セマンティクス。利用者は文字列の寿命を
 考えずに `label.setText("hello")` を書ける。コストは数十バイトの memcpy なので無視できる。
 
-ユーザーが寿命を保証できるケース (literal `"hello"` や静的バッファ) で dup を avoid したい場合は、
+利用者が寿命を保証できるケース (literal `"hello"` や静的バッファ) で dup を avoid したい場合は、
 将来 `setTextBorrowed(text)` を追加する余地はある。v1 では一律 dup で割り切る。
 
 ## font と color
@@ -139,25 +139,19 @@ Container が子として保持している Label については、Container.de
 `elem.component.vtable.destroy(elem.component, self.allocator)` を呼ぶことで
 この経路を通って free される。
 
-## v1 のスコープ
-
-| 機能 | v1 でやる? | 備考 |
-|---|---|---|
-| 1 行テキスト描画 | やる | top-of-bbox at (0, 0) |
-| setText / setFont / setColor | やる | setter で repaint |
-| preferredSize | やる | font.measureString。LayoutManager 無いので使い手は無し |
-| 改行 (`\n`) 対応 | やらない | drawString が無視。複数行は別 widget で |
-| horizontal / vertical alignment | やらない | v2 で SwingConstants 相当を導入 |
-| icon / image 同時表示 | やらない | Swing JLabel の icon 機能。v2 以降 |
-| HTML / rich text | やらない | スコープ外 |
-| mnemonic / accelerator | やらない | キーイベント整備後 (v2 以降) |
-
 ## 拡張ポイント
-ユーザーがビルトイン Label の見た目を変えたい時は (component.md / lookandfeel.md の方針通り):
+利用者がビルトイン Label の見た目を変えたい時は (component.md / lookandfeel.md の方針通り):
 
-- **個別差替**: `lbl.component.setVTable(&my_label_vt)` で 1 個だけ paint を差替
-- **一斉差替**: `app.replaceVTable(&Label.vtable, &my_label_vt)` で全 Label を差替
-- **新型を作る**: `MyLabel = struct { label: Label, ... }` で struct embed して独自 paint
-- **setter で個別調整**: setColor / setFont で済む範囲
+* **個別差替**: `lbl.component.setVTable(&my_label_vt)` で 1 個だけ paint を差替
+* **一斉差替**: `app.replaceVTable(&Label.vtable, &my_label_vt)` で全 Label を差替
+* **新型を作る**: `MyLabel = struct { label: Label, ... }` で struct embed して独自 paint
+* **setter で個別調整**: setColor / setFont で済む範囲
 
 framework としては Label 自身に theme / L&F 機構を入れない。
+
+## 機能要望
+* 改行 (`\n`) 対応 — 現状 `drawString` が無視するため対応なし。複数行は別 widget (TextArea / MultilineLabel 等) で扱う。
+* horizontal / vertical alignment — SwingConstants 相当を導入。
+* icon / image 同時表示 — Swing JLabel の icon 機能。
+* HTML / rich text — 当面スコープ外。
+* mnemonic / accelerator — キーイベント整備後。

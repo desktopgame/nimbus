@@ -65,7 +65,7 @@ class Frame(Window):
         return cls(b)
 ```
 
-ユーザーから見たコードは普通の Python:
+利用者から見たコードは普通の Python:
 
 ```python
 app = nimbus.Application()
@@ -168,23 +168,20 @@ add / remove で refcount を ±1 するのは標準パターン。 これはバ
 
 この機構は Python だけでなく:
 
-- **Lua / Ruby / Swift バインディング**: 同じパターンで動く
-- **L&F の実装**: 元 vtable を property に保存して、 新 vtable から super 呼び出しできる、 という機構が成立する。
+* **Lua / Ruby / Swift バインディング**: 同じパターンで動く
+* **L&F の実装**: 元 vtable を property に保存して、 新 vtable から super 呼び出しできる、 という機構が成立する。
   「`setVTable` は full replace」 という制約が、 super_vt convention を使えば緩む
-- **テスト**: paint を mock vtable に差し替えて呼び出し回数を検証、 等が同じ仕組みで書ける
+* **テスト**: paint を mock vtable に差し替えて呼び出し回数を検証、 等が同じ仕組みで書ける
 
-## v1 スコープ
+## 機能要望
+nimbus core 自身は当面ピュア Zig + C ABI で完結する。他言語バインディングを実現する段階で以下を整える:
 
-v1 では Python バインディング自体は実装しない。 nimbus core 側の対応も `Component.getVTable()` を生やすだけ。
-
-| 機能 | v1 でやる? | 備考 |
-|---|---|---|
-| `Component.getVTable()` | やる | 1 行。 将来の binding / L&F 機構の入り口 |
-| 派生型ごとの `asXxx` 関数 (C ABI) | やらない | C ABI 着手時に派生型ごとに添える |
-| Python binding 実装 | やらない | 別 repo / 別マイルストーン |
-| L&F 機構 | やらない | lookandfeel.md の通り「機構は提供しない」 |
+* **派生型ごとの `asXxx` 関数 (C ABI)** — `nimbusFrameAsWindow` 等。Zig 側は `&self.foo.bar` を返す 1 行関数で済む。C ABI 着手時に派生型ごとに添える。
+* **Python binding 実装** — 別 repo / 別マイルストーン。
+* **同パターンでの Lua / Ruby / Swift bindings**。
+* **L&F 機構** — `lookandfeel.md` の方針通り、 nimbus core 自身は機構を提供せず、 拡張点 (`setVTable` / `properties` / `getVTable`) の組み合わせとして外部実装に任せる。
 
 ## 関連 doc
 
-- component.md — vtable / setVTable / properties / destroy の詳細
-- lookandfeel.md — 「nimbus 自身は L&F 機構を提供せず、 拡張点だけ露出する」 の方針
+* component.md — vtable / setVTable / properties / destroy の詳細
+* lookandfeel.md — 「nimbus 自身は L&F 機構を提供せず、 拡張点だけ露出する」 の方針

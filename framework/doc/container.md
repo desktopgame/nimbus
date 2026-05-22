@@ -28,15 +28,15 @@ pub const Container = struct {
 
 ## 役割
 Container は Component の派生型の一つで、子 Component を所有する。
-- 子の追加/削除
-- 子の再帰描画 (paint)
-- 子へのイベント dispatch (processEvent)
+* 子の追加 / 削除
+* 子の再帰描画 (paint)
+* 子へのイベント dispatch (processEvent)
 
 framework としては Container を特別扱いしているわけではない。
 `Component.container` フィールドが non-null になっているものを Container とみなす、
 というルールで識別する。
 
-ユーザーが「子を持つ独自 widget」を作りたい場合、Container を embed して使うのが標準的。
+利用者が「子を持つ独自 widget」を作りたい場合、Container を embed して使うのが標準的。
 あるいは同じ pattern (children + `component.container = self`) を自前で実装してもよい。
 
 ## 子の所有
@@ -101,7 +101,7 @@ fn paint(self: *Component, g: *awt.Graphics) void {
 }
 ```
 
-Container 自身は背景描画をしない (透明)。背景を持たせたいユーザーは setVTable で差し替えるか、
+Container 自身は背景描画をしない (透明)。背景を持たせたい利用者は setVTable で差し替えるか、
 自前で Container を継承して paint を書き直す。
 
 ## イベント
@@ -119,7 +119,7 @@ Container は init で `self.component.container = self` をセットする。
 component.md「コンポーネントの列挙」を参照。
 
 ## レイアウトと hint
-v1 では LayoutManager は未実装で、子の位置・サイズはユーザーが `child.setBounds(...)` で手動指定する。
+v1 では LayoutManager は未実装で、子の位置・サイズは利用者が `child.setBounds(...)` で手動指定する。
 このとき `LayoutElement.hint` は使われない (常に null)。
 
 v2 以降で LayoutManager (BorderLayout / BoxLayout 等) が導入された時、
@@ -135,8 +135,8 @@ try container.addWithHint(&label.component, @ptrCast(&north_hint), null);
 ```
 
 hint の所有モデルは Component.properties と同じく **opt-in destroy hook**:
-- `hint_destroy = null` (デフォルト): caller 所有、framework は触らない (上記 `&local_enum` 等)
-- `hint_destroy = fn` を渡せば Container.remove / deinit で自動 free (動的 alloc した GridBagConstraints 等)
+* `hint_destroy = null` (デフォルト): caller 所有、framework は触らない (上記 `&local_enum` 等)
+* `hint_destroy = fn` を渡せば Container.remove / deinit で自動 free (動的 alloc した GridBagConstraints 等)
 
 LayoutManager 本体の設計は別 doc で扱う。
 
@@ -157,10 +157,10 @@ pub fn container(self: *Application) !*Container {
 deinit は子から先、自分が後。Container.deinit は内部で全 children に対して
 `elem.component.deinit()` + `allocator.destroy(elem.component)` を実行し、
 hint_destroy が設定されていれば hint の destroy も呼ぶ。
-そのため、Container を deinit した後にユーザーが children のポインタを保持していると dangling になる。
+そのため、Container を deinit した後に利用者が children のポインタを保持していると dangling になる。
 
-## ユーザーが直接使うか
-通常ユーザーは `app.container()` を直接使わず、`Frame` 経由で widget を add する。
+## 利用者が直接使うか
+通常利用者は `app.container()` を直接使わず、`Frame` 経由で widget を add する。
 `Frame` は内部で Container を持っており、`frame.add(label)` は実質的に
 `frame.container.add(&label.component)` への委譲。
 

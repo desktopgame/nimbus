@@ -1,20 +1,20 @@
 # application
 Application についての設計ノート。 nimbus アプリのエントリーポイントとなる top-level オブジェクト。
 
-## 立ち位置
-- アプリ全体の **アロケータ所有者** (widget / window は全部ここの allocator で確保される)
-- **ファクトリ** (`app.frame(...)`, `app.label(...)`, `app.button(...)` 等)
-- **イベントループの主体** (`app.run()`)
-- **共有リソースの所有者** (Graphics.Context, default font 等)
-- **ウィンドウ追跡** (全 Window を `WindowEntry` で持ち、 OS state diff を末尾で push)
+## 責務
+* アプリ全体の **アロケータ所有者** (widget / window は全部ここの allocator で確保される)
+* **ファクトリ** (`app.frame(...)`, `app.label(...)`, `app.button(...)` 等)
+* **イベントループの主体** (`app.run()`)
+* **共有リソースの所有者** (Graphics.Context, default font 等)
+* **ウィンドウ追跡** (全 Window を `WindowEntry` で持ち、 OS state diff を末尾で push)
 
 ## なぜ Application を作るのか (Swing との違い)
 Swing には Application 型が無く、 `JFrame` を直接 `new` する。 nimbus はあえて Application を持つ:
 
-- **アロケータの集約**: Zig は GC が無いので allocator がアプリ全体に必要。 ファクトリが allocator を握るのが素直
-- **イベントループの隠蔽**: ユーザーが `glfwPollEvents` / `glfwWaitEvents` を直接触らなくて済む。 `app.run()` 1 つで起動
-- **共有リソースの一元化**: Graphics.Context (programs / rings / atlas) や default font は重く、 アプリ全体で 1 セット使うのが自然
-- **ウィンドウ追跡**: 全 Window を 1 箇所で管理する場所が必要 (OS state diff、 close 回収、 全ウィンドウクローズ判定)
+* **アロケータの集約**: Zig は GC が無いので allocator がアプリ全体に必要。 ファクトリが allocator を握るのが素直
+* **イベントループの隠蔽**: 利用者が `glfwPollEvents` / `glfwWaitEvents` を直接触らなくて済む。 `app.run()` 1 つで起動
+* **共有リソースの一元化**: Graphics.Context (programs / rings / atlas) や default font は重く、 アプリ全体で 1 セット使うのが自然
+* **ウィンドウ追跡**: 全 Window を 1 箇所で管理する場所が必要 (OS state diff、 close 回収、 全ウィンドウクローズ判定)
 
 参考: 後発の SwingApplicationFramework (JSR 296) は `Application` を導入していた (その後消えたが)。
 nimbus は最初から入れる。
@@ -69,7 +69,7 @@ GLFW は `glfwInit` がプロセス単位なので、 Application も実質シ�
 
 ## ファクトリの責務
 ファクトリは「allocator 確保 + init + install + tracking 登録」を 1 まとめにする (component.md 「ライフサイクル」)。
-ユーザーは戻り値のポインタを使って setter / add 等を呼ぶだけで、 メモリの面倒は見ない。
+利用者は戻り値のポインタを使って setter / add 等を呼ぶだけで、 メモリの面倒は見ない。
 
 例:
 ```zig
@@ -138,11 +138,11 @@ fn syncOsState(self: *Application) void {
 ```
 
 OS callback が `component.position/size` と `synced_xxx` を **両方** 更新するので、
-ユーザーが setter で書き換えた場合だけ diff が発生し、 OS に push される (window.md 参照)。
+利用者が setter で書き換えた場合だけ diff が発生し、 OS に push される (window.md 参照)。
 
 ### 終了条件
 全ウィンドウが閉じたらループ抜け (`while self.windows.items.len > 0`)。 「最後のウィンドウを閉じたら exit」
-セマンティクス。 これを変えたい (ウィンドウ全閉じでも常駐したい) ユーザー向けには将来 hook を生やす。
+セマンティクス。 これを変えたい (ウィンドウ全閉じでも常駐したい) 利用者向けには将来 hook を生やす。
 
 ## invokeLater / invokeAndWait (v2)
 別スレッドから UI を触る唯一の正規の手段。 CLAUDE.md の「EventQueue / invokeLater」 セクションを参照。
@@ -169,15 +169,15 @@ programs (Color / Image / RoundedRect / Text) と ring buffer (vertex_ring / uni
 glyph_atlas を束ねたもの。 Application が所有し、 全 Window が借用する。
 
 なぜ Application 所有か:
-- programs は shader compile を含むので 1 回作って共有が自然
-- ring buffer / atlas はメモリが大きく、 Window 毎に持つと無駄
-- 全 Window が同じ font atlas を共有すると glyph cache 効率が良い
+* programs は shader compile を含むので 1 回作って共有が自然
+* ring buffer / atlas はメモリが大きく、 Window 毎に持つと無駄
+* 全 Window が同じ font atlas を共有すると glyph cache 効率が良い
 
 ### default_font
 Noto Sans (Latin + CJK JP) を `@embedFile` で焼き込んだものを Application init で読み込む。
 Label / Button 等の widget ファクトリが借用する。 寿命は Application と同じ。
 
-`setDefaultFont(path)` で差し替え可能 (パワーユーザー向け、 CLAUDE.md 「フォント」 参照)。
+`setDefaultFont(path)` で差し替え可能 (上級利用者向け、 CLAUDE.md 「フォント」 参照)。
 差し替え後に作成した widget は新フォント、 既存 widget は変更前のフォントを保持 (font は値型で widget 内に複製される)。
 
 ## ライフサイクル
@@ -232,22 +232,13 @@ pub fn deinit(self: *Application) void {
 
 破棄順序を間違えると、 残った Window が context を参照して落ちるので Window → context → awt の順。
 
-## v1 スコープ
+## 機能要望
+* `invokeLater` / `invokeAndWait` — 別スレッドから UI を触る正規ルート (CLAUDE.md「非同期処理」参照)。`task_queue` フィールドは予約済み、ドレインは現状 no-op。
+* SecondaryLoop — modal dialog 用の入れ子イベントループ (Swing の SecondaryLoop / Qt の QEventLoop 相当)。Dialog 追加と同時に検討。
+* `button()` / `textfield()` 等の widget factory — widget 追加に合わせて生やす。
+* 「最後のウィンドウを閉じても常駐したい」 ケース向けの hook (現状は全ウィンドウ閉でループ終了)。
 
-| 機能 | v1 でやる? | 備考 |
-|---|---|---|
-| `init` / `deinit` | やる | allocator + awt init + 共有リソース構築 |
-| `frame()` factory | やる | Frame を作って windows に append |
-| `label()` / `container()` factory | やる | default font / color を注入 |
-| `run()` イベントループ | やる | waitEvents + dirty redraw + OS sync + close 回収 |
-| OS state diff (`syncOsState`) | やる | pos / size / title |
-| `setDefaultFont(path)` | やる | パワーユーザー向け |
-| `invokeLater` / `invokeAndWait` | やらない | v2 (別スレッド対応時) |
-| SecondaryLoop | やらない | v2 (Dialog 着手時) |
-| `button()` / `textfield()` 等の widget factory | やらない | v2 以降、 widget 追加と同時 |
-| 複数 Application インスタンス | やらない | プロセス内 1 インスタンス前提 |
-
-## ユーザーから見た典型コード
+## 利用者から見た典型コード
 
 ```zig
 var app = try nimbus.Application.init(std.heap.page_allocator);
@@ -263,7 +254,7 @@ try app.run();   // event loop。 全ウィンドウ閉じで抜ける
 
 ## 関連 doc
 
-- window.md — Window / WindowEntry の詳細、 イベントループとの関係
-- frame.md — Frame factory の例
-- component.md — ファクトリのライフサイクル / メモリ解放
-- binding.md — Application 経由のファクトリが他言語バインディングでどう見えるか
+* window.md — Window / WindowEntry の詳細、 イベントループとの関係
+* frame.md — Frame factory の例
+* component.md — ファクトリのライフサイクル / メモリ解放
+* binding.md — Application 経由のファクトリが他言語バインディングでどう見えるか

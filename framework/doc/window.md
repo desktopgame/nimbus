@@ -1,8 +1,8 @@
 # window
 ウィンドウについての設計ノート。Frame / Dialog の共通親となる抽象トップレベル。
 
-## 立ち位置
-nimbus の階層:
+## 階層と依存関係
+nimbus のトップレベル階層:
 ```
 framework.Window (抽象トップレベル、Container 派生 = 推移的に Component 派生)
   ├─ framework.Frame    (独立トップレベル、タイトルバー / メニュー / 最大化最小化)
@@ -12,14 +12,16 @@ framework.Window (抽象トップレベル、Container 派生 = 推移的に Com
 Swing と同じく Window を抽象基底にし、Frame と Dialog を並列の派生型として持つ。
 共通機能 (タイトル、close 処理、resize、root container、repaint dispatch) は Window に集約する。
 
+`awt` の `Window` / `Swapchain` / `Graphics.Context` に依存する (描画面と GPU 共有資源)。
+
 ## Container 派生として扱う
 Window は `Container` を embed する。Container は `Component` を embed しているので、
 推移的に「Window は Component」「Window は Container」として扱える (Swing の `Window extends Container extends Component` と同じ階層)。
 
 これにより:
-- `window.container.add(child)` で root level に子を足せる
-- `window.container.component` (= Component) として汎用 walker / paint dispatch に流せる
-- Layout manager (v2) も他の Container と同じ機構で挿せる
+* `window.container.add(child)` で root level に子を足せる
+* `window.container.component` (= Component) として汎用 walker / paint dispatch に流せる
+* Layout manager (v2) も他の Container と同じ機構で挿せる
 
 ## awt.Window との関係 (名前衝突注意)
 **`awt.Window` と `framework.Window` は同名で別物**。役割は完全に違う。
@@ -94,16 +96,16 @@ const WindowEntry = struct {
 
 | イベント | 動作 |
 |---|---|
-| ユーザーが `window.component.setBounds(...)` | `component.position/size` を書き換えるだけ。OS には未反映 |
+| 利用者が `window.component.setBounds(...)` | `component.position/size` を書き換えるだけ。OS には未反映 |
 | OS callback (ドラッグ / リサイズ等) | `component.position/size` と `app.windows[i].synced_xxx` を**両方**更新 |
 | イベントループ末尾 (Application.run) | 全 entry で `component.position != synced_pos` なら `awt_window.setPos(...)` → `synced_pos` 更新。size / title も同様 |
 
 OS callback が両方更新するのがポイント。これがないと「OS が動かした → 末尾の diff で push し返す」の無限ピンポンになる。
 
 これにより:
-- `Component.setBounds` の override 不要 (通常規約のまま)
-- 同一フレーム内で setBounds を複数回呼んでも自動 coalesce (最後の値だけ push)
-- Window struct は sync 用フィールドで汚れない
+* `Component.setBounds` の override 不要 (通常規約のまま)
+* 同一フレーム内で setBounds を複数回呼んでも自動 coalesce (最後の値だけ push)
+* Window struct は sync 用フィールドで汚れない
 
 ## paint dispatch
 Window の paint は他の Container と挙動が違うため、**専用 vtable.paint (`paintWindow`)** を持つ。
@@ -268,20 +270,12 @@ fn onAwtRefresh(_: ?*c.struct_nmWindow, user_data: ?*anyopaque) callconv(.c) voi
 Application はループの主体 (waitEvents + 全 window の dirty 走査 + OS sync + close 回収) だけを担当し、
 event の dispatch 自体は GLFW + user_data 経由。
 
-## v1 スコープ
-
-| 機能 | v1 でやる? | 備考 |
-|---|---|---|
-| Window 抽象型 (Container 派生 + awt.Window 内蔵) | やる | 共通親、Frame の embed 対象 |
-| add / setTitle / repaint / redraw / dispose | やる | 基本 API |
-| resize / refresh / move callback の hook | やる | self.repaint() / synced 更新を自動で行う |
-| Application 末尾の OS state diff push | やる | pos / size / title |
-| dirty_rect 蓄積 | やる | API は rect 単位、実装は full redraw に倒す (v1) |
-| shouldClose 検出 → run loop で回収 | やる | Application 側 |
-| Dialog | やらない | v2 |
-| WindowListener (close 確認等) | やらない | v2 |
-| 複数モニタ対応 | やらない | v2 以降 |
-| アニメーション駆動 (requestAnimationFrame 相当) | やらない | v2 以降 |
+## 機能要望
+* Dialog (オーナー必須、 modal / modeless)。
+* WindowListener 相当 (close 確認、 minimize 通知等)。
+* 複数モニタ対応 (モニタ選択、 移動時の DPI 変化対応)。
+* アニメーション駆動 (`requestAnimationFrame` 相当の連続再描画)。
+* `dirty_rect` を実描画に反映する部分再描画 (現状は API のみ rect 単位で受け、実装は full redraw に倒す)。
 
 ## ライフサイクル
 factory コード例 (Application 側):
