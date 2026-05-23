@@ -151,10 +151,13 @@ orphan 状態 (`window` に attach されていない) では no-op。
 * `min_size.height = font.metrics().line_height + PADDING_Y * 2`
 * `max_size.height = min_size.height` (1 行で固定)
 * `min_size.width = font.glyphAdvance('M') * 20 + PADDING_X * 2` (約 20 桁の幅)
-* `grow_x = 1` (フォーム幅に伸びる)
+* `grow_x = 0` (デフォルトでは伸びない。Swing JTextField と同じ)
 
 `'M'` を基準に幅を決めるのは Western 的な慣習で、CJK では 1 セル ≈ 2 セル幅になる。
 あくまで「だいたい 20 列ぶんの推奨幅」のヒントで、外部から `setMinSize` で上書き可能。
+
+フォーム幅に伸ばしたい場合は `field.component.setGrowX(1)` を呼ぶ。
+「ウィジェットの自然サイズ」と「レイアウト戦略 (どれを伸ばすか)」を分離する設計で、利用者が用途別にコントロールできる。
 
 ## 描画順序
 1. 背景塗り (`background`)

@@ -1,6 +1,11 @@
 //! TextField smoke test. One TextField above a Label; typing into the
 //! field mirrors the current text into the label.
 //!
+//! Also doubles as the documented recipe for "margin via empty Panel":
+//! nimbus has no per-component `insets`, so visual breathing room is
+//! built with horizontal / vertical spacer Panels (see `hSpacer` /
+//! `vSpacer` below).
+//!
 //! Usage:
 //!     zig build run-textfield_demo
 //!
@@ -28,35 +33,82 @@ fn refreshLabel(state: *State) void {
     state.label.setText(display) catch {};
 }
 
+fn tick(user_data: *anyopaque) void {
+    const state: *State = @ptrCast(@alignCast(user_data));
+    refreshLabel(state);
+}
+
+// ── tiny layout helpers (the "empty Panel as margin" pattern) ────────────
+
+/// Height-`h` slab that eats vertical space. Used as top / between-row
+/// padding inside a vertical BoxLayout.
+fn vSpacer(app: *nimbus.Application, h: f32) !*nimbus.Panel {
+    const p = try app.panel();
+    p.container.component.setMinSize(.{ .width = 0, .height = h });
+    p.container.component.setMaxSize(.{ .width = std.math.inf(f32), .height = h });
+    return p;
+}
+
+/// Width-`w` slab that eats horizontal space. Used as left / right
+/// padding inside a horizontal BoxLayout.
+fn hSpacer(app: *nimbus.Application, w: f32) !*nimbus.Panel {
+    const p = try app.panel();
+    p.container.component.setMinSize(.{ .width = w, .height = 0 });
+    p.container.component.setMaxSize(.{ .width = w, .height = std.math.inf(f32) });
+    return p;
+}
+
+/// Wrap `child` with `pad` px of empty Panel on its left and right.
+/// The returned row is a horizontal BoxLayout container.
+///
+/// NOTE: nimbus's Container does not auto-propagate "min size computed
+/// from children" into `component.min_size`, so a parent BoxLayout would
+/// see this row as 0×0 and collapse it. We seed both bounds from the
+/// layout's computed values so the outer box gives us real space. This
+/// is a known gap in the framework — a future `Container.refreshMinSize`
+/// (or auto-call inside `add`) would let us drop these two lines.
+fn padHorizontal(app: *nimbus.Application, child: *nimbus.Component, pad: f32) !*nimbus.Container {
+    const row = try app.container();
+    row.setLayout(nimbus.BoxLayout.horizontal());
+    try row.add(&(try hSpacer(app, pad)).container.component);
+    try row.add(child);
+    try row.add(&(try hSpacer(app, pad)).container.component);
+    row.component.setMinSize(row.getMinSize());
+    row.component.setMaxSize(row.getMaxSize());
+    return row;
+}
+
 pub fn main(init: std.process.Init) !void {
     const app = try nimbus.Application.init(init.gpa, init.io);
     defer app.deinit();
 
-    const frame = try app.frame("textfield demo", 600, 160);
-
-    const col = try app.container();
-    col.setLayout(nimbus.BoxLayout.vertical());
+    const frame = try app.frame("textfield demo", 600, 200);
 
     const field = try app.textField("hello");
+    field.component.setGrowX(1); // fill the padded row
+
     const label = try app.label("input: \"hello\"");
     label.component.setAlignY(.center);
 
-    try col.add(&field.component);
-    try col.add(&label.component);
+    // Vertical stack with manual top / between / bottom margins.
+    const col = try app.container();
+    col.setLayout(nimbus.BoxLayout.vertical());
+    try col.add(&(try vSpacer(app, 12)).container.component);
+    try col.add(&(try padHorizontal(app, &field.component, 12)).component);
+    try col.add(&(try vSpacer(app, 8)).container.component);
+    try col.add(&(try padHorizontal(app, &label.component, 12)).component);
+    // Push everything to the top by absorbing leftover height.
+    const bottom_spring = try app.panel();
+    bottom_spring.container.component.setGrowY(1);
+    try col.add(&bottom_spring.container.component);
+
     try nimbus.BorderLayout.add(&frame.window.container, .center, &col.component);
 
-    // No public ChangeListener API on TextField in v1 — instead we drive the
-    // mirror update from the timer that already runs the caret blink, so any
-    // edit shows up within ~500ms. Good enough as a smoke test; a proper
-    // ChangeListener slot can come later.
+    // No public ChangeListener API on TextField in v1 — instead we drive
+    // the mirror update from a low-frequency timer.
     var state = State{ .field = field, .label = label };
     _ = try app.setInterval(120, tick, @ptrCast(&state));
 
     std.debug.print("Type into the field; the label mirrors the contents.\n", .{});
     try app.run();
-}
-
-fn tick(user_data: *anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(user_data));
-    refreshLabel(state);
 }
