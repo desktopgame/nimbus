@@ -2,7 +2,11 @@ glfw-*/docs
 glfw-*/examples
 glfw-*/tests
 
-freetype-*/docs
+freetype-*/docs/*
+# Keep the canonical license texts (FTL.TXT, GPLv2.TXT) so distributors of
+# nimbus apps can find them in-tree. See doc/distribution.md.
+!freetype-*/docs/FTL.TXT
+!freetype-*/docs/GPLv2.TXT
 freetype-*/builds
 freetype-*/tests
 freetype-*/devel
