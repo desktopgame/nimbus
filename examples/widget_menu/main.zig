@@ -10,7 +10,6 @@ const std = @import("std");
 const nimbus = @import("nimbus");
 const awt = nimbus.awt;
 
-const lucide = nimbus.lucide;
 
 const State = struct {
     label:   *nimbus.Label,
@@ -167,30 +166,19 @@ pub fn main(init: std.process.Init) !void {
     const label = try app.label("Click a menu, or right-click on the content area.");
     var state = State{ .label = label };
 
-    // Decode the lucide icons we use. All Image objects must outlive the
-    // widgets that reference them — defer their deinit until program exit.
-    var ic_new    = try awt.Image.fromMemory(app.allocator, app.device, lucide.file_plus);
-    defer ic_new.deinit();
-    var ic_open   = try awt.Image.fromMemory(app.allocator, app.device, lucide.folder_open);
-    defer ic_open.deinit();
-    var ic_save   = try awt.Image.fromMemory(app.allocator, app.device, lucide.save);
-    defer ic_save.deinit();
-    var ic_quit   = try awt.Image.fromMemory(app.allocator, app.device, lucide.x);
-    defer ic_quit.deinit();
-    var ic_cut    = try awt.Image.fromMemory(app.allocator, app.device, lucide.scissors);
-    defer ic_cut.deinit();
-    var ic_copy   = try awt.Image.fromMemory(app.allocator, app.device, lucide.copy);
-    defer ic_copy.deinit();
-    var ic_paste  = try awt.Image.fromMemory(app.allocator, app.device, lucide.clipboard);
-    defer ic_paste.deinit();
-    var ic_search = try awt.Image.fromMemory(app.allocator, app.device, lucide.search);
-    defer ic_search.deinit();
-    var ic_undo   = try awt.Image.fromMemory(app.allocator, app.device, lucide.undo);
-    defer ic_undo.deinit();
-    var ic_redo   = try awt.Image.fromMemory(app.allocator, app.device, lucide.redo);
-    defer ic_redo.deinit();
-    var ic_trash  = try awt.Image.fromMemory(app.allocator, app.device, lucide.trash);
-    defer ic_trash.deinit();
+    // Decode the lucide icons we use. Images are owned and cached by the
+    // Application; they outlive every widget that references them.
+    const ic_new    = try app.icon(.file_plus);
+    const ic_open   = try app.icon(.folder_open);
+    const ic_save   = try app.icon(.save);
+    const ic_quit   = try app.icon(.x);
+    const ic_cut    = try app.icon(.scissors);
+    const ic_copy   = try app.icon(.copy);
+    const ic_paste  = try app.icon(.clipboard);
+    const ic_search = try app.icon(.search);
+    const ic_undo   = try app.icon(.undo);
+    const ic_redo   = try app.icon(.redo);
+    const ic_trash  = try app.icon(.trash);
 
     // Content panel.
     const content = try app.panel();

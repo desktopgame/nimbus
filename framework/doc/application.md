@@ -128,6 +128,21 @@ pub fn slider(
 BoundedRangeModel は内部生成される（`owns_model = true`）。
 共有 Model 版は `Slider.createWithModel` を直接呼ぶ。
 
+## ビルトインアイコンの取得
+```zig
+pub fn icon(self: *Application, id: lucide.Icon) !awt.Image;
+```
+
+`nimbus.lucide.Icon` で定義されたビルトインアイコン（PNG 化済み、64×64）を、デコード済みの GPU `awt.Image` として返す。
+初回呼び出し時に PNG をデコードして GPU テクスチャにアップロードし、内部キャッシュに格納する。
+2 回目以降の同じ `id` に対する呼び出しは、キャッシュ済みの `awt.Image` をそのまま返す。
+
+返り値は `Application` が所有する。利用者は `deinit` を呼んではならない。
+寿命は `Application` と同じで、`app.deinit()` 時にキャッシュごとまとめて解放される。
+
+利用者独自の PNG / JPEG を使いたい場合は `app.icon` ではなく `awt.Image.fromMemory` を直接呼ぶ。
+こちらは利用者が `deinit` を呼んで寿命を管理する。
+
 ## ツールバーの生成
 ```zig
 pub fn toolbar(self: *Application) !*Panel;
@@ -148,7 +163,7 @@ pub fn toolbar(self: *Application) !*Panel;
 * アプリ全体の **アロケータ所有者**（ウィジェット / ウィンドウは全部ここの allocator で確保される）
 * **ファクトリ**（`app.frame(...)`、`app.label(...)`、`app.button(...)` 等）
 * **イベントループの主体**（`app.run()`）
-* **共有リソースの所有者**（Graphics.Context、default font、EventQueue）
+* **共有リソースの所有者**（Graphics.Context、default font、EventQueue、ビルトインアイコンキャッシュ）
 * **ウィンドウ追跡**（全 Window を `WindowEntry` で持ち、OS state diff を末尾で push）
 
 ## なぜ Application を作るのか（Swing との違い）
@@ -225,6 +240,29 @@ framework に同梱された Noto Sans JP（Latin + CJK JP）を `@embedFile` �
 Label / Button 等のウィジェットファクトリが借用する。寿命は Application と同じ。
 
 `setDefaultFont(path)` で差し替え可能（上級利用者向け、CLAUDE.md「フォント」参照）。
+
+### icon_cache
+ビルトインアイコン（`nimbus.lucide.Icon` の各エントリ）を、初回参照時にデコード + GPU テクスチャ化した `awt.Image` のキャッシュ。
+`[lucide.Icon.count]?awt.Image` の配列で、添字は `@intFromEnum(icon)`。
+Application init 時は全スロット null で、`app.icon(.foo)` の初回呼び出しでスロットが埋まる。
+Application が所有し、Button / MenuItem 等が借用する。寿命は Application と同じ。
+
+なぜ Application 所有か:
+* 同じアイコンを複数のウィジェットが使い回しても GPU テクスチャは 1 つで済む
+* 利用者が `awt.Image.fromMemory` / `deinit` を自分で書く必要が無くなり、boilerplate が消える
+* デコード + GPU アップロードは重いので、初回 1 回だけにしたい
+* 寿命がウィジェットより長い場所に置く必要があり、Application が自然な置き場所
+
+### サイズコストの整理
+ランタイムメモリ:
+* `?awt.Image` 1 スロットは数十バイト程度。1711 エントリでも数十 KB に収まるため、Application が常時抱える分は無視できる。
+* GPU 側のメモリは初回呼び出し時にしか確保されないので、未使用アイコンに対する GPU メモリのコストは 0。
+
+バイナリサイズ:
+* `Application.icon` がランタイムの `Icon` 値を受け取る設計のため、コンパイラ／リンカは「どのアイコンが使われるか」を静的に判定できず、`framework/src/lucide/icons.zig` の `all_bytes` 経由で**全 PNG が実行ファイルに残る**。
+* 実測値: `widget_menu` (ReleaseSmall) で +1.7 MB（アイコンを 1 つも使わない `widget_simple` は影響なし）。
+* これは設計上の意図的トレードオフ。`app.icon(.foo)` の使い勝手と、コンパイル時 typo チェックを優先した結果。
+* switch 分岐版 (`switch (self) { .save => @embedFile(...), ... }`) でも実測差は出なかった。`Icon.bytes()` という間接層を挟む限り、デッドコード除去は原理的に効かない。
 
 ## 終了条件
 `run()` は `windows.items.len > 0` の間ループする。

@@ -11,6 +11,7 @@ const Slider = @import("Slider.zig");
 const Frame = @import("Frame.zig");
 const Window = @import("Window.zig");
 const noto = @import("noto/fonts.zig");
+const lucide = @import("lucide/icons.zig");
 
 const Application = @This();
 
@@ -28,6 +29,10 @@ context:      awt.Graphics.Context,
 default_font: awt.Font,
 event_queue:  *awt.EventQueue,
 windows:      std.ArrayList(WindowEntry),
+/// Lazily-decoded GPU images for built-in lucide icons. Slot is null until
+/// the first `icon(.foo)` call decodes the PNG and uploads the texture.
+/// All slots are freed in `deinit`.
+icon_cache:   [lucide.Icon.count]?awt.Image,
 
 // Owned program / buffer objects (Graphics.Context holds pointers to these).
 _color_program: awt.programs.Color,
@@ -53,6 +58,7 @@ pub fn init(allocator: std.mem.Allocator, io: std.Io) !*Application {
 
     app.allocator = allocator;
     app.windows = .empty;
+    app.icon_cache = @splat(null);
 
     app.device = try awt.Device.init();
     errdefer app.device.deinit();
@@ -104,6 +110,12 @@ pub fn deinit(self: *Application) void {
 
     self.event_queue.deinit();
     self.default_font.deinit();
+
+    // Free cached icon textures before tearing down the device they live on.
+    for (&self.icon_cache) |*slot| {
+        if (slot.*) |*img| img.deinit();
+    }
+
     self._atlas.deinit();
     self._quad_index.deinit();
     self._uniforms.deinit();
@@ -210,6 +222,17 @@ pub fn slider(
     max: i32,
 ) !*Slider {
     return try Slider.create(self.allocator, orientation, min, value, max);
+}
+
+/// Get a built-in lucide icon as a GPU `awt.Image`, decoding + uploading on
+/// first use. The returned Image is borrowed; do not call `deinit` on it.
+/// Lifetime is tied to the Application.
+pub fn icon(self: *Application, id: lucide.Icon) !awt.Image {
+    const idx = @intFromEnum(id);
+    if (self.icon_cache[idx]) |img| return img;
+    const img = try awt.Image.fromMemory(self.allocator, self.device, id.bytes());
+    self.icon_cache[idx] = img;
+    return img;
 }
 
 pub fn filler(self: *Application) !*Panel {
