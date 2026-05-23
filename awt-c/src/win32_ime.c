@@ -226,18 +226,64 @@ static void emit_composition(HWND hwnd, nmWindowCallbacks* cbs) {
     free(bounds);
 }
 
-/* Tell the IME where to draw its candidate window. Called by
- * nm_ime_set_cursor_pos so the OS picks up framework's caret position. */
+/* Tell the IME where to draw its composition + candidate windows.
+ *
+ * Setting both `COMPOSITIONFORM` and `CANDIDATEFORM` is required because
+ * different IMEs (MS-IME, Google IME, ATOK, ...) honor different forms.
+ * Candidate window uses CFS_EXCLUDE with a 1-px-wide rect at the caret
+ * column spanning the line height — the IME interprets this as "avoid
+ * overlapping this rectangle", and most place the popup just below it.
+ *
+ * Called from nm_ime_set_cursor_pos (framework push) and also during
+ * WM_IME_STARTCOMPOSITION (so the IME picks up our value at the moment
+ * it is about to place its windows — pushing once up-front before a
+ * composition exists is often dropped).
+ *
+ * Re-entry guard: ImmSetCompositionWindow / ImmSetCandidateWindow each
+ * synthesize an IMN_SETCANDIDATEPOS / IMN_SETCOMPOSITIONWINDOW back to
+ * our subclassed wndproc, which would call us again → infinite recursion
+ * and stack overflow. UI is single-threaded so a static flag suffices. */
+static int g_pushing = 0;
+
 static void push_candidate_pos(HWND hwnd, int x, int y, int height) {
+    if (g_pushing) return;
+    g_pushing = 1;
+
     HIMC himc = ImmGetContext(hwnd);
-    if (!himc) return;
-    COMPOSITIONFORM form;
-    form.dwStyle = CFS_POINT;
-    form.ptCurrentPos.x = x;
-    form.ptCurrentPos.y = y + height; /* below the caret line */
-    form.rcArea.left = form.rcArea.top = form.rcArea.right = form.rcArea.bottom = 0;
-    ImmSetCompositionWindow(himc, &form);
+    if (!himc) {
+        g_pushing = 0;
+        return;
+    }
+
+    COMPOSITIONFORM cf;
+    cf.dwStyle = CFS_POINT;
+    cf.ptCurrentPos.x = x;
+    cf.ptCurrentPos.y = y;
+    cf.rcArea.left = cf.rcArea.top = cf.rcArea.right = cf.rcArea.bottom = 0;
+    ImmSetCompositionWindow(himc, &cf);
+
+    CANDIDATEFORM candf;
+    candf.dwIndex = 0;
+    candf.dwStyle = CFS_EXCLUDE;
+    candf.ptCurrentPos.x = x;
+    candf.ptCurrentPos.y = y;
+    candf.rcArea.left = x;
+    candf.rcArea.top = y;
+    candf.rcArea.right = x + 1;
+    candf.rcArea.bottom = y + height;
+    ImmSetCandidateWindow(himc, &candf);
+
     ImmReleaseContext(hwnd, himc);
+    g_pushing = 0;
+}
+
+/* Re-push the cached cursor pos. Used at IME lifecycle events so the
+ * value framework provided sticks to the correct HIMC state. */
+static void repush_cached_pos(HWND hwnd, nmWindowCallbacks* cbs) {
+    push_candidate_pos(hwnd,
+        cbs->composition_cursor_x,
+        cbs->composition_cursor_y,
+        cbs->composition_cursor_h);
 }
 
 static LRESULT CALLBACK ime_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
@@ -249,8 +295,14 @@ static LRESULT CALLBACK ime_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 
     switch (msg) {
     case WM_IME_STARTCOMPOSITION:
-        /* Begin: notify with empty preedit so framework can reset state. */
-        if (cbs) emit_composition(hwnd, cbs);
+        /* Push the cached caret pos NOW so the IME picks it up for the
+         * candidate / composition windows it is about to spawn. Without
+         * this, the IME tends to default to a system-default location
+         * (e.g. screen bottom-right). */
+        if (cbs) {
+            repush_cached_pos(hwnd, cbs);
+            emit_composition(hwnd, cbs);
+        }
         return 0;
     case WM_IME_COMPOSITION:
         if (lp & GCS_COMPSTR) {
@@ -264,6 +316,20 @@ static LRESULT CALLBACK ime_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (cbs && cbs->composition_cb) {
             nmCompositionEvent ev = { .text = "", .text_len = 0, .target_start = 0, .target_end = 0 };
             cbs->composition_cb((nmWindow*)hwnd, &ev, cbs->composition_user);
+        }
+        break;
+    case WM_IME_NOTIFY:
+        /* IME is about to open or move its candidate window — re-push our
+         * cached pos so it lands at the caret instead of the previous /
+         * default position.
+         *
+         * IMPORTANT: IMN_SETCANDIDATEPOS / IMN_SETCOMPOSITIONWINDOW are
+         * synthesized BY our own ImmSet*Window calls — responding to
+         * them would loop forever. Only act on user-driven events. */
+        if (cbs && (wp == IMN_OPENCANDIDATE
+                 || wp == IMN_CHANGECANDIDATE))
+        {
+            repush_cached_pos(hwnd, cbs);
         }
         break;
     default:
