@@ -55,7 +55,7 @@ pub fn setMenuBar(self: *Frame, bar: ?*MenuBar) void;
 
 Frame の上部にメニューバーを取り付ける。
 `null` を渡すと外す（既存があれば外して `owns_menu` に従って解放する）。
-内部的には Window の chrome 層（`window.md`「chrome bar 層」参照）に bar の `Component` を登録する。
+内部的には Window の `menu_bar` field（`window.md`「メニューバー層」参照）に bar をセットする。
 Window.container の bounds はメニューバーぶん下にずれる。
 
 引数の `bar` は **Frame に所有権が移る**（`owns_menu = true` になる）。

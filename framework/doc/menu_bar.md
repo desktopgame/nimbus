@@ -3,7 +3,7 @@ Frame の上部に固定で配置するメニューバー。
 水平に `Menu` を並べ、ラベルクリックで対応する Menu を popup として展開する。
 Swing の `JMenuBar` 相当。
 
-通常コンポーネントツリーとは別レイヤ（Window の chrome bar 層）に置かれる。
+通常コンポーネントツリーとは別レイヤ（Window の `menu_bar` 専用 field）に置かれる。
 `Container.add` 経由ではなく、`Frame.setMenuBar(MenuBar)` で取り付ける（`frame.md` 参照）。
 
 ## 型定義
@@ -96,10 +96,10 @@ MenuBar は水平方向に Menu のラベルを並べる。
 クリックの hit-test：x 座標から該当 Menu を線形探索（メニュー数は通常 10 個未満）。
 hover による切替は MenuBar.processEvent の `.move` で「open 中かつカーソルが別 Menu の bounds 内」を検知して発火する。
 
-## Window の chrome bar 層との接続
-`Frame.setMenuBar(bar)` が `window.chrome_bar = &bar.component` をセットする。
+## Window の menu_bar field との接続
+`Frame.setMenuBar(bar)` が `window.menu_bar = bar` をセットする。
 Window 側はメニューバーぶんの高さ（`bar.component.min_size.height`）を確保し、`container` の bounds をその下に詰める。
-詳細は `window.md`「chrome bar 層」を参照。
+詳細は `window.md`「メニューバー層」を参照。
 
 ## レイアウト属性
 * `min_size.height`: 標準 24〜28px（フォント高 + padding）
