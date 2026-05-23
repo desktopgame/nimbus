@@ -53,6 +53,13 @@ pub fn waitEvents() void {
     c.nmWaitEvents();
 }
 
+/// Block for at most `seconds` waiting for an event. Returns even if no
+/// event arrived (timeout fired). Used by run loops that need to wake
+/// on a future deadline (timers, caret blink).
+pub fn waitEventsTimeout(seconds: f64) void {
+    c.nmWaitEventsTimeout(seconds);
+}
+
 /// Seconds since `init`. Monotonic; suitable for animation / timing.
 pub fn time() f64 {
     return c.nmGetTime();

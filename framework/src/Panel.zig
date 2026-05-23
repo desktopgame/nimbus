@@ -129,12 +129,13 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
                 }
             }
         },
-        .key => {
+        .key, .char => {
             for (cont.children.items) |elem| {
                 elem.component.vtable.processEvent(elem.component, ev);
                 if (ev.isConsumed()) return;
             }
         },
+        .focus => {},
     }
 }
 

@@ -1,6 +1,6 @@
 # event
 入力イベントの型定義。
-キー入力とマウス入力を表現する `Event` と、消費フラグ・座標変換のサポートを提供する。
+キー入力、テキスト入力、マウス入力、フォーカス変更を表現する `Event` と、消費フラグ・座標変換のサポートを提供する。
 イベントループ自体は awt-c の `nmPollEvents` / `nmWaitEvents` が担当する（`awt-c/doc/event.md` 参照）。
 イベントを実際にコンポーネントへ dispatch するのは framework 層の責務。
 
@@ -13,7 +13,9 @@ pub const Event = struct {
 
     pub const Payload = union(enum) {
         key:   KeyEvent,
+        char:  CharEvent,
         mouse: MouseEvent,
+        focus: FocusEvent,
     };
 
     // ... メソッド
@@ -23,6 +25,14 @@ pub const KeyEvent = struct {
     code:      KeyCode,
     action:    KeyAction,
     modifiers: Modifiers,
+};
+
+pub const CharEvent = struct {
+    codepoint: u32,                // OS キーボードレイアウト適用後の Unicode codepoint
+};
+
+pub const FocusEvent = struct {
+    gained: bool,                  // true: フォーカス獲得, false: 喪失
 };
 
 pub const MouseEvent = struct {
@@ -86,7 +96,7 @@ pub fn translated(self: Event, offset: Point) Event;
 ```
 
 `payload` が `.mouse` ならその座標を `offset` で平行移動する。
-それ以外（`.key`）は変更なしで返す。
+それ以外（`.key` / `.char` / `.focus`）は変更なしで返す。
 `consumed` フラグはコピーされる。
 
 ## 修飾キーの組み合わせ確認
@@ -196,11 +206,38 @@ awt は型を提供するだけで、実際の routing は framework の責務�
 ドラッグ中の `move` で `button` を non-null にするか null にするかは、framework 層が dispatcher で決める。
 awt 層は OS から来た情報をそのまま MouseEvent に詰めるだけ。
 
+## CharEvent と KeyEvent の使い分け
+`KeyEvent` は **物理キーの押下** を表す（`.code` は GLFW の `GLFW_KEY_*` 相当）。
+`CharEvent` は **入力された文字** を表す（`.codepoint` は OS のキーボードレイアウトを通過した後の Unicode codepoint）。
+
+| 用途 | 使うべきイベント |
+|---|---|
+| テキストフィールドへの文字入力 | `CharEvent` |
+| ショートカット（Ctrl+S 等）の検出 | `KeyEvent`（`modifiers` を見る） |
+| カーソル移動・編集操作（矢印 / Home / Backspace / Del） | `KeyEvent` |
+| IME 変換中の文字列表示 | （将来）独立した composition イベント |
+
+両者は同じキー操作に対して**両方発火する**ことがある。
+たとえば `'a'` キーの押下では `KeyEvent{ .code = .a, .action = .press }` と `CharEvent{ .codepoint = 'a' }` が両方流れてくる（OS から見ると別系統のイベント）。
+
+`CharEvent.codepoint` に修飾キーフィールドは持たない。
+Shift+1 は OS がすでに `'!'` に変換した状態で来るので、利用者は文字そのものだけ見ればよい。
+
+## FocusEvent
+キーボード入力先のコンポーネント（フォーカスオーナー）が切り替わる際に dispatch される。
+OS から来るのではなく framework 側（`Window.requestFocusFor`）が生成する点が他の payload と異なる。
+
+旧オーナーには `FocusEvent{ .gained = false }`、新オーナーには `FocusEvent{ .gained = true }` がそれぞれ届く。
+両方に届く順序は「旧オーナー lost → 新オーナー gained」。
+
+`null → Component` や `Component → null` への切り替えも有効（片側だけが dispatch される）。
+
 ## awt-c との関係
-awt-c は GLFW の C 関数ポインタ型でコールバックを受ける（`nmKeyCallback`、`nmMouseButtonCallback`、`nmCursorPosCallback`、`nmScrollCallback` 等）。
-これらのコールバックは個別の引数（コード / ボタン / 座標 / スクロール量）を受け取る形になる。
+awt-c は GLFW の C 関数ポインタ型でコールバックを受ける（`nmKeyCallback`、`nmCharCallback`、`nmMouseButtonCallback`、`nmCursorPosCallback`、`nmScrollCallback` 等）。
+これらのコールバックは個別の引数（コード / 文字 / ボタン / 座標 / スクロール量）を受け取る形になる。
 
 awt 層がそれらを Zig の `Event` 型に統合してから framework に渡す。
+`FocusEvent` は OS 由来ではなく framework が生成するため対応するコールバックは存在しない。
 このため awt-c では「Event」という統合型は存在せず、event.md は awt 層のみに存在する。
 
 ---
@@ -218,11 +255,20 @@ fn processEvent(self: *Component, event: *Event) void {
                 event.consume();
             }
         },
+        .char => |ch| {
+            // テキスト入力。文字フィールドにのみ意味がある。
+            insertCodepoint(self, ch.codepoint);
+            event.consume();
+        },
         .mouse => |m| {
             if (m.action == .press and m.button == .left) {
                 handleClick(self, m.x, m.y);   // 既にコンポーネントローカル座標
                 event.consume();
             }
+        },
+        .focus => |f| {
+            // フォーカス獲得・喪失時に再描画 (キャレットの表示切替等)。
+            if (f.gained) startCaretBlink(self) else stopCaretBlink(self);
         },
     }
 }
@@ -248,8 +294,7 @@ const local_event  = mouse_event.translated(local_offset);
 ```
 
 ## 機能要望
-* フォーカス変更イベント（`FocusEvent`）
-* テキスト入力イベント（IME 対応含む `TextInputEvent`）
+* IME composition イベント（変換中文字列の inline 表示）
 * タッチ / ジェスチャイベント（マルチタッチ環境向け）
 * キーリピート間隔の設定
 * ドラッグ&ドロップ専用イベント

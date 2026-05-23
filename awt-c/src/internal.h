@@ -69,6 +69,10 @@ typedef void (*nmMouseButtonCallback)(nmWindow* window, nmMouseButton button, nm
 typedef void (*nmCursorPosCallback)(nmWindow* window, double x, double y, void* user_data);
 typedef void (*nmScrollCallback)(nmWindow* window, double dx, double dy, void* user_data);
 typedef void (*nmKeyCallback)(nmWindow* window, nmKeyCode key, nmKeyAction action, int modifiers, void* user_data);
+/* Text input character callback. Receives one Unicode codepoint per call —
+ * already mapped through the OS keyboard layout (Shift+1 → '!', AZERTY etc).
+ * Use this for text entry; nmKeyCallback for shortcuts and navigation. */
+typedef void (*nmCharCallback)(nmWindow* window, uint32_t codepoint, void* user_data);
 
 void nmSetWindowResizeCallback(nmWindow* self, nmWindowResizeCallback cb, void* user_data);
 void nmSetWindowRefreshCallback(nmWindow* self, nmWindowRefreshCallback cb, void* user_data);
@@ -76,6 +80,19 @@ void nmSetMouseButtonCallback(nmWindow* self, nmMouseButtonCallback cb, void* us
 void nmSetCursorPosCallback(nmWindow* self, nmCursorPosCallback cb, void* user_data);
 void nmSetScrollCallback(nmWindow* self, nmScrollCallback cb, void* user_data);
 void nmSetKeyCallback(nmWindow* self, nmKeyCallback cb, void* user_data);
+void nmSetCharCallback(nmWindow* self, nmCharCallback cb, void* user_data);
+
+/* Clipboard (system-wide; the window argument is required by the GLFW
+ * surface but the clipboard itself is process / OS scoped).
+ *
+ * `nmGetClipboardString` returns a pointer owned by awt-c. It stays valid
+ * only until the next nmGet/SetClipboardString call on the same thread —
+ * callers must copy the bytes before doing further clipboard work.
+ * Returns NULL if the clipboard is empty or does not hold UTF-8 text.
+ *
+ * `nmSetClipboardString` copies `utf8` into the system clipboard. */
+const char* nmGetClipboardString(nmWindow* self);
+void        nmSetClipboardString(nmWindow* self, const char* utf8);
 
 /* Window size in logical screen units (points). This is what the user
  * requested in nmCreateWindow; on HiDPI displays it is smaller than the
@@ -93,6 +110,12 @@ void nmGetFramebufferSize(const nmWindow* self, int* width, int* height);
 
 void nmPollEvents(void);
 void nmWaitEvents(void);
+
+/* Wait for at most `seconds` for an OS event to arrive, then return.
+ * Returns even when no event arrived (timeout fired). Negative or zero
+ * `seconds` degenerates to a non-blocking poll. Use this when the UI
+ * thread needs to wake on a future deadline (timers, caret blink). */
+void nmWaitEventsTimeout(double seconds);
 
 /* Wake up the UI thread blocked in nmWaitEvents. Safe to call from any thread.
  * No side effects beyond unblocking — the wake-up just resumes polling. */

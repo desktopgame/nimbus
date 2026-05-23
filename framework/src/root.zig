@@ -26,6 +26,7 @@ pub const PopupMenu = @import("PopupMenu.zig");
 pub const Window = @import("Window.zig");
 pub const Frame = @import("Frame.zig");
 pub const Application = @import("Application.zig");
+pub const TextField = @import("TextField.zig");
 
 test {
     std.testing.refAllDecls(@This());

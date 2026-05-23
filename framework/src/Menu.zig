@@ -369,7 +369,7 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
                 .scroll => {},
             }
         },
-        .key => {},
+        .key, .char, .focus => {},
     }
 }
 
@@ -463,8 +463,8 @@ fn popupProcessEvent(self: *Component, ev: *Component.Event) void {
                 }
             }
         },
-        .key => {
-            // No keyboard nav in v1.
+        .key, .char, .focus => {
+            // No keyboard nav / text input in v1.
         },
     }
 }

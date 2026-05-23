@@ -35,6 +35,8 @@ typedef struct nmWindowCallbacks {
     void*                   scroll_user;
     nmKeyCallback           key_cb;
     void*                   key_user;
+    nmCharCallback          char_cb;
+    void*                   char_user;
 } nmWindowCallbacks;
 
 static void on_framebuffer_size(GLFWwindow* gw, int w, int h) {
@@ -120,6 +122,12 @@ static void on_key(GLFWwindow* gw, int key, int scancode, int action, int mods) 
     );
 }
 
+static void on_char(GLFWwindow* gw, unsigned int codepoint) {
+    nmWindowCallbacks* cb = (nmWindowCallbacks*)glfwGetWindowUserPointer(gw);
+    if (!cb || !cb->char_cb) return;
+    cb->char_cb((nmWindow*)gw, (uint32_t)codepoint, cb->char_user);
+}
+
 int nmInitAwt(void) {
     if (glfwInit() != GLFW_TRUE) return -1;
     if (nm_font_internal_init() != 0) {
@@ -159,6 +167,7 @@ nmWindow* nmCreateWindow(const char* title, int width, int height) {
     glfwSetCursorPosCallback(w, on_cursor_pos);
     glfwSetScrollCallback(w, on_scroll);
     glfwSetKeyCallback(w, on_key);
+    glfwSetCharCallback(w, on_char);
     return (nmWindow*)w;
 }
 
@@ -227,6 +236,14 @@ void nmSetKeyCallback(nmWindow* self, nmKeyCallback cb, void* user_data) {
     cbs->key_user = user_data;
 }
 
+void nmSetCharCallback(nmWindow* self, nmCharCallback cb, void* user_data) {
+    if (!self) return;
+    nmWindowCallbacks* cbs = (nmWindowCallbacks*)glfwGetWindowUserPointer((GLFWwindow*)self);
+    if (!cbs) return;
+    cbs->char_cb = cb;
+    cbs->char_user = user_data;
+}
+
 void nmPollEvents(void) {
     glfwPollEvents();
 }
@@ -235,12 +252,24 @@ void nmWaitEvents(void) {
     glfwWaitEvents();
 }
 
+void nmWaitEventsTimeout(double seconds) {
+    glfwWaitEventsTimeout(seconds);
+}
+
 void nmPostEmptyEvent(void) {
     glfwPostEmptyEvent();
 }
 
 double nmGetTime(void) {
     return glfwGetTime();
+}
+
+const char* nmGetClipboardString(nmWindow* self) {
+    return glfwGetClipboardString((GLFWwindow*)self);
+}
+
+void nmSetClipboardString(nmWindow* self, const char* utf8) {
+    glfwSetClipboardString((GLFWwindow*)self, utf8);
 }
 
 void nmGetWindowSize(const nmWindow* self, int* width, int* height) {

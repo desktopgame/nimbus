@@ -16,6 +16,7 @@ const MenuBar = @import("MenuBar.zig");
 const CheckBoxMenuItem = @import("CheckBoxMenuItem.zig");
 const PopupMenu = @import("PopupMenu.zig");
 const MenuSeparator = @import("MenuSeparator.zig");
+const TextField = @import("TextField.zig");
 const noto = @import("noto/fonts.zig");
 const lucide = @import("lucide/icons.zig");
 
@@ -29,12 +30,30 @@ const WindowEntry = struct {
     destroy: *const fn (*anyopaque, std.mem.Allocator) void,
 };
 
+pub const TimerId = u32;
+/// Callback fired when a timer's deadline elapses. Receives the opaque
+/// `user_data` registered with `setTimeout` / `setInterval`.
+pub const TimerCallback = *const fn (*anyopaque) void;
+
+const Timer = struct {
+    id:        TimerId,
+    /// Monotonic `awt.time()` (seconds since `awt.init`) at which this
+    /// timer next fires.
+    due_time:  f64,
+    /// Repeat period in milliseconds. 0 → one-shot (removed after firing).
+    period_ms: u32,
+    cb:        TimerCallback,
+    user_data: *anyopaque,
+};
+
 allocator:    std.mem.Allocator,
 device:       awt.Device,
 context:      awt.Graphics.Context,
 default_font: awt.Font,
 event_queue:  *awt.EventQueue,
 windows:      std.ArrayList(WindowEntry),
+timers:       std.ArrayList(Timer),
+next_timer_id: TimerId,
 /// Lazily-decoded GPU images for built-in lucide icons. Slot is null until
 /// the first `icon(.foo)` call decodes the PNG and uploads the texture.
 /// All slots are freed in `deinit`.
@@ -64,6 +83,8 @@ pub fn init(allocator: std.mem.Allocator, io: std.Io) !*Application {
 
     app.allocator = allocator;
     app.windows = .empty;
+    app.timers = .empty;
+    app.next_timer_id = 1;
     app.icon_cache = @splat(null);
 
     app.device = try awt.Device.init();
@@ -114,6 +135,8 @@ pub fn deinit(self: *Application) void {
     }
     self.windows.deinit(self.allocator);
 
+    self.timers.deinit(self.allocator);
+
     self.event_queue.deinit();
     self.default_font.deinit();
 
@@ -143,7 +166,16 @@ pub fn getEventQueue(self: *Application) *awt.EventQueue {
 /// Run the main event loop. Returns when all windows have been closed.
 pub fn run(self: *Application) !void {
     while (self.windows.items.len > 0) {
-        awt.waitEvents();
+        // Block until either (a) an OS event arrives or (b) the next
+        // timer's deadline elapses. waitEvents (no timeout) when no
+        // timers are pending.
+        if (self.earliestDueIn()) |delay| {
+            awt.waitEventsTimeout(@max(0, delay));
+        } else {
+            awt.waitEvents();
+        }
+
+        self.fireDueTimers();
         self.event_queue.drain();
 
         // Render dirty windows.
@@ -165,6 +197,113 @@ pub fn run(self: *Application) !void {
             }
         }
     }
+}
+
+// ── timers ───────────────────────────────────────────────────────────────
+
+/// Schedule a one-shot callback to fire after `ms` milliseconds.
+/// Returns an opaque id usable with `clearTimer` if you need to cancel
+/// before it fires (e.g. component being destroyed).
+pub fn setTimeout(
+    self: *Application,
+    ms: u32,
+    cb: TimerCallback,
+    user_data: *anyopaque,
+) !TimerId {
+    return self.addTimer(ms, 0, cb, user_data);
+}
+
+/// Schedule a repeating callback to fire every `ms` milliseconds.
+/// The first firing happens `ms` after the call. Use `clearTimer` to stop.
+pub fn setInterval(
+    self: *Application,
+    ms: u32,
+    cb: TimerCallback,
+    user_data: *anyopaque,
+) !TimerId {
+    return self.addTimer(ms, ms, cb, user_data);
+}
+
+/// Cancel a pending timer. No-op if the id is unknown (already fired /
+/// cleared / never existed).
+pub fn clearTimer(self: *Application, id: TimerId) void {
+    var i: usize = 0;
+    while (i < self.timers.items.len) : (i += 1) {
+        if (self.timers.items[i].id == id) {
+            _ = self.timers.orderedRemove(i);
+            return;
+        }
+    }
+}
+
+fn addTimer(
+    self: *Application,
+    delay_ms: u32,
+    period_ms: u32,
+    cb: TimerCallback,
+    user_data: *anyopaque,
+) !TimerId {
+    const id = self.next_timer_id;
+    self.next_timer_id +%= 1;
+    const delay_s: f64 = @as(f64, @floatFromInt(delay_ms)) / 1000.0;
+    try self.timers.append(self.allocator, .{
+        .id        = id,
+        .due_time  = awt.time() + delay_s,
+        .period_ms = period_ms,
+        .cb        = cb,
+        .user_data = user_data,
+    });
+    // Wake the run loop so the wait deadline is recomputed (the new timer
+    // may be sooner than the current sleep target).
+    awt.postEmptyEvent();
+    return id;
+}
+
+/// Seconds until the soonest timer fires (clamped to 0). Returns null
+/// when no timers are scheduled.
+fn earliestDueIn(self: *Application) ?f64 {
+    if (self.timers.items.len == 0) return null;
+    var soonest: f64 = self.timers.items[0].due_time;
+    for (self.timers.items[1..]) |t| {
+        if (t.due_time < soonest) soonest = t.due_time;
+    }
+    return soonest - awt.time();
+}
+
+fn fireDueTimers(self: *Application) void {
+    const now = awt.time();
+    var i: usize = 0;
+    while (i < self.timers.items.len) {
+        var t = self.timers.items[i];
+        if (t.due_time <= now) {
+            // Snapshot the timer before firing; the callback may call
+            // `clearTimer` on its own id, which would invalidate `i`.
+            t.cb(t.user_data);
+
+            // Re-locate by id since the list may have changed in the cb.
+            if (self.findTimerIndex(t.id)) |idx| {
+                if (self.timers.items[idx].period_ms == 0) {
+                    _ = self.timers.orderedRemove(idx);
+                } else {
+                    const period_s: f64 = @as(f64, @floatFromInt(self.timers.items[idx].period_ms)) / 1000.0;
+                    // Advance by period (no skip-catch-up; missed ticks coalesce).
+                    self.timers.items[idx].due_time = now + period_s;
+                    i = idx + 1;
+                    continue;
+                }
+            }
+            // Either deleted by callback or removed as one-shot — don't bump i.
+        } else {
+            i += 1;
+        }
+    }
+}
+
+fn findTimerIndex(self: *Application, id: TimerId) ?usize {
+    for (self.timers.items, 0..) |t, idx| {
+        if (t.id == id) return idx;
+    }
+    return null;
 }
 
 // ── factories ────────────────────────────────────────────────────────────
@@ -294,4 +433,17 @@ pub fn popupMenu(self: *Application) !*PopupMenu {
 
 pub fn menuSeparator(self: *Application) !*MenuSeparator {
     return try MenuSeparator.create(self.allocator);
+}
+
+/// Single-line text input. Uses default font (14px) and black text on a
+/// white background. `initial_text` is copied into the widget's internal
+/// UTF-8 buffer; pass `""` for an empty field.
+pub fn textField(self: *Application, initial_text: []const u8) !*TextField {
+    return try TextField.create(
+        self.allocator,
+        self,
+        .{ .face = self.default_font, .pixel_size = 14 },
+        awt.Graphics.Color.rgb(0, 0, 0),
+        initial_text,
+    );
 }

@@ -22,8 +22,10 @@ pub const Window = struct {
     paint_dirty:  bool,
     layout_dirty: bool,
     mouse_capture: ?*Component,                // ドラッグ中の capture 先 (詳細は「マウスキャプチャ」参照)
+    focus_owner:   ?*Component,                // キーボードフォーカスの現オーナー (詳細は「フォーカス」参照)
     allocator:    std.mem.Allocator,
     dirty_notify: Component.DirtyNotify,
+    focus_controller: Component.FocusController,
 
     pub const vtable = Component.VTable{
         .install      = install,
@@ -189,6 +191,20 @@ pub fn dismissAllOverlays(self: *Window) void;
 
 cascade した menu popup（File → Find → submenu）が一発で全部閉じる。
 
+## フォーカスオーナーの設定
+```zig
+pub fn requestFocusFor(self: *Window, c: ?*Component) void;
+```
+
+`focus_owner` を `c` に切り替える。
+旧オーナーには `FocusEvent{ .gained = false }`、新オーナーには `FocusEvent{ .gained = true }` を**同期的に** dispatch する（イベントキューを経由しない）。
+両者は `repaint` でマークされ、フォーカスリング / キャレットの表示状態が次回描画に反映される。
+
+`c` を `null` にするとフォーカスを解除する（テキスト入力先がない状態）。
+現オーナーと等しい `c` を渡したときは no-op。
+
+通常は利用者が直接呼ばず、widget が `Component.requestFocus()` を呼ぶことで間接的に呼ばれる。
+
 ---
 
 ## 階層と依存関係
@@ -285,6 +301,33 @@ container
 
 overlay が open 中は menu_bar と container への .move ルートも制限される（外クリックは dismiss、ホバーは menu_bar 切替のみ）。
 詳細実装は `Window.dispatchInput` 参照。
+
+## フォーカス
+キーボードフォーカスは Window が `focus_owner: ?*Component` で 1 個保持する。
+non-null のときキー入力 (`.key` / `.char`) はこのコンポーネントに**直接** dispatch され、container や menu_bar の fan-out は経由しない。
+null のとき `.key` は menu_bar → container の従来経路、`.char` は drop（テキスト入力先がないため）。
+
+### フォーカスの取得
+* マウス左クリック時、container 配下に `focusable == true` の widget が当たれば自動で `requestFocusFor(widget)` が呼ばれる
+* widget が能動的に `Component.requestFocus()` を呼ぶ (例: モーダル表示後の初期フォーカス指定)
+* どちらの経路でも `requestFocusFor` を経由するので FocusEvent と repaint は等しく発火する
+
+### フォーカスの喪失
+* 別の widget をクリックすると自動で focus が移る (前述)
+* container の何もない領域 / Window 外をクリックすると `requestFocusFor(null)` で解除される
+* widget 側で能動的に `c.requestFocus()` (= 別 widget の取得) を呼ぶケースもある
+
+menu_bar / overlay 上の左クリックではフォーカスは奪われない（メニュー操作はテキスト入力を中断しない）。
+
+### FocusController プロパティ
+Component から Window への直接依存を避けるため、Window は install 時に各ルートコンポーネント (container.component、menu_bar、overlay) に `FocusController` プロパティを put しておく。
+`Component.requestFocus` は親チェーンを遡ってルートで `FocusController` を見つけ、コールバック経由で `Window.requestFocusFor` を呼ぶ。
+DirtyNotify プロパティと同じ設計パターン。
+
+### v1 の制限
+* Tab / Shift+Tab によるフォーカス遷移は未実装 (機能要望)
+* フォーカスが付いたウィジェットが destroy される際、Window 側で自動的に `focus_owner = null` にする保護は v1 では持たない。各 widget の `uninstall` で「自分が focus_owner なら解除」を行う規約
+* マウスドラッグ中 (mouse_capture が non-null) の focus 遷移は capture を解除しない (drag は drag、focus は focus と独立)
 
 ## awt.Window との関係（名前衝突注意）
 **`awt.Window` と `framework.Window` は同名で別物**。役割は完全に違う。

@@ -12,6 +12,8 @@ pub const Application = struct {
     default_font: awt.Font,
     event_queue:  *awt.EventQueue,
     windows:      std.ArrayList(WindowEntry),
+    timers:       std.ArrayList(Timer),           // 登録中のタイマー (詳細は「タイマー」)
+    next_timer_id: TimerId,                       // タイマー id 採番カウンター
     icon_cache:   [lucide.Icon.count]?awt.Image,  // ビルトインアイコン (詳細は後述)
 
     // 内部所有: programs / ring バッファ / glyph atlas (Graphics.Context が借用)
@@ -50,10 +52,11 @@ pub fn run(self: *Application) !void;
 全ウィンドウが閉じるまでイベントループを回す。
 各反復で次を順に行う。
 
-1. `awt.waitEvents()` でイベントを待つ（アイドル時の CPU は 0）
-2. `event_queue.drain()` で別スレッドからポストされたタスクを UI スレッドで実行
-3. 各 Window の `paint_dirty` または `layout_dirty` が true なら `window.redraw()` を呼ぶ
-4. close フラグが立った Window を `windows` リストから外して `destroy`
+1. 次のタイマー deadline までイベントを待つ（タイマーが無ければ `awt.waitEvents()`、あれば `awt.waitEventsTimeout(...)`）。アイドル時の CPU は 0
+2. due 時刻に達したタイマーを発火する（詳細は「タイマー」参照）
+3. `event_queue.drain()` で別スレッドからポストされたタスクを UI スレッドで実行
+4. 各 Window の `paint_dirty` または `layout_dirty` が true なら `window.redraw()` を呼ぶ
+5. close フラグが立った Window を `windows` リストから外して `destroy`
 
 OS と Window state の同期（位置 / サイズ / タイトル）は v1 では未実装。
 将来 `WindowEntry` に `synced_xxx` を追加してループ末尾で diff push する予定（「OS との同期」参照）。
@@ -182,6 +185,44 @@ try bar.add(file);
 try frame.setMenuBar(bar);
 ```
 
+## テキストフィールドの生成
+```zig
+pub fn textField(self: *Application, initial_text: []const u8) !*TextField;
+```
+
+`TextField.create` をラップして default font (14px) と黒色を注入する。
+背景はデフォルトで白。
+`initial_text` は内部 UTF-8 バッファにコピーされる (呼び出し後すぐ free しても安全)。
+
+詳細は `textfield.md` を参照。
+
+## ワンショットタイマーの登録
+```zig
+pub fn setTimeout(self: *Application, ms: u32, cb: TimerCallback, user_data: *anyopaque) !TimerId;
+```
+
+`ms` ミリ秒経過後に `cb(user_data)` を **UI スレッドで一度だけ**呼ぶよう登録する。
+返り値の `TimerId` は `clearTimer` でキャンセルに使える（発火前に widget が destroy される場合など）。
+発火後は内部リストから自動的に外れる。
+内部で `awt.postEmptyEvent()` を呼んで run ループを起こすので、別スレッドから安全には呼べない（タイマーは UI スレッドで呼び出す前提）。
+
+## 繰り返しタイマーの登録
+```zig
+pub fn setInterval(self: *Application, ms: u32, cb: TimerCallback, user_data: *anyopaque) !TimerId;
+```
+
+`ms` ミリ秒ごとに `cb(user_data)` を繰り返し UI スレッドで呼ぶよう登録する。
+最初の発火は登録から `ms` 経過後。停止は `clearTimer` で行う。
+ループが詰まって複数 tick 分遅延した場合、tick を取り戻すような catch-up は行わず**まとめて 1 回**だけ発火する（次回 due は `now + period`）。
+
+## タイマーの解除
+```zig
+pub fn clearTimer(self: *Application, id: TimerId) void;
+```
+
+指定 id のタイマーを内部リストから外す。
+既に発火・解除済み、または未知の id は no-op。
+
 ---
 
 ## 責務
@@ -238,6 +279,27 @@ Application からは `getEventQueue()` でアクセスする。
 
 EventQueue 自体の詳細な API は awt 側の doc で扱う。
 Application はその所有とイベントループ内でのドレイン（`event_queue.drain()`）だけを担当する。
+
+## タイマー
+caret 点滅、ツールチップの遅延表示、tween アニメーション等の「未来のある時刻に UI スレッドで処理を実行したい」用途を、Application が一元的に提供する。
+
+仕組み:
+* `setTimeout` / `setInterval` で登録すると `timers` リストに `Timer` が積まれ、`due_time = awt.time() + delay` がセットされる
+* run ループは毎回開始時に最も近い `due_time` までの残り秒を計算し、`awt.waitEventsTimeout(delta)` でブロックする
+* OS イベント到着 or タイムアウトのどちらで戻っても `fireDueTimers` が `due_time <= now` の Timer を順に呼ぶ
+* ワンショット (`period_ms = 0`) は発火後にリストから外す。繰り返し (`period_ms > 0`) は `due_time = now + period_ms / 1000` で更新する
+
+精度:
+* GLFW の `glfwWaitEventsTimeout` 精度に依存。Windows では 1ms オーダーまで詰められるが、OS スケジューラ遅延で数ミリ秒のジッタは普通に発生する
+* ms 精度が要求される用途 (60fps 連続アニメーション等) には不向き。`requestAnimationFrame` 相当は機能要望
+
+スレッド:
+* `setTimeout` / `setInterval` / `clearTimer` / `cb` の呼び出しはすべて UI スレッドで完結する前提
+* 別スレッドから時間遅延でタスクを差し込みたい場合は、別スレッド側で `std.Thread.sleep` してから `event_queue.invokeLater(...)` を呼ぶ方が安全
+
+注意:
+* タイマー登録の所有権は Application。`clearTimer` を呼ばずに widget を destroy するとコールバックが解放済みメモリを触る。widget の `uninstall` で必ず `clearTimer` を呼ぶ規約
+* 発火順は「due_time の昇順」ではなく `timers` への登録順なので、同時刻に複数 due があるケースでは登録順に発火する (ms 単位で別なら昇順と等価)
 
 ## SecondaryLoop
 入れ子イベントループ。
@@ -338,5 +400,7 @@ try app.run();
 ```
 
 ## 機能要望
-* `textfield()` / `checkbox()` 等の追加ウィジェット factory — ウィジェット追加に合わせて生やす
+* `checkbox()` / `radio()` / `combo()` 等の追加ウィジェット factory — ウィジェット追加に合わせて生やす
 * 「最後のウィンドウを閉じても常駐したい」ケース向けの hook（現状は全ウィンドウ閉でループ終了）
+* `requestAnimationFrame` 相当 — vsync 同期での連続再描画 (現状のタイマーは ms オーダーの精度)
+* min-heap でタイマーを管理して `earliestDueIn` を O(1) に（現状は O(n)、数十〜数百個までは問題ない）

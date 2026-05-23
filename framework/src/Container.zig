@@ -168,12 +168,18 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
                 }
             }
         },
-        .key => {
-            // Key events: dispatch to all children for now (focus support: 機能要望).
+        .key, .char => {
+            // Key / text-input events: fan out to all children. Focus-aware
+            // routing (B-2: focus_owner) bypasses this path when set; this
+            // fan-out is the fallback when no component has focus.
             for (container.children.items) |elem| {
                 elem.component.vtable.processEvent(elem.component, ev);
                 if (ev.isConsumed()) return;
             }
+        },
+        .focus => {
+            // Focus events are delivered directly to the gaining/losing
+            // component by Window.requestFocusFor — not through fan-out.
         },
     }
 }

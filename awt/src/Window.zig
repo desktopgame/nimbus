@@ -55,6 +55,7 @@ pub const MouseButtonCallback = c.nmMouseButtonCallback;
 pub const CursorPosCallback   = c.nmCursorPosCallback;
 pub const ScrollCallback      = c.nmScrollCallback;
 pub const KeyCallback         = c.nmKeyCallback;
+pub const CharCallback        = c.nmCharCallback;
 
 pub fn setResizeCallback(self: Window, cb: ResizeCallback, user_data: ?*anyopaque) void {
     c.nmSetWindowResizeCallback(self.handle, cb, user_data);
@@ -78,4 +79,20 @@ pub fn setScrollCallback(self: Window, cb: ScrollCallback, user_data: ?*anyopaqu
 
 pub fn setKeyCallback(self: Window, cb: KeyCallback, user_data: ?*anyopaque) void {
     c.nmSetKeyCallback(self.handle, cb, user_data);
+}
+
+pub fn setCharCallback(self: Window, cb: CharCallback, user_data: ?*anyopaque) void {
+    c.nmSetCharCallback(self.handle, cb, user_data);
+}
+
+/// System clipboard. Returns null if the clipboard is empty or does not
+/// hold UTF-8 text. The returned slice is owned by the underlying C
+/// layer and only valid until the next clipboard call — copy if needed.
+pub fn getClipboardString(self: Window) ?[:0]const u8 {
+    const p = c.nmGetClipboardString(self.handle) orelse return null;
+    return std.mem.span(@as([*:0]const u8, @ptrCast(p)));
+}
+
+pub fn setClipboardString(self: Window, text: [:0]const u8) void {
+    c.nmSetClipboardString(self.handle, text.ptr);
 }

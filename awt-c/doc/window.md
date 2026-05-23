@@ -37,6 +37,7 @@ typedef void (*nmMouseButtonCallback)(nmWindow* window, nmMouseButton button, nm
 typedef void (*nmCursorPosCallback)(nmWindow* window, double x, double y, void* user_data);
 typedef void (*nmScrollCallback)(nmWindow* window, double dx, double dy, void* user_data);
 typedef void (*nmKeyCallback)(nmWindow* window, nmKeyCode key, nmKeyAction action, int modifiers, void* user_data);
+typedef void (*nmCharCallback)(nmWindow* window, uint32_t codepoint, void* user_data);
 ```
 
 `nmWindow` の内部実装に関する知識は外部に漏らさない。
@@ -159,6 +160,35 @@ void nmSetKeyCallback(nmWindow* self, nmKeyCallback cb, void* user_data);
 `action` は `nmKeyActionPress` / `nmKeyActionRelease` / `nmKeyActionRepeat` のいずれか。
 `modifiers` は `nmModifiers` のビットマスク。
 `cb` に `NULL` を渡すと登録解除される。
+
+## 文字入力コールバックの登録
+void nmSetCharCallback(nmWindow* self, nmCharCallback cb, void* user_data);
+
+OS のキーボードレイアウトを通過した後の Unicode codepoint を 1 つずつ受け取るコールバックを登録する。
+`'a'` キー押下で `'a' = 0x61`、Shift+1 で `'!' = 0x21` のように、修飾キーの効果が反映された後の文字が届く。
+ショートカット検出やカーソル移動には `nmSetKeyCallback` を使い、テキスト入力にはこちらを使う。
+`cb` に `NULL` を渡すと登録解除される。
+
+## クリップボードからの読み出し
+const char* nmGetClipboardString(nmWindow* self);
+
+システムクリップボードに格納されている UTF-8 文字列を返す。
+クリップボードが空、または UTF-8 テキスト以外を保持している場合は `NULL` を返す。
+返り値のポインタは awt-c が所有しており、次に同スレッドから `nmGetClipboardString` / `nmSetClipboardString` を呼ぶまで有効。
+それ以降は無効化されるので、呼び出し側は必要なら呼び出し直後に内容をコピーする。
+
+### 事前条件
+* `self` が non-NULL であること。違反した場合の動作は UB。
+
+## クリップボードへの書き込み
+void nmSetClipboardString(nmWindow* self, const char* utf8);
+
+`utf8` の内容をシステムクリップボードに書き込む。
+内部で内容のコピーを取るので、関数戻り後に `utf8` が解放されても安全。
+
+### 事前条件
+* `self` が non-NULL であること。違反した場合の動作は UB。
+* `utf8` が NUL 終端された UTF-8 文字列であること。違反した場合の動作は UB。
 
 ## 機能要望
 * DPI スケール係数の単独取得 API (現状は論理 / 実ピクセルの 2 値から逆算が必要)。

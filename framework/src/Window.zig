@@ -60,8 +60,13 @@ layout_dirty: bool,
 /// widget calls `ev.requestCapture(&self.component)` from a `.press`
 /// handler; cleared on the matching `.release`.
 mouse_capture: ?*Component,
+/// Keyboard-focus owner. When non-null, `.key` and `.char` events are
+/// delivered only to this component (instead of fan-out via container).
+/// Cleared automatically if the owning component is detached.
+focus_owner:  ?*Component,
 allocator:    std.mem.Allocator,
 dirty_notify: Component.DirtyNotify,
+focus_controller: Component.FocusController,
 
 pub const vtable = Component.VTable{
     .install      = install,
@@ -110,9 +115,11 @@ pub fn init(
         .cursor_y      = 0,
         .paint_dirty   = true,
         .layout_dirty  = true,
-        .mouse_capture = null,
-        .allocator     = allocator,
-        .dirty_notify  = undefined, // filled in install
+        .mouse_capture    = null,
+        .focus_owner      = null,
+        .allocator        = allocator,
+        .dirty_notify     = undefined,     // filled in install
+        .focus_controller = undefined,     // filled in install
     };
     win.container.component.vtable = &vtable;
     // Default layout: BorderLayout. Lets users compose a toolbar / status /
@@ -254,9 +261,11 @@ pub fn redraw(self: *Window) void {
 pub fn setMenuBar(self: *Window, bar: ?*Component) !void {
     if (bar) |b| {
         b.parent = null;
-        // Wire dirty-notify so child repaint/markLayoutDirty propagates up
-        // to this Window (the menu_bar is a separate root, not inside container).
+        // Wire dirty-notify + focus-controller so child repaint/markLayoutDirty
+        // and requestFocus propagate to this Window (the menu_bar is a
+        // separate root, not inside container).
         try b.putProperty(@typeName(Component.DirtyNotify), @ptrCast(&self.dirty_notify), null);
+        try b.putProperty(@typeName(Component.FocusController), @ptrCast(&self.focus_controller), null);
     }
     self.menu_bar = bar;
     self.layout_dirty = true;
@@ -275,6 +284,7 @@ pub fn addOverlay(
 ) !void {
     component.parent = null;
     try component.putProperty(@typeName(Component.DirtyNotify), @ptrCast(&self.dirty_notify), null);
+    try component.putProperty(@typeName(Component.FocusController), @ptrCast(&self.focus_controller), null);
     try self.overlays.append(self.allocator, .{
         .component = component,
         .owner = owner,
@@ -295,6 +305,29 @@ pub fn removeOverlay(self: *Window, owner: *anyopaque) void {
             awt.postEmptyEvent();
             return;
         }
+    }
+}
+
+// ── focus management ────────────────────────────────────────────────────
+
+/// Make `c` the keyboard-focus owner. Pass null to clear focus.
+/// Dispatches `FocusEvent{ .gained = false }` to the previous owner and
+/// `FocusEvent{ .gained = true }` to the new owner (synchronously, not via
+/// the event queue), and marks both regions for repaint so focus rings /
+/// carets re-render. No-op if the new owner equals the current owner.
+pub fn requestFocusFor(self: *Window, c: ?*Component) void {
+    if (self.focus_owner == c) return;
+    const old = self.focus_owner;
+    self.focus_owner = c;
+    if (old) |o| {
+        var ev = awt.Event{ .payload = .{ .focus = .{ .gained = false } } };
+        o.vtable.processEvent(o, &ev);
+        o.repaint();
+    }
+    if (c) |n| {
+        var ev = awt.Event{ .payload = .{ .focus = .{ .gained = true } } };
+        n.vtable.processEvent(n, &ev);
+        n.repaint();
     }
 }
 
@@ -340,6 +373,14 @@ fn install(self: *Component) !void {
     };
     try self.putProperty(@typeName(Component.DirtyNotify), @ptrCast(&win.dirty_notify), null);
 
+    // Focus controller — lets descendants call `c.requestFocus()` and have
+    // it bubble back to this Window via property lookup.
+    win.focus_controller = .{
+        .user_data         = @ptrCast(win),
+        .request_focus_for = focusControllerCallback,
+    };
+    try self.putProperty(@typeName(Component.FocusController), @ptrCast(&win.focus_controller), null);
+
     // Wire OS-level input callbacks into our dispatcher.
     win.awt_window.setResizeCallback(onResize, @ptrCast(win));
     win.awt_window.setRefreshCallback(onRefresh, @ptrCast(win));
@@ -347,6 +388,12 @@ fn install(self: *Component) !void {
     win.awt_window.setCursorPosCallback(onCursorPos, @ptrCast(win));
     win.awt_window.setScrollCallback(onScroll, @ptrCast(win));
     win.awt_window.setKeyCallback(onKey, @ptrCast(win));
+    win.awt_window.setCharCallback(onChar, @ptrCast(win));
+}
+
+fn focusControllerCallback(user_data: *anyopaque, c: ?*Component) void {
+    const win: *Window = @ptrCast(@alignCast(user_data));
+    win.requestFocusFor(c);
 }
 
 fn uninstall(self: *Component) void {
@@ -447,6 +494,13 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
                 if (ev.capture_target) |t| {
                     self.mouse_capture = @ptrCast(@alignCast(t));
                 }
+                // Auto-focus: if the press landed on a focusable widget,
+                // make it the focus owner. We approximate "landed on" by
+                // hit-testing the container subtree against window-local
+                // coords. menu_bar / overlay clicks are excluded earlier
+                // (they returned before reaching this branch).
+                if (self.findFocusableAt(m.x, m.y)) |w| self.requestFocusFor(w)
+                else self.requestFocusFor(null);
             }
         },
         .key => {
@@ -461,11 +515,36 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
                 }
                 return;  // modal: don't propagate
             }
+            // Focused widget gets first shot.
+            if (self.focus_owner) |fo| {
+                fo.vtable.processEvent(fo, ev);
+                if (ev.isConsumed()) return;
+            }
             if (self.menu_bar) |bar| {
                 bar.vtable.processEvent(bar, ev);
                 if (ev.isConsumed()) return;
             }
-            self.container.component.vtable.processEvent(&self.container.component, ev);
+            // Fan-out fallback when no focus owner consumed the key.
+            if (self.focus_owner == null) {
+                self.container.component.vtable.processEvent(&self.container.component, ev);
+            }
+        },
+        .char => {
+            if (self.overlays.items.len > 0) {
+                const top = self.overlays.items[self.overlays.items.len - 1];
+                top.component.vtable.processEvent(top.component, ev);
+                return;  // modal
+            }
+            if (self.focus_owner) |fo| {
+                fo.vtable.processEvent(fo, ev);
+                return;  // text input only goes to focused widget
+            }
+            // No focus owner: drop on the floor (nothing to type into).
+        },
+        .focus => {
+            // Focus events are dispatched synchronously by requestFocusFor
+            // (B-2) directly to the gaining/losing component — they should
+            // not normally arrive here via the event queue. No-op as a safety net.
         },
     }
 }
@@ -474,6 +553,28 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
 fn dispatchInputThunk(target: *anyopaque, ev: *awt.Event) void {
     const win: *Window = @ptrCast(@alignCast(target));
     win.dispatchInput(ev);
+}
+
+/// Walk the container subtree (children top-most-first), returning the
+/// deepest focusable component whose absolute window-bounds contain
+/// (`x`, `y`). Used by the dispatcher to auto-focus on left-press.
+fn findFocusableAt(self: *Window, x: f32, y: f32) ?*Component {
+    return findFocusableInSubtree(&self.container.component, x, y);
+}
+
+fn findFocusableInSubtree(c: *Component, x: f32, y: f32) ?*Component {
+    if (!c.containsWindowPoint(x, y)) return null;
+    // Descend into children first so a focusable inside a container wins
+    // over the container itself.
+    if (c.container) |cont| {
+        var i: usize = cont.children.items.len;
+        while (i > 0) {
+            i -= 1;
+            const child = cont.children.items[i].component;
+            if (findFocusableInSubtree(child, x, y)) |hit| return hit;
+        }
+    }
+    return if (c.focusable) c else null;
 }
 
 fn destroy(self: *Component, allocator: std.mem.Allocator) void {
@@ -595,4 +696,17 @@ fn onKey(
     };
     win.event_queue.postEvent(ev, @ptrCast(win), dispatchInputThunk) catch |err|
         log.warn("window", "input dropped (key): {s}", .{@errorName(err)});
+}
+
+fn onChar(
+    _: ?*awt.c.struct_nmWindow,
+    codepoint: u32,
+    user_data: ?*anyopaque,
+) callconv(.c) void {
+    const win: *Window = @ptrCast(@alignCast(user_data.?));
+    const ev = awt.Event{
+        .payload = .{ .char = .{ .codepoint = codepoint } },
+    };
+    win.event_queue.postEvent(ev, @ptrCast(win), dispatchInputThunk) catch |err|
+        log.warn("window", "input dropped (char): {s}", .{@errorName(err)});
 }

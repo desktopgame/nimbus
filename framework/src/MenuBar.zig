@@ -162,7 +162,7 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
                 .scroll => {},
             }
         },
-        .key => {},
+        .key, .char, .focus => {},
     }
 }
 

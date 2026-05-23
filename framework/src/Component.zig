@@ -68,6 +68,10 @@ align_x:    Alignment,
 align_y:    Alignment,
 parent:     ?*Component,
 container:  ?*Container,
+/// True if this component can receive keyboard focus. Default false:
+/// Button / Label / Slider don't take focus in v1 (mouse only). Widgets
+/// that consume text input (TextField, TextArea) set this to true.
+focusable:  bool,
 name:       ?[]const u8,
 properties: ?std.StringHashMap(Property),
 allocator:  std.mem.Allocator,
@@ -85,6 +89,7 @@ pub fn init(allocator: std.mem.Allocator, vtable: *const VTable) Component {
         .align_y    = .stretch,
         .parent     = null,
         .container  = null,
+        .focusable  = false,
         .name       = null,
         .properties = null,
         .allocator  = allocator,
@@ -189,6 +194,42 @@ pub fn setAlignY(self: *Component, a: Alignment) void {
     self.align_y = a;
     self.markLayoutDirty();
 }
+
+// ── focus ────────────────────────────────────────────────────────────────
+
+pub fn isFocusable(self: *const Component) bool {
+    return self.focusable;
+}
+
+pub fn setFocusable(self: *Component, v: bool) void {
+    self.focusable = v;
+}
+
+/// Ask the owning Window to make this component the focus owner.
+/// Walks the parent chain to a root that carries a `FocusController`
+/// property (installed by Window). No-op if the component is not
+/// attached to a focus-aware root (e.g. orphan during construction).
+pub fn requestFocus(self: *Component) void {
+    var node: ?*Component = self;
+    while (node) |cur| {
+        if (cur.parent == null) {
+            if (cur.getTyped(FocusController)) |fc| {
+                fc.request_focus_for(fc.user_data, self);
+            }
+            return;
+        }
+        node = cur.parent;
+    }
+}
+
+/// Property type that Window installs on each root Component so that
+/// `Component.requestFocus()` can bubble up and reach the Window's
+/// focus-owner state without a direct framework→framework dependency
+/// cycle. Same pattern as `DirtyNotify`.
+pub const FocusController = struct {
+    user_data:         *anyopaque,
+    request_focus_for: *const fn (*anyopaque, ?*Component) void,
+};
 
 // ── name (debug) ─────────────────────────────────────────────────────────
 

@@ -134,6 +134,21 @@ pub const KeyEvent = struct {
     modifiers: Modifiers,
 };
 
+/// Text-input event — a single Unicode codepoint already mapped through the
+/// OS keyboard layout. Separate from `KeyEvent` because the latter reports
+/// physical keys while `CharEvent` reports the resulting character.
+/// No modifiers field: the OS has already folded them into the codepoint
+/// (Shift+1 → '!'); handlers that need raw keys should look at `KeyEvent`.
+pub const CharEvent = struct {
+    codepoint: u32,
+};
+
+/// Focus gained / lost on a component. Dispatched by the framework when
+/// `Window.focus_owner` changes — not produced by the OS directly.
+pub const FocusEvent = struct {
+    gained: bool,
+};
+
 pub const MouseEvent = struct {
     x:         f32,
     y:         f32,
@@ -154,7 +169,9 @@ pub const MouseEvent = struct {
 
 pub const Payload = union(enum) {
     key:   KeyEvent,
+    char:  CharEvent,
     mouse: MouseEvent,
+    focus: FocusEvent,
 };
 
 consumed: bool = false,
@@ -191,7 +208,7 @@ pub fn translated(self: Event, offset: Point) Event {
             .consumed = self.consumed,
             .payload  = .{ .mouse = m.translated(offset) },
         },
-        .key => self,
+        .key, .char, .focus => self,
     };
 }
 

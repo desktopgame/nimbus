@@ -25,6 +25,7 @@ pub const Component = struct {
     align_y:    Alignment,                      // 垂直方向のアラインメント (デフォルト stretch)
     parent:     ?*Component,
     container:  ?*Container,                    // Container embed のみ self を指す
+    focusable:  bool,                           // キーボードフォーカスを受け取れるか (デフォルト false)
     name:       ?[]const u8,                    // Java AWT 互換
     properties: ?std.StringHashMap(Property),   // Swing putClientProperty 互換
     allocator:  std.mem.Allocator,
@@ -179,6 +180,34 @@ pub fn getName(self: Component) ?[]const u8;
 ```
 
 値レシーバ (`getBounds` と同じ理由)。
+
+## フォーカス可能性の取得
+```zig
+pub fn isFocusable(self: *const Component) bool;
+```
+
+`focusable` フィールドの getter。
+
+## フォーカス可能性の設定
+```zig
+pub fn setFocusable(self: *Component, v: bool) void;
+```
+
+`focusable` フィールドを更新する。
+true にしたウィジェット (TextField 等) は `requestFocus` でフォーカスを取得できる。
+レイアウトには影響しないので dirty フラグは立てない。
+
+## フォーカスの要求
+```zig
+pub fn requestFocus(self: *Component) void;
+```
+
+自身を Window のフォーカスオーナーにするよう要求する。
+内部的には親チェーンを上ってルートまで遡り、ルートに登録された `FocusController` プロパティを通じて Window に通知する。
+ルートが Window 配下に attach されていない (factory 直後など) 場合は no-op。
+
+`focusable == false` のコンポーネントに呼んでもフォーカス遷移は発生する（仕様）。
+利用者側で必要なら呼び出し前に `isFocusable()` をチェックする。
 
 ## VTable の差し替え
 ```zig
@@ -348,6 +377,27 @@ deinit の前に必ず `uninstall` を呼び出すこと。
 ## ルックアンドフィールの想定実装
 コンポーネントを再帰的に列挙して `setVTable` を呼ぶ、というのが想定。
 nimbus 自身はこの実装を提供しない。利用者の自由領域。
+
+## フォーカス
+`focusable` フィールドはこのコンポーネントがキーボードフォーカスを受け取れるかを示す。
+デフォルトは false で、Button / Label / Slider など v1 のウィジェットの多くはフォーカスを取らない。
+TextField / TextArea のようにテキスト入力を受けるウィジェットだけが true にセットする。
+
+`requestFocus` を呼ぶと、Window が `focus_owner` を切り替え、新旧のフォーカスオーナーに `FocusEvent` を dispatch する。
+詳細は `window.md`「フォーカス」を参照。
+
+framework は Component と Window の直接依存を避けるため、`FocusController` プロパティを介して通知する設計を採る。
+Window が各ルートコンポーネント (`container.component`、`menu_bar`、各 overlay) にこのプロパティを install しておき、`Component.requestFocus` は親チェーンを遡ってルートで読み取り、コールバック経由で Window に届ける。
+`DirtyNotify` プロパティと同じパターン。
+
+```zig
+pub const FocusController = struct {
+    user_data:         *anyopaque,
+    request_focus_for: *const fn (*anyopaque, ?*Component) void,
+};
+```
+
+利用者がこの型に触る必要はない (Window が install / 利用する内部仕掛け)。
 
 ## install / uninstall
 `install` を呼んだら必ず対応する `uninstall` も呼び出さなければならない。
