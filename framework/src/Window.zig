@@ -7,6 +7,7 @@ const std = @import("std");
 const awt = @import("awt");
 const Component = @import("Component.zig");
 const Container = @import("Container.zig");
+const BoxLayout = @import("BoxLayout.zig");
 
 const Window = @This();
 
@@ -16,7 +17,7 @@ swapchain:    awt.Swapchain,
 context:      *awt.Graphics.Context,
 device:       *awt.Device,
 app:          *anyopaque,                 // *Application (avoid circular import)
-title:        []u8,
+title:        [:0]u8,
 fb_w:         i32,
 fb_h:         i32,
 cursor_x:     f32,
@@ -72,6 +73,9 @@ pub fn init(
         .dirty_notify = undefined, // filled in install
     };
     win.container.component.vtable = &vtable;
+    // Default layout: vertical box. Children fill the window width, height
+    // distributed via grow_y. Users can override via window.container.setLayout.
+    win.container.layout = BoxLayout.vertical();
     return win;
 }
 

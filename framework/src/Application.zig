@@ -39,9 +39,10 @@ _quad_index:    awt.QuadIndexBuffer,
 _atlas:         awt.GlyphAtlas,
 
 /// Initialize the application. `font_data` is the byte slice for the default
-/// font (e.g., `@embedFile("...ttf")`). The data must outlive the
-/// Application.
-pub fn init(allocator: std.mem.Allocator, font_data: []const u8) !*Application {
+/// font (e.g., `@embedFile("...ttf")`). The data must outlive the Application.
+/// `io` is used for the internal EventQueue's mutex / condvar operations;
+/// typically obtained from `std.process.Init.io` in the caller's `main`.
+pub fn init(allocator: std.mem.Allocator, io: std.Io, font_data: []const u8) !*Application {
     const app = try allocator.create(Application);
     errdefer allocator.destroy(app);
 
@@ -86,7 +87,7 @@ pub fn init(allocator: std.mem.Allocator, font_data: []const u8) !*Application {
     app.default_font = try awt.Font.init(font_data, 0);
     errdefer app.default_font.deinit();
 
-    app.event_queue = try awt.EventQueue.init(allocator);
+    app.event_queue = try awt.EventQueue.init(allocator, io);
     errdefer app.event_queue.deinit();
     app.event_queue.setUiThread(std.Thread.getCurrentId());
 
