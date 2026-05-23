@@ -26,7 +26,7 @@ pub const Application = struct {
     windows:      std.ArrayList(WindowEntry),
     context:      awt.Graphics.Context,
     default_font: awt.Font,
-    task_queue:   ?*awt.EventQueue,        // v1 は null、 v2 で invokeLater 用
+    event_queue:  *awt.EventQueue,
 
     pub fn init(allocator: std.mem.Allocator) !Application;
     pub fn deinit(self: *Application) void;
@@ -44,9 +44,8 @@ pub const Application = struct {
     // ── イベントループ ────────────────────
     pub fn run(self: *Application) !void;
 
-    // ── invokeLater / invokeAndWait (v2) ─
-    // pub fn invokeLater(self: *Application, fn_ptr, user_data) !void;
-    // pub fn invokeAndWait(self: *Application, fn_ptr, user_data) !void;
+    // ── イベントキューへのアクセス ────────
+    pub fn getEventQueue(self: *Application) *awt.EventQueue;
 
     // ── デフォルトフォント差し替え ─────────
     pub fn setDefaultFont(self: *Application, path: []const u8) !void;
@@ -105,7 +104,7 @@ Window 系のファクトリは追加で `windows` リストへの append が要
 pub fn run(self: *Application) !void {
     while (self.windows.items.len > 0) {
         awt.waitEvents();                 // ブロック (event か glfwPostEmptyEvent で起きる)
-        self.drainTaskQueue();            // v1 は no-op、 v2 で invokeLater 配信
+        self.event_queue.drain();         // invokeLater 経由でポストされたタスクを UI スレッドで実行
         for (self.windows.items) |e| {
             if (e.window.dirty_rect != null) e.window.redraw();
         }
@@ -144,23 +143,33 @@ OS callback が `component.position/size` と `synced_xxx` を **両方** 更新
 全ウィンドウが閉じたらループ抜け (`while self.windows.items.len > 0`)。 「最後のウィンドウを閉じたら exit」
 セマンティクス。 これを変えたい (ウィンドウ全閉じでも常駐したい) 利用者向けには将来 hook を生やす。
 
-## invokeLater / invokeAndWait (v2)
-別スレッドから UI を触る唯一の正規の手段。 CLAUDE.md の「EventQueue / invokeLater」 セクションを参照。
-v1 では task_queue を持つだけで実装しない。
+## イベントキュー (invokeLater / invokeAndWait)
+別スレッドから UI を触る唯一の正規ルート。CLAUDE.md「非同期処理」セクションを参照。
+
+`invokeLater` / `invokeAndWait` は Application のメソッドとしては生やさず、Application が所有する `awt.EventQueue` のメソッドとして提供する。
+Application からは `getEventQueue()` でアクセスする。
 
 ```zig
-// v2 で実装予定 (API スケッチ)
-pub fn invokeLater(self: *Application, fn_ptr: *const fn(*anyopaque) void, user_data: *anyopaque) !void;
-pub fn invokeAndWait(self: *Application, fn_ptr: *const fn(*anyopaque) void, user_data: *anyopaque) !void;
+// 利用者コード (別スレッドから UI に反映)
+const queue = app.getEventQueue();
+try queue.invokeLater(taskFn, user_data);     // ポストして即 return
+try queue.invokeAndWait(taskFn, user_data);   // ポスト後 UI スレッドが実行するまでブロック
 ```
 
-`invokeAndWait` は別スレッドから呼ぶ前提 (UI スレッド自身から呼ぶとデッドロック)。 assert で弾く。
+`invokeAndWait` は別スレッドから呼ぶ前提 (UI スレッド自身から呼ぶとデッドロック)。assert で弾く。
 
-## SecondaryLoop (v2)
-modal dialog 用の入れ子イベントループ。 「Application.run() の中から、 dialog 表示中だけ
-小さな run() を回し、 dialog が閉じたら戻る」 という Swing の SecondaryLoop / Qt の QEventLoop 相当。
+EventQueue 自体の詳細な API は awt 側の doc で扱う。
+Application はその所有とイベントループ内でのドレイン（`event_queue.drain()`）だけを担当する。
 
-v1 では Dialog が無いので不要。 Dialog 着手時に再検討する。
+## SecondaryLoop
+入れ子イベントループ。
+`Application.run()` の中からさらに小さなイベントループを回し、何らかの条件が満たされたら呼び出し元に戻る。
+Swing の SecondaryLoop / Qt の QEventLoop に相当する。
+
+主な用途は将来追加される modal dialog の実装だが、それ以外にも「同期的に応答待ちしたいがイベントは流したい」という場面で利用者が直接使える。
+
+SecondaryLoop は awt 側のプリミティブとして提供される。
+Application は内部実装では利用しないが、必要なら利用者が直接インスタンス化して使用する。
 
 ## 共有リソース
 
@@ -197,12 +206,15 @@ pub fn init(allocator: std.mem.Allocator) !Application {
     const font = try awt.Font.init(builtin_noto_sans_jp, 0);
     errdefer font.deinit();
 
+    const event_queue = try awt.EventQueue.init(allocator);
+    errdefer event_queue.deinit();
+
     return .{
         .allocator    = allocator,
         .windows      = .empty,
         .context      = ctx,
         .default_font = font,
-        .task_queue   = null,
+        .event_queue  = event_queue,
     };
 }
 ```
@@ -218,6 +230,7 @@ pub fn deinit(self: *Application) void {
     self.windows.deinit(self.allocator);
 
     // 2. 共有リソース
+    self.event_queue.deinit();
     self.default_font.deinit();
     self.context.deinit();
 
@@ -233,8 +246,6 @@ pub fn deinit(self: *Application) void {
 破棄順序を間違えると、 残った Window が context を参照して落ちるので Window → context → awt の順。
 
 ## 機能要望
-* `invokeLater` / `invokeAndWait` — 別スレッドから UI を触る正規ルート (CLAUDE.md「非同期処理」参照)。`task_queue` フィールドは予約済み、ドレインは現状 no-op。
-* SecondaryLoop — modal dialog 用の入れ子イベントループ (Swing の SecondaryLoop / Qt の QEventLoop 相当)。Dialog 追加と同時に検討。
 * `button()` / `textfield()` 等の widget factory — widget 追加に合わせて生やす。
 * 「最後のウィンドウを閉じても常駐したい」 ケース向けの hook (現状は全ウィンドウ閉でループ終了)。
 
