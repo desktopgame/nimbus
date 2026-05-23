@@ -15,6 +15,10 @@ pub const Component = struct {
     vtable:     *const VTable,                  // ★ 書き換え可能 (個別差替 / 一斉差替)
     position:   Point,
     size:       Size,
+    min_size:   Size,                           // レイアウト下限 (デフォルト 0,0)
+    max_size:   Size,                           // レイアウト上限 (デフォルト inf,inf)
+    grow_x:     f32,                            // 水平方向の余白分配重み (デフォルト 0)
+    grow_y:     f32,                            // 垂直方向の余白分配重み (デフォルト 0)
     parent:     ?*Component,
     container:  ?*Container,                    // Container embed のみ self を指す
     name:       ?[]const u8,                    // Java AWT 互換
@@ -53,6 +57,34 @@ Component ごとに以下のカスタマイズポイントがある。
 VTable によって利用者が好きな処理を入れられるだけでは不十分な場合もある。
 例えばコンポーネントが追加で独自の状態を保持して、それがイベントで変化するような場合。
 このような場合のために、 `Component.properties` が存在している。
+
+## レイアウト属性
+LayoutManager が子の bounds を計算するための入力として、Component は 4 つの属性を持つ。
+意味と分配アルゴリズムの詳細は `{REPO_ROOT}/doc/layout-design.md` を参照。
+
+| フィールド | 型 | デフォルト | 意味 |
+|---|---|---|---|
+| `min_size` | `Size` | `(0, 0)` | これ以下のサイズにはならない |
+| `max_size` | `Size` | `(inf, inf)` | これより大きいサイズにはならない |
+| `grow_x` | `f32` | `0` | 水平方向に余白があるときの分配重み |
+| `grow_y` | `f32` | `0` | 垂直方向に余白があるときの分配重み |
+
+`min_size` / `max_size` は **ハード境界** であり、grow による分配は max を超えない。
+
+### コンテンツ依存の min_size
+Label のようにテキスト幅から自然な min_size が決まる widget では、widget の init や setter (`Label.setText` 等) が自前で `component.min_size` を計算してセットする。
+Component 自身に「コンテンツから min を導出する」仕組みは持たない。
+理由は widget ごとに参照する内部状態 (テキスト、フォント、画像など) が異なり、共通化に意味がないため。
+
+利用者が明示的に min を上書きしたい場合は `component.setMinSize(...)` を呼ぶ。
+
+### setter / getter
+* `setMinSize` / `getMinSize`
+* `setMaxSize` / `getMaxSize`
+* `setGrowX` / `getGrowX`
+* `setGrowY` / `getGrowY`
+
+setter は Frame の `layout_dirty` を立てる責務も持つ（詳細は `{REPO_ROOT}/doc/layout-design.md` の「レイアウトと描画の更新タイミング」を参照）。
 
 ## ライフサイクル
 アロケーターで Component を確保、initしたのち、呼び出し側で VTable.install() まで実行すること。
