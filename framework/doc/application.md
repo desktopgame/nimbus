@@ -25,10 +25,11 @@ const WindowEntry = struct {
 
 ## アプリケーションの初期化
 ```zig
-pub fn init(allocator: std.mem.Allocator) !Application;
+pub fn init(allocator: std.mem.Allocator, io: std.Io) !*Application;
 ```
 
 awt の初期化（GLFW）、Device の生成、Graphics.Context（programs / rings / atlas）の構築、デフォルトフォントの読み込み、EventQueue の生成までを一括で行う。
+デフォルトフォントは framework に同梱された Noto Sans JP（`framework/src/noto/`、`nimbus.noto.noto_sans_jp_regular` でも参照可）を `@embedFile` で焼き込んで使う。利用者がフォントバイトを渡す必要は無い。
 失敗時は途中まで確保したリソースを全部解放する（強い例外保証）。
 
 ## アプリケーションの後片付け
@@ -219,7 +220,8 @@ Application が所有し、全 Window が借用する。
 * 全 Window が同じ font atlas を共有すると glyph cache 効率が良い
 
 ### default_font
-Noto Sans（Latin + CJK JP）を `@embedFile` で焼き込んだものを Application init で読み込む。
+framework に同梱された Noto Sans JP（Latin + CJK JP）を `@embedFile` で焼き込んだものを Application init で読み込む。
+本体は `framework/src/noto/NotoSansJP-Regular.ttf`、Zig 側からは `nimbus.noto.noto_sans_jp_regular` でバイト列としても参照できる（awt を直接叩く利用者向け）。
 Label / Button 等のウィジェットファクトリが借用する。寿命は Application と同じ。
 
 `setDefaultFont(path)` で差し替え可能（上級利用者向け、CLAUDE.md「フォント」参照）。
@@ -241,7 +243,7 @@ Label / Button 等のウィジェットファクトリが借用する。寿命�
 基本形。
 
 ```zig
-var app = try nimbus.Application.init(std.heap.page_allocator);
+var app = try nimbus.Application.init(init.gpa, init.io);
 defer app.deinit();
 
 const frame = try app.frame("hello nimbus", 800, 600);

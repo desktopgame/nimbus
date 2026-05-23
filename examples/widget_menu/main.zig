@@ -10,7 +10,6 @@ const std = @import("std");
 const nimbus = @import("nimbus");
 const awt = nimbus.awt;
 
-const noto_sans_ttf = @embedFile("assets/NotoSansJP-Regular.ttf");
 const lucide = nimbus.lucide;
 
 const State = struct {
@@ -157,7 +156,7 @@ fn onTbAction(user_data: *anyopaque) void {
 // ── main ─────────────────────────────────────────────────────────────────
 
 pub fn main(init: std.process.Init) !void {
-    const app = try nimbus.Application.init(init.gpa, init.io, noto_sans_ttf);
+    const app = try nimbus.Application.init(init.gpa, init.io);
     defer app.deinit();
 
     const frame = try app.frame("menu demo", 640, 360);

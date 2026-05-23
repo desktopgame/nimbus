@@ -7,8 +7,6 @@
 const std = @import("std");
 const nimbus = @import("nimbus");
 
-const noto_sans_ttf = @embedFile("assets/NotoSansJP-Regular.ttf");
-
 const State = struct {
     label:         *nimbus.Label,
     slider:        *nimbus.Slider,
@@ -37,7 +35,7 @@ fn onSliderChange(user_data: *anyopaque) void {
 }
 
 pub fn main(init: std.process.Init) !void {
-    const app = try nimbus.Application.init(init.gpa, init.io, noto_sans_ttf);
+    const app = try nimbus.Application.init(init.gpa, init.io);
     defer app.deinit();
 
     const frame = try app.frame("widget simple", 600, 120);

@@ -5,7 +5,7 @@ const c = awt.c;
 const Label = nimbus.Label;
 const Container = nimbus.Container;
 
-const noto_sans_ttf = @embedFile("assets/noto-sans/NotoSansJP-Regular.ttf");
+const noto_sans_ttf = nimbus.noto.noto_sans_jp_regular;
 const example_png = @embedFile("assets/example.png");
 
 const Renderer = struct {

@@ -5,10 +5,12 @@
 
 const std = @import("std");
 const awt = @import("awt");
+const framework = @import("nimbus");
 
-// Embed the default font once so all framework scenes can build Labels /
-// Buttons without each scene loading a font.
-pub const default_font_bytes = @embedFile("assets/NotoSansJP-Regular.ttf");
+// Re-export the framework's bundled Noto Sans JP so snapshot tests /
+// inspector binaries can build Labels / Buttons without each one embedding
+// its own copy.
+pub const default_font_bytes = framework.noto.noto_sans_jp_regular;
 
 pub const PaintContext = struct {
     g:         *awt.Graphics,
@@ -58,8 +60,6 @@ fn paintBasicShapes(ctx: PaintContext) anyerror!void {
 }
 
 // ── framework layout scenes ──────────────────────────────────────────────
-
-const framework = @import("nimbus");
 
 /// Helper: build a root Container, lay it out at full ctx size, paint, free.
 const FrameworkSetup = struct {

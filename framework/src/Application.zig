@@ -10,6 +10,7 @@ const Button = @import("Button.zig");
 const Slider = @import("Slider.zig");
 const Frame = @import("Frame.zig");
 const Window = @import("Window.zig");
+const noto = @import("noto/fonts.zig");
 
 const Application = @This();
 
@@ -38,11 +39,12 @@ _uniforms:      awt.UniformBuffer,
 _quad_index:    awt.QuadIndexBuffer,
 _atlas:         awt.GlyphAtlas,
 
-/// Initialize the application. `font_data` is the byte slice for the default
-/// font (e.g., `@embedFile("...ttf")`). The data must outlive the Application.
-/// `io` is used for the internal EventQueue's mutex / condvar operations;
-/// typically obtained from `std.process.Init.io` in the caller's `main`.
-pub fn init(allocator: std.mem.Allocator, io: std.Io, font_data: []const u8) !*Application {
+/// Initialize the application. The default font is the bundled Noto Sans JP
+/// regular (see `framework/src/noto/`); callers do not need to supply font
+/// bytes. `io` is used for the internal EventQueue's mutex / condvar
+/// operations; typically obtained from `std.process.Init.io` in the caller's
+/// `main`.
+pub fn init(allocator: std.mem.Allocator, io: std.Io) !*Application {
     const app = try allocator.create(Application);
     errdefer allocator.destroy(app);
 
@@ -84,7 +86,7 @@ pub fn init(allocator: std.mem.Allocator, io: std.Io, font_data: []const u8) !*A
         .text_program  = &app._text_program,
     };
 
-    app.default_font = try awt.Font.init(font_data, 0);
+    app.default_font = try awt.Font.init(noto.noto_sans_jp_regular, 0);
     errdefer app.default_font.deinit();
 
     app.event_queue = try awt.EventQueue.init(allocator, io);
