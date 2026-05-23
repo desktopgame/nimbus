@@ -59,7 +59,7 @@ pub fn add(self: *PopupMenu, item: *Component) !void {
         const sub: *Menu = @fieldParentPtr("component", item);
         sub.setMode(.item);
     } else if (modelOf(item)) |m| {
-        m.addActionListener(onItemAction, @ptrCast(self)) catch {};
+        try m.addActionListener(onItemAction, @ptrCast(self));
     }
 }
 
@@ -159,7 +159,7 @@ fn modelOf(c: *Component) ?*ButtonModel {
 
 // ── popup_root vtable ────────────────────────────────────────────────────
 
-fn popupInstall(_: *Component) void {}
+fn popupInstall(_: *Component) !void {}
 fn popupUninstall(_: *Component) void {}
 fn popupDestroyNoop(_: *Component, _: std.mem.Allocator) void {}
 

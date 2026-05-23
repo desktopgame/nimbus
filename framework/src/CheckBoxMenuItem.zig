@@ -71,7 +71,7 @@ fn createInternal(
         .allocator = allocator,
     };
     item.applyMetrics();
-    CheckBoxMenuItem.vtable.install(&item.component);
+    try CheckBoxMenuItem.vtable.install(&item.component);
     return item;
 }
 
@@ -110,9 +110,9 @@ pub fn getModel(self: CheckBoxMenuItem) *ButtonModel {
 
 // ── vtable impl ──────────────────────────────────────────────────────────
 
-fn install(self: *Component) void {
+fn install(self: *Component) !void {
     const item: *CheckBoxMenuItem = @fieldParentPtr("component", self);
-    item.model.addChangeListener(onModelChange, self) catch {};
+    try item.model.addChangeListener(onModelChange, self);
 }
 
 fn uninstall(self: *Component) void {

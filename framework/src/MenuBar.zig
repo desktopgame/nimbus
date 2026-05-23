@@ -86,7 +86,7 @@ fn relayout(self: *MenuBar) void {
 
 // ── vtable impl ──────────────────────────────────────────────────────────
 
-fn install(_: *Component) void {}
+fn install(_: *Component) !void {}
 fn uninstall(_: *Component) void {}
 
 fn paint(self: *Component, g: *awt.Graphics) void {

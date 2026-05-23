@@ -44,7 +44,7 @@ pub fn create(allocator: std.mem.Allocator) !*Panel {
     const panel = try allocator.create(Panel);
     errdefer allocator.destroy(panel);
     panel.* = Panel.init(allocator);
-    Panel.vtable.install(&panel.container.component);
+    try Panel.vtable.install(&panel.container.component);
     return panel;
 }
 
@@ -72,7 +72,7 @@ pub fn asContainer(self: *Panel) *Container {
 
 // ── vtable impl ──────────────────────────────────────────────────────────
 
-fn install(self: *Component) void {
+fn install(self: *Component) !void {
     const cont: *Container = @fieldParentPtr("component", self);
     self.container = cont;
 }

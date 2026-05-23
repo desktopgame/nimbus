@@ -77,7 +77,7 @@ fn createInternal(
         .allocator = allocator,
     };
     item.applyMetrics();
-    MenuItem.vtable.install(&item.component);
+    try MenuItem.vtable.install(&item.component);
     return item;
 }
 
@@ -117,9 +117,9 @@ pub fn getModel(self: MenuItem) *ButtonModel {
 
 // ── vtable impl ──────────────────────────────────────────────────────────
 
-fn install(self: *Component) void {
+fn install(self: *Component) !void {
     const item: *MenuItem = @fieldParentPtr("component", self);
-    item.model.addChangeListener(onModelChange, self) catch {};
+    try item.model.addChangeListener(onModelChange, self);
 }
 
 fn uninstall(self: *Component) void {

@@ -31,7 +31,13 @@ pub const Event = awt.Event;
 pub const Alignment = enum { start, center, end, stretch };
 
 pub const VTable = struct {
-    install:      *const fn (self: *Component) void,
+    /// One-time setup after the component is placed in its container (or for
+    /// the root, immediately after construction). May fail if it allocates
+    /// (listener registration, property insertion, etc.). `create()` factories
+    /// propagate this error so the half-built widget is freed cleanly.
+    install:      *const fn (self: *Component) anyerror!void,
+    /// Tear down whatever `install` set up. Conceptually a destructor — only
+    /// releases resources, never fails. Callers do not need to handle errors.
     uninstall:    *const fn (self: *Component) void,
     paint:        *const fn (self: *Component, g: *awt.Graphics) void,
     /// Mutable Event pointer; consumption is via `ev.consume()`. See
@@ -195,11 +201,14 @@ pub fn getName(self: Component) ?[]const u8 {
     return self.name;
 }
 
-/// Swap to a new vtable. uninstall the old, swap, install the new — atomic.
-pub fn setVTable(self: *Component, new_vt: *const VTable) void {
+/// Swap to a new vtable. uninstall the old, swap, install the new — atomic
+/// only on success. If the new install fails, the component is left in the
+/// uninstalled state (old vtable already torn down); caller's responsibility
+/// to roll back if needed.
+pub fn setVTable(self: *Component, new_vt: *const VTable) !void {
     self.vtable.uninstall(self);
     self.vtable = new_vt;
-    self.vtable.install(self);
+    try self.vtable.install(self);
 }
 
 /// Mark dirty for repaint. Walks up parent chain to the root Window which

@@ -87,7 +87,7 @@ pub fn create(
         .allocator  = allocator,
     };
     menu.applyMetrics();
-    Menu.vtable.install(&menu.component);
+    try Menu.vtable.install(&menu.component);
     return menu;
 }
 
@@ -143,7 +143,7 @@ pub fn add(self: *Menu, child: *Component) !void {
         if (self.window) |w| sub.setWindow(w);
     } else if (modelOf(child)) |m| {
         // Auto-dismiss after item action.
-        m.addActionListener(onItemAction, @ptrCast(self)) catch {};
+        try m.addActionListener(onItemAction, @ptrCast(self));
     }
 }
 
@@ -265,9 +265,9 @@ fn modelOf(c: *Component) ?*ButtonModel {
 
 // ── vtable: label / row ──────────────────────────────────────────────────
 
-fn install(self: *Component) void {
+fn install(self: *Component) !void {
     const menu: *Menu = @fieldParentPtr("component", self);
-    menu.model.addChangeListener(onModelChange, self) catch {};
+    try menu.model.addChangeListener(onModelChange, self);
 }
 
 fn uninstall(self: *Component) void {
@@ -390,7 +390,7 @@ fn destroy(self: *Component, allocator: std.mem.Allocator) void {
 
 // ── popup_root vtable ────────────────────────────────────────────────────
 
-fn popupInstall(_: *Component) void {}
+fn popupInstall(_: *Component) !void {}
 fn popupUninstall(_: *Component) void {}
 fn popupDestroyNoop(_: *Component, _: std.mem.Allocator) void {}
 

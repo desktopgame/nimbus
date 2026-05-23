@@ -43,7 +43,7 @@ pub fn asWindow(self: *Frame) *Window {
 
 // ── menu bar ─────────────────────────────────────────────────────────────
 
-pub fn setMenuBar(self: *Frame, bar: ?*MenuBar) void {
+pub fn setMenuBar(self: *Frame, bar: ?*MenuBar) !void {
     // Tear down previous.
     if (self.menu_bar) |old| {
         if (self.owns_menu) {
@@ -54,13 +54,13 @@ pub fn setMenuBar(self: *Frame, bar: ?*MenuBar) void {
     self.owns_menu = bar != null;
     if (bar) |b| {
         b.setWindow(&self.window);
-        self.window.setMenuBar(&b.component);
+        try self.window.setMenuBar(&b.component);
     } else {
-        self.window.setMenuBar(null);
+        try self.window.setMenuBar(null);
     }
 }
 
-pub fn setMenuBarBorrowed(self: *Frame, bar: ?*MenuBar) void {
+pub fn setMenuBarBorrowed(self: *Frame, bar: ?*MenuBar) !void {
     if (self.menu_bar) |old| {
         if (self.owns_menu) {
             old.component.vtable.destroy(&old.component, self.window.allocator);
@@ -70,9 +70,9 @@ pub fn setMenuBarBorrowed(self: *Frame, bar: ?*MenuBar) void {
     self.owns_menu = false;
     if (bar) |b| {
         b.setWindow(&self.window);
-        self.window.setMenuBar(&b.component);
+        try self.window.setMenuBar(&b.component);
     } else {
-        self.window.setMenuBar(null);
+        try self.window.setMenuBar(null);
     }
 }
 

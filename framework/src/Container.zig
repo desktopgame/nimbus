@@ -50,7 +50,7 @@ pub fn create(allocator: std.mem.Allocator) !*Container {
     const cont = try allocator.create(Container);
     errdefer allocator.destroy(cont);
     cont.* = Container.init(allocator);
-    Container.vtable.install(&cont.component);
+    try Container.vtable.install(&cont.component);
     return cont;
 }
 
@@ -137,7 +137,7 @@ pub fn doLayout(self: *Container) void {
 
 // ── vtable impl ──────────────────────────────────────────────────────────
 
-fn install(self: *Component) void {
+fn install(self: *Component) !void {
     const container: *Container = @fieldParentPtr("component", self);
     self.container = container;
 }

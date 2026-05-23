@@ -86,7 +86,7 @@ fn createInternal(
         .allocator = allocator,
     };
     b.applyMetrics();
-    Button.vtable.install(&b.component);
+    try Button.vtable.install(&b.component);
     return b;
 }
 
@@ -166,9 +166,9 @@ pub fn getModel(self: Button) *ButtonModel { return self.model; }
 
 // ── vtable impl ──────────────────────────────────────────────────────────
 
-fn install(self: *Component) void {
+fn install(self: *Component) !void {
     const button: *Button = @fieldParentPtr("component", self);
-    button.model.addChangeListener(onModelChange, self) catch {};
+    try button.model.addChangeListener(onModelChange, self);
 }
 
 fn uninstall(self: *Component) void {

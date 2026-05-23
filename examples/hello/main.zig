@@ -207,7 +207,7 @@ pub fn main() !void {
     // Container + 子 Label 2 個、右下に配置。
     const fw_container = try gpa.create(Container);
     fw_container.* = Container.init(gpa);
-    Container.vtable.install(&fw_container.component);
+    try Container.vtable.install(&fw_container.component);
     fw_container.component.setBounds(.{ .x = 430, .y = 605, .width = 350, .height = 60 });
     defer {
         fw_container.deinit();

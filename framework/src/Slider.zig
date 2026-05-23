@@ -72,7 +72,7 @@ fn createInternal(
         .allocator = allocator,
     };
     s.applyDefaultLayoutAttrs();
-    Slider.vtable.install(&s.component);
+    try Slider.vtable.install(&s.component);
     return s;
 }
 
@@ -140,9 +140,9 @@ fn posToValue(self: *const Slider, local_x: f32, local_y: f32) i32 {
 
 // ── vtable impl ──────────────────────────────────────────────────────────
 
-fn install(self: *Component) void {
+fn install(self: *Component) !void {
     const slider: *Slider = @fieldParentPtr("component", self);
-    slider.model.addChangeListener(onModelChange, self) catch {};
+    try slider.model.addChangeListener(onModelChange, self);
 }
 
 fn uninstall(self: *Component) void {

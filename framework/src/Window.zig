@@ -251,12 +251,12 @@ pub fn redraw(self: *Window) void {
 /// Set or clear the top-strip menu bar. The component is **not owned** by
 /// Window — caller (Frame) handles lifetime. Pass null to remove.
 /// Triggers re-layout (container y-offset adjusts to bar height).
-pub fn setMenuBar(self: *Window, bar: ?*Component) void {
+pub fn setMenuBar(self: *Window, bar: ?*Component) !void {
     if (bar) |b| {
         b.parent = null;
         // Wire dirty-notify so child repaint/markLayoutDirty propagates up
         // to this Window (the menu_bar is a separate root, not inside container).
-        b.putProperty(@typeName(Component.DirtyNotify), @ptrCast(&self.dirty_notify), null) catch {};
+        try b.putProperty(@typeName(Component.DirtyNotify), @ptrCast(&self.dirty_notify), null);
     }
     self.menu_bar = bar;
     self.layout_dirty = true;
@@ -274,7 +274,7 @@ pub fn addOverlay(
     on_dismiss: *const fn (*anyopaque) void,
 ) !void {
     component.parent = null;
-    component.putProperty(@typeName(Component.DirtyNotify), @ptrCast(&self.dirty_notify), null) catch {};
+    try component.putProperty(@typeName(Component.DirtyNotify), @ptrCast(&self.dirty_notify), null);
     try self.overlays.append(self.allocator, .{
         .component = component,
         .owner = owner,
@@ -326,7 +326,7 @@ fn notifyLayout(user_data: *anyopaque) void {
 
 // ── vtable impl ──────────────────────────────────────────────────────────
 
-fn install(self: *Component) void {
+fn install(self: *Component) !void {
     const cont: *Container = @fieldParentPtr("component", self);
     const win: *Window = @fieldParentPtr("container", cont);
     self.container = cont;
@@ -338,7 +338,7 @@ fn install(self: *Component) void {
         .paint     = notifyPaint,
         .layout    = notifyLayout,
     };
-    self.putProperty(@typeName(Component.DirtyNotify), @ptrCast(&win.dirty_notify), null) catch {};
+    try self.putProperty(@typeName(Component.DirtyNotify), @ptrCast(&win.dirty_notify), null);
 
     // Wire OS-level input callbacks into our dispatcher.
     win.awt_window.setResizeCallback(onResize, @ptrCast(win));

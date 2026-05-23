@@ -97,8 +97,8 @@ pub const ctx_vtable = nimbus.Component.VTable{
     .destroy      = ctxDestroy,
 };
 
-fn ctxInstall(self: *nimbus.Component) void {
-    ContextPanel.instance.saved_vt.install(self);
+fn ctxInstall(self: *nimbus.Component) !void {
+    try ContextPanel.instance.saved_vt.install(self);
 }
 
 fn ctxUninstall(self: *nimbus.Component) void {
@@ -302,7 +302,7 @@ pub fn main(init: std.process.Init) !void {
         try bar.add(view);
     }
 
-    frame.setMenuBar(bar);
+    try frame.setMenuBar(bar);
 
     std.debug.print(
         \\Try:

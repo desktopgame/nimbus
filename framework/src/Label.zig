@@ -53,7 +53,7 @@ pub fn create(
     const label = try allocator.create(Label);
     errdefer allocator.destroy(label);
     label.* = try Label.init(allocator, text, font, color);
-    Label.vtable.install(&label.component);
+    try Label.vtable.install(&label.component);
     return label;
 }
 
@@ -93,7 +93,7 @@ fn textMinSize(font: awt.Graphics.TextFont, text: []const u8) Component.Size {
 
 // ── vtable impl ──────────────────────────────────────────────────────────
 
-fn install(self: *Component) void {
+fn install(self: *Component) !void {
     _ = self;
 }
 
