@@ -20,8 +20,6 @@
 int  nm_font_internal_init(void);
 void nm_font_internal_terminate(void);
 
-void nm_log(nmLogLevel level, const char* category, const char* fmt, ...);
-
 /* Implemented in dx12_device.c (Windows) or dx12_stub.c (no-op elsewhere). */
 void nm_dxgi_report_live_objects(void);
 
@@ -114,7 +112,6 @@ static void on_key(GLFWwindow* gw, int key, int scancode, int action, int mods) 
 }
 
 static void on_char(GLFWwindow* gw, unsigned int codepoint) {
-    nm_log(nmLogLevelInfo, "char", "codepoint=U+%04X", codepoint);
     nmWindowCallbacks* cb = (nmWindowCallbacks*)glfwGetWindowUserPointer(gw);
     if (!cb || !cb->char_cb) return;
     cb->char_cb((nmWindow*)gw, (uint32_t)codepoint, cb->char_user);

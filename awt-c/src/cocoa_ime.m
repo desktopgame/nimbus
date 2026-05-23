@@ -34,8 +34,6 @@
 #include "internal.h"
 #include "window_internal.h"
 
-void nm_log(nmLogLevel level, const char* category, const char* fmt, ...);
-
 /* Associated-object key for stashing the nmWindowCallbacks* on a content view.
  * The address of the static variable is the key — its value is irrelevant. */
 static const void* kNmCbsKey = &kNmCbsKey;
@@ -158,10 +156,6 @@ static void nim_setMarkedText(id self, SEL _cmd,
 
     NSString* str = coerce_marked_string(markedText);
     NSUInteger wlen = str ? [str length] : 0;
-    nm_log(nmLogLevelInfo, "ime", "setMarkedText wlen=%lu sel=%lu+%lu repl=%lu+%lu",
-        (unsigned long)wlen,
-        (unsigned long)selectedRange.location, (unsigned long)selectedRange.length,
-        (unsigned long)replacementRange.location, (unsigned long)replacementRange.length);
 
     if (wlen == 0) {
         /* Empty marked text behaves like unmark — emit cleared. */
@@ -222,14 +216,6 @@ static void nim_setMarkedText(id self, SEL _cmd,
  * actually active, so plain ASCII input doesn't emit spurious cleared
  * events. */
 static void nim_insertText(id self, SEL _cmd, id string, NSRange replacementRange) {
-    NSString* s = [string isKindOfClass:[NSAttributedString class]]
-        ? [(NSAttributedString*)string string]
-        : (NSString*)string;
-    nm_log(nmLogLevelInfo, "ime", "insertText len=%lu repl=%lu+%lu str=\"%s\"",
-        (unsigned long)(s ? [s length] : 0),
-        (unsigned long)replacementRange.location, (unsigned long)replacementRange.length,
-        s ? [s UTF8String] : "(nil)");
-
     BOOL was_marked = ((BOOL(*)(id, SEL))objc_msgSend)(self, @selector(hasMarkedText));
 
     if (g_base_class) {
@@ -251,7 +237,6 @@ static void nim_unmarkText(id self, SEL _cmd) {
         ((void(*)(struct objc_super*, SEL))objc_msgSendSuper)(&sup, _cmd);
     }
 
-    nm_log(nmLogLevelInfo, "ime", "unmarkText");
     nmWindowCallbacks* cbs = view_get_cbs((NSView*)self);
     if (!cbs || !cbs->composition_cb) return;
     nmCompositionEvent ev = {
