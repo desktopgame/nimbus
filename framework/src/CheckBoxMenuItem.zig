@@ -166,18 +166,27 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     g.drawString(item.text, tx, ty);
 }
 
-/// Simple checkmark: two diagonal strokes drawn as small filled rects.
-/// Origin x is left of the icon slot; vertically centered in the row height.
+/// Checkmark: two diagonal strokes approximated by small filled squares
+/// along each diagonal. Origin x is left of the icon slot; vertically
+/// centered in the row height.
 fn drawCheckmark(g: *awt.Graphics, x0: f32, row_h: f32, color: awt.Graphics.Color) void {
     g.setColor(color);
-    const size: f32 = 10;
+    const size: f32 = 12;
     const cx = x0 + (MenuItem.ICON_SLOT_WIDTH - size) / 2;
     const cy = (row_h - size) / 2;
-    // Short stroke (lower-left to middle-bottom)
-    const t: f32 = 2;
-    g.fillRect(.{ .x = cx,         .y = cy + size * 0.55, .width = size * 0.35, .height = t });
-    // Long stroke (middle-bottom to upper-right)
-    g.fillRect(.{ .x = cx + size * 0.30, .y = cy + size * 0.40, .width = size * 0.65, .height = t });
+    const dot: f32 = 2;
+    // Short stroke (down-right): 5 dots from lower-left to mid-bottom.
+    var i: usize = 0;
+    while (i < 5) : (i += 1) {
+        const f: f32 = @floatFromInt(i);
+        g.fillRect(.{ .x = cx + 1 + f, .y = cy + 5 + f, .width = dot, .height = dot });
+    }
+    // Long stroke (up-right): 7 dots from mid-bottom to upper-right.
+    i = 0;
+    while (i < 7) : (i += 1) {
+        const f: f32 = @floatFromInt(i);
+        g.fillRect(.{ .x = cx + 5 + f, .y = cy + 9 - f, .width = dot, .height = dot });
+    }
 }
 
 fn processEvent(self: *Component, ev: *Component.Event) void {
