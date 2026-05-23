@@ -34,9 +34,19 @@
 #include "internal.h"
 #include "window_internal.h"
 
+void nm_log(nmLogLevel level, const char* category, const char* fmt, ...);
+
 /* Associated-object key for stashing the nmWindowCallbacks* on a content view.
  * The address of the static variable is the key — its value is irrelevant. */
 static const void* kNmCbsKey = &kNmCbsKey;
+
+/* Class of the GLFW content view (base of our subclass). Captured at attach
+ * time and used as the super_class for objc_msgSendSuper. We MUST NOT use
+ * `class_getSuperclass(object_getClass(self))` here: AppKit / KVO can insert
+ * additional dynamic subclasses on top of our isa, which would make that
+ * expression resolve to our own class — causing the super dispatch to
+ * re-enter our IMP and stack-overflow. */
+static Class g_base_class = Nil;
 
 static nmWindowCallbacks* view_get_cbs(NSView* view) {
     /* Stored via OBJC_ASSOCIATION_ASSIGN — no retention, raw pointer round-trip. */
@@ -130,14 +140,28 @@ static NSString* coerce_marked_string(id markedText) {
 static void nim_setMarkedText(id self, SEL _cmd,
                               id markedText, NSRange selectedRange,
                               NSRange replacementRange) {
-    (void)_cmd;
-    (void)replacementRange;
+    /* Chain to super so GLFW's internal markedText ivar stays in sync.
+     * macOS NSTextInputContext queries hasMarkedText / markedRange on the
+     * view (which read GLFW's ivar) to decide whether to treat the next
+     * key event as part of a composition or as a fresh character. Skipping
+     * the chain leaves hasMarkedText == NO during composition, which causes
+     * the OS to dispatch the original key char in addition to the IME's
+     * marked text — duplicated input on commit. */
+    if (g_base_class) {
+        struct objc_super sup = { self, g_base_class };
+        ((void(*)(struct objc_super*, SEL, id, NSRange, NSRange))objc_msgSendSuper)(
+            &sup, _cmd, markedText, selectedRange, replacementRange);
+    }
 
     nmWindowCallbacks* cbs = view_get_cbs((NSView*)self);
     if (!cbs || !cbs->composition_cb) return;
 
     NSString* str = coerce_marked_string(markedText);
     NSUInteger wlen = str ? [str length] : 0;
+    nm_log(nmLogLevelInfo, "ime", "setMarkedText wlen=%lu sel=%lu+%lu repl=%lu+%lu",
+        (unsigned long)wlen,
+        (unsigned long)selectedRange.location, (unsigned long)selectedRange.length,
+        (unsigned long)replacementRange.location, (unsigned long)replacementRange.length);
 
     if (wlen == 0) {
         /* Empty marked text behaves like unmark — emit cleared. */
@@ -183,8 +207,51 @@ static void nim_setMarkedText(id self, SEL _cmd,
     free(bounds);
 }
 
+/* Apple's NSTextInputClient protocol expects insertText: to commit (and
+ * therefore clear) any active marked text. The system Japanese IME does
+ * NOT follow up with unmarkText / setMarkedText("") — leaving GLFW's
+ * markedText ivar populated and our preedit_text in the framework still
+ * showing "あ" right next to the freshly-committed character. The user
+ * sees the committed char twice (once in the buffer, once still painted
+ * as preedit) until something else (e.g. the next key) clears it.
+ *
+ * Fix: after chaining to super (so GLFW fires _glfwInputChar normally),
+ * synthesize an unmarkText send. That dispatches through our subclass —
+ * nim_unmarkText fires the composition-cleared event AND chains to super
+ * to drop GLFW's markedText ivar. Only do this if marked text was
+ * actually active, so plain ASCII input doesn't emit spurious cleared
+ * events. */
+static void nim_insertText(id self, SEL _cmd, id string, NSRange replacementRange) {
+    NSString* s = [string isKindOfClass:[NSAttributedString class]]
+        ? [(NSAttributedString*)string string]
+        : (NSString*)string;
+    nm_log(nmLogLevelInfo, "ime", "insertText len=%lu repl=%lu+%lu str=\"%s\"",
+        (unsigned long)(s ? [s length] : 0),
+        (unsigned long)replacementRange.location, (unsigned long)replacementRange.length,
+        s ? [s UTF8String] : "(nil)");
+
+    BOOL was_marked = ((BOOL(*)(id, SEL))objc_msgSend)(self, @selector(hasMarkedText));
+
+    if (g_base_class) {
+        struct objc_super sup = { self, g_base_class };
+        ((void(*)(struct objc_super*, SEL, id, NSRange))objc_msgSendSuper)(
+            &sup, _cmd, string, replacementRange);
+    }
+
+    if (was_marked) {
+        ((void(*)(id, SEL))objc_msgSend)(self, @selector(unmarkText));
+    }
+}
+
 static void nim_unmarkText(id self, SEL _cmd) {
-    (void)_cmd;
+    /* Chain to super to clear GLFW's markedText ivar. Same rationale as
+     * nim_setMarkedText. */
+    if (g_base_class) {
+        struct objc_super sup = { self, g_base_class };
+        ((void(*)(struct objc_super*, SEL))objc_msgSendSuper)(&sup, _cmd);
+    }
+
+    nm_log(nmLogLevelInfo, "ime", "unmarkText");
     nmWindowCallbacks* cbs = view_get_cbs((NSView*)self);
     if (!cbs || !cbs->composition_cb) return;
     nmCompositionEvent ev = {
@@ -249,7 +316,9 @@ static Class get_or_create_ime_subclass(Class base) {
         /* Already registered (e.g. previous module-load lifecycle); look it up. */
         cls = objc_getClass(name);
         if (!cls) return Nil;
+        g_base_class = base;
     } else {
+        g_base_class = base;
         /* Pull the type encodings from the base class so the runtime knows
          * argument / return ABI for our IMPs. */
         Method m1 = class_getInstanceMethod(base,
@@ -257,10 +326,13 @@ static Class get_or_create_ime_subclass(Class base) {
         Method m2 = class_getInstanceMethod(base, @selector(unmarkText));
         Method m3 = class_getInstanceMethod(base,
             @selector(firstRectForCharacterRange:actualRange:));
+        Method m4 = class_getInstanceMethod(base,
+            @selector(insertText:replacementRange:));
 
         const char* t1 = m1 ? method_getTypeEncoding(m1) : "v@:@{_NSRange=QQ}{_NSRange=QQ}";
         const char* t2 = m2 ? method_getTypeEncoding(m2) : "v@:";
         const char* t3 = m3 ? method_getTypeEncoding(m3) : "{CGRect={CGPoint=dd}{CGSize=dd}}@:{_NSRange=QQ}^{_NSRange=QQ}";
+        const char* t4 = m4 ? method_getTypeEncoding(m4) : "v@:@{_NSRange=QQ}";
 
         class_addMethod(cls,
             @selector(setMarkedText:selectedRange:replacementRange:),
@@ -269,6 +341,9 @@ static Class get_or_create_ime_subclass(Class base) {
         class_addMethod(cls,
             @selector(firstRectForCharacterRange:actualRange:),
             (IMP)nim_firstRectForCharacterRange, t3);
+        class_addMethod(cls,
+            @selector(insertText:replacementRange:),
+            (IMP)nim_insertText, t4);
 
         objc_registerClassPair(cls);
     }
