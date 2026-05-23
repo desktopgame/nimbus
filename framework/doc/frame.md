@@ -96,7 +96,7 @@ Frame ポインタではなく Window ポインタを WindowEntry に入れる�
 ---
 
 ## 利用例
-Application 経由で Frame を作って widget を追加する典型コード。
+Application 経由で Frame を作ってウィジェットを追加する典型コード。
 
 ```zig
 var app = try nimbus.Application.init(std.heap.page_allocator);
@@ -116,7 +116,7 @@ Frame 直に setter / add を生やしていないので、`frame.window.xxx` �
 `&frame.window` は `*Window` として他の API に渡せる。
 
 ## 機能要望
-* `menu_bar`: トップに固定のメニューバー（`MenuBar` widget が要る）
+* `menu_bar`: トップに固定のメニューバー（`MenuBar` ウィジェットが要る）
 * `icon`: タイトルバーアイコン
 * `decoration_style`: 通常 / フレームレス / フルスクリーンの切替
 * default close operation: 閉じた時に dispose する / hide する / アプリ終了する 等の選択（現状は dispose 固定）

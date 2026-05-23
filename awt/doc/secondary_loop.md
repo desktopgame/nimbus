@@ -2,7 +2,7 @@
 入れ子イベントループのプリミティブ。
 `Application.run()` の中からさらに小さな blocking ループを回し、明示的に `exit()` が呼ばれるまで待機する。
 Swing の `SecondaryLoop` / Qt の `QEventLoop` 相当。
-主用途は将来追加される modal dialog だが、awt 層のプリミティブとして利用者が直接使うこともできる。
+主用途は将来追加されるモーダルダイアログだが、awt 層のプリミティブとして利用者が直接使うこともできる。
 
 ## 型定義
 ```zig
@@ -70,12 +70,12 @@ SecondaryLoop は awt 層のプリミティブとして「イベントを流す�
 そのため SecondaryLoop は「イベント駆動でループを回す」だけを行い、ループ反復ごとに何をするかは `tick` コールバックで利用者（framework）に委ねる。
 framework は `Application.tickOnce` のような関数を渡して、メインループと同じ per-iteration 処理を SecondaryLoop でも回す。
 
-awt 層単体でも使える（modal dialog の代わりに低レベル blocking UI を作る用途等）。
+awt 層単体でも使える（モーダルダイアログの代わりに低レベル blocking UI を作る用途等）。
 その場合は `tick = null` で初期化し、イベントだけ流して `exit()` 呼び出しを待つ。
 
 ## ネスト
 SecondaryLoop は入れ子で使える。
-modal dialog の中から別の modal dialog を開く、というケースに対応する。
+モーダルダイアログの中から別のモーダルダイアログを開く、というケースに対応する。
 各 SecondaryLoop が独立した `exit_requested` を持つので、外側は内側の終了を待ってから自分の `exit` を判定する。
 
 ## EventQueue との関係
@@ -94,7 +94,7 @@ SecondaryLoop の `tick` が EventQueue の `drain` を呼ぶ責務を負う（f
 「最後のウィンドウが閉じたら」終了するのは `Application.run()` のみ。
 SecondaryLoop は明示的な `exit()` を待つ。
 
-## modal dialog での想定利用フロー
+## モーダルダイアログでの想定利用フロー
 将来 Dialog が追加された時の典型フロー:
 
 1. `dialog.showModal()` が呼ばれる
@@ -110,7 +110,7 @@ const result = dialog.showModal();
 if (result == .ok) { ... }
 ```
 
-これにより modal dialog の同期的な API がイベント駆動アーキテクチャの上に成立する。
+これによりモーダルダイアログの同期的な API がイベント駆動アーキテクチャの上に成立する。
 
 ---
 
@@ -127,7 +127,7 @@ const code = loop.exec();
 std.debug.print("loop exited with code {d}\n", .{code});
 ```
 
-framework 側から tick 付きで使う想定（modal dialog 実装相当の擬似コード）。
+framework 側から tick 付きで使う想定（モーダルダイアログ実装相当の擬似コード）。
 
 ```zig
 fn showDialogModal(self: *Dialog) DialogResult {

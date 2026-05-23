@@ -144,8 +144,8 @@ baseline 派の API が必要になったら `drawStringAtBaseline(s, x, baselin
   * 角丸 / 円のような滑らかな形状は 1px の AA を持つ。
 * **テキスト**: 同じグリフが繰り返し現れる前提で、再ラスタライズが起きないよう設計する (キャッシュが効くこと)。
 * **Graphics 自体**: 値型として軽量に複製可能であること (`clip` で子 paint に渡すため、ヒープアロケーションが入らない)。
-* **GPU リソースのフレームライフサイクル**: 1 フレーム内の draw が参照する vertex / uniform データは、次に `nmAcquireCommandBuffer` が返るタイミングまで GPU から読まれ続ける前提でメモリを保持する。`nmAcquireCommandBuffer` は前フレームの GPU 完了を保証するため (`command_buffer.md` 参照)、それ以降は同じ領域を新しいフレームで安全に上書きできる。
-* **リソース集約**: 同種のデータ (vertex / uniform 等) は可能な限り単一のバッファに詰めて、heap オブジェクト数とバインド切替を減らす。
+* **GPU リソースのフレームライフサイクル**: 1 フレーム内の draw が参照する頂点 / uniform データは、次に `nmAcquireCommandBuffer` が返るタイミングまで GPU から読まれ続ける前提でメモリを保持する。`nmAcquireCommandBuffer` は前フレームの GPU 完了を保証するため (`command_buffer.md` 参照)、それ以降は同じ領域を新しいフレームで安全に上書きできる。
+* **リソース集約**: 同種のデータ (頂点 / uniform 等) は可能な限り単一のバッファに詰めて、heap オブジェクト数とバインド切替を減らす。
 
 ## 機能要望
 | 機能 | 理由 / 想定対応 |
@@ -158,4 +158,4 @@ baseline 派の API が必要になったら `drawStringAtBaseline(s, x, baselin
 | `save` / `restore` | `clip` で値返しすることで不要 |
 | `drawImage` の scale / subimage 指定 | 元サイズで貼るのみ |
 | 複数行 `drawString` (`\n` の自動レイアウト) | テキストレイアウトは別レイヤーで対応予定 |
-| グラデーション塗り | 当面 image / texture で代用 |
+| グラデーション塗り | 当面 image / テクスチャで代用 |

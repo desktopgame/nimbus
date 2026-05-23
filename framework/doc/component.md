@@ -1,6 +1,6 @@
 # component
 コンポーネントについての設計ノート。
-nimbus のすべての widget のルートとなる基本型。
+nimbus のすべてのウィジェットのルートとなる基本型。
 データ + VTable + プロパティ + レイアウト属性を持つ。
 
 ## 型定義
@@ -40,7 +40,7 @@ pub fn init(allocator: std.mem.Allocator) Component;
 ```
 
 デフォルト値で `Component` のフィールドを初期化する。
-`vtable` は呼び出し側（widget の `create` または factory）が後からセットする責務を持つ。
+`vtable` は呼び出し側（ウィジェットの `create` または factory）が後からセットする責務を持つ。
 `min_size = (0, 0)`、`max_size = (inf, inf)`、`grow_x = grow_y = 0` で初期化される。
 
 ## コンポーネントの後片付け
@@ -70,7 +70,7 @@ pub fn repaint(self: *Component) void;
 ```
 
 paint_dirty を立てる。レイアウトには影響しない。
-widget の setter（`setColor` 等、見た目だけ変える操作）が内部的に呼ぶことを想定。
+ウィジェットの setter（`setColor` 等、見た目だけ変える操作）が内部的に呼ぶことを想定。
 
 ## 最小サイズの設定
 ```zig
@@ -160,7 +160,7 @@ pub fn getProperty(self: *const Component, key: []const u8) ?Property;
 
 ## プラッガブルな設計
 Component を継承した Button、Label などは VTable を独自に実装する。
-利用者は普通にビルトインの widget を使えばよく、カスタマイズしたいときだけ VTable を差し替える。
+利用者は普通にビルトインのウィジェットを使えばよく、カスタマイズしたいときだけ VTable を差し替える。
 ルックアンドフィールのような「全コンポーネントの VTable を一斉に入れ替える」操作も同じ仕組みで実現できる。
 
 nimbus はルックアンドフィールそのものの設計は提供しない。
@@ -197,19 +197,19 @@ LayoutManager が子の bounds を計算するための入力として、4 つ�
 `min_size` / `max_size` はハード境界であり、grow による分配は max を超えない。
 
 ### コンテンツ依存の min_size
-Label のようにテキスト幅から自然な min_size が決まる widget では、widget 側 (`Label.setText` など) が自前で `component.min_size` を計算してセットする。
-Component 自身には「コンテンツから min を導出する」仕組みは持たない（widget ごとに参照する内部状態が違うため）。
+Label のようにテキスト幅から自然な min_size が決まるウィジェットでは、ウィジェット側 (`Label.setText` など) が自前で `component.min_size` を計算してセットする。
+Component 自身には「コンテンツから min を導出する」仕組みは持たない（ウィジェットごとに参照する内部状態が違うため）。
 
 利用者が明示的に上書きしたい場合は `setMinSize` を呼ぶ。
-ただし widget が次回 setter を呼んだときに再計算で上書きされる場合がある（widget の方針による）。
+ただしウィジェットが次回 setter を呼んだときに再計算で上書きされる場合がある（ウィジェットの方針による）。
 
 ## メモリ解放
 Container が子を解放するとき、`allocator.destroy(child)` で素直に free できないのが Zig の制約。
-`child` の型は `*Component` だが実体は外側の widget (Label、Button 等) であり、`allocator.destroy` は引数の静的サイズ（sizeof Component）しか free しない。
-このままだと widget 固有のフィールドが leak する。
+`child` の型は `*Component` だが実体は外側のウィジェット (Label、Button 等) であり、`allocator.destroy` は引数の静的サイズ（sizeof Component）しか free しない。
+このままだとウィジェット固有のフィールドが leak する。
 
-そのため VTable に `destroy` を持ち、各 widget が `@fieldParentPtr` で外側に戻して正しいサイズで free する責務を負う。
-ファクトリー経由で生成された widget を利用者が自分で free する場合も `component.vtable.destroy(&comp, allocator)` を呼ぶのが正規ルート。
+そのため VTable に `destroy` を持ち、各ウィジェットが `@fieldParentPtr` で外側に戻して正しいサイズで free する責務を負う。
+ファクトリー経由で生成されたウィジェットを利用者が自分で free する場合も `component.vtable.destroy(&comp, allocator)` を呼ぶのが正規ルート。
 
 `Component.deinit` 自体はメモリ解放を行わない（uninstall + properties cleanup まで）。
 メモリ解放は `vtable.destroy` の責務。
@@ -224,7 +224,7 @@ Container embed の場合だけ `container` が self を指す。
 ルックアップ用ではなく、デバッグダンプ用を想定している。
 
 ## 派生型から Component メソッドへのアクセス
-Zig は継承を持たないので、派生 widget (Label、Container など) からの Component メソッド呼び出しは**親フィールド直接アクセス**で書く。
+Zig は継承を持たないので、派生ウィジェット (Label、Container など) からの Component メソッド呼び出しは**親フィールド直接アクセス**で書く。
 委譲メソッドは生やさない。
 
 ```zig
@@ -246,7 +246,7 @@ Java の感覚だと `setBounds` / `repaint` あたりは利用者が頻繁に�
 | `setName` / `getName` | デバッグ用。出番少 |
 | `setVTable` / properties | 上級者用、明示的でいい |
 
-利用者が頻繁に呼ぶのは widget 固有 setter (`label.setText`、`label.setColor`) であり、親 Component メソッドはほぼ呼ばない。
+利用者が頻繁に呼ぶのはウィジェット固有 setter (`label.setText`、`label.setColor`) であり、親 Component メソッドはほぼ呼ばない。
 委譲を生やしても普段使われない上にボイラープレートになる。
 将来「本当に頻出と判明したメソッド」が出てきたら、その時に派生型に委譲を生やす。
 
@@ -257,7 +257,7 @@ Container には `asComponent()` という親型へのアップキャストの�
 try container.add(label.asComponent());
 ```
 
-Label など leaf widget には `asComponent` はないが、`&label.component` で同等。
+Label など leaf ウィジェットには `asComponent` はないが、`&label.component` で同等。
 
 ## setter / getter の方針
 書き換え可能なプロパティは **setter / getter をペアで提供する**（Swing 流の対称性）。
@@ -275,10 +275,10 @@ Zig はフィールド単位の private 修飾子を持たないので、言語�
 入った時に setter が listener 通知を担う。
 
 ## ライフサイクル
-factory（または widget の `create`）が次の手順をひとまとめに行う。
+factory（またはウィジェットの `create`）が次の手順をひとまとめに行う。
 
-1. `allocator.create(WidgetType)` で widget 全体を確保
-2. `init` で widget 固有のフィールドを初期化（Component のフィールドも含む）
+1. `allocator.create(WidgetType)` でウィジェット全体を確保
+2. `init` でウィジェット固有のフィールドを初期化（Component のフィールドも含む）
 3. `component.vtable = &WidgetType.vtable` をセット
 4. `component.vtable.install(&component)` を呼ぶ
 
@@ -296,10 +296,10 @@ VTable を差し替えるときは古い vtable の `uninstall` → 新しい vt
 ---
 
 ## 利用例
-利用者が直接 Component を生成することはほぼなく、widget（Label 等）の `create` または Application の factory が内部で組み立てる。
+利用者が直接 Component を生成することはほぼなく、ウィジェット（Label 等）の `create` または Application の factory が内部で組み立てる。
 利用者から見える典型コードは label.md / application.md の利用例を参照。
 
-派生 widget の Component メソッドにアクセスする場合の例。
+派生ウィジェットの Component メソッドにアクセスする場合の例。
 
 ```zig
 const label = try app.label("hello");

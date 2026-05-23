@@ -111,7 +111,7 @@ nimbus のトップレベル階層:
 ```
 framework.Window (抽象トップレベル、Container 派生)
   ├─ framework.Frame    (独立トップレベル、タイトルバー / 最大化最小化)
-  └─ framework.Dialog   (オーナー必須、modal / modeless)   ← v2
+  └─ framework.Dialog   (オーナー必須、モーダル / モードレス)   ← v2
 ```
 
 Swing と同じく Window を抽象基底にし、Frame と Dialog を並列の派生型として持つ。
@@ -133,8 +133,8 @@ Container は `Component` を embed しているので、推移的に「Window �
 
 | | `awt.Window` | `framework.Window` |
 |---|---|---|
-| 役割 | OS native window のラッパー、描画面 (swapchain ターゲット) | UI トップレベルの抽象、Container 派生 |
-| 内部に持つもの | glfw window ハンドルのみ | `awt.Window` + `awt.Swapchain` + Container embed + dirty フラグ |
+| 役割 | OS native ウィンドウのラッパー、描画面 (swapchain ターゲット) | UI トップレベルの抽象、Container 派生 |
+| 内部に持つもの | glfw ウィンドウハンドルのみ | `awt.Window` + `awt.Swapchain` + Container embed + dirty フラグ |
 | 寿命 | `framework.Window` が所有 | Application が所有 |
 
 `framework.Window` は内部に `awt.Window` を埋め込み、UI レイヤーとして肉付けする。
@@ -175,7 +175,7 @@ Application のループが `window.redraw()` を直接呼び、そこで root �
 `Component.repaint()` / `repaintRect(r)` が呼ばれると、parent を遡って Window まで上がり、`window.dirty_rect` に union で蓄積される。
 これは `framework.Component` で実装する責務。
 
-`dirty_rect` の扱いは graphics 層に伝える scissor のヒントとして使う。
+`dirty_rect` の扱いは graphics 層に伝えるシザーのヒントとして使う。
 v1 では full redraw に倒すが、API としては rect 単位で受けられるようにしておく（`component.md`「repaint」参照）。
 
 ## close 処理
@@ -184,7 +184,7 @@ Window 自体は何もしない（close ボタンを押した瞬間に dispose �
 Application のループが：
 
 1. `shouldClose()` をチェック
-2. true なら window を `windows` リストから外して `dispose` → `destroy`
+2. true ならウィンドウを `windows` リストから外して `dispose` → `destroy`
 
 これにより Window 側で「閉じる前に保存しますか?」のような確認ダイアログを差し挟む余地が生まれる。
 WindowListener 相当（機能要望）が入った時に活きる。
@@ -193,22 +193,22 @@ WindowListener 相当（機能要望）が入った時に活きる。
 
 ### グローバル singleton は不要
 GLFW のイベントキューはプロセス単位なので「全ウィンドウのループ」は 1 本でよく、そのループを **Application が単一管理する**。
-Application が windows を tracking している限り、Window 側はグローバル状態を持たない（Singleton レジストリや `var all_windows = ...` は使わない）。
+Application がウィンドウを tracking している限り、Window 側はグローバル状態を持たない（Singleton レジストリや `var all_windows = ...` は使わない）。
 
-### awt 側 callback と window の紐付け
+### awt 側 callback とウィンドウの紐付け
 GLFW callback は `glfwGetWindowUserPointer` で任意のポインタを受け取れる。
 Window の init で `awt.Window.setResizeCallback` / `setRefreshCallback` に自身のポインタを user_data として登録する。
 callback の中では `*Window` を取り出して、`component.position/size` と Application 側の `WindowEntry.synced_xxx` を**両方**更新する。
 
-これで「グローバルレジストリなし」で window 個別の event をハンドリングできる。
-Application はループの主体（waitEvents + 全 window の dirty 走査 + OS sync + close 回収）だけを担当し、event の dispatch 自体は GLFW + user_data 経由。
+これで「グローバルレジストリなし」でウィンドウ個別のイベントをハンドリングできる。
+Application はループの主体（waitEvents + 全ウィンドウの dirty 走査 + OS sync + close 回収）だけを担当し、イベントの dispatch 自体は GLFW + user_data 経由。
 
 ## ライフサイクル
 Window は Application のファクトリ（`app.frame(...)` 等）が `Frame.init` 内で生成する。
 利用者が直接 `Window.init` を呼ぶことは無い。
 
 destroy は子（children）→ swapchain → awt_window → title バッファ の順。
-swapchain が awt_window より先に破棄されないと、swapchain が破棄済み window を参照して落ちる。
+swapchain が awt_window より先に破棄されないと、swapchain が破棄済みウィンドウを参照して落ちる。
 
 ---
 
@@ -234,7 +234,7 @@ window.dispose();
 ```
 
 ## 機能要望
-* Dialog（オーナー必須、modal / modeless）
+* Dialog（オーナー必須、モーダル / モードレス）
 * WindowListener 相当（close 確認、minimize 通知等）
 * 複数モニタ対応（モニタ選択、移動時の DPI 変化対応）
 * アニメーション駆動（`requestAnimationFrame` 相当の連続再描画）

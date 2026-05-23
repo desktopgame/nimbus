@@ -1,7 +1,7 @@
 # label
 ラベルについての設計ノート。
-テキストを 1 行描画するだけのもっとも単純な leaf widget。
-v1 で唯一のビルトイン leaf widget として、Component / Container / vtable 周りの動作検証も兼ねる。
+テキストを 1 行描画するだけのもっとも単純な leaf ウィジェット。
+v1 で唯一のビルトイン leaf ウィジェットとして、Component / Container / vtable 周りの動作検証も兼ねる。
 
 ## 型定義
 ```zig
@@ -122,7 +122,7 @@ Label は `component.min_size` を「現在の text を現在の font で描画�
 `(0, 0)` は component ローカル座標で、`graphics.md` の方針に従って top-of-bounding-box が原点に合う。
 
 `\n` を含む文字列は `drawString` が無視する（`graphics.md` 参照）。
-複数行描画は別 widget（TextArea 等）として扱う方針。
+複数行描画は別ウィジェット（TextArea 等）として扱う方針。
 
 ## install / uninstall
 ビルトイン Label の install / uninstall は no-op。
@@ -183,7 +183,7 @@ label.component.setBounds(.{ .x = 30, .y = 30, .width = 400, .height = 32 });
 Component メソッド（`setBounds` 等）は委譲を生やしていないので、`label.component.setBounds(...)` の形で親フィールド経由で呼ぶ（component.md「派生型から Component メソッドへのアクセス」参照）。
 
 ## 機能要望
-* 改行 (`\n`) 対応 — 現状 `drawString` が無視するため対応なし。複数行は別 widget で扱う
+* 改行 (`\n`) 対応 — 現状 `drawString` が無視するため対応なし。複数行は別ウィジェットで扱う
 * horizontal / vertical alignment — SwingConstants 相当を導入
 * icon / image 同時表示 — Swing `JLabel` の icon 機能
 * HTML / rich text — 当面スコープ外

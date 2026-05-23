@@ -61,10 +61,10 @@ pub fn bindUniforms(self: Self, cb: CommandBuffer, ubuf: UniformBuffer, handle: 
 
 `Uniforms` は CPU 側で uniform 値を組み立てる際の型エイリアス。
 `bindUniforms` は metadata で宣言したスロット番号を解決して `cb.bindConstantBuffer` を呼ぶ。
-テクスチャの bind は呼び出し側で `cb.bindTexture` を直接行う。
+テクスチャのバインドは呼び出し側で `cb.bindTexture` を直接行う。
 
 ## ビルトイン program 一覧
-| program | 用途 | vertex layout | uniforms | textures |
+| program | 用途 | 頂点レイアウト | uniforms | テクスチャ |
 |---|---|---|---|---|
 | `Text` | グリフアトラスから 1 文字分のクワッドを描画。`color` で色付け | 2D + UV | `color: float4` | グリフアトラス (R8) |
 | `Color` | 単色塗りの 2D クワッド (背景、パネル、罫線等) | 2D | `color: float4` | なし |
@@ -83,5 +83,5 @@ pub fn bindUniforms(self: Self, cb: CommandBuffer, ubuf: UniformBuffer, handle: 
 
 ## 機能要望
 * シェーダーの事前コンパイル (現状はランタイムコンパイル、起動時間短縮の余地)。
-* 1 つの program で複数の uniform ブロック (`meta.uniforms.len > 1`) を扱う API。現状 `bindUniforms` は最初のブロックのみを bind する。
+* 1 つの program で複数の uniform ブロック (`meta.uniforms.len > 1`) を扱う API。現状 `bindUniforms` は最初のブロックのみをバインドする。
 * メタデータからシェーダー側の宣言 (HLSL / MSL の `register` / `cbuffer` 等) を自動生成する仕組み。現状はシェーダー側を作者が手書きするので、メタデータと食い違うリスクが残る。

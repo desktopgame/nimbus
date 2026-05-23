@@ -1,6 +1,6 @@
 # container
 コンテナーについての設計ノート。
-Component を継承した「子を持つ」widget。
+Component を継承した「子を持つ」ウィジェット。
 `LayoutManager` を差すことで子の bounds を自動計算できる。
 
 ## 型定義
@@ -75,7 +75,7 @@ pub fn remove(self: *Container, child: *Component) void;
 
 `children` から該当要素を外す。
 `hint_destroy` が設定されていれば hint だけ解放する。
-`child` 本体（Component / widget）は解放しない（付け替え用途のため）。
+`child` 本体（Component / ウィジェット）は解放しない（付け替え用途のため）。
 レイアウトと再描画の dirty フラグを立てる。
 
 ## LayoutManager の取得
@@ -134,7 +134,7 @@ Container は Component の派生型の一つで、子 Component を所有する
 
 framework としては Container を特別扱いしているわけではない。
 `Component.container` フィールドが non-null になっているものを Container とみなすルールで識別する。
-利用者が「子を持つ独自 widget」を作りたい場合、Container を embed して使うか、同じパターン（children + `component.container = self`）を自前で実装する。
+利用者が「子を持つ独自ウィジェット」を作りたい場合、Container を embed して使うか、同じパターン（children + `component.container = self`）を自前で実装する。
 
 ## 子の所有
 CLAUDE.md「所有権」セクションのとおり、Container が children を所有し、destroy で再帰的に解放する。
@@ -145,7 +145,7 @@ hint と hint_destroy の意味と所有モデルについては `framework/doc/
 
 `remove` と `destroy` は分離している（Swing `Container.remove` も解放はしない）。
 子の解放は必ず `elem.component.vtable.destroy` を経由する。
-`allocator.destroy(elem.component)` を直接呼ぶと sizeof Component しか free できず、widget 固有のメモリが leak する（`component.md`「メモリ解放」参照）。
+`allocator.destroy(elem.component)` を直接呼ぶと sizeof Component しか free できず、ウィジェット固有のメモリが leak する（`component.md`「メモリ解放」参照）。
 
 ## 描画
 デフォルトの `vtable.paint` は子を順番に描画する。
@@ -179,7 +179,7 @@ Container は init で `self.component.container = self` をセットする。
 詳細は `component.md`「コンポーネントの列挙」を参照。
 
 ## 利用者が直接使うか
-通常、利用者は `app.container()` を直接使わず、`Frame` 経由で widget を add する。
+通常、利用者は `app.container()` を直接使わず、`Frame` 経由でウィジェットを add する。
 `Frame` は内部で Container を持っており、`frame.add(label)` は実質的に `frame.container.add(&label.component)` への委譲。
 
 `Container` を直接使うのは「子をグルーピングして配置したい」ような中間ノードが必要な場合。

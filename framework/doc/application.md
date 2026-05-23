@@ -70,7 +70,7 @@ pub fn setDefaultFont(self: *Application, path: []const u8) !void;
 ```
 
 上級利用者向け。
-差し替え後に作成した widget は新フォントを使う。既存 widget は変更前のフォントを保持する（font は値型で widget 内に複製されているため）。
+差し替え後に作成したウィジェットは新フォントを使う。既存ウィジェットは変更前のフォントを保持する（font は値型でウィジェット内に複製されているため）。
 
 ## フレームの生成
 ```zig
@@ -97,7 +97,7 @@ pub fn container(self: *Application) !*Container;
 ---
 
 ## 責務
-* アプリ全体の **アロケータ所有者**（widget / window は全部ここの allocator で確保される）
+* アプリ全体の **アロケータ所有者**（ウィジェット / ウィンドウは全部ここの allocator で確保される）
 * **ファクトリ**（`app.frame(...)`、`app.label(...)`、`app.button(...)` 等）
 * **イベントループの主体**（`app.run()`）
 * **共有リソースの所有者**（Graphics.Context、default font、EventQueue）
@@ -127,7 +127,7 @@ GLFW は `glfwInit` がプロセス単位なので、Application も実質シン
 利用者は戻り値のポインタを使って setter / add 等を呼ぶだけで、メモリの面倒は見ない。
 
 Window 系のファクトリは追加で `windows` リストへの append が要る。
-Widget 系のファクトリは widget の `create` をラップするだけ（default font / color を注入する）。
+ウィジェット系のファクトリはウィジェットの `create` をラップするだけ（default font / color を注入する）。
 
 ## OS との同期
 各イベントループ末尾で、すべての WindowEntry について以下の比較を行う。
@@ -155,7 +155,7 @@ Application はその所有とイベントループ内でのドレイン（`even
 `Application.run()` の中からさらに小さなイベントループを回し、何らかの条件が満たされたら呼び出し元に戻る。
 Swing の SecondaryLoop / Qt の QEventLoop に相当する。
 
-主な用途は将来追加される modal dialog の実装だが、それ以外にも「同期的に応答待ちしたいがイベントは流したい」という場面で利用者が直接使える。
+主な用途は将来追加されるモーダルダイアログの実装だが、それ以外にも「同期的に応答待ちしたいがイベントは流したい」という場面で利用者が直接使える。
 
 SecondaryLoop は awt 側のプリミティブとして提供される。
 Application は内部実装では利用しないが、必要なら利用者が直接インスタンス化して使用する。
@@ -163,17 +163,17 @@ Application は内部実装では利用しないが、必要なら利用者が�
 ## 共有リソース
 
 ### Graphics.Context
-programs（Color / Image / RoundedRect / Text）と ring buffer（vertex_ring / uniforms / quad_index）と glyph_atlas を束ねたもの。
+programs（Color / Image / RoundedRect / Text）と ring バッファ（vertex_ring / uniforms / quad_index）と glyph_atlas を束ねたもの。
 Application が所有し、全 Window が借用する。
 
 なぜ Application 所有か:
 * programs は shader compile を含むので 1 回作って共有が自然
-* ring buffer / atlas はメモリが大きく、Window 毎に持つと無駄
+* ring バッファ / atlas はメモリが大きく、Window 毎に持つと無駄
 * 全 Window が同じ font atlas を共有すると glyph cache 効率が良い
 
 ### default_font
 Noto Sans（Latin + CJK JP）を `@embedFile` で焼き込んだものを Application init で読み込む。
-Label / Button 等の widget ファクトリが借用する。寿命は Application と同じ。
+Label / Button 等のウィジェットファクトリが借用する。寿命は Application と同じ。
 
 `setDefaultFont(path)` で差し替え可能（上級利用者向け、CLAUDE.md「フォント」参照）。
 
@@ -224,5 +224,5 @@ try app.run();
 ```
 
 ## 機能要望
-* `button()` / `textfield()` 等の widget factory — widget 追加に合わせて生やす
+* `button()` / `textfield()` 等のウィジェット factory — ウィジェット追加に合わせて生やす
 * 「最後のウィンドウを閉じても常駐したい」ケース向けの hook（現状は全ウィンドウ閉でループ終了）

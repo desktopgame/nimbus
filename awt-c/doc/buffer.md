@@ -80,7 +80,7 @@ void nmBindIndexBuffer(nmCommandBuffer* self, nmBuffer* buf, nmIndexFormat fmt, 
 記録中のコマンドバッファに対し、`buf` をインデックスバッファとしてバインドする。
 `fmt` はインデックス値の型 (u16 / u32)。
 `offset` はバッファ先頭からのバイトオフセット。
-インデックスバッファのスロットは 1 つしかないため、slot 引数はない。
+インデックスバッファのスロットは 1 つしかないため、スロット引数はない。
 
 ### 事前条件
 * `buf` の `usage` に `nmBufferUsageIndex` が含まれること。含まれない場合の動作は UB。
@@ -117,14 +117,14 @@ fragment float4 psMain(VsOut in [[stage_in]],
 ### 事前条件
 * `buf` の `usage` に `nmBufferUsageConstant` が含まれること。含まれない場合の動作は UB。
 * この呼び出しの前に `nmBindPipeline` でパイプラインがバインドされていること
-  （バインドされた pipeline の root signature を参照して slot を解決するため）
+  （バインドされたパイプラインの root signature を参照してスロットを解決するため）
 * `offset` が 256 の倍数であること。違反した場合の動作は UB。
 
 ### 診断情報
 * `nmBindPipeline` 未呼び出しの状態で呼ぶと `[ERROR] [buffer] nmBindConstantBuffer: no pipeline bound` を出して何もしない
 * `offset + size` がバッファサイズを超える場合は `[ERROR] [buffer] ... range out of bounds ...` を出して何もしない
-* `slot` が現在の pipeline の root signature に存在しない場合（型違いを含む）は `[WARN] [buffer] no ConstantBuffer binding for slot N ...` を出して何もしない
-  * このときシェーダー側がその slot を参照すると undefined behavior になるので、debug layer が draw call 時にさらに警告を出すはず
+* `slot` が現在のパイプラインの root signature に存在しない場合（型違いを含む）は `[WARN] [buffer] no ConstantBuffer binding for slot N ...` を出して何もしない
+  * このときシェーダー側がそのスロットを参照すると undefined behavior になるので、debug layer が draw call 時にさらに警告を出すはず
 * `offset` が 256 の倍数でない場合は `[ERROR] [buffer] nmBindConstantBuffer: offset not aligned to 256` を出して何もしない
 
 ### 補足

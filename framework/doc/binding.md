@@ -198,8 +198,8 @@ nimbus core 自身は当面ピュア Zig + C ABI で完結する。
 
 * `Component.getVTable()` を nimbus core に追加（上記「nimbus core に必要な変更」参照、これだけ）
 * 派生型ごとの `asXxx` 関数（C ABI）— `nimbusFrameAsWindow` 等。Zig 側は `&self.foo.bar` を返す 1 行関数で済む。C ABI 着手時に派生型ごとに添える
-* Python binding 実装 — 別 repo / 別マイルストーン
-* 同パターンでの Lua / Ruby / Swift bindings
+* Python バインディング実装 — 別 repo / 別マイルストーン
+* 同パターンでの Lua / Ruby / Swift バインディング
 * L&F 機構 — `lookandfeel.md` の方針通り、nimbus core 自身は機構を提供せず、拡張点（`setVTable` / `properties` / `getVTable`）の組み合わせとして外部実装に任せる
 
 ## 関連 doc

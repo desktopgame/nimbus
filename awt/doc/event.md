@@ -117,7 +117,7 @@ return-bool 方式（消費 = 伝搬停止）と異なり、フィールド方�
 MouseEvent の `x` / `y` は **ウィンドウローカル座標**（ウィンドウの左上が `(0, 0)`、右下が `(window_width, window_height)`）で届く。
 ウィンドウの OS 絶対座標とは別物（OS 絶対座標は `framework.Window` の `component.position` 経由でアクセス可、`window.md` 参照）。
 
-コンポーネントの bounds は「親 Container 内のローカル座標」で表現されているので、深くネストされたコンポーネントが mouse event を受け取るときには、ウィンドウローカル座標から自身のローカル座標へ変換する必要がある。
+コンポーネントの bounds は「親 Container 内のローカル座標」で表現されているので、深くネストされたコンポーネントがマウスイベントを受け取るときには、ウィンドウローカル座標から自身のローカル座標へ変換する必要がある。
 
 ```
 window-local mouse pos (300, 250)
