@@ -94,6 +94,39 @@ pub fn container(self: *Application) !*Container;
 
 `Container.create` をラップする。
 
+## パネルの生成
+```zig
+pub fn panel(self: *Application) !*Panel;
+```
+
+`Panel.create` をラップする。
+背景色と境界線はデフォルトで null（透明 / 線なし）。
+利用者が `panel.setBackground(...)` / `panel.setBorder(...)` で設定する。
+
+## ボタンの生成
+```zig
+pub fn button(self: *Application, text: []const u8) !*Button;
+```
+
+`Button.create` をラップして default font と黒色を注入する。
+ButtonModel は内部生成される（`owns_model = true`）。
+利用者が共有 Model を使いたい場合は `Button.createWithModel` を直接呼ぶ。
+
+## スライダーの生成
+```zig
+pub fn slider(
+    self: *Application,
+    orientation: Slider.Orientation,
+    min: i32,
+    value: i32,
+    max: i32,
+) !*Slider;
+```
+
+`Slider.create` をラップする。
+BoundedRangeModel は内部生成される（`owns_model = true`）。
+共有 Model 版は `Slider.createWithModel` を直接呼ぶ。
+
 ---
 
 ## 責務
@@ -224,5 +257,5 @@ try app.run();
 ```
 
 ## 機能要望
-* `button()` / `textfield()` 等のウィジェット factory — ウィジェット追加に合わせて生やす
+* `textfield()` / `checkbox()` 等の追加ウィジェット factory — ウィジェット追加に合わせて生やす
 * 「最後のウィンドウを閉じても常駐したい」ケース向けの hook（現状は全ウィンドウ閉でループ終了）
