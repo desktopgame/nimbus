@@ -81,14 +81,9 @@ pub fn build(b: *std.Build) void {
                     "metal_texture.m",
                     "metal_root_signature.m",
                     "metal_pipeline.m",
+                    "cocoa_ime.m",
                 },
                 .flags = &.{ "-fno-objc-arc", "-Wall", "-Wextra" },
-            });
-            // IME stub on macOS (real NSTextInputClient backend is future work).
-            awt_c_mod.addCSourceFiles(.{
-                .root = b.path("awt-c/src"),
-                .files = &.{"ime_stub.c"},
-                .flags = c_flags,
             });
 
             awt_c_mod.linkFramework("Metal", .{});
