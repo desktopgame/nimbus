@@ -232,6 +232,35 @@ pub fn build(b: *std.Build) void {
     const update_run = b.addRunArtifact(snapshot_test_exe);
     update_run.setEnvironmentVariable("NIMBUS_UPDATE_SNAPSHOTS", "1");
     update_step.dependOn(&update_run.step);
+
+    // ── framework snapshot tests (golden-image, framework widgets) ─────
+    const framework_scenes_mod = b.createModule(.{
+        .root_source_file = b.path("framework/tests/scenes.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "awt", .module = awt_mod },
+            .{ .name = "nimbus", .module = framework_mod },
+        },
+    });
+
+    const framework_snapshot_test_mod = b.createModule(.{
+        .root_source_file = b.path("framework/tests/snapshot_test.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "awt", .module = awt_mod },
+            .{ .name = "zigimg", .module = zigimg_mod },
+            .{ .name = "framework_scenes", .module = framework_scenes_mod },
+        },
+    });
+
+    const framework_snapshot_test_exe = b.addTest(.{ .root_module = framework_snapshot_test_mod });
+    test_step.dependOn(&b.addRunArtifact(framework_snapshot_test_exe).step);
+
+    const framework_update_run = b.addRunArtifact(framework_snapshot_test_exe);
+    framework_update_run.setEnvironmentVariable("NIMBUS_UPDATE_SNAPSHOTS", "1");
+    update_step.dependOn(&framework_update_run.step);
 }
 
 fn addExample(
