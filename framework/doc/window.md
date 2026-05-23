@@ -69,7 +69,8 @@ pub fn setTitle(self: *Window, title: []const u8) !void;
 ```
 
 タイトル文字列を dup し直して保持する。
-OS への反映は次のイベントループ末尾の `syncOsState` で行う（即時には反映されない）。
+v1 では OS への push は未実装 (内部バッファだけ更新する no-op に近い挙動)。
+将来は Application のイベントループ末尾の sync 機構で OS に反映される予定 (`application.md`「OS との同期」参照)。
 
 ## タイトルの取得
 ```zig
@@ -96,7 +97,7 @@ framework 経由の Frame / Window はこの値で `cb.clearColor` を実行す�
 pub fn repaint(self: *Window) void;
 ```
 
-`dirty_rect` をウィンドウ全体に拡張する。
+`paint_dirty` を true にして `awt.postEmptyEvent()` でイベントループを叩き起こす。
 次回のイベントループで `redraw` が呼ばれる。
 
 ## 再描画の領域指定要求
@@ -104,8 +105,8 @@ pub fn repaint(self: *Window) void;
 pub fn repaintRect(self: *Window, r: Component.Rect) void;
 ```
 
-`dirty_rect` を引数の rect と union する。
-v1 では実描画には反映されず（full redraw に倒す）、API として将来の部分再描画のために用意。
+v1 では `repaint` と同じく `paint_dirty` を立てるだけ (`r` は無視)。
+API として将来の部分再描画 (rect 単位の dirty 蓄積) のために用意。
 
 ## 再描画の実行
 ```zig
@@ -129,13 +130,13 @@ true でも Window 自身は何もしない。後片付けは Application のル
 pub fn dispose(self: *Window) void;
 ```
 
-OS の close フラグを立てる。
-利用者がコードからウィンドウを閉じたいときに呼ぶ。
-実際の解放はやはり Application のループが行う。
+将来的には OS の close フラグを立てる API。
+v1 では awt-c に該当 API を未実装のため best-effort no-op (機能要望)。
+利用者から「プログラムからウィンドウを閉じる」操作は v1 では未サポート。
 
 ## メニューバーの設定
 ```zig
-pub fn setMenuBar(self: *Window, bar: ?*Component) void;
+pub fn setMenuBar(self: *Window, bar: ?*Component) !void;
 ```
 
 ウィンドウ上部に固定する Component（典型的には `&menu_bar.component`）を登録する。
@@ -143,7 +144,8 @@ pub fn setMenuBar(self: *Window, bar: ?*Component) void;
 Window は **所有しない**（Frame が所有を管理する。`frame.md` 参照）。
 
 セットすると `layout_dirty` / `paint_dirty` が立ち、次回 redraw でコンテナーが下にずれて再配置される。
-bar の `parent` は内部で `null` にセットされ、Window の dirty 伝搬経路に組み込まれる。
+bar の `parent` は内部で `null` にセットされ、Window の dirty 伝搬経路 (`putProperty` で DirtyNotify を埋め込む) に組み込まれる。
+この `putProperty` が OOM で失敗すると error を返す (bar はセットされない)。
 
 通常は利用者が直接呼ばず `Frame.setMenuBar` 経由で呼ばれる。
 

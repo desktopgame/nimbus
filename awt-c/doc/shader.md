@@ -53,6 +53,20 @@ void nmDestroyShader(nmShader* self);
 * `self` が NULL のとき、なにも実行せずに終了する。
 * `self` に依存するパイプラインが残っていないこと。違反した場合の動作は UB。
 
+## コンパイル済みバイナリからのロード
+nmShader* nmLoadShader(nmShaderStage stage, const void* binary, size_t size);
+
+事前にコンパイルされたシェーダーバイトコード (DX12 なら DXBC) をロードして `nmShader` として保持する。
+起動時間の短縮や、配布バイナリの実行環境からシェーダーコンパイラ依存を切るために使う。
+失敗時は `NULL` を返す。
+
+Metal バックエンドでは現状未対応 (`[ERROR] [shader] nmLoadShader: precompiled bytecode not supported in Metal backend` を流して NULL を返す)。
+
+### 事前条件
+* `binary` が NULL でなく、`size` ぶん有効なメモリを指していること。違反した場合の動作は UB。
+
+### 診断情報
+ロードに失敗した場合、原因を `nmLogLevelError` でログに流す (詳細は `log.md` を参照)。
+
 ## 機能要望
-* コンパイル済みバイナリからのロード API: `nmShader* nmLoadShader(nmShaderStage stage, const void* binary, size_t size);`
-  起動時間の短縮や、配布バイナリの実行環境からシェーダーコンパイラ依存を切るためにあると望ましい。
+* (現状なし — `nmLoadShader` の Metal バックエンド対応は将来の課題だが、本ドキュメントの担当範囲外。)

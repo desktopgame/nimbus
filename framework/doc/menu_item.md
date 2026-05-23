@@ -26,11 +26,16 @@ pub const MenuItem = struct {
 
 ## MenuItem の生成
 ```zig
-pub fn create(allocator: std.mem.Allocator, text: []const u8) !*MenuItem;
+pub fn create(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    font: awt.Graphics.TextFont,
+    color: awt.Graphics.Color,
+) !*MenuItem;
 ```
 
 allocator で MenuItem を確保し、内部 `ButtonModel` を生成して所有する（`owns_model = true`）。
-`text` を dup して保持し、`component.min_size` を icon slot 幅 + テキスト寸法 + accel slot 幅 + padding から算出する。
+`text` を dup して保持し、`font` / `color` を保持し、`component.min_size` を icon slot 幅 + テキスト寸法 + accel slot 幅 + padding から算出する。
 vtable をセットして install まで実行する。
 
 ### 失敗時の保証
@@ -42,6 +47,8 @@ pub fn createWithModel(
     allocator: std.mem.Allocator,
     model: *ButtonModel,
     text: []const u8,
+    font: awt.Graphics.TextFont,
+    color: awt.Graphics.Color,
 ) !*MenuItem;
 ```
 
@@ -129,8 +136,11 @@ slot 幅は親 Menu / PopupMenu が `computeMinSize` で全項目をスキャン
 基本のクリック項目。
 
 ```zig
-const open = try MenuItem.create(allocator, "Open");
-try open.setIcon(open_icon);
+const font  = awt.Graphics.TextFont{ .face = app.default_font, .pixel_size = 14 };
+const black = awt.Graphics.Color.rgb(0.1, 0.1, 0.1);
+
+const open = try MenuItem.create(allocator, "Open", font, black);
+open.setIcon(open_icon);
 try open.getModel().addActionListener(onOpen, &app_ctx);
 try file_menu.add(&open.component);
 ```
@@ -138,7 +148,7 @@ try file_menu.add(&open.component);
 disabled の制御。
 
 ```zig
-const debug = try MenuItem.create(allocator, "Toggle Debug");
+const debug = try MenuItem.create(allocator, "Toggle Debug", font, black);
 debug.getModel().setEnabled(false);
 try menu.add(&debug.component);
 // 後から有効化
@@ -152,8 +162,8 @@ const model = try allocator.create(ButtonModel);
 model.* = ButtonModel.init(allocator);
 defer { model.deinit(); allocator.destroy(model); }
 
-const save_in_file = try MenuItem.createWithModel(allocator, model, "Save");
-const save_in_ctx  = try MenuItem.createWithModel(allocator, model, "Save");
+const save_in_file = try MenuItem.createWithModel(allocator, model, "Save", font, black);
+const save_in_ctx  = try MenuItem.createWithModel(allocator, model, "Save", font, black);
 try file_menu.add(&save_in_file.component);
 try context_menu.add(&save_in_ctx.component);
 // model.setEnabled(false) で両方 disabled になる

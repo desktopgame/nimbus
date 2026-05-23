@@ -18,16 +18,19 @@ pub const Frame = struct {
 ```zig
 pub fn init(
     allocator: std.mem.Allocator,
-    app: *Application,
+    app_ptr: *anyopaque,
+    event_queue: *awt.EventQueue,
     title: []const u8,
     w: u32,
     h: u32,
+    device: *awt.Device,
     context: *awt.Graphics.Context,
 ) !Frame;
 ```
 
 `Window` を内部で構築し、Frame として返す。
-`app` は Window が back-pointer として保持する（OS callback が Application 側 synced cache を更新する経路に使う、`window.md` 参照）。
+`app_ptr` は Window が back-pointer として保持する。
+`event_queue` / `device` / `context` は Application から借用するハンドル群で、すべての Window で共有される。
 
 利用者が直接呼ぶことは想定していない。
 `app.frame(title, w, h)` factory から呼ばれる。
@@ -50,7 +53,7 @@ Application 内部の WindowEntry に格納する時など、`*Window` を期待
 
 ## メニューバーの設定
 ```zig
-pub fn setMenuBar(self: *Frame, bar: ?*MenuBar) void;
+pub fn setMenuBar(self: *Frame, bar: ?*MenuBar) !void;
 ```
 
 Frame の上部にメニューバーを取り付ける。
@@ -61,6 +64,9 @@ Window.container の bounds はメニューバーぶん下にずれる。
 引数の `bar` は **Frame に所有権が移る**（`owns_menu = true` になる）。
 Frame の deinit 時に bar の `destroy` が呼ばれる。
 外部で長く持ち回したい場合は `setMenuBarBorrowed` を使う（後述）。
+
+OOM 等で内部の DirtyNotify 配線が失敗すると error を返す。
+返ったあとは bar は **取り付けられていない** 状態で残る（Frame 側のフィールドはセットされない）。
 
 ### 事前条件
 * `bar` が既に他の Frame にセットされていない（multi-mount は未対応）
@@ -75,7 +81,7 @@ pub fn getMenuBar(self: Frame) ?*MenuBar;
 
 ## メニューバーの設定（借用）
 ```zig
-pub fn setMenuBarBorrowed(self: *Frame, bar: ?*MenuBar) void;
+pub fn setMenuBarBorrowed(self: *Frame, bar: ?*MenuBar) !void;
 ```
 
 `setMenuBar` と同じだが、所有権を移さない（`owns_menu = false`）。
@@ -133,7 +139,7 @@ Frame ポインタではなく Window ポインタを WindowEntry に入れる�
 Application 経由で Frame を作ってウィジェットを追加する典型コード。
 
 ```zig
-var app = try nimbus.Application.init(std.heap.page_allocator);
+var app = try nimbus.Application.init(init.gpa, init.io);
 defer app.deinit();
 
 var frame = try app.frame("hello nimbus", 800, 600);
@@ -161,7 +167,7 @@ try file.addSeparator();
 try file.add(&(try MenuItem.create(app.allocator, "Quit")).component);
 
 try bar.add(file);
-frame.setMenuBar(bar);  // 所有権が Frame に移る
+try frame.setMenuBar(bar);  // 所有権が Frame に移る
 ```
 
 ## 機能要望

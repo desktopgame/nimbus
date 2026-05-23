@@ -7,7 +7,7 @@ nimbus のすべてのウィジェットのルートとなる基本型。
 ```zig
 pub const Component = struct {
     pub const VTable = struct {
-        install:      *const fn (*Component) void,
+        install:      *const fn (*Component) anyerror!void,
         uninstall:    *const fn (*Component) void,
         paint:        *const fn (*Component, *awt.Graphics) void,
         processEvent: *const fn (*Component, *awt.Event) void,
@@ -49,12 +49,13 @@ pub const Alignment = enum { start, center, end, stretch };
 
 ## コンポーネントの初期化
 ```zig
-pub fn init(allocator: std.mem.Allocator) Component;
+pub fn init(allocator: std.mem.Allocator, vtable: *const VTable) Component;
 ```
 
 デフォルト値で `Component` のフィールドを初期化する。
-`vtable` は呼び出し側（ウィジェットの `create` または factory）が後からセットする責務を持つ。
+`vtable` は呼び出し時に渡す（後から `setVTable` で差し替え可能）。
 `min_size = (0, 0)`、`max_size = (inf, inf)`、`grow_x = grow_y = 0`、`align_x = align_y = .stretch` で初期化される。
+`install` はここでは呼ばれない（factory が `vtable.install(&component)` を別途呼ぶ）。
 
 ## コンポーネントの後片付け
 ```zig
@@ -175,25 +176,37 @@ pub fn getName(self: *const Component) ?[]const u8;
 
 ## VTable の差し替え
 ```zig
-pub fn setVTable(self: *Component, new_vt: *const VTable) void;
+pub fn setVTable(self: *Component, new_vt: *const VTable) !void;
 ```
 
 現在の `vtable.uninstall` を呼んだあと、新しい vtable に差し替え、`new_vt.install` を呼ぶ。
 個別の差し替え（1 コンポーネントだけ paint をフックする）と、一斉差し替え（ルックアンドフィール）の両方に対応する。
 
+新しい `install` が失敗した場合は、旧 vtable は既に `uninstall` 済みで、新 vtable は install されなかった状態で error を返す。
+呼び出し側が必要なら旧 vtable の `install` を再度呼ぶことでロールバックする責務を負う（自動巻き戻しはしない）。
+
 ## プロパティの書き込み
 ```zig
-pub fn putProperty(self: *Component, key: []const u8, value: Property) !void;
+pub fn putProperty(
+    self: *Component,
+    key: []const u8,
+    value: *anyopaque,
+    destroy: ?*const fn (*anyopaque, std.mem.Allocator) void,
+) !void;
 ```
 
 `properties` マップに `key` / `value` を登録する。
+`destroy` が non-null なら `removeProperty` / `Component.deinit` 時に値の解放に使われる。
 `properties` がまだアロケートされていなければここで初期化する。
 Swing `JComponent.putClientProperty` 相当。
 
 ## プロパティの読み取り
 ```zig
-pub fn getProperty(self: *const Component, key: []const u8) ?Property;
+pub fn getProperty(self: Component, key: []const u8) ?*anyopaque;
 ```
+
+登録されていなければ `null` を返す。
+返り値の解釈（実型）は呼び出し側の責任。型安全な薄いラッパー `putTyped(T, *T)` / `getTyped(T) ?*T` も同ファイルに存在する。
 
 ---
 
@@ -320,9 +333,8 @@ Zig はフィールド単位の private 修飾子を持たないので、言語�
 factory（またはウィジェットの `create`）が次の手順をひとまとめに行う。
 
 1. `allocator.create(WidgetType)` でウィジェット全体を確保
-2. `init` でウィジェット固有のフィールドを初期化（Component のフィールドも含む）
-3. `component.vtable = &WidgetType.vtable` をセット
-4. `component.vtable.install(&component)` を呼ぶ
+2. `init` でウィジェット固有のフィールドを初期化（Component のフィールドも含む）。Component の `init(allocator, vtable)` でデフォルト vtable をセット
+3. `try component.vtable.install(&component)` を呼ぶ（失敗時は手順 1 で確保した分を errdefer で free して伝搬）
 
 deinit の前に必ず `uninstall` を呼び出すこと。
 正規ルートは `component.vtable.destroy(&component, allocator)` で、これが内部で `deinit`（uninstall + cleanup）と `allocator.destroy(widget)` を順に行う。
@@ -334,6 +346,14 @@ nimbus 自身はこの実装を提供しない。利用者の自由領域。
 ## install / uninstall
 `install` を呼んだら必ず対応する `uninstall` も呼び出さなければならない。
 VTable を差し替えるときは古い vtable の `uninstall` → 新しい vtable の `install` の順（`setVTable` が内部で行う）。
+
+`install` は失敗し得る (`anyerror!void`)。
+リスナー登録 / プロパティ登録など allocator を使う処理を含むウィジェットの install が OOM 等で失敗した場合、`create` factory がその error を呼び出し元に伝搬する。
+利用者は通常通り `try app.button(...)` の形で受け取る。
+
+`uninstall` はデストラクタ風で、常に void を返す。
+リソース解放しかしないため失敗を返さない設計。
+（リスナー解除 / プロパティ free などは失敗しても呼び出し側が回復できないため、`uninstall` 自身が握りつぶす or panic する責任を負う。）
 
 ---
 
@@ -360,7 +380,7 @@ const my_vt = Component.VTable{
     .processEvent = Label.vtable.processEvent,
     .destroy      = Label.vtable.destroy,
 };
-label.component.setVTable(&my_vt);
+try label.component.setVTable(&my_vt);
 ```
 
 ## 機能要望

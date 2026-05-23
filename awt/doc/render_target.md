@@ -70,6 +70,7 @@ pub fn readback(self: RenderTarget, width: i32, height: i32, out_rgba: []u8) !vo
 pub fn readbackToPng(
     self: RenderTarget,
     allocator: std.mem.Allocator,
+    io: std.Io,
     width: i32,
     height: i32,
     path: []const u8,
@@ -78,6 +79,7 @@ pub fn readbackToPng(
 
 `readback` でピクセルを取得し、 `zigimg` で PNG エンコードして `path` に書き出す。
 `allocator` は readback バッファと PNG エンコーダの一時メモリに使う (関数戻り時に解放済み)。
+`io` は zigimg がファイル書き込みに使う (`std.Io` ベース)。
 
 ### 事前条件
 * `readback` と同じ (生成時の寸法と一致する `width` / `height` 等)。

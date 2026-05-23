@@ -36,11 +36,11 @@ const Item = union(enum) { task: Task, input: InputItem };
 
 ## キューの生成
 ```zig
-pub fn init(allocator: std.mem.Allocator) !*EventQueue;
+pub fn init(allocator: std.mem.Allocator, io: std.Io) !*EventQueue;
 ```
 
 EventQueue を allocator で確保して初期化する。
-内部のミューテックスと condvar も初期化する。
+内部のミューテックスと condvar も初期化する (`io` を `std.Io.Mutex` / 条件変数のセットアップに使う)。
 
 ### 失敗時の保証
 途中で失敗した場合、`init` 内で確保したリソースはすべて関数内で解放される。

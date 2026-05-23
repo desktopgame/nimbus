@@ -26,11 +26,16 @@ pub const MenuBar = struct {
 
 ## メニューバーの生成
 ```zig
-pub fn create(allocator: std.mem.Allocator) !*MenuBar;
+pub fn create(
+    allocator: std.mem.Allocator,
+    font: awt.Graphics.TextFont,
+    color: awt.Graphics.Color,
+) !*MenuBar;
 ```
 
 allocator で MenuBar を確保して初期化する。
-`menus` は空、`open` は null で開始する。
+`menus` は空、`open_menu` は null で開始する。
+`font` / `color` は配下の Menu ラベル描画用 (`add` した Menu は MenuBar の font / color を参照する想定)。
 vtable をセットして install まで実行する。
 
 ### 失敗時の保証
@@ -123,25 +128,28 @@ popup が dismiss されたら `open = null` に戻る（popup 側から callbac
 3 つの Menu を持つメニューバー。
 
 ```zig
-const bar = try MenuBar.create(allocator);
+const font  = awt.Graphics.TextFont{ .face = app.default_font, .pixel_size = 14 };
+const black = awt.Graphics.Color.rgb(0.1, 0.1, 0.1);
 
-const file = try Menu.create(allocator, "File");
-try file.add(&(try MenuItem.create(allocator, "New")).component);
-try file.add(&(try MenuItem.create(allocator, "Open")).component);
+const bar = try MenuBar.create(allocator, font, black);
+
+const file = try Menu.create(allocator, "File", font, black);
+try file.add(&(try MenuItem.create(allocator, "New",  font, black)).component);
+try file.add(&(try MenuItem.create(allocator, "Open", font, black)).component);
 try file.addSeparator();
-try file.add(&(try MenuItem.create(allocator, "Quit")).component);
+try file.add(&(try MenuItem.create(allocator, "Quit", font, black)).component);
 try bar.add(file);
 
-const edit = try Menu.create(allocator, "Edit");
-try edit.add(&(try MenuItem.create(allocator, "Undo")).component);
-try edit.add(&(try MenuItem.create(allocator, "Redo")).component);
+const edit = try Menu.create(allocator, "Edit", font, black);
+try edit.add(&(try MenuItem.create(allocator, "Undo", font, black)).component);
+try edit.add(&(try MenuItem.create(allocator, "Redo", font, black)).component);
 try bar.add(edit);
 
-const help = try Menu.create(allocator, "Help");
-try help.add(&(try MenuItem.create(allocator, "About")).component);
+const help = try Menu.create(allocator, "Help", font, black);
+try help.add(&(try MenuItem.create(allocator, "About", font, black)).component);
 try bar.add(help);
 
-frame.setMenuBar(bar);
+try frame.setMenuBar(bar);
 ```
 
 ## 機能要望

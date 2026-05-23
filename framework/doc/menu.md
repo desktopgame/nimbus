@@ -34,11 +34,16 @@ pub const Menu = struct {
 
 ## Menu の生成
 ```zig
-pub fn create(allocator: std.mem.Allocator, text: []const u8) !*Menu;
+pub fn create(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    font: awt.Graphics.TextFont,
+    color: awt.Graphics.Color,
+) !*Menu;
 ```
 
 allocator で Menu を確保、内部 ButtonModel を生成して所有する。
-`text` を dup して保持し、`component.min_size` をテキスト寸法 + アイコン slot + padding + サブメニュー矢印分（コンテキストにより）から算出する。
+`text` を dup して保持し、`font` / `color` を保持し、`component.min_size` をテキスト寸法 + アイコン slot + padding + サブメニュー矢印分（コンテキストにより）から算出する。
 vtable をセットして install まで実行する。
 
 ### 失敗時の保証

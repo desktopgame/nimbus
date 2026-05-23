@@ -30,12 +30,17 @@ pub const CheckBoxMenuItem = struct {
 
 ## CheckBoxMenuItem の生成
 ```zig
-pub fn create(allocator: std.mem.Allocator, text: []const u8) !*CheckBoxMenuItem;
+pub fn create(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    font: awt.Graphics.TextFont,
+    color: awt.Graphics.Color,
+) !*CheckBoxMenuItem;
 ```
 
 allocator で CheckBoxMenuItem を確保し、内部 ButtonModel を生成して所有する（`owns_model = true`）。
 初期状態は checked = false（`model.selected = false`）。
-`text` を dup して保持し、`component.min_size` を icon slot 幅 + テキスト寸法 + accel slot 幅 + padding から算出する。
+`text` を dup して保持し、`font` / `color` を保持し、`component.min_size` を icon slot 幅 + テキスト寸法 + accel slot 幅 + padding から算出する。
 vtable をセットして install まで実行する。
 
 ### 失敗時の保証
@@ -47,6 +52,8 @@ pub fn createWithModel(
     allocator: std.mem.Allocator,
     model: *ButtonModel,
     text: []const u8,
+    font: awt.Graphics.TextFont,
+    color: awt.Graphics.Color,
 ) !*CheckBoxMenuItem;
 ```
 
@@ -128,7 +135,10 @@ icon slot はチェックマーク描画専用になる点だけ違う。
 表示オプションのトグル。
 
 ```zig
-const show_grid = try CheckBoxMenuItem.create(allocator, "Show Grid");
+const font  = awt.Graphics.TextFont{ .face = app.default_font, .pixel_size = 14 };
+const black = awt.Graphics.Color.rgb(0.1, 0.1, 0.1);
+
+const show_grid = try CheckBoxMenuItem.create(allocator, "Show Grid", font, black);
 try show_grid.getModel().addActionListener(onToggleGrid, &editor_ctx);
 try view_menu.add(&show_grid.component);
 
@@ -143,7 +153,7 @@ const grid_model = try allocator.create(ButtonModel);
 grid_model.* = ButtonModel.init(allocator);
 defer { grid_model.deinit(); allocator.destroy(grid_model); }
 
-const grid_menu = try CheckBoxMenuItem.createWithModel(allocator, grid_model, "Show Grid");
+const grid_menu = try CheckBoxMenuItem.createWithModel(allocator, grid_model, "Show Grid", font, black);
 const grid_btn  = try ToggleButton.createWithModel(allocator, grid_model, grid_icon); // 将来
 try view_menu.add(&grid_menu.component);
 try toolbar.add(&grid_btn.component);

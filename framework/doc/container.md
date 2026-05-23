@@ -16,6 +16,7 @@ pub const Container = struct {
         .uninstall    = uninstall,
         .paint        = paint,
         .processEvent = processEvent,
+        .destroy      = destroy,
     };
 
     // ... メソッド

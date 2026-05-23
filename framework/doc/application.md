@@ -7,19 +7,21 @@ nimbus アプリのエントリーポイントとなる top-level オブジェ�
 ```zig
 pub const Application = struct {
     allocator:    std.mem.Allocator,
-    windows:      std.ArrayList(WindowEntry),
+    device:       awt.Device,
     context:      awt.Graphics.Context,
     default_font: awt.Font,
     event_queue:  *awt.EventQueue,
+    windows:      std.ArrayList(WindowEntry),
+    icon_cache:   [lucide.Icon.count]?awt.Image,  // ビルトインアイコン (詳細は後述)
 
+    // 内部所有: programs / ring バッファ / glyph atlas (Graphics.Context が借用)
     // ... メソッド
 };
 
 const WindowEntry = struct {
-    window:       *Window,
-    synced_pos:   Point,
-    synced_size:  Size,
-    synced_title: []const u8,
+    window:  *Window,
+    outer:   *anyopaque,                                          // Frame / Dialog 等の外側ウィジェット
+    destroy: *const fn (*anyopaque, std.mem.Allocator) void,      // outer の解放関数
 };
 ```
 
@@ -50,9 +52,11 @@ pub fn run(self: *Application) !void;
 
 1. `awt.waitEvents()` でイベントを待つ（アイドル時の CPU は 0）
 2. `event_queue.drain()` で別スレッドからポストされたタスクを UI スレッドで実行
-3. 各 Window の `dirty_rect != null` なら `window.redraw()` を呼ぶ
-4. position / size / title の差分を OS に push（後述「OS との同期」）
-5. close フラグが立った Window を `windows` リストから外して `destroy`
+3. 各 Window の `paint_dirty` または `layout_dirty` が true なら `window.redraw()` を呼ぶ
+4. close フラグが立った Window を `windows` リストから外して `destroy`
+
+OS と Window state の同期（位置 / サイズ / タイトル）は v1 では未実装。
+将来 `WindowEntry` に `synced_xxx` を追加してループ末尾で diff push する予定（「OS との同期」参照）。
 
 最後のウィンドウが閉じたらループ抜け（「最後のウィンドウを閉じたら exit」セマンティクス）。
 
@@ -64,14 +68,6 @@ pub fn getEventQueue(self: *Application) *awt.EventQueue;
 別スレッドから UI を触りたい場合の窓口。
 `queue.invokeLater(...)` / `queue.invokeAndWait(...)` を呼ぶ。
 詳細は後述「イベントキュー」を参照。
-
-## デフォルトフォントの差し替え
-```zig
-pub fn setDefaultFont(self: *Application, path: []const u8) !void;
-```
-
-上級利用者向け。
-差し替え後に作成したウィジェットは新フォントを使う。既存ウィジェットは変更前のフォントを保持する（font は値型でウィジェット内に複製されているため）。
 
 ## フレームの生成
 ```zig
@@ -192,16 +188,17 @@ GLFW は `glfwInit` がプロセス単位なので、Application も実質シン
 Window 系のファクトリは追加で `windows` リストへの append が要る。
 ウィジェット系のファクトリはウィジェットの `create` をラップするだけ（default font / color を注入する）。
 
-## OS との同期
-各イベントループ末尾で、すべての WindowEntry について以下の比較を行う。
+## OS との同期 (機能要望)
+v1 では未実装。
+将来は各イベントループ末尾で、すべての WindowEntry について以下の比較を行う予定。
 
 * `window.component.position != synced_pos` → `awt_window.setPos(...)` で OS に push、`synced_pos` を更新
 * `window.component.size != synced_size` → `awt_window.setSize(...)` で OS に push、`synced_size` を更新
 * `window.title != synced_title` → `awt_window.setTitle(...)` で OS に push、`synced_title` を更新
 
-OS callback（ドラッグ / リサイズ等）は `component.position/size` と `synced_xxx` を**両方**更新する。
+OS callback（ドラッグ / リサイズ等）は `component.position/size` と `synced_xxx` を**両方**更新する想定。
 これがないと「OS が動かした → 末尾の diff で push し返す」の無限ピンポンになる。
-詳細は `window.md`「OS との同期」を参照。
+現状の `Window.setTitle` / `Window.dispose` は best-effort no-op、または awt-c が直接 push する暫定実装になっている (`window.md` 参照)。
 
 ## イベントキュー（invokeLater / invokeAndWait）
 別スレッドから UI を触る唯一の正規ルート。CLAUDE.md「非同期処理」セクションを参照。
@@ -239,7 +236,8 @@ framework に同梱された Noto Sans JP（Latin + CJK JP）を `@embedFile` �
 本体は `framework/src/noto/NotoSansJP-Regular.ttf`、Zig 側からは `nimbus.noto.noto_sans_jp_regular` でバイト列としても参照できる（awt を直接叩く利用者向け）。
 Label / Button 等のウィジェットファクトリが借用する。寿命は Application と同じ。
 
-`setDefaultFont(path)` で差し替え可能（上級利用者向け、CLAUDE.md「フォント」参照）。
+v1 ではランタイムでの差し替え API は無い。
+差し替えたい場合は CLAUDE.md「フォント」を参照しつつ、利用者が独自 widget factory を組む形になる（機能要望）。
 
 ### icon_cache
 ビルトインアイコン（`nimbus.lucide.Icon` の各エントリ）を、初回参照時にデコード + GPU テクスチャ化した `awt.Image` のキャッシュ。
