@@ -1,0 +1,211 @@
+# menu
+ラベルを持ち、子 menu item を popup として展開できるコンテナー。
+Swing の `JMenu` 相当。
+2 つのコンテキストで使われる：
+
+1. `MenuBar` の子としてバー上にラベル表示（クリックで popup 展開）
+2. 他の Menu / PopupMenu の子としてサブメニュー行表示（hover で popup 展開、右端に `>` 矢印）
+
+同じ Menu 型でこの両方を担う。
+表示形式は親コンテキストが決めるので、Menu 自身は描画ロジックを 2 系統持つ（または親が描画を引き受ける）。
+
+## 型定義
+```zig
+pub const Menu = struct {
+    component:  Component,
+    text:       []const u8,
+    icon:       ?awt.Image,
+    items:      std.ArrayList(*Component),    // MenuItem / CheckBoxMenuItem / MenuSeparator / Menu
+    model:      *ButtonModel,                  // enabled / armed / rollover (ButtonModel 流用)
+    owns_model: bool,
+    open:       bool,                          // popup 表示中か
+    popup:      ?*Container,                   // 表示中の popup の内部 Container (overlay と同一)
+    allocator:  std.mem.Allocator,
+
+    pub const vtable = Component.VTable{
+        .install      = install,
+        .uninstall    = uninstall,
+        .paint        = paint,
+        .processEvent = processEvent,
+        .destroy      = destroy,
+    };
+};
+```
+
+## Menu の生成
+```zig
+pub fn create(allocator: std.mem.Allocator, text: []const u8) !*Menu;
+```
+
+allocator で Menu を確保、内部 ButtonModel を生成して所有する。
+`text` を dup して保持し、`component.min_size` をテキスト寸法 + アイコン slot + padding + サブメニュー矢印分（コンテキストにより）から算出する。
+vtable をセットして install まで実行する。
+
+### 失敗時の保証
+途中で失敗した場合、`create` 内で確保したメモリはすべて関数内で解放される。
+
+## Menu の破棄
+```zig
+fn destroy(self: *Component, allocator: std.mem.Allocator) void;
+```
+
+`Menu.vtable.destroy` として登録される。
+保持している全 child item を destroy 経由で解放、`text` バッファ・`icon`（所有していれば）・`popup` Container（あれば）を解放、`owns_model` が true なら model を deinit + 解放、最後に Menu 本体を free する。
+
+## item の追加
+```zig
+pub fn add(self: *Menu, item: *Component) !void;
+```
+
+末尾に item を追加する。
+`item` は `MenuItem` / `CheckBoxMenuItem` / `MenuSeparator` / `Menu`（サブメニュー）の `&xxx.component` を渡す。
+所有権は Menu に移る。
+
+### 事前条件
+* `item` が既に他の Menu / PopupMenu / MenuBar に追加されていない
+
+## separator の追加
+```zig
+pub fn addSeparator(self: *Menu) !void;
+```
+
+`MenuSeparator.create` して `add` する shorthand。
+
+## テキストの取得 / 設定
+```zig
+pub fn getText(self: Menu) []const u8;
+pub fn setText(self: *Menu, text: []const u8) !void;
+```
+
+`setText` は dup し直して `component.min_size` を再計算する。
+
+## アイコンの取得 / 設定
+```zig
+pub fn getIcon(self: Menu) ?awt.Image;
+pub fn setIcon(self: *Menu, icon: ?awt.Image) void;
+```
+
+`MenuItem` と同じ規則（borrow、null 可、slot 幅は揃う）。
+
+## Model の取得
+```zig
+pub fn getModel(self: Menu) *ButtonModel;
+```
+
+enabled / disabled を切り替えたいときに使う。
+disabled の Menu はクリックしても popup が開かない。
+
+## popup の表示
+```zig
+pub fn show(self: *Menu, window: *Window, anchor: Component.Point) !void;
+```
+
+`anchor` を起点に popup を開く。
+`anchor` は Window ローカル座標。
+* MenuBar から呼ばれる時は「Menu ラベルの左下」が anchor
+* サブメニューとして呼ばれる時は「親 Menu 行の右上」が anchor
+
+内部で popup 用 Container を生成（既存があれば再利用）、`items` を縦並び BoxLayout で配置、Window の overlays 層に登録する。
+画面端で popup が見切れる場合は反対側に反転（v1 はクライアント領域内に収まるよう reposition、`doc/menu-bar-requirements.md`「描画と当たり判定」参照）。
+
+`open = true` にする。
+
+### 事前条件
+* 既に `open = true` の場合は no-op
+
+## popup を閉じる
+```zig
+pub fn hide(self: *Menu) void;
+```
+
+popup を Window の overlays 層から外す。
+`open = false` にする。
+popup Container は破棄せず再利用のため保持する（次回 show 時に再表示）。
+親が MenuBar の場合、MenuBar 側の `open` も連動して `null` に戻す（callback 経由）。
+
+---
+
+## ButtonModel を使う理由
+Menu は「クリックで反応する」「hover で armed 状態が変わる」「disabled できる」など、Button と同じ state パターンを持つ。
+個別に `MenuModel` を定義するメリットが薄いので ButtonModel を流用する。
+`selected` フラグは Menu では使わない（popup の開閉は `open` フィールドで別管理）。
+
+CheckBoxMenuItem / MenuItem も同じ理由で ButtonModel を使う（`checkbox_menu_item.md` / `menu_item.md` 参照）。
+
+## 親コンテキストによる描画差異
+Menu の `paint` は親 Container を判定して 2 種類の描画を出し分ける：
+
+| 親 | 描画 |
+|---|---|
+| MenuBar | ラベルのみ（テキストを padding 付きで描画、open 中はハイライト） |
+| Menu / PopupMenu の popup | 行形式（icon slot + テキスト + 右端に `>` 矢印） |
+
+判定は `self.parent` を辿って親が MenuBar 型かどうかで分岐する。
+親が直接 popup Container の場合は「行形式」に倒す。
+
+## サブメニュー展開のタイミング
+親が MenuBar の場合：**クリック**で展開（`menu-bar-requirements.md`「メニューバーはクリックで要素を展開」）。
+親が Menu の popup の場合：**hover**で展開（同「メニューはホバーで要素を展開」）。
+
+行内 hover で 200ms 程度の遅延を設けて誤展開を防ぐ実装余地あり（機能要望）。
+
+## ライフサイクル
+* MenuBar.add(menu) / Menu.add(submenu_as_component) で menu の所有権が親に移る
+* 親の destroy で連鎖的に menu も destroy される
+* popup の Container は menu が所有（hide 後も再利用）
+* model は内部生成なら menu が所有、`createWithModel` で外部から渡されたなら借用
+
+## レイアウト属性
+親が MenuBar の時：
+* `min_size`: テキスト寸法 + 左右 padding
+* `max_size`: 同上（伸ばさない）
+* `grow_x` / `grow_y`: 0
+
+親が popup の時：
+* `min_size`: icon slot + テキスト寸法 + arrow slot + padding
+* `max_size`: width=inf, height=min_size.height
+* `grow_x` / `grow_y`: 0（popup 内 BoxLayout で full width に揃う）
+
+---
+
+## 利用例
+基本的な File メニュー。
+
+```zig
+const file = try Menu.create(allocator, "File");
+try file.add(&(try MenuItem.create(allocator, "New")).component);
+try file.add(&(try MenuItem.create(allocator, "Open")).component);
+try file.addSeparator();
+try file.add(&(try MenuItem.create(allocator, "Quit")).component);
+try menu_bar.add(file);
+```
+
+サブメニューの例（Edit → Find → {Find, Find Next, Find Previous}）。
+
+```zig
+const edit = try Menu.create(allocator, "Edit");
+try edit.add(&(try MenuItem.create(allocator, "Undo")).component);
+try edit.add(&(try MenuItem.create(allocator, "Redo")).component);
+try edit.addSeparator();
+
+const find = try Menu.create(allocator, "Find");
+try find.add(&(try MenuItem.create(allocator, "Find...")).component);
+try find.add(&(try MenuItem.create(allocator, "Find Next")).component);
+try find.add(&(try MenuItem.create(allocator, "Find Previous")).component);
+try edit.add(&find.component);   // submenu
+
+try menu_bar.add(edit);
+```
+
+disabled な Menu。
+
+```zig
+const debug = try Menu.create(allocator, "Debug");
+debug.getModel().setEnabled(false);
+try menu_bar.add(debug);  // クリックしても開かない、グレー表示
+```
+
+## 機能要望
+* sub-menu hover 展開の遅延（200ms 程度）
+* キーボードナビゲーション（矢印キーで item 移動、Enter で発火）
+* Menu の最小幅を指定する API（popup の見た目を整える）

@@ -6,9 +6,9 @@ Swing の `JFrame` 相当。
 ## 型定義
 ```zig
 pub const Frame = struct {
-    window: Window,                // embed (共通機能はすべてここ)
-
-    // Frame 固有のフィールドは現状なし。将来 menu_bar / icon / decoration_style 等を追加する場所。
+    window:    Window,                // embed (共通機能はすべてここ)
+    menu_bar:  ?*MenuBar = null,      // 上部固定のメニューバー (なくてもよい)
+    owns_menu: bool      = false,     // setMenuBar の引数を所有するか
 
     // ... メソッド
 };
@@ -47,6 +47,40 @@ pub fn asWindow(self: *Frame) *Window;
 
 `&self.window` を返すだけの helper。
 Application 内部の WindowEntry に格納する時など、`*Window` を期待する API に渡すために使う。
+
+## メニューバーの設定
+```zig
+pub fn setMenuBar(self: *Frame, bar: ?*MenuBar) void;
+```
+
+Frame の上部にメニューバーを取り付ける。
+`null` を渡すと外す（既存があれば外して `owns_menu` に従って解放する）。
+内部的には Window の chrome 層（`window.md`「chrome bar 層」参照）に bar の `Component` を登録する。
+Window.container の bounds はメニューバーぶん下にずれる。
+
+引数の `bar` は **Frame に所有権が移る**（`owns_menu = true` になる）。
+Frame の deinit 時に bar の `destroy` が呼ばれる。
+外部で長く持ち回したい場合は `setMenuBarBorrowed` を使う（後述）。
+
+### 事前条件
+* `bar` が既に他の Frame にセットされていない（multi-mount は未対応）
+
+## メニューバーの取得
+```zig
+pub fn getMenuBar(self: Frame) ?*MenuBar;
+```
+
+現在セットされているメニューバーへのポインタを返す。
+無ければ `null`。
+
+## メニューバーの設定（借用）
+```zig
+pub fn setMenuBarBorrowed(self: *Frame, bar: ?*MenuBar) void;
+```
+
+`setMenuBar` と同じだが、所有権を移さない（`owns_menu = false`）。
+Frame の deinit 時に bar は解放されない。
+利用者が外部で寿命を管理する。
 
 ---
 
@@ -115,8 +149,22 @@ try app.run();   // event loop。close で抜ける
 Frame 直に setter / add を生やしていないので、`frame.window.xxx` 経由で呼ぶ。
 `&frame.window` は `*Window` として他の API に渡せる。
 
+メニューバーを取り付ける例。
+
+```zig
+const bar = try MenuBar.create(app.allocator);
+
+const file = try Menu.create(app.allocator, "File");
+try file.add(&(try MenuItem.create(app.allocator, "Open")).component);
+try file.add(&(try MenuItem.create(app.allocator, "Save")).component);
+try file.addSeparator();
+try file.add(&(try MenuItem.create(app.allocator, "Quit")).component);
+
+try bar.add(file);
+frame.setMenuBar(bar);  // 所有権が Frame に移る
+```
+
 ## 機能要望
-* `menu_bar`: トップに固定のメニューバー（`MenuBar` ウィジェットが要る）
 * `icon`: タイトルバーアイコン
 * `decoration_style`: 通常 / フレームレス / フルスクリーンの切替
 * default close operation: 閉じた時に dispose する / hide する / アプリ終了する 等の選択（現状は dispose 固定）
