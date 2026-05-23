@@ -226,10 +226,9 @@ pub fn redraw(self: *Window) void {
         self.fb_h,
     );
 
-    // 1. Container children
-    for (self.container.children.items) |elem| {
-        elem.component.paintAt(&g);
-    }
+    // 1. Container. Use paintAt so the clip translates by container.position
+    //    (which is non-zero when a menu_bar is set, shifting content down).
+    self.container.component.paintAt(&g);
     // 2. menu_bar (above container)
     if (self.menu_bar) |bar| {
         bar.paintAt(&g);
