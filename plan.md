@@ -196,6 +196,7 @@ v1 でやらないが、API 設計時に将来を見越して抽象を整える�
 
 - **codepoint → grapheme cluster 移行** (#10/#12): TextField の Backspace / カーソル移動 API は v1 では codepoint 単位だが、将来 grapheme cluster 単位に差し替え可能な抽象 (`countCharacters` / `deleteBackward` 等) で設計する。バイト index を直接公開しない。
 - **メニュー類は自前描画** (#34): コンテキストメニュー / メニューバー含めて nimbus 内で描画する方針。ただし将来 native メニュー（Windows: `TrackPopupMenu` / Mac: `NSMenu`）に切り替えられる抽象を残す。
+    - 抽象を残す、はナシにしたい。メニューに自前コンポーネントを載せられることを優先。
 - **ドラッグ&ドロップは汎用機能** (#41): テキスト D&D 専用ではなく、widget 全般の D&D を扱う仕組みとして設計する（v1 では未実装）。
 - **スクロールバーは汎用 widget** (#30): Swing の `JScrollBar` / `JScrollPane` 同様、テキスト専用ではない汎用部品として設計する。TextArea の横スクロールはこれを使う。
 - **汎用 SetCursor 機構** (#42): I-beam は v1 で配線しないが、ウィンドウリサイズ / スプリットペイン用にカーソル変化機構自体は v1 で必要。
