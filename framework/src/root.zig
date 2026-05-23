@@ -17,6 +17,7 @@ pub const Button = @import("Button.zig");
 pub const MenuSeparator = @import("MenuSeparator.zig");
 pub const lucide = @import("lucide/icons.zig");
 pub const noto = @import("noto/fonts.zig");
+pub const log = @import("log.zig");
 pub const MenuItem = @import("MenuItem.zig");
 pub const CheckBoxMenuItem = @import("CheckBoxMenuItem.zig");
 pub const Menu = @import("Menu.zig");

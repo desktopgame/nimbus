@@ -90,3 +90,8 @@ test "built-in programs type-check" {
     _ = programs.RoundedRect;
     _ = programs.RoundedRect.Uniforms;
 }
+
+test {
+    // Run tests in every sub-module of awt (mirrors framework/src/root.zig).
+    std.testing.refAllDecls(@This());
+}
