@@ -147,12 +147,12 @@ fn paint(self: *Component, g: *awt.Graphics) void {
         }
     }
 
-    // Icon slot (left). v1: draws at the image's natural size. User is
-    // responsible for providing an appropriately sized icon.
+    // Icon slot (left): always scaled to 16x16, centered in the slot.
     if (item.icon) |img| {
-        const ix = PADDING_X + 4;
-        const iy = (sz.height - 16) / 2;
-        g.drawImage(img, ix, iy);
+        const draw_size: f32 = 16;
+        const ix = PADDING_X + (ICON_SLOT_WIDTH - draw_size) / 2;
+        const iy = (sz.height - draw_size) / 2;
+        g.drawImageScaled(img, ix, iy, draw_size, draw_size);
     }
 
     // Label.

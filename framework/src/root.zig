@@ -15,6 +15,7 @@ pub const Slider = @import("Slider.zig");
 pub const ButtonModel = @import("ButtonModel.zig");
 pub const Button = @import("Button.zig");
 pub const MenuSeparator = @import("MenuSeparator.zig");
+pub const lucide = @import("lucide/icons.zig");
 pub const MenuItem = @import("MenuItem.zig");
 pub const CheckBoxMenuItem = @import("CheckBoxMenuItem.zig");
 pub const Menu = @import("Menu.zig");

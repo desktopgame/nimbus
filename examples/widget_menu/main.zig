@@ -11,7 +11,7 @@ const nimbus = @import("nimbus");
 const awt = nimbus.awt;
 
 const noto_sans_ttf = @embedFile("assets/NotoSansJP-Regular.ttf");
-const example_png = @embedFile("assets/example.png");
+const lucide = nimbus.lucide;
 
 const State = struct {
     label:   *nimbus.Label,
@@ -168,6 +168,31 @@ pub fn main(init: std.process.Init) !void {
     const label = try app.label("Click a menu, or right-click on the content area.");
     var state = State{ .label = label };
 
+    // Decode the lucide icons we use. All Image objects must outlive the
+    // widgets that reference them — defer their deinit until program exit.
+    var ic_new    = try awt.Image.fromMemory(app.allocator, app.device, lucide.file_plus);
+    defer ic_new.deinit();
+    var ic_open   = try awt.Image.fromMemory(app.allocator, app.device, lucide.folder_open);
+    defer ic_open.deinit();
+    var ic_save   = try awt.Image.fromMemory(app.allocator, app.device, lucide.save);
+    defer ic_save.deinit();
+    var ic_quit   = try awt.Image.fromMemory(app.allocator, app.device, lucide.x);
+    defer ic_quit.deinit();
+    var ic_cut    = try awt.Image.fromMemory(app.allocator, app.device, lucide.scissors);
+    defer ic_cut.deinit();
+    var ic_copy   = try awt.Image.fromMemory(app.allocator, app.device, lucide.copy);
+    defer ic_copy.deinit();
+    var ic_paste  = try awt.Image.fromMemory(app.allocator, app.device, lucide.clipboard);
+    defer ic_paste.deinit();
+    var ic_search = try awt.Image.fromMemory(app.allocator, app.device, lucide.search);
+    defer ic_search.deinit();
+    var ic_undo   = try awt.Image.fromMemory(app.allocator, app.device, lucide.undo);
+    defer ic_undo.deinit();
+    var ic_redo   = try awt.Image.fromMemory(app.allocator, app.device, lucide.redo);
+    defer ic_redo.deinit();
+    var ic_trash  = try awt.Image.fromMemory(app.allocator, app.device, lucide.trash);
+    defer ic_trash.deinit();
+
     // Content panel.
     const content = try app.panel();
     content.setBackground(awt.Graphics.Color.rgb(1, 1, 1));
@@ -178,10 +203,12 @@ pub fn main(init: std.process.Init) !void {
     // Set up right-click context menu via vtable override on the content panel.
     const popup = try nimbus.PopupMenu.create(app.allocator);
     const paste = try nimbus.MenuItem.create(app.allocator, "Paste", font, black);
+    paste.setIcon(ic_paste);
     try paste.getModel().addActionListener(onCtxPaste, @ptrCast(&state));
     try popup.add(&paste.component);
 
     const del = try nimbus.MenuItem.create(app.allocator, "Delete", font, black);
+    del.setIcon(ic_trash);
     try del.getModel().addActionListener(onCtxDelete, @ptrCast(&state));
     try popup.add(&del.component);
 
@@ -208,15 +235,11 @@ pub fn main(init: std.process.Init) !void {
 
     try nimbus.BorderLayout.add(&frame.window.container, .center, &content.container.component);
 
-    // Toolbar with icon-only buttons. The image is shared across all 3
-    // buttons (same texture, different display sizes work too).
-    var icon = try awt.Image.fromMemory(app.allocator, app.device, example_png);
-    defer icon.deinit();
-
+    // Toolbar with icon-only buttons.
     const tb = try app.toolbar();
-    inline for ([_]u0{0} ** 3) |_| {
+    inline for ([_]awt.Image{ ic_new, ic_open, ic_save, ic_undo, ic_redo }) |icn| {
         const tb_btn = try app.button("");
-        tb_btn.setIcon(icon);
+        tb_btn.setIcon(icn);
         tb_btn.setIconSize(.{ .width = 20, .height = 20 });
         try tb_btn.getModel().addActionListener(onTbAction, @ptrCast(&state));
         try tb.container.add(&tb_btn.component);
@@ -230,16 +253,20 @@ pub fn main(init: std.process.Init) !void {
     {
         const file = try nimbus.Menu.create(app.allocator, "File", font, black);
         const new_item = try nimbus.MenuItem.create(app.allocator, "New", font, black);
+        new_item.setIcon(ic_new);
         try new_item.getModel().addActionListener(onFileNew, @ptrCast(&state));
         try file.add(&new_item.component);
         const open = try nimbus.MenuItem.create(app.allocator, "Open", font, black);
+        open.setIcon(ic_open);
         try open.getModel().addActionListener(onFileOpen, @ptrCast(&state));
         try file.add(&open.component);
         const save = try nimbus.MenuItem.create(app.allocator, "Save", font, black);
+        save.setIcon(ic_save);
         try save.getModel().addActionListener(onFileSave, @ptrCast(&state));
         try file.add(&save.component);
         try file.addSeparator();
         const quit = try nimbus.MenuItem.create(app.allocator, "Quit", font, black);
+        quit.setIcon(ic_quit);
         try quit.getModel().addActionListener(onFileQuit, @ptrCast(&state));
         try file.add(&quit.component);
         try bar.add(file);
@@ -249,17 +276,21 @@ pub fn main(init: std.process.Init) !void {
     {
         const edit = try nimbus.Menu.create(app.allocator, "Edit", font, black);
         const cut = try nimbus.MenuItem.create(app.allocator, "Cut", font, black);
+        cut.setIcon(ic_cut);
         try cut.getModel().addActionListener(onEditCut, @ptrCast(&state));
         try edit.add(&cut.component);
         const copy = try nimbus.MenuItem.create(app.allocator, "Copy", font, black);
+        copy.setIcon(ic_copy);
         try copy.getModel().addActionListener(onEditCopy, @ptrCast(&state));
         try edit.add(&copy.component);
         const paste2 = try nimbus.MenuItem.create(app.allocator, "Paste", font, black);
+        paste2.setIcon(ic_paste);
         try paste2.getModel().addActionListener(onEditPaste, @ptrCast(&state));
         try edit.add(&paste2.component);
         try edit.addSeparator();
 
         const find = try nimbus.Menu.create(app.allocator, "Find", font, black);
+        find.setIcon(ic_search);
         const find_one = try nimbus.MenuItem.create(app.allocator, "Find...", font, black);
         try find_one.getModel().addActionListener(onFindOne, @ptrCast(&state));
         try find.add(&find_one.component);
