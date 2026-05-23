@@ -216,3 +216,15 @@ pub fn filler(self: *Application) !*Panel {
     p.container.component.setGrowY(1);
     return p;
 }
+
+/// Pre-configured Panel for use as a Frame toolbar. Light grey background,
+/// horizontal BoxLayout, 32px fixed height. Add icon-only Buttons to it and
+/// place it via `BorderLayout.add(window.container, .north, &tb.container.component)`.
+pub fn toolbar(self: *Application) !*Panel {
+    const p = try self.panel();
+    p.setBackground(awt.Graphics.Color.rgb(0.94, 0.94, 0.96));
+    p.container.setLayout(@import("BoxLayout.zig").horizontal());
+    p.container.component.min_size = .{ .width = 0, .height = 32 };
+    p.container.component.max_size = .{ .width = std.math.inf(f32), .height = 32 };
+    return p;
+}

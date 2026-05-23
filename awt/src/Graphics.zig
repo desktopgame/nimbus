@@ -308,11 +308,24 @@ pub fn drawCircle(self: *Graphics, r: Rect) void {
 // ─── Image / text ────────────────────────────────────────────────────────
 
 pub fn drawImage(self: *Graphics, image: Image, x: f32, y: f32) void {
+    self.drawImageScaled(
+        image,
+        x, y,
+        @floatFromInt(image.width),
+        @floatFromInt(image.height),
+    );
+}
+
+/// Draw `image` into the rect (`x`, `y`, `w`, `h`). The full image
+/// (UV 0..1) is sampled and the GPU's linear filter scales to fit.
+/// Use when displaying the same image at different sizes (toolbar icon
+/// vs menu icon vs preview) without preparing per-size assets.
+pub fn drawImageScaled(self: *Graphics, image: Image, x: f32, y: f32, w: f32, h: f32) void {
     if (self.clipIsEmpty()) return;
     const left = self.origin_x + x;
     const top = self.origin_y + y;
-    const right = left + @as(f32, @floatFromInt(image.width));
-    const bottom = top + @as(f32, @floatFromInt(image.height));
+    const right = left + w;
+    const bottom = top + h;
     const x0 = self.pxToNdcX(left);
     const x1 = self.pxToNdcX(right);
     const y0 = self.pxToNdcY(top);

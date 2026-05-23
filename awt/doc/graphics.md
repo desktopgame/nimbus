@@ -115,6 +115,7 @@ pub fn drawCircle(self: *Graphics, r: Rect) void;  // bounding box r のアウ�
 pub fn fillCircle(self: *Graphics, r: Rect) void;  // bounding box r 塗り
 
 pub fn drawImage(self: *Graphics, image: awt.Image, x: f32, y: f32) void;
+pub fn drawImageScaled(self: *Graphics, image: awt.Image, x: f32, y: f32, w: f32, h: f32) void;
 ```
 
 色は current color、フォントは current font を参照する。
@@ -156,6 +157,6 @@ baseline 派の API が必要になったら `drawStringAtBaseline(s, x, baselin
 | `setTransform` (rotate / translate / scale) | アニメ時に必要だが当面不要 |
 | `setAntiAlias` | 暗黙対応 (rect は AA 不要、滑らか形状は常時 1px AA) のため明示 API なし |
 | `save` / `restore` | `clip` で値返しすることで不要 |
-| `drawImage` の scale / subimage 指定 | 元サイズで貼るのみ |
+| `drawImage` の subimage (UV 部分指定) | 元画像の全領域 (UV 0..1) を貼るのみ。scale は `drawImageScaled` で対応 |
 | 複数行 `drawString` (`\n` の自動レイアウト) | テキストレイアウトは別レイヤーで対応予定 |
 | グラデーション塗り | 当面 image / テクスチャで代用 |

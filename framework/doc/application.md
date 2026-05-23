@@ -127,6 +127,20 @@ pub fn slider(
 BoundedRangeModel は内部生成される（`owns_model = true`）。
 共有 Model 版は `Slider.createWithModel` を直接呼ぶ。
 
+## ツールバーの生成
+```zig
+pub fn toolbar(self: *Application) !*Panel;
+```
+
+`Panel` を内部で生成し、ツールバー向けにプリセットを適用して返す：
+
+* 背景色: 薄グレー（メニューバーと揃える）
+* レイアウト: `BoxLayout.horizontal()`
+* 高さ: 32px 固定（`min_size.height` / `max_size.height` 共に 32）
+
+返り値は普通の `*Panel` なので、`toolbar.container.add(&btn.component)` で子ボタンを追加して、`BorderLayout.add(window.container, .north, &toolbar.container.component)` で Frame 上部（メニューバーがあればその下）に取り付ける。
+専用型 `ToolBar` は作らない（Panel + BoxLayout のレシピに名前を付けただけ）。
+
 ---
 
 ## 責務

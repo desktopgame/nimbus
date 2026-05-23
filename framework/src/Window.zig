@@ -424,7 +424,12 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
 
             // 3. menu_bar (above container if no overlay handled the event).
             if (self.menu_bar) |bar| {
-                if (bar.containsWindowPoint(m.x, m.y)) {
+                const over_bar = bar.containsWindowPoint(m.x, m.y);
+                if (m.action == .move) {
+                    // Always dispatch .move to the bar (even when outside)
+                    // so its menus can clear rollover when cursor leaves.
+                    bar.vtable.processEvent(bar, ev);
+                } else if (over_bar) {
                     bar.vtable.processEvent(bar, ev);
                     if (m.action == .press) {
                         if (ev.capture_target) |t| {
@@ -433,9 +438,6 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
                     }
                     if (ev.isConsumed()) return;
                 }
-                // For .move that's not over the bar, still let it through
-                // (a Menu in the bar may want to know hover-off — but for
-                // v1 we just let the bar see only events inside its bounds).
             }
 
             // 4. Container.

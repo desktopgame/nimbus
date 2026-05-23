@@ -1,7 +1,9 @@
 //! Button widget. See `framework/doc/button.md`.
 //!
-//! Visual: rounded rectangle with centered text. The fill color reflects
-//! ButtonModel state (pressed → darker, rollover → lighter, disabled → gray).
+//! Visual modes (auto-detected from text / icon):
+//!   - text only        → rounded rect with border, bg by state (standard)
+//!   - icon only        → "flat" mode: no border; gray bg only on hover
+//!   - text + icon      → standard rounded rect with icon left of text
 
 const std = @import("std");
 const awt = @import("awt");
@@ -13,6 +15,8 @@ const Button = @This();
 const PADDING_X: f32 = 12;
 const PADDING_Y: f32 = 8;
 const CORNER_RADIUS: f32 = 6;
+const ICON_TEXT_GAP: f32 = 6;
+const FLAT_PADDING: f32 = 4;
 
 component:  Component,
 model:      *ButtonModel,
@@ -20,6 +24,8 @@ owns_model: bool,
 text:       []const u8,
 font:       awt.Graphics.TextFont,
 color:      awt.Graphics.Color,
+icon:       ?awt.Image,
+icon_size:  ?Component.Size,           // null = natural size; non-null = scaled
 allocator:  std.mem.Allocator,
 
 pub const vtable = Component.VTable{
@@ -75,16 +81,46 @@ fn createInternal(
         .text = text_dup,
         .font = font,
         .color = color,
+        .icon = null,
+        .icon_size = null,
         .allocator = allocator,
     };
-    b.component.min_size = textMinSize(b.font, b.text);
+    b.applyMetrics();
     Button.vtable.install(&b.component);
     return b;
 }
 
-fn textMinSize(font: awt.Graphics.TextFont, text: []const u8) Component.Size {
-    const m = font.measureString(text);
-    return .{ .width = m.width + PADDING_X * 2, .height = m.height + PADDING_Y * 2 };
+fn iconDrawSize(self: *const Button) Component.Size {
+    if (self.icon_size) |s| return s;
+    if (self.icon) |img| return .{
+        .width = @floatFromInt(img.width),
+        .height = @floatFromInt(img.height),
+    };
+    return .{ .width = 0, .height = 0 };
+}
+
+fn applyMetrics(self: *Button) void {
+    const has_text = self.text.len > 0;
+    const has_icon = self.icon != null;
+    const icon_sz = self.iconDrawSize();
+    const text_m = if (has_text) self.font.measureString(self.text)
+                   else awt.Font.TextSize{ .width = 0, .height = 0 };
+
+    var w: f32 = 0;
+    var h: f32 = 0;
+    if (has_icon and has_text) {
+        w = icon_sz.width + ICON_TEXT_GAP + text_m.width + PADDING_X * 2;
+        h = @max(icon_sz.height, text_m.height) + PADDING_Y * 2;
+    } else if (has_icon) {
+        // flat mode: tighter padding
+        w = icon_sz.width + FLAT_PADDING * 2;
+        h = icon_sz.height + FLAT_PADDING * 2;
+    } else {
+        // text only
+        w = text_m.width + PADDING_X * 2;
+        h = text_m.height + PADDING_Y * 2;
+    }
+    self.component.min_size = .{ .width = w, .height = h };
 }
 
 pub fn getText(self: Button) []const u8 {
@@ -95,19 +131,35 @@ pub fn setText(self: *Button, text: []const u8) !void {
     const new_text = try self.allocator.dupe(u8, text);
     self.allocator.free(self.text);
     self.text = new_text;
-    self.component.setMinSize(textMinSize(self.font, self.text));
+    self.applyMetrics();
+    self.component.markLayoutDirty();
 }
 
 pub fn getFont(self: Button) awt.Graphics.TextFont { return self.font; }
 pub fn setFont(self: *Button, font: awt.Graphics.TextFont) void {
     self.font = font;
-    self.component.setMinSize(textMinSize(self.font, self.text));
+    self.applyMetrics();
+    self.component.markLayoutDirty();
 }
 
 pub fn getColor(self: Button) awt.Graphics.Color { return self.color; }
 pub fn setColor(self: *Button, color: awt.Graphics.Color) void {
     self.color = color;
     self.component.repaint();
+}
+
+pub fn getIcon(self: Button) ?awt.Image { return self.icon; }
+pub fn setIcon(self: *Button, icon: ?awt.Image) void {
+    self.icon = icon;
+    self.applyMetrics();
+    self.component.markLayoutDirty();
+}
+
+pub fn getIconSize(self: Button) ?Component.Size { return self.icon_size; }
+pub fn setIconSize(self: *Button, size: ?Component.Size) void {
+    self.icon_size = size;
+    self.applyMetrics();
+    self.component.markLayoutDirty();
 }
 
 pub fn getModel(self: Button) *ButtonModel { return self.model; }
@@ -133,27 +185,63 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     const button: *Button = @fieldParentPtr("component", self);
     const sz = self.size;
 
-    // Background color picks based on model state.
-    var bg = awt.Graphics.Color.rgb(0.85, 0.85, 0.90);
-    if (!button.model.enabled) {
-        bg = awt.Graphics.Color.rgb(0.75, 0.75, 0.78);
-    } else if (button.model.armed and button.model.pressed) {
-        bg = awt.Graphics.Color.rgb(0.55, 0.65, 0.85); // pressed = darker
-    } else if (button.model.rollover) {
-        bg = awt.Graphics.Color.rgb(0.92, 0.92, 0.97); // hover = lighter
+    const has_text = button.text.len > 0;
+    const has_icon = button.icon != null;
+    const flat = has_icon and !has_text;
+    const armed_pressed = button.model.armed and button.model.pressed;
+
+    if (flat) {
+        // Flat: bg only on hover / armed. No border.
+        if (button.model.enabled) {
+            if (armed_pressed) {
+                g.setColor(awt.Graphics.Color.rgb(0.78, 0.82, 0.92));
+                g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = sz.height });
+            } else if (button.model.rollover) {
+                g.setColor(awt.Graphics.Color.rgb(0.88, 0.88, 0.92));
+                g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = sz.height });
+            }
+        }
+    } else {
+        // Standard rounded-rect background.
+        var bg = awt.Graphics.Color.rgb(0.85, 0.85, 0.90);
+        if (!button.model.enabled) {
+            bg = awt.Graphics.Color.rgb(0.75, 0.75, 0.78);
+        } else if (armed_pressed) {
+            bg = awt.Graphics.Color.rgb(0.55, 0.65, 0.85);
+        } else if (button.model.rollover) {
+            bg = awt.Graphics.Color.rgb(0.92, 0.92, 0.97);
+        }
+        g.setColor(bg);
+        g.fillRoundRect(.{ .x = 0, .y = 0, .width = sz.width, .height = sz.height }, CORNER_RADIUS);
     }
 
-    g.setColor(bg);
-    g.fillRoundRect(.{ .x = 0, .y = 0, .width = sz.width, .height = sz.height }, CORNER_RADIUS);
+    // Content layout.
+    const icon_sz = button.iconDrawSize();
+    const text_m = if (has_text) button.font.measureString(button.text)
+                   else awt.Font.TextSize{ .width = 0, .height = 0 };
 
-    // Text centered.
-    const m = button.font.measureString(button.text);
-    const tx = (sz.width - m.width) / 2;
-    const ty = (sz.height - m.height) / 2;
-    const text_color = if (button.model.enabled) button.color else awt.Graphics.Color.rgb(0.5, 0.5, 0.5);
-    g.setFont(button.font);
-    g.setColor(text_color);
-    g.drawString(button.text, tx, ty);
+    var content_w: f32 = 0;
+    if (has_icon) content_w += icon_sz.width;
+    if (has_icon and has_text) content_w += ICON_TEXT_GAP;
+    if (has_text) content_w += text_m.width;
+
+    var x = (sz.width - content_w) / 2;
+    if (has_icon) {
+        const iy = (sz.height - icon_sz.height) / 2;
+        if (button.icon) |img| {
+            g.drawImageScaled(img, x, iy, icon_sz.width, icon_sz.height);
+        }
+        x += icon_sz.width;
+        if (has_text) x += ICON_TEXT_GAP;
+    }
+    if (has_text) {
+        const ty = (sz.height - text_m.height) / 2;
+        const text_color = if (button.model.enabled) button.color
+                          else awt.Graphics.Color.rgb(0.5, 0.5, 0.5);
+        g.setFont(button.font);
+        g.setColor(text_color);
+        g.drawString(button.text, x, ty);
+    }
 }
 
 fn processEvent(self: *Component, ev: *Component.Event) void {
@@ -188,11 +276,9 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
                     }
                 },
                 .move => {
-                    // Update armed (drag in/out toggles armed while pressed).
                     if (button.model.isPressed()) {
                         button.model.setArmed(inside);
                     }
-                    // Update rollover.
                     button.model.setRollover(inside);
                 },
                 .scroll => {},

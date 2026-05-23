@@ -194,7 +194,39 @@ pub fn getModel(self: Button) *ButtonModel;
 
 利用者が `addActionListener` を直接呼ぶ場合などに使う。
 
+## アイコンの取得 / 設定
+```zig
+pub fn getIcon(self: Button) ?awt.Image;
+pub fn setIcon(self: *Button, icon: ?awt.Image) void;
+```
+
+`null` でアイコンなし。Image の所有権は Button に**移らない**（borrow）。
+アイコン有無で見た目モードが切り替わる（後述「描画モード」参照）。
+
+## アイコン表示サイズの取得 / 設定
+```zig
+pub fn getIconSize(self: Button) ?Component.Size;
+pub fn setIconSize(self: *Button, size: ?Component.Size) void;
+```
+
+`null` のとき Image の実寸で描画する。
+non-null のとき指定サイズに縮小 / 拡大して描画する（`awt.Graphics.drawImageScaled` 経由）。
+toolbar 用に大きな画像を 16x16 / 20x20 等へ縮小表示するのが主な用途。
+
 ---
+
+## 描画モード
+`text` と `icon` の有無で 3 通り自動切替する：
+
+| text | icon | モード | 見た目 |
+|---|---|---|---|
+| 有 | 無 | standard | 角丸矩形 + 背景塗り（push button 風）。既存の挙動 |
+| 有 | 有 | standard | 同上 + アイコンをラベルの左に並べる |
+| 無 | 有 | flat | **枠なし**。hover / armed のときだけ薄グレーの矩形背景。toolbar 向け |
+
+flat モードでは hover 時の背景色しか描かないので、toolbar に並べたとき周囲と自然に溶け込む。
+standard モードでは常時の枠塗りがあり、独立したクリック対象として目立つ。
+
 
 ## 状態変化と Action の二系統
 Button には 2 種類の通知系統がある。これは Swing の `JButton` も同じ。
@@ -241,9 +273,16 @@ L&F 差し替え時の挙動は `model.md`「ウィジェットとの連携」�
 ActionListener の登録は利用者がアプリコードから直接行う（Button 自身は登録しない）。
 
 ## レイアウト属性
-* `min_size`: テキスト寸法 + padding（既定: 上下 8px、左右 12px ぐらい）
-* `max_size`: inf, inf（伸ばしても見た目は壊れない想定）
-* `grow_x` / `grow_y`: 0（既定では伸びない）
+モード別の `min_size`:
+
+| モード | 計算 |
+|---|---|
+| standard (text only) | テキスト寸法 + padding (左右 12px / 上下 8px) |
+| standard (text + icon) | アイコン幅 + 6px + テキスト寸法 + padding |
+| flat (icon only) | アイコン寸法 + padding (上下左右 4px) |
+
+`max_size` は `inf, inf`（伸ばしても見た目は壊れない想定）。
+`grow_x` / `grow_y`: 0（既定では伸びない）。
 
 利用者が「ボタンを行いっぱいに広げたい」場合は `setGrowX(1)` で上書きする。
 
@@ -304,10 +343,32 @@ fn onButtonStateChanged(user_data: *anyopaque) void {
 try button.getModel().addChangeListener(onButtonStateChanged, button);
 ```
 
+toolbar に並べる icon-only ボタン（flat モード）。
+
+```zig
+const icon = try awt.Image.fromMemory(allocator, app.device, png_bytes);
+
+const btn = try app.button("");        // text 空 → アイコン専用 = flat
+btn.setIcon(icon);
+btn.setIconSize(.{ .width = 20, .height = 20 });  // toolbar 用に縮小
+try btn.getModel().addActionListener(onSave, &state);
+
+try toolbar.container.add(&btn.component);
+```
+
+text + icon の standard モード。
+
+```zig
+const btn = try app.button("Save");
+btn.setIcon(save_icon);
+btn.setIconSize(.{ .width = 16, .height = 16 });
+// → 角丸矩形ボタンの中に「[icon] Save」が並ぶ
+```
+
 ## 機能要望
 * キーボード操作（Space / Enter で押下）
 * ニーモニック（Alt+x ショートカット）
-* アイコン表示（テキスト + アイコン併用）
 * トグルボタン（`selected` フラグを活用、ButtonGroup と組合せて排他選択）
 * デフォルトボタンの装飾（Enter で発火する強調表示）
 * アクセシビリティ用の追加属性（aria-label 相当）
+* tint カラー指定（モノクロ SVG 風アイコンを色付けして表示）

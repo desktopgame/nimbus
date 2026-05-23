@@ -11,6 +11,7 @@ const nimbus = @import("nimbus");
 const awt = nimbus.awt;
 
 const noto_sans_ttf = @embedFile("assets/NotoSansJP-Regular.ttf");
+const example_png = @embedFile("assets/example.png");
 
 const State = struct {
     label:   *nimbus.Label,
@@ -148,6 +149,11 @@ fn onCtxInsertTable(user_data: *anyopaque) void {
     setStatus(s, "PopupMenu > Insert > Table", .{});
 }
 
+fn onTbAction(user_data: *anyopaque) void {
+    const s: *State = @ptrCast(@alignCast(user_data));
+    setStatus(s, "Toolbar button clicked", .{});
+}
+
 // ── main ─────────────────────────────────────────────────────────────────
 
 pub fn main(init: std.process.Init) !void {
@@ -201,6 +207,21 @@ pub fn main(init: std.process.Init) !void {
     content.container.component.vtable = &ctx_vtable;
 
     try nimbus.BorderLayout.add(&frame.window.container, .center, &content.container.component);
+
+    // Toolbar with icon-only buttons. The image is shared across all 3
+    // buttons (same texture, different display sizes work too).
+    var icon = try awt.Image.fromMemory(app.allocator, app.device, example_png);
+    defer icon.deinit();
+
+    const tb = try app.toolbar();
+    inline for ([_]u0{0} ** 3) |_| {
+        const tb_btn = try app.button("");
+        tb_btn.setIcon(icon);
+        tb_btn.setIconSize(.{ .width = 20, .height = 20 });
+        try tb_btn.getModel().addActionListener(onTbAction, @ptrCast(&state));
+        try tb.container.add(&tb_btn.component);
+    }
+    try nimbus.BorderLayout.add(&frame.window.container, .north, &tb.container.component);
 
     // Build menu bar.
     const bar = try nimbus.MenuBar.create(app.allocator, font, black);
