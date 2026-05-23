@@ -115,6 +115,24 @@ pub fn setMaxSize(self: *Component, size: Size) void;
 pub fn getMaxSize(self: *const Component) Size;
 ```
 
+## レイアウト測定用の min/max サイズ
+```zig
+pub fn effectiveMinSize(self: *const Component) Size;
+pub fn effectiveMaxSize(self: *const Component) Size;
+```
+
+レイアウトマネージャ (BoxLayout 等) が子の min/max を見るときに使うべきヘルパー。
+plain な Component に対しては `min_size` / `max_size` の値をそのまま返すが、Container を embed したコンポーネントに対しては `Container.getMinSize` / `getMaxSize` を呼び出し、レイアウト計算済みのサイズを取得する。
+
+これにより、空 Panel やネストした Container を BoxLayout の子に置いたとき、内側の子から自動的にサイズが伝播する。
+利用者が `setMinSize` で明示的に値をセットしていれば、Container の場合「min(明示値, 計算値) の大きい方」が採用される (`Container.getMinSize` の挙動)。
+
+計算量は subtree のサイズに比例 (キャッシュなし)。
+深い木 / 多数の widget の場合は呼び出しコストに注意。
+将来的にはレイアウトキャッシュ機能を追加予定 (機能要望)。
+
+利用者が直接呼ぶ機会はほぼなく、layout 実装者向けのフック。
+
 ## 水平方向 grow の設定
 ```zig
 pub fn setGrowX(self: *Component, weight: f32) void;
@@ -442,3 +460,5 @@ try label.component.setVTable(&my_vt);
 ## 機能要望
 * `PropertyChangeListener` 相当 — setter からの変更通知。Swing PCE と同等
 * Component 単位の `dirty` フラグ — 現状は Frame 単位で持つ（`{REPO_ROOT}/doc/layout-design.md` 参照）
+* `effectiveMinSize` / `effectiveMaxSize` のキャッシュ — 深い木では毎回 subtree 走査になる
+* `Container.getMaxSize` の不整合解消 — 現状は `component.max_size` を見ず layout 値のみ返す (getMinSize は max を取るのに非対称)

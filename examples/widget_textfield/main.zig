@@ -60,21 +60,12 @@ fn hSpacer(app: *nimbus.Application, w: f32) !*nimbus.Panel {
 
 /// Wrap `child` with `pad` px of empty Panel on its left and right.
 /// The returned row is a horizontal BoxLayout container.
-///
-/// NOTE: nimbus's Container does not auto-propagate "min size computed
-/// from children" into `component.min_size`, so a parent BoxLayout would
-/// see this row as 0×0 and collapse it. We seed both bounds from the
-/// layout's computed values so the outer box gives us real space. This
-/// is a known gap in the framework — a future `Container.refreshMinSize`
-/// (or auto-call inside `add`) would let us drop these two lines.
 fn padHorizontal(app: *nimbus.Application, child: *nimbus.Component, pad: f32) !*nimbus.Container {
     const row = try app.container();
     row.setLayout(nimbus.BoxLayout.horizontal());
     try row.add(&(try hSpacer(app, pad)).container.component);
     try row.add(child);
     try row.add(&(try hSpacer(app, pad)).container.component);
-    row.component.setMinSize(row.getMinSize());
-    row.component.setMaxSize(row.getMaxSize());
     return row;
 }
 

@@ -155,6 +155,30 @@ pub fn setMaxSize(self: *Component, s: Size) void {
     self.markLayoutDirty();
 }
 
+/// Min size that layouts should use when measuring a child. For plain
+/// components this is `min_size`; for containers it combines the field
+/// with the layout-computed value (so a nested Container reports a size
+/// derived from its own children, instead of the default zero).
+///
+/// Layouts should prefer this over reading `min_size` directly. Costs
+/// O(n) per call where n = subtree size, since computing a container's
+/// size walks its children — keep an eye on this if the tree gets deep
+/// (no caching in v1).
+pub fn effectiveMinSize(self: *const Component) Size {
+    if (self.container) |c| return c.getMinSize();
+    return self.min_size;
+}
+
+/// Max size counterpart of `effectiveMinSize`. NOTE: for containers
+/// this currently delegates to `Container.getMaxSize`, which only
+/// looks at the layout-computed value (a known asymmetry with
+/// `getMinSize`). Manually setting `max_size` on a container has no
+/// effect until that is fixed.
+pub fn effectiveMaxSize(self: *const Component) Size {
+    if (self.container) |c| return c.getMaxSize();
+    return self.max_size;
+}
+
 pub fn getGrowX(self: *const Component) f32 {
     return self.grow_x;
 }

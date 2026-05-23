@@ -96,10 +96,12 @@ fn doLayout(self: *LayoutManager, container: *Container) void {
     const W = cb.width;
     const H = cb.height;
 
-    const nh: f32 = if (slots.north)  |c| c.min_size.height else 0;
-    const sh: f32 = if (slots.south)  |c| c.min_size.height else 0;
-    const ww: f32 = if (slots.west)   |c| c.min_size.width  else 0;
-    const ew: f32 = if (slots.east)   |c| c.min_size.width  else 0;
+    // Use effectiveMinSize so that nested Containers report a size
+    // derived from their own children, not the default 0.
+    const nh: f32 = if (slots.north)  |c| c.effectiveMinSize().height else 0;
+    const sh: f32 = if (slots.south)  |c| c.effectiveMinSize().height else 0;
+    const ww: f32 = if (slots.west)   |c| c.effectiveMinSize().width  else 0;
+    const ew: f32 = if (slots.east)   |c| c.effectiveMinSize().width  else 0;
 
     const mid_h = @max(0, H - nh - sh);
     const mid_w = @max(0, W - ww - ew);
@@ -115,17 +117,17 @@ fn computeMinSize(self: *LayoutManager, container: *const Container) Component.S
     _ = self;
     const slots = collect(container);
 
-    const nw: f32 = if (slots.north)  |c| c.min_size.width  else 0;
-    const sw: f32 = if (slots.south)  |c| c.min_size.width  else 0;
-    const ww: f32 = if (slots.west)   |c| c.min_size.width  else 0;
-    const ew: f32 = if (slots.east)   |c| c.min_size.width  else 0;
-    const cw: f32 = if (slots.center) |c| c.min_size.width  else 0;
+    const nw: f32 = if (slots.north)  |c| c.effectiveMinSize().width  else 0;
+    const sw: f32 = if (slots.south)  |c| c.effectiveMinSize().width  else 0;
+    const ww: f32 = if (slots.west)   |c| c.effectiveMinSize().width  else 0;
+    const ew: f32 = if (slots.east)   |c| c.effectiveMinSize().width  else 0;
+    const cw: f32 = if (slots.center) |c| c.effectiveMinSize().width  else 0;
 
-    const nh: f32 = if (slots.north)  |c| c.min_size.height else 0;
-    const sh: f32 = if (slots.south)  |c| c.min_size.height else 0;
-    const wh: f32 = if (slots.west)   |c| c.min_size.height else 0;
-    const eh: f32 = if (slots.east)   |c| c.min_size.height else 0;
-    const ch: f32 = if (slots.center) |c| c.min_size.height else 0;
+    const nh: f32 = if (slots.north)  |c| c.effectiveMinSize().height else 0;
+    const sh: f32 = if (slots.south)  |c| c.effectiveMinSize().height else 0;
+    const wh: f32 = if (slots.west)   |c| c.effectiveMinSize().height else 0;
+    const eh: f32 = if (slots.east)   |c| c.effectiveMinSize().height else 0;
+    const ch: f32 = if (slots.center) |c| c.effectiveMinSize().height else 0;
 
     const mid_w = ww + cw + ew;
     const min_w = @max(@max(nw, sw), mid_w);

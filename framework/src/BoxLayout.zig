@@ -81,11 +81,13 @@ fn doLayout(self: *LayoutManager, container: *Container) void {
     const main_size = mainOf(ori, cb);
     const cross_size = crossOf(ori, cb);
 
-    // Pass 1: collect mins + growth sum.
+    // Pass 1: collect mins + growth sum. Use effectiveMinSize so a child
+    // that is itself a Container reports a size computed from its own
+    // children (instead of the default 0 on `component.min_size`).
     var sum_min: f32 = 0;
     var sum_grow: f32 = 0;
     for (container.children.items) |elem| {
-        sum_min += mainOf(ori, elem.component.min_size);
+        sum_min += mainOf(ori, elem.component.effectiveMinSize());
         sum_grow += growMain(ori, elem.component);
     }
 
@@ -96,8 +98,10 @@ fn doLayout(self: *LayoutManager, container: *Container) void {
     var pos: f32 = 0;
     for (container.children.items) |elem| {
         const child = elem.component;
-        const child_min = mainOf(ori, child.min_size);
-        const child_max = mainOf(ori, child.max_size);
+        const child_min_size = child.effectiveMinSize();
+        const child_max_size = child.effectiveMaxSize();
+        const child_min = mainOf(ori, child_min_size);
+        const child_max = mainOf(ori, child_max_size);
         const child_grow = growMain(ori, child);
 
         var main: f32 = child_min;
@@ -107,8 +111,8 @@ fn doLayout(self: *LayoutManager, container: *Container) void {
         if (main > child_max) main = child_max;
 
         // Cross axis sizing + alignment.
-        const child_cmin = crossOf(ori, child.min_size);
-        const child_cmax = crossOf(ori, child.max_size);
+        const child_cmin = crossOf(ori, child_min_size);
+        const child_cmax = crossOf(ori, child_max_size);
         const align_v = crossAlign(ori, child);
         var cross: f32 = switch (align_v) {
             .stretch => cross_size,
@@ -144,8 +148,9 @@ fn computeMinSize(self: *LayoutManager, container: *const Container) Component.S
     var main_total: f32 = 0;
     var cross_max: f32 = 0;
     for (container.children.items) |elem| {
-        main_total += mainOf(ori, elem.component.min_size);
-        const c = crossOf(ori, elem.component.min_size);
+        const child_min = elem.component.effectiveMinSize();
+        main_total += mainOf(ori, child_min);
+        const c = crossOf(ori, child_min);
         if (c > cross_max) cross_max = c;
     }
     return switch (ori) {
@@ -161,8 +166,9 @@ fn computeMaxSize(self: *LayoutManager, container: *const Container) Component.S
     var main_total: f32 = 0;
     var cross_max: f32 = 0;
     for (container.children.items) |elem| {
-        main_total += mainOf(ori, elem.component.max_size);
-        const c = crossOf(ori, elem.component.max_size);
+        const child_max = elem.component.effectiveMaxSize();
+        main_total += mainOf(ori, child_max);
+        const c = crossOf(ori, child_max);
         if (c > cross_max) cross_max = c;
     }
     return switch (ori) {
