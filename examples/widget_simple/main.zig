@@ -48,9 +48,18 @@ pub fn main(init: std.process.Init) !void {
     row.component.setGrowY(1);        // fill the window vertically
 
     const button = try app.button("Click");
+    button.component.setAlignY(.center);
+    // Cap the button's vertical max to its min so it doesn't stretch when the
+    // row is tall. Width stays inf so it can still grow horizontally if needed.
+    button.component.setMaxSize(.{
+        .width = std.math.inf(f32),
+        .height = button.component.getMinSize().height,
+    });
     const slider = try app.slider(.horizontal, 0, 50, 100);
     slider.component.setGrowX(1);     // slider eats leftover horizontal space
+    slider.component.setAlignY(.center);
     const label = try app.label("clicks: 0 / value: 50");
+    label.component.setAlignY(.center);
 
     try row.add(&button.component);
     try row.add(&slider.component);
