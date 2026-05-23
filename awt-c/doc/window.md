@@ -195,7 +195,7 @@ IME の preedit（変換中文字列）が更新された時に呼ばれるコ�
 | プラットフォーム | 状態 |
 |---|---|
 | Windows | IMM32 + WNDPROC subclass で実装済み |
-| macOS | stub（no-op）。`NSTextInputClient` ベースの実装は将来 |
+| macOS | NSView runtime subclass + `NSTextInputClient` (`setMarkedText:` / `unmarkText` / `firstRectForCharacterRange:`) で実装済み |
 | Linux | stub（no-op）。Wayland text-input v3 ベースの実装は将来 |
 
 ## IME 候補ウィンドウ位置の設定
@@ -205,8 +205,8 @@ IME 候補ウィンドウの表示位置を、現在のテキストキャレッ�
 TextField 等のキャレットが移動するたびに呼ぶ想定。
 処理は軽量で、毎キー入力ごとに呼んでもパフォーマンス影響は無視できる。
 
-* Windows: `ImmSetCompositionWindow` で即時 push
-* macOS: 内部キャッシュに保存し、OS が `firstRectForCharacterRange:` で pull したとき返却（予定）
+* Windows: `ImmSetCompositionWindow` + `ImmSetCandidateWindow` で即時 push
+* macOS: 内部キャッシュに保存し、`NSTextInputContext.invalidateCharacterCoordinates` で OS に再 pull を促す。実際の座標応答は `firstRectForCharacterRange:` ハンドラで行う
 * Linux: `zwp_text_input_v3.set_cursor_rectangle` で即時 push（予定）
 
 ### 事前条件

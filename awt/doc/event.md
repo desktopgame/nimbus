@@ -259,14 +259,15 @@ OS との連携:
 
 現状の実装:
 * Windows: WNDPROC subclass + IMM32 で `WM_IME_COMPOSITION` を拾う
-* macOS / Linux: stub（no-op）。`NSTextInputClient` / Wayland text-input v3 ベースの実装が将来追加される予定
+* macOS: NSView の runtime subclass で `NSTextInputClient.setMarkedText:` / `firstRectForCharacterRange:` を intercept
+* Linux: stub（no-op）。Wayland text-input v3 ベースの実装が将来追加される予定
 
 ## awt-c との関係
 awt-c は GLFW の C 関数ポインタ型でコールバックを受ける（`nmKeyCallback`、`nmCharCallback`、`nmMouseButtonCallback`、`nmCursorPosCallback`、`nmScrollCallback` 等）。
 これらのコールバックは個別の引数（コード / 文字 / ボタン / 座標 / スクロール量）を受け取る形になる。
 
 加えて、IME 用に `nmCompositionCallback`（GLFW にはなく awt-c 独自）がある。
-これは GLFW を経由せず、プラットフォーム別バックエンド（Windows: WNDPROC subclass、macOS: NSTextInputClient（予定）、Linux: Wayland text-input（予定））が直接 fire する。
+これは GLFW を経由せず、プラットフォーム別バックエンド（Windows: WNDPROC subclass、macOS: NSView runtime subclass + NSTextInputClient、Linux: Wayland text-input（予定））が直接 fire する。
 
 awt 層がそれらを Zig の `Event` 型に統合してから framework に渡す。
 `FocusEvent` は OS 由来ではなく framework が生成するため対応するコールバックは存在しない。

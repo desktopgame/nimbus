@@ -98,7 +98,7 @@ CLAUDE.md「文字コード」「書記素クラスタ」の方針に従って�
 * 左から右に書く言語のみ (RTL は未対応)
 * codepoint 単位での挿入・削除・キャレット移動 (書記素クラスタ単位は将来課題。詳細は「機能要望」)
 * color emoji の表示は v1 では対象外 (フォントと描画パスの両方が要拡張、 詳細は「機能要望」)
-* IME composition の inline 表示は **Windows のみ実装済み**。macOS / Linux はバックエンド未対応 (詳細は「IME 連携」)
+* IME composition の inline 表示は **Windows / macOS で実装済み**。Linux はバックエンド未対応 (詳細は「IME 連携」)
 * 標準編集ショートカット: `Backspace` / `Delete` / `Home` / `End` / 矢印 / `Shift+矢印` / `Ctrl+A,C,X,V`
 
 `Enter` は単一行なので無視する (将来 `submit` イベントを発火する余地は残す)。
@@ -180,7 +180,7 @@ IME による composition (preedit、変換中文字列) を inline で表示す
 | OS | 状態 |
 |---|---|
 | Windows | IMM32 (`WM_IME_COMPOSITION` + `ImmGetCompositionStringW`) で動作 |
-| macOS | バックエンド未実装 (no-op stub)。`NSTextInputClient` ベースの実装は将来 |
+| macOS | `NSTextInputClient` (`setMarkedText:` / `firstRectForCharacterRange:`) を runtime subclass で intercept (`awt-c/src/cocoa_ime.m`) |
 | Linux | バックエンド未実装 (no-op stub)。Wayland text-input v3 ベースの実装は将来 |
 
 ## 描画順序
@@ -198,7 +198,7 @@ IME による composition (preedit、変換中文字列) を inline で表示す
 * `ChangeListener` (`addChangeListener` / `removeChangeListener`) — 内容変更時の通知。現状は呼び出し側が tick タイマー等で polling
 * `setColumns(n: u32)` — `'M'` ベースの幅算出を桁数で外から指定
 * `setPlaceholder(text)` — 空のときに薄く表示するヒント
-* macOS / Linux 用 IME バックエンドの実装 (現状は Windows のみ。`awt-c/src/ime_stub.c` が no-op)
+* Linux 用 IME バックエンドの実装 (現状は Windows + macOS のみ。Linux は `awt-c/src/ime_stub.c` で no-op)
 * IME composition attribute の多段化 (現状は target 1 区間のみ。Windows IMM の CompAttr の TARGET_NOTCONVERTED / CONVERTED / INPUT 等を色分けして見せたい場合に必要)
 * `Tab` / `Shift+Tab` traversal の標準対応
 * 部分再描画 (キャレット点滅で全画面再描画になるのを避ける)
