@@ -160,9 +160,19 @@ pub fn build(b: *std.Build) void {
         .install_subdir = "",
     });
 
+    // ── shared snapshot scenes (used by tests AND examples/snapshot) ──
+    const scenes_mod = b.createModule(.{
+        .root_source_file = b.path("awt/tests/scenes.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "awt", .module = awt_mod },
+        },
+    });
+
     // ── examples ─────────────────────────────────────────────────
-    addExample(b, "hello", framework_mod, target, optimize);
-    addExample(b, "snapshot", framework_mod, target, optimize);
+    addExample(b, "hello", framework_mod, null, target, optimize);
+    addExample(b, "snapshot", framework_mod, scenes_mod, target, optimize);
 
     // ── tests ────────────────────────────────────────────────────
     const test_step = b.step("test", "Run all unit tests");
@@ -173,28 +183,62 @@ pub fn build(b: *std.Build) void {
         const t = b.addTest(.{ .root_module = entry[1] });
         test_step.dependOn(&b.addRunArtifact(t).step);
     }
+
+    // ── snapshot tests (golden-image comparison) ─────────────────
+    const snapshot_test_mod = b.createModule(.{
+        .root_source_file = b.path("awt/tests/snapshot_test.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "awt", .module = awt_mod },
+            .{ .name = "zigimg", .module = zigimg_mod },
+            .{ .name = "scenes", .module = scenes_mod },
+        },
+    });
+
+    // Same test artifact is reused by `zig build test` (compare) and
+    // `zig build update-snapshots` (regenerate fixtures via env var).
+    const snapshot_test_exe = b.addTest(.{ .root_module = snapshot_test_mod });
+
+    const snapshot_test_run = b.addRunArtifact(snapshot_test_exe);
+    test_step.dependOn(&snapshot_test_run.step);
+
+    const update_step = b.step(
+        "update-snapshots",
+        "Regenerate snapshot test fixtures from the current renderer output",
+    );
+    const update_run = b.addRunArtifact(snapshot_test_exe);
+    update_run.setEnvironmentVariable("NIMBUS_UPDATE_SNAPSHOTS", "1");
+    update_step.dependOn(&update_run.step);
 }
 
 fn addExample(
     b: *std.Build,
     comptime name: []const u8,
     nimbus_mod: *std.Build.Module,
+    scenes_mod: ?*std.Build.Module,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
 ) void {
+    var imports: std.ArrayList(std.Build.Module.Import) = .empty;
+    imports.append(b.allocator, .{ .name = "nimbus", .module = nimbus_mod }) catch unreachable;
+    if (scenes_mod) |m| {
+        imports.append(b.allocator, .{ .name = "scenes", .module = m }) catch unreachable;
+    }
+
     const exe = b.addExecutable(.{
         .name = name,
         .root_module = b.createModule(.{
             .root_source_file = b.path("examples/" ++ name ++ "/main.zig"),
             .target = target,
             .optimize = optimize,
-            .imports = &.{
-                .{ .name = "nimbus", .module = nimbus_mod },
-            },
+            .imports = imports.items,
         }),
     });
     b.installArtifact(exe);
 
     const run_step = b.step("run-" ++ name, "Run the " ++ name ++ " example");
-    run_step.dependOn(&b.addRunArtifact(exe).step);
+    const run = b.addRunArtifact(exe);
+    if (b.args) |args| run.addArgs(args);
+    run_step.dependOn(&run.step);
 }
