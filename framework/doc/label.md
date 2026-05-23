@@ -26,7 +26,7 @@ pub const Label = struct {
 ## 役割
 * テキスト 1 行を `(0, 0)` (component ローカル) を起点に描画
 * フォント・色は setter で動的変更可能
-* `preferredSize` でテキストの自然なサイズを返す (将来 LayoutManager 用)
+* テキスト寸法から `component.min_size` を自動算出（LayoutManager がこれを下限として使う）
 
 ## 描画
 vtable.paint は単純に Graphics の API を叩く:
@@ -49,14 +49,15 @@ fn paint(self: *Component, g: *awt.Graphics) void {
 登録したい」場合のためにあるもので、ビルトインでは使わない (component.md 参照)。
 
 ## text の所有
-Label が `allocator.dupe` で複製を持つ。setter は古い text を free して新しい dup を保持する。
+Label が `allocator.dupe` で複製を持つ。setter は古い text を free して新しい dup を保持し、テキスト寸法を測りなおして `component.min_size` を更新する。
 
 ```zig
 pub fn setText(self: *Label, text: []const u8) !void {
     const new_text = try self.allocator.dupe(u8, text);
     self.allocator.free(self.text);
     self.text = new_text;
-    self.component.repaint();
+    self.component.setMinSize(self.font.measureString(self.text).asSize());
+    // setMinSize が layout_dirty + paint_dirty を立てるため、別途 repaint は不要
 }
 ```
 
@@ -75,13 +76,13 @@ pub fn getText(self: Label) []const u8 { return self.text; }
 
 pub fn setFont(self: *Label, font: awt.Graphics.TextFont) void {
     self.font = font;
-    self.component.repaint();
+    self.component.setMinSize(self.font.measureString(self.text).asSize());
 }
 pub fn getFont(self: Label) awt.Graphics.TextFont { return self.font; }
 
 pub fn setColor(self: *Label, color: awt.Graphics.Color) void {
     self.color = color;
-    self.component.repaint();
+    self.component.repaint();    // 見た目だけの変更。レイアウトは変わらない
 }
 pub fn getColor(self: Label) awt.Graphics.Color { return self.color; }
 ```
@@ -92,15 +93,18 @@ Component メソッド (setBounds / repaint / setName 等) は委譲しない。
 
 初期値は Application のデフォルト (default_font + 黒) を factory で注入する。
 
-## preferredSize
-font の metrics と text 長さから「テキストが自然に収まるサイズ」を返す。
-v1 では LayoutManager が無いので使われないが、将来のために生やしておく。
+## MinimumSize の自動算出
+Label は `component.min_size` を「現在の text を現在の font で描画したときに必要な寸法」に保つ責任を負う。
+更新タイミングは次の 3 箇所のみ:
 
-```zig
-pub fn preferredSize(self: Label) Size {
-    return self.font.measureString(self.text).asSize();
-}
-```
+* `Label.init` — text と font の初期値から算出してセット
+* `setText` — 新しい text の寸法を測ってセット
+* `setFont` — 新しい font で現在の text の寸法を測ってセット
+
+利用者がさらに大きな下限を指定したい場合は `component.setMinSize(...)` で上書きできるが、その後 `setText` / `setFont` を呼ぶと Label が再度計算した値で上書きされる。
+
+`max_size` / `grow_x` / `grow_y` は Label からは触らない。
+利用者が用途に応じて Component の setter で設定する（デフォルトは `inf, inf, 0, 0` で「下限テキスト寸法、上限なし、伸びない」となる）。
 
 ## ライフサイクル
 factory コード例 (内部):
@@ -115,8 +119,8 @@ pub fn label(self: *Application, text: []const u8) !*Label {
 }
 ```
 
-`Label.init` は text を `allocator.dupe` で複製する。失敗時は `allocator.create` で確保したメモリを
-解放してエラーを返す責任を持つ (awt-c の Create 関数失敗時セマンティクスと同様、強い例外保証)。
+`Label.init` は text を `allocator.dupe` で複製し、`component.min_size` を `font.measureString(text)` から算出してセットする。
+失敗時は `allocator.create` で確保したメモリを解放してエラーを返す責任を持つ (awt-c の Create 関数失敗時セマンティクスと同様、強い例外保証)。
 
 deinit では:
 1. `component.deinit()` で uninstall + properties cleanup
