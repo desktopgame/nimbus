@@ -8,6 +8,35 @@ typedef struct nmWindow nmWindow;
 
 typedef void (*nmWindowResizeCallback)(nmWindow* window, int width, int height, void* user_data);
 typedef void (*nmWindowRefreshCallback)(nmWindow* window, void* user_data);
+
+typedef enum nmKeyAction {
+    nmKeyActionRelease,
+    nmKeyActionPress,
+    nmKeyActionRepeat,
+} nmKeyAction;
+
+typedef enum nmMouseButton {
+    nmMouseButtonLeft,
+    nmMouseButtonMiddle,
+    nmMouseButtonRight,
+} nmMouseButton;
+
+/* Modifier bitmask. Combine with bitwise OR. */
+typedef enum nmModifiers {
+    nmModifierShift = 1 << 0,
+    nmModifierCtrl  = 1 << 1,
+    nmModifierAlt   = 1 << 2,
+    nmModifierMeta  = 1 << 3,
+} nmModifiers;
+
+/* Key code; mirrors GLFW_KEY_* values. The awt (Zig) layer maps these into a
+ * typed enum. */
+typedef int nmKeyCode;
+
+typedef void (*nmMouseButtonCallback)(nmWindow* window, nmMouseButton button, nmKeyAction action, int modifiers, void* user_data);
+typedef void (*nmCursorPosCallback)(nmWindow* window, double x, double y, void* user_data);
+typedef void (*nmScrollCallback)(nmWindow* window, double dx, double dy, void* user_data);
+typedef void (*nmKeyCallback)(nmWindow* window, nmKeyCode key, nmKeyAction action, int modifiers, void* user_data);
 ```
 
 `nmWindow` の内部実装に関する知識は外部に漏らさない。
@@ -99,6 +128,37 @@ Windows の modal sizing loop 中 (利用者が枠をドラッグしている間
 `cb` に `NULL` を渡すと登録解除される。
 
 リサイズ中も描画を継続したい場合、このコールバックから描画処理を呼ぶ。
+
+## マウスボタンコールバックの登録
+void nmSetMouseButtonCallback(nmWindow* self, nmMouseButtonCallback cb, void* user_data);
+
+マウスボタン押下 / 解放時に呼ばれるコールバックを登録する。
+`action` は `nmKeyActionPress` または `nmKeyActionRelease`。
+`modifiers` は `nmModifiers` のビットマスク。
+`cb` に `NULL` を渡すと登録解除される。
+
+## カーソル位置コールバックの登録
+void nmSetCursorPosCallback(nmWindow* self, nmCursorPosCallback cb, void* user_data);
+
+カーソル移動時に呼ばれるコールバックを登録する。
+`x` / `y` は **ウィンドウローカル座標 (論理ポイント)** で、ウィンドウの左上が `(0, 0)`、右下が `(width, height)` となる。
+`cb` に `NULL` を渡すと登録解除される。
+
+## スクロールコールバックの登録
+void nmSetScrollCallback(nmWindow* self, nmScrollCallback cb, void* user_data);
+
+マウスホイール / トラックパッド スクロール時に呼ばれるコールバックを登録する。
+`dx` / `dy` はスクロール量で、`dy` の正の値は上方向。
+`cb` に `NULL` を渡すと登録解除される。
+
+## キーコールバックの登録
+void nmSetKeyCallback(nmWindow* self, nmKeyCallback cb, void* user_data);
+
+キー押下 / 解放 / リピート時に呼ばれるコールバックを登録する。
+`key` は GLFW のキーコードに対応する整数値。
+`action` は `nmKeyActionPress` / `nmKeyActionRelease` / `nmKeyActionRepeat` のいずれか。
+`modifiers` は `nmModifiers` のビットマスク。
+`cb` に `NULL` を渡すと登録解除される。
 
 ## 機能要望
 * DPI スケール係数の単独取得 API (現状は論理 / 実ピクセルの 2 値から逆算が必要)。

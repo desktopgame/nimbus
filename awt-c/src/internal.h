@@ -42,8 +42,40 @@ void nmSwapBuffers(nmWindow* self);
 typedef void (*nmWindowResizeCallback)(nmWindow* window, int width, int height, void* user_data);
 typedef void (*nmWindowRefreshCallback)(nmWindow* window, void* user_data);
 
+typedef enum nmKeyAction {
+    nmKeyActionRelease,
+    nmKeyActionPress,
+    nmKeyActionRepeat,
+} nmKeyAction;
+
+typedef enum nmMouseButton {
+    nmMouseButtonLeft,
+    nmMouseButtonMiddle,
+    nmMouseButtonRight,
+} nmMouseButton;
+
+/* Modifier bitmask. Combine with bitwise OR. */
+typedef enum nmModifiers {
+    nmModifierShift = 1 << 0,
+    nmModifierCtrl  = 1 << 1,
+    nmModifierAlt   = 1 << 2,
+    nmModifierMeta  = 1 << 3,
+} nmModifiers;
+
+/* Mirrors GLFW_KEY_* values. */
+typedef int nmKeyCode;
+
+typedef void (*nmMouseButtonCallback)(nmWindow* window, nmMouseButton button, nmKeyAction action, int modifiers, void* user_data);
+typedef void (*nmCursorPosCallback)(nmWindow* window, double x, double y, void* user_data);
+typedef void (*nmScrollCallback)(nmWindow* window, double dx, double dy, void* user_data);
+typedef void (*nmKeyCallback)(nmWindow* window, nmKeyCode key, nmKeyAction action, int modifiers, void* user_data);
+
 void nmSetWindowResizeCallback(nmWindow* self, nmWindowResizeCallback cb, void* user_data);
 void nmSetWindowRefreshCallback(nmWindow* self, nmWindowRefreshCallback cb, void* user_data);
+void nmSetMouseButtonCallback(nmWindow* self, nmMouseButtonCallback cb, void* user_data);
+void nmSetCursorPosCallback(nmWindow* self, nmCursorPosCallback cb, void* user_data);
+void nmSetScrollCallback(nmWindow* self, nmScrollCallback cb, void* user_data);
+void nmSetKeyCallback(nmWindow* self, nmKeyCallback cb, void* user_data);
 
 /* Window size in logical screen units (points). This is what the user
  * requested in nmCreateWindow; on HiDPI displays it is smaller than the
@@ -61,6 +93,10 @@ void nmGetFramebufferSize(const nmWindow* self, int* width, int* height);
 
 void nmPollEvents(void);
 void nmWaitEvents(void);
+
+/* Wake up the UI thread blocked in nmWaitEvents. Safe to call from any thread.
+ * No side effects beyond unblocking — the wake-up just resumes polling. */
+void nmPostEmptyEvent(void);
 
 /* Seconds since nmInitAwt; monotonic. */
 double nmGetTime(void);

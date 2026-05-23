@@ -33,6 +33,9 @@ pub fn main(init: std.process.Init) !void {
     var device = try awt.Device.init();
     defer device.deinit();
 
+    var font = try awt.Font.init(scenes.default_font_bytes, 0);
+    defer font.deinit();
+
     var rt = try awt.RenderTarget.create(device, scene.width, scene.height);
     defer rt.deinit();
 
@@ -78,7 +81,13 @@ pub fn main(init: std.process.Init) !void {
         cb.clearStencil(0);
 
         var g = awt.Graphics.init(cb, &ctx, scene.width, scene.height, scene.width, scene.height);
-        scene.paint(&g);
+        try scene.paint(.{
+            .g = &g,
+            .allocator = gpa,
+            .font = font,
+            .width = scene.width,
+            .height = scene.height,
+        });
 
         cb.end();
         cb.submit(device);

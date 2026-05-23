@@ -35,6 +35,30 @@ test "snapshot: basic_shapes" {
     try runScene(scenes.basic_shapes);
 }
 
+test "snapshot: layout_horizontal_buttons" {
+    try runScene(scenes.layout_horizontal_buttons);
+}
+
+test "snapshot: layout_vertical_grow" {
+    try runScene(scenes.layout_vertical_grow);
+}
+
+test "snapshot: layout_right_aligned" {
+    try runScene(scenes.layout_right_aligned);
+}
+
+test "snapshot: layout_centered" {
+    try runScene(scenes.layout_centered);
+}
+
+test "snapshot: layout_panel_decoration" {
+    try runScene(scenes.layout_panel_decoration);
+}
+
+test "snapshot: layout_nested" {
+    try runScene(scenes.layout_nested);
+}
+
 fn runScene(scene: scenes.Scene) !void {
     const allocator = std.testing.allocator;
 
@@ -43,7 +67,10 @@ fn runScene(scene: scenes.Scene) !void {
     var device = awt.Device.init() catch return error.SkipZigTest;
     defer device.deinit();
 
-    const actual = try renderScene(allocator, device, scene);
+    var font = try awt.Font.init(scenes.default_font_bytes, 0);
+    defer font.deinit();
+
+    const actual = try renderScene(allocator, device, font, scene);
     defer allocator.free(actual);
 
     try snapshotCompare(allocator, scene, actual);
@@ -52,6 +79,7 @@ fn runScene(scene: scenes.Scene) !void {
 fn renderScene(
     allocator: std.mem.Allocator,
     device: awt.Device,
+    font: awt.Font,
     scene: scenes.Scene,
 ) ![]u8 {
     var rt = try awt.RenderTarget.create(device, scene.width, scene.height);
@@ -99,7 +127,13 @@ fn renderScene(
         cb.clearStencil(0);
 
         var g = awt.Graphics.init(cb, &ctx, scene.width, scene.height, scene.width, scene.height);
-        scene.paint(&g);
+        try scene.paint(.{
+            .g = &g,
+            .allocator = allocator,
+            .font = font,
+            .width = scene.width,
+            .height = scene.height,
+        });
 
         cb.end();
         cb.submit(device);

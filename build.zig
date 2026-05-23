@@ -167,6 +167,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{
             .{ .name = "awt", .module = awt_mod },
+            .{ .name = "nimbus", .module = framework_mod },
         },
     });
 

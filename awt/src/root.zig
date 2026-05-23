@@ -21,6 +21,14 @@ pub const VertexRing = @import("VertexRing.zig");
 pub const QuadIndexBuffer = @import("QuadIndexBuffer.zig");
 pub const programs = @import("programs.zig");
 pub const Graphics = @import("Graphics.zig");
+pub const Event = @import("Event.zig");
+pub const EventQueue = @import("EventQueue.zig");
+pub const SecondaryLoop = @import("SecondaryLoop.zig");
+
+/// Wake the UI thread blocked in `waitEvents`. Safe from any thread.
+pub fn postEmptyEvent() void {
+    c.nmPostEmptyEvent();
+}
 
 pub const LogLevel = c.nmLogLevel;
 pub const LogCallback = c.nmLogCallback;

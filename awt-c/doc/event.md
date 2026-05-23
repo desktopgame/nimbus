@@ -26,6 +26,17 @@ void nmWaitEvents(void);
 ### 事前条件
 * `nmInitAwt()` が事前に呼び出されていること。違反した場合の動作は UB。
 
+## 空イベントのポスト
+void nmPostEmptyEvent(void);
+
+イベントキューに空イベントを 1 個ポストする。
+別スレッドから UI スレッドを `nmWaitEvents` のブロックから起こす唯一の正規手段。
+他に副作用はなく、ポーリングが再開するだけ。
+
+EventQueue (Zig 層) の `invokeLater` 実装などで利用される。
+内部的には `glfwPostEmptyEvent` を呼ぶが、その知識は外部に漏らさない。
+任意スレッドから安全に呼べる。
+
 ## 時刻の取得
 double nmGetTime(void);
 

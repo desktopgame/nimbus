@@ -49,8 +49,12 @@ pub fn swapBuffers(self: Window) void {
     c.nmSwapBuffers(self.handle);
 }
 
-pub const ResizeCallback = c.nmWindowResizeCallback;
-pub const RefreshCallback = c.nmWindowRefreshCallback;
+pub const ResizeCallback      = c.nmWindowResizeCallback;
+pub const RefreshCallback     = c.nmWindowRefreshCallback;
+pub const MouseButtonCallback = c.nmMouseButtonCallback;
+pub const CursorPosCallback   = c.nmCursorPosCallback;
+pub const ScrollCallback      = c.nmScrollCallback;
+pub const KeyCallback         = c.nmKeyCallback;
 
 pub fn setResizeCallback(self: Window, cb: ResizeCallback, user_data: ?*anyopaque) void {
     c.nmSetWindowResizeCallback(self.handle, cb, user_data);
@@ -58,4 +62,20 @@ pub fn setResizeCallback(self: Window, cb: ResizeCallback, user_data: ?*anyopaqu
 
 pub fn setRefreshCallback(self: Window, cb: RefreshCallback, user_data: ?*anyopaque) void {
     c.nmSetWindowRefreshCallback(self.handle, cb, user_data);
+}
+
+pub fn setMouseButtonCallback(self: Window, cb: MouseButtonCallback, user_data: ?*anyopaque) void {
+    c.nmSetMouseButtonCallback(self.handle, cb, user_data);
+}
+
+pub fn setCursorPosCallback(self: Window, cb: CursorPosCallback, user_data: ?*anyopaque) void {
+    c.nmSetCursorPosCallback(self.handle, cb, user_data);
+}
+
+pub fn setScrollCallback(self: Window, cb: ScrollCallback, user_data: ?*anyopaque) void {
+    c.nmSetScrollCallback(self.handle, cb, user_data);
+}
+
+pub fn setKeyCallback(self: Window, cb: KeyCallback, user_data: ?*anyopaque) void {
+    c.nmSetKeyCallback(self.handle, cb, user_data);
 }
