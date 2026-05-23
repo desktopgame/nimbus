@@ -6,7 +6,7 @@
 pub const Container = struct {
     component: Component,
     children:  std.ArrayList(LayoutElement),
-    layout:    ?*LayoutManager,                                             // v1 は null 許容
+    layout:    ?*LayoutManager,                                             // null なら手動配置
     allocator: std.mem.Allocator,
 
     pub const vtable = Component.VTable{
@@ -118,8 +118,8 @@ component.md「コンポーネントの列挙」を参照。
 Container は `layout: ?*LayoutManager` を持ち、子の bounds の計算を LayoutManager に委譲する。
 LayoutManager のインターフェイス定義は `framework/doc/layout.md`、設計方針は `{REPO_ROOT}/doc/layout-design.md` を参照。
 
-v1 では LayoutManager の標準実装（BoxLayout / BorderLayout 等）はまだ存在せず、`layout` は null のまま運用する。
-このとき子の位置・サイズは利用者が `child.setBounds(...)` で手動指定する。
+`layout` が null の場合、子の位置・サイズは利用者が `child.setBounds(...)` で手動指定する。
+通常の使い方では `setLayout` で BoxLayout や BorderLayout を差して使う。
 
 ### MinimumSize / MaximumSize の委譲
 Container は leaf widget と同じ `getMinSize()` / `getMaxSize()` のインターフェイスを持つが、内部では `layout` に問い合わせて返す。
@@ -200,4 +200,4 @@ hint_destroy が設定されていれば hint の destroy も呼ぶ。
 `frame.container.add(&label.component)` への委譲。
 
 `Container` を直接使うのは「子をグルーピングして配置したい」ような中間ノードが必要な場合。
-将来 LayoutManager が入れば、その単位として Container を使うのが自然になる。
+LayoutManager の適用単位としてもこの中間 Container を使うのが自然である。

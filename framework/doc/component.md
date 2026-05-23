@@ -122,7 +122,7 @@ Java の感覚だと `setBounds` / `repaint` あたりは「利用者が頻繁�
 
 | メソッド | 実際の呼び出し主 |
 |---|---|
-| `setBounds` / `getBounds` | **LayoutManager (v2〜)**。 利用者は設定しない |
+| `setBounds` / `getBounds` | **LayoutManager**。 利用者は設定しない |
 | `repaint` | **setter が内部で呼ぶ** (`setText` 等)。 利用者が直接呼ぶ機会は稀 |
 | `setName` / `getName` | デバッグ用。 出番少 |
 | `setVTable` / properties | 上級者用、 明示的でいい |
