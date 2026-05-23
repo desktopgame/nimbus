@@ -13,6 +13,7 @@ nimbus は外部のオープンソースを vendoring してビルドする方�
 
 | 名前 | 用途 | ライセンス | リポジトリ内の場所 |
 | --- | --- | --- | --- |
+| nimbus 自身 | フレームワーク本体 | Apache License 2.0 | `{REPO_ROOT}/LICENSE.txt` |
 | GLFW 3.4 | ウィンドウシステム / 入力 | zlib/libpng License | `{REPO_ROOT}/vendor/glfw-3.4/LICENSE.md` |
 | FreeType 2.14.3 | フォントラスタライズ | FreeType License (FTL) または GPLv2 のデュアル | `{REPO_ROOT}/vendor/freetype-2.14.3/LICENSE.TXT`, `docs/FTL.TXT`, `docs/GPLv2.TXT` |
 | zigimg | 画像デコーダ | MIT License | `{REPO_ROOT}/vendor/zigimg-zigimg_zig_0.16.0/LICENSE` |
@@ -20,6 +21,21 @@ nimbus は外部のオープンソースを vendoring してビルドする方�
 | Noto Sans JP Regular | デフォルトフォント | SIL Open Font License 1.1 (OFL) | `{REPO_ROOT}/framework/src/noto/OFL.txt` |
 
 ## ライセンスごとの要件
+
+### nimbus 自身 (Apache License 2.0)
+Apache 2.0 は寛容なライセンスだが、配布時にいくつかの条件がある。
+利用者アプリに関係する主な要件は以下の通り。
+
+* Apache 2.0 ライセンス本文（`{REPO_ROOT}/LICENSE.txt`）のコピーを配布物に含める
+* nimbus の `NOTICE.txt`（`{REPO_ROOT}/NOTICE.txt`）の内容を、派生著作物に伝達する（Apache 2.0 セクション 4d）。具体的には次のいずれかを満たす：
+  * 派生著作物に含めるテキストファイル（例えば配布物中の `NOTICE` ファイル）に転載する
+  * 派生著作物に同梱するドキュメントに転載する
+  * 派生著作物が起動時や About 画面でクレジットを表示する仕組みを持っているなら、そこに含める
+* 著作権表示・特許表示・商標表示・帰属表示を残す
+* nimbus のソースを改変して配布する場合は、改変したファイルに「改変した」と目立つ形で通知する
+
+`NOTICE.txt` の中身は1〜2行と短いので、`LICENSES/` ディレクトリの隣に `NOTICE` ファイルとしてそのままコピーすればよい。
+利用者アプリは自身の Attribution Notice を追加してもよいが、nimbus 由来の NOTICE 内容を改変・削除してはならない。
 
 ### GLFW (zlib License)
 zlib License は緩い。
@@ -34,10 +50,12 @@ zlib License は緩い。
 ライセンス本文の同梱は事実上必須と考えてよい。
 
 ### FreeType (FTL / GPLv2 デュアル)
-FreeType は「FTL」と「GPLv2」のどちらか一方を利用者が選ぶ仕組み。
-nimbus は商用も含めた利用を想定しているため、デフォルトとして FTL を選択する前提で進める。
-（GPLv2 を選んだ場合は利用者アプリ全体が GPLv2 に縛られるので、
-通常は選択しない。）
+FreeType は「FTL」と「GPLv2」のどちらか一方を選んで使う仕組み（デュアルライセンス）。
+**nimbus は FTL を選択している前提でこのドキュメントを書いている**。
+従って利用者アプリも、特別な理由がない限り FTL を選ぶことになる。
+（GPLv2 を選んだ場合は利用者アプリ全体が GPLv2 に縛られるので、通常は選択しない。
+nimbus 側で「FTL を採用する」と法的に宣言する義務はないが、
+混乱を避けるため明記しておく。）
 
 FTL は BSD ライクなライセンスに広告条項を加えたもの。
 配布時に**製品ドキュメント中**で以下を明示する必要がある。
@@ -105,6 +123,8 @@ OFL の主な要件は以下の通り。
 ## 参考: nimbus リポジトリ内のライセンス原文の場所
 | 名前 | 原文ファイル |
 | --- | --- |
+| nimbus (ライセンス本文) | `{REPO_ROOT}/LICENSE.txt` |
+| nimbus (NOTICE) | `{REPO_ROOT}/NOTICE.txt` |
 | GLFW | `{REPO_ROOT}/vendor/glfw-3.4/LICENSE.md` |
 | FreeType (まとめ) | `{REPO_ROOT}/vendor/freetype-2.14.3/LICENSE.TXT` |
 | FreeType (FTL 本文) | `{REPO_ROOT}/vendor/freetype-2.14.3/docs/FTL.TXT` |
@@ -114,6 +134,5 @@ OFL の主な要件は以下の通り。
 | Noto Sans JP (OFL) | `{REPO_ROOT}/framework/src/noto/OFL.txt` |
 
 ## スコープ外
-* nimbus 自身のライセンス（まだ決定していない。決まり次第このドキュメントに追記する）
 * ビルド時のみ使うツールのライセンス（`resvg` 等）— 利用者アプリのバイナリに含まれないため対象外
 * 利用者がアプリ内で追加で使うサードパーティ成果物のライセンス — 各利用者の責任で対応
