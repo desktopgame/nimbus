@@ -171,6 +171,14 @@ pub fn getFont(self: Graphics) ?TextFont {
 
 // ─────────────────────────── internal helpers ────────────────────────────
 
+/// True when the current clip would scissor everything away.
+/// Draw methods use this to skip work entirely (DX12 logs a warning if
+/// DrawIndexedInstanced is issued with an empty scissor — and the draw
+/// produces no pixels anyway).
+fn clipIsEmpty(self: Graphics) bool {
+    return self.clip_rect.width <= 0 or self.clip_rect.height <= 0;
+}
+
 fn applyScissor(self: Graphics) void {
     const sx = @as(f32, @floatFromInt(self.fb_w)) / @as(f32, @floatFromInt(self.window_w));
     const sy = @as(f32, @floatFromInt(self.fb_h)) / @as(f32, @floatFromInt(self.window_h));
@@ -195,6 +203,7 @@ pub fn fillRect(self: *Graphics, r: Rect) void {
 }
 
 fn fillRectColor(self: *Graphics, r: Rect, color: Color) void {
+    if (self.clipIsEmpty()) return;
     const left = self.origin_x + r.x;
     const top = self.origin_y + r.y;
     const right = left + r.width;
@@ -236,6 +245,7 @@ pub fn drawRect(self: *Graphics, r: Rect) void {
 const sdf_margin: f32 = 4.0;
 
 fn sdfQuad(self: *Graphics, r: Rect, color: Color, corner_radius: f32, thickness: f32) void {
+    if (self.clipIsEmpty()) return;
     const half_w = r.width / 2.0;
     const half_h = r.height / 2.0;
     const cx = self.origin_x + r.x + half_w;
@@ -298,6 +308,7 @@ pub fn drawCircle(self: *Graphics, r: Rect) void {
 // ─── Image / text ────────────────────────────────────────────────────────
 
 pub fn drawImage(self: *Graphics, image: Image, x: f32, y: f32) void {
+    if (self.clipIsEmpty()) return;
     const left = self.origin_x + x;
     const top = self.origin_y + y;
     const right = left + @as(f32, @floatFromInt(image.width));
@@ -328,6 +339,7 @@ pub fn drawImage(self: *Graphics, image: Image, x: f32, y: f32) void {
 /// box (graphics.md: top-of-bbox派). `\n` is ignored; complex layout is the
 /// caller's responsibility.
 pub fn drawString(self: *Graphics, s: []const u8, x: f32, y: f32) void {
+    if (self.clipIsEmpty()) return;
     const font = self.current_font orelse return;
     font.face.setPixelSize(font.pixel_size);
     const ascender = font.face.metrics().ascender;
