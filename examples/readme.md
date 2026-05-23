@@ -13,3 +13,6 @@ frameworkのAPIを使用して、ボタン、スライダー、ラベルを横�
 
 ## widget_menu
 frameworkのAPIを使用して、メニュー、ポップアップメニューを表示する。
+
+## widget_textfield
+frameworkのAPIを使用して、テキストフィールドを表示する。あわせて、空Panelを使って余白（margin相当）を作るレシピのデモも兼ねる。

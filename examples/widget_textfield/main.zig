@@ -7,7 +7,7 @@
 //! `vSpacer` below).
 //!
 //! Usage:
-//!     zig build run-textfield_demo
+//!     zig build run-widget_textfield
 //!
 //! Test recipe:
 //!     - type letters / numbers (and Shift combos) → mirror in label

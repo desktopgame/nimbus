@@ -176,7 +176,7 @@ pub fn build(b: *std.Build) void {
     addExample(b, "snapshot", framework_mod, scenes_mod, target, optimize);
     addExample(b, "widget_simple", framework_mod, null, target, optimize);
     addExample(b, "widget_menu", framework_mod, null, target, optimize);
-    addExample(b, "textfield_demo", framework_mod, null, target, optimize);
+    addExample(b, "widget_textfield", framework_mod, null, target, optimize);
 
     // ── tests ────────────────────────────────────────────────────
     const test_step = b.step("test", "Run all unit tests");
