@@ -188,6 +188,24 @@ pub fn build(b: *std.Build) void {
         test_step.dependOn(&b.addRunArtifact(t).step);
     }
 
+    // framework integration tests under framework/tests/ — split per
+    // layout-manager so failures point at a single subject.
+    inline for (.{
+        "framework/tests/box_layout_test.zig",
+        "framework/tests/border_layout_test.zig",
+    }) |path| {
+        const m = b.createModule(.{
+            .root_source_file = b.path(path),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "nimbus", .module = framework_mod },
+            },
+        });
+        const t = b.addTest(.{ .root_module = m });
+        test_step.dependOn(&b.addRunArtifact(t).step);
+    }
+
     // ── snapshot tests (golden-image comparison) ─────────────────
     const snapshot_test_mod = b.createModule(.{
         .root_source_file = b.path("awt/tests/snapshot_test.zig"),
