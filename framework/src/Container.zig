@@ -117,8 +117,18 @@ pub fn getMinSize(self: *const Container) Component.Size {
 }
 
 pub fn getMaxSize(self: *const Container) Component.Size {
-    if (self.layout) |lm| return lm.vtable.computeMaxSize(lm, self);
-    return .{ .width = std.math.inf(f32), .height = std.math.inf(f32) };
+    const lm_max: Component.Size = if (self.layout) |lm|
+        lm.vtable.computeMaxSize(lm, self)
+    else
+        .{ .width = std.math.inf(f32), .height = std.math.inf(f32) };
+    // Symmetric with `getMinSize`: combine the explicit field with the
+    // layout-computed value. For max we take the *smaller* of the two
+    // ("both bounds must hold"), so an explicit `setMaxSize` actually
+    // caps the layout's contribution.
+    return .{
+        .width  = @min(self.component.max_size.width, lm_max.width),
+        .height = @min(self.component.max_size.height, lm_max.height),
+    };
 }
 
 pub fn setBounds(self: *Container, bounds: Component.Rect) void {

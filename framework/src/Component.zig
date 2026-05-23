@@ -169,11 +169,10 @@ pub fn effectiveMinSize(self: *const Component) Size {
     return self.min_size;
 }
 
-/// Max size counterpart of `effectiveMinSize`. NOTE: for containers
-/// this currently delegates to `Container.getMaxSize`, which only
-/// looks at the layout-computed value (a known asymmetry with
-/// `getMinSize`). Manually setting `max_size` on a container has no
-/// effect until that is fixed.
+/// Max size counterpart of `effectiveMinSize`. Containers combine
+/// `component.max_size` with the layout-computed value by taking the
+/// minimum (symmetric with `getMinSize` taking the maximum), so an
+/// explicit `setMaxSize` on a container caps the layout's reported max.
 pub fn effectiveMaxSize(self: *const Component) Size {
     if (self.container) |c| return c.getMaxSize();
     return self.max_size;

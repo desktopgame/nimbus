@@ -125,7 +125,7 @@ pub fn effectiveMaxSize(self: *const Component) Size;
 plain な Component に対しては `min_size` / `max_size` の値をそのまま返すが、Container を embed したコンポーネントに対しては `Container.getMinSize` / `getMaxSize` を呼び出し、レイアウト計算済みのサイズを取得する。
 
 これにより、空 Panel やネストした Container を BoxLayout の子に置いたとき、内側の子から自動的にサイズが伝播する。
-利用者が `setMinSize` で明示的に値をセットしていれば、Container の場合「min(明示値, 計算値) の大きい方」が採用される (`Container.getMinSize` の挙動)。
+利用者が `setMinSize` / `setMaxSize` で明示的に値をセットしていれば、Container の場合「min は明示値と計算値の大きい方」「max は明示値と計算値の小さい方」が採用される (両方の制約を同時に満たす)。
 
 計算量は subtree のサイズに比例 (キャッシュなし)。
 深い木 / 多数の widget の場合は呼び出しコストに注意。
@@ -461,4 +461,3 @@ try label.component.setVTable(&my_vt);
 * `PropertyChangeListener` 相当 — setter からの変更通知。Swing PCE と同等
 * Component 単位の `dirty` フラグ — 現状は Frame 単位で持つ（`{REPO_ROOT}/doc/layout-design.md` 参照）
 * `effectiveMinSize` / `effectiveMaxSize` のキャッシュ — 深い木では毎回 subtree 走査になる
-* `Container.getMaxSize` の不整合解消 — 現状は `component.max_size` を見ず layout 値のみ返す (getMinSize は max を取るのに非対称)
