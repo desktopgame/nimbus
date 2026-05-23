@@ -17,6 +17,11 @@ swapchain:    awt.Swapchain,
 context:      *awt.Graphics.Context,
 device:       *awt.Device,
 app:          *anyopaque,                 // *Application (avoid circular import)
+/// Borrowed reference to the Application-owned EventQueue. Input
+/// callbacks post events here instead of dispatching synchronously,
+/// so input / invokeLater / redraw all serialize through the same
+/// queue (see `framework/doc/window.md`「イベント post と dispatch」).
+event_queue:  *awt.EventQueue,
 title:        [:0]u8,
 background:   awt.Graphics.Color,
 fb_w:         i32,
@@ -44,6 +49,7 @@ pub const vtable = Component.VTable{
 pub fn init(
     allocator: std.mem.Allocator,
     app_ptr: *anyopaque,
+    event_queue: *awt.EventQueue,
     title: []const u8,
     w: u32,
     h: u32,
@@ -62,16 +68,17 @@ pub fn init(
     const fb = aw.framebufferSize();
 
     var win = Window{
-        .container    = Container.init(allocator),
-        .awt_window   = aw,
-        .swapchain    = sc,
-        .context      = context,
-        .device       = device,
-        .app          = app_ptr,
-        .title        = title_dup,
-        .background   = awt.Graphics.Color.rgb(0.94, 0.94, 0.94),
-        .fb_w         = fb.width,
-        .fb_h         = fb.height,
+        .container     = Container.init(allocator),
+        .awt_window    = aw,
+        .swapchain     = sc,
+        .context       = context,
+        .device        = device,
+        .app           = app_ptr,
+        .event_queue   = event_queue,
+        .title         = title_dup,
+        .background    = awt.Graphics.Color.rgb(0.94, 0.94, 0.94),
+        .fb_w          = fb.width,
+        .fb_h          = fb.height,
         .cursor_x      = 0,
         .cursor_y      = 0,
         .paint_dirty   = true,
@@ -256,6 +263,42 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
     Container.vtable.processEvent(&cont.component, ev);
 }
 
+/// Dispatch an input event to this window's component tree, honoring
+/// the mouse-capture state. Called from EventQueue.drain via the
+/// thunk below when an event posted by an OS callback fires.
+pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
+    switch (ev.payload) {
+        .mouse => |m| {
+            if (m.action == .release and self.mouse_capture != null) {
+                const cap = self.mouse_capture.?;
+                cap.vtable.processEvent(cap, ev);
+                self.mouse_capture = null;
+                return;
+            }
+            if (m.action == .move and self.mouse_capture != null) {
+                const cap = self.mouse_capture.?;
+                cap.vtable.processEvent(cap, ev);
+                return;
+            }
+            self.container.component.vtable.processEvent(&self.container.component, ev);
+            if (m.action == .press) {
+                if (ev.capture_target) |t| {
+                    self.mouse_capture = @ptrCast(@alignCast(t));
+                }
+            }
+        },
+        .key => {
+            self.container.component.vtable.processEvent(&self.container.component, ev);
+        },
+    }
+}
+
+/// Thunk for EventQueue.postEvent so awt can store a type-erased pointer.
+fn dispatchInputThunk(target: *anyopaque, ev: *awt.Event) void {
+    const win: *Window = @ptrCast(@alignCast(target));
+    win.dispatchInput(ev);
+}
+
 fn destroy(self: *Component, allocator: std.mem.Allocator) void {
     const cont: *Container = @fieldParentPtr("component", self);
     const win: *Window = @fieldParentPtr("container", cont);
@@ -302,7 +345,7 @@ fn onMouseButton(
         .release => .release,
         else => return,
     };
-    var ev = awt.Event{
+    const ev = awt.Event{
         .payload = .{ .mouse = .{
             .x = win.cursor_x,
             .y = win.cursor_y,
@@ -311,23 +354,7 @@ fn onMouseButton(
             .modifiers = awt.Event.Modifiers.fromCBits(modifiers),
         } },
     };
-
-    if (ev_action == .release and win.mouse_capture != null) {
-        // Route release directly to the captured target, then clear capture.
-        const cap = win.mouse_capture.?;
-        cap.vtable.processEvent(cap, &ev);
-        win.mouse_capture = null;
-        return;
-    }
-
-    win.container.component.vtable.processEvent(&win.container.component, &ev);
-
-    // On press, a widget may have requested capture for the subsequent drag.
-    if (ev_action == .press) {
-        if (ev.capture_target) |t| {
-            win.mouse_capture = @ptrCast(@alignCast(t));
-        }
-    }
+    win.event_queue.postEvent(ev, @ptrCast(win), dispatchInputThunk) catch {};
 }
 
 fn onCursorPos(
@@ -339,7 +366,7 @@ fn onCursorPos(
     const win: *Window = @ptrCast(@alignCast(user_data.?));
     win.cursor_x = @floatCast(x);
     win.cursor_y = @floatCast(y);
-    var ev = awt.Event{
+    const ev = awt.Event{
         .payload = .{ .mouse = .{
             .x = win.cursor_x,
             .y = win.cursor_y,
@@ -347,13 +374,7 @@ fn onCursorPos(
             .action = .move,
         } },
     };
-    if (win.mouse_capture) |cap| {
-        // Bypass hit-test: send drag straight to the capture target so
-        // the user can drag outside the widget's bounds without losing it.
-        cap.vtable.processEvent(cap, &ev);
-        return;
-    }
-    win.container.component.vtable.processEvent(&win.container.component, &ev);
+    win.event_queue.postEvent(ev, @ptrCast(win), dispatchInputThunk) catch {};
 }
 
 fn onScroll(
@@ -364,7 +385,7 @@ fn onScroll(
 ) callconv(.c) void {
     _ = dx;
     const win: *Window = @ptrCast(@alignCast(user_data.?));
-    var ev = awt.Event{
+    const ev = awt.Event{
         .payload = .{ .mouse = .{
             .x = win.cursor_x,
             .y = win.cursor_y,
@@ -373,7 +394,7 @@ fn onScroll(
             .wheel = @floatCast(dy),
         } },
     };
-    win.container.component.vtable.processEvent(&win.container.component, &ev);
+    win.event_queue.postEvent(ev, @ptrCast(win), dispatchInputThunk) catch {};
 }
 
 fn onKey(
@@ -384,12 +405,12 @@ fn onKey(
     user_data: ?*anyopaque,
 ) callconv(.c) void {
     const win: *Window = @ptrCast(@alignCast(user_data.?));
-    var ev = awt.Event{
+    const ev = awt.Event{
         .payload = .{ .key = .{
             .code = awt.Event.KeyCode.fromCInt(@intCast(key)),
             .action = awt.Event.KeyAction.fromC(action),
             .modifiers = awt.Event.Modifiers.fromCBits(modifiers),
         } },
     };
-    win.container.component.vtable.processEvent(&win.container.component, &ev);
+    win.event_queue.postEvent(ev, @ptrCast(win), dispatchInputThunk) catch {};
 }

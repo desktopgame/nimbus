@@ -152,7 +152,7 @@ pub fn run(self: *Application) !void {
 pub fn frame(self: *Application, title: []const u8, w: u32, h: u32) !*Frame {
     const f = try self.allocator.create(Frame);
     errdefer self.allocator.destroy(f);
-    f.* = try Frame.init(self.allocator, @ptrCast(self), title, w, h, &self.device, &self.context);
+    f.* = try Frame.init(self.allocator, @ptrCast(self), self.event_queue, title, w, h, &self.device, &self.context);
 
     // The Window vtable's install() does container linkup + OS callback wiring.
     Window.vtable.install(&f.window.container.component);

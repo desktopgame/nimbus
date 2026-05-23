@@ -11,6 +11,7 @@ window: Window,
 pub fn init(
     allocator: std.mem.Allocator,
     app_ptr: *anyopaque,
+    event_queue: *awt.EventQueue,
     title: []const u8,
     w: u32,
     h: u32,
@@ -18,7 +19,7 @@ pub fn init(
     context: *awt.Graphics.Context,
 ) !Frame {
     return .{
-        .window = try Window.init(allocator, app_ptr, title, w, h, device, context),
+        .window = try Window.init(allocator, app_ptr, event_queue, title, w, h, device, context),
     };
 }
 

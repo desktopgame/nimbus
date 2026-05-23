@@ -3,10 +3,15 @@
 
 const std = @import("std");
 const awt_root = @import("root.zig");
+const Event = @import("Event.zig");
 
 const EventQueue = @This();
 
 pub const TaskFn = *const fn (*anyopaque) void;
+/// Dispatcher for queued input events. The first argument is `target`
+/// (the per-event opaque pointer registered by the poster — typically
+/// `*framework.Window`), the second is the event itself.
+pub const InputDispatchFn = *const fn (*anyopaque, *Event) void;
 
 const Task = struct {
     fn_ptr:    TaskFn,
@@ -14,6 +19,17 @@ const Task = struct {
     /// For invokeAndWait, the poster waits on `done` after appending.
     /// `null` means fire-and-forget.
     done: ?*Sync = null,
+};
+
+const InputItem = struct {
+    event:       Event,
+    target:      *anyopaque,
+    dispatch_fn: InputDispatchFn,
+};
+
+const Item = union(enum) {
+    task:  Task,
+    input: InputItem,
 };
 
 const Sync = struct {
@@ -25,7 +41,7 @@ const Sync = struct {
 allocator: std.mem.Allocator,
 io:        std.Io,
 mutex:     std.Io.Mutex,
-queue:     std.ArrayList(Task),
+queue:     std.ArrayList(Item),
 ui_thread: ?std.Thread.Id,
 
 /// Allocate and initialize a new EventQueue. Caller owns the returned pointer.
@@ -57,11 +73,11 @@ pub fn invokeLater(self: *EventQueue, fn_ptr: TaskFn, user_data: *anyopaque) !vo
     {
         self.mutex.lockUncancelable(self.io);
         defer self.mutex.unlock(self.io);
-        try self.queue.append(self.allocator, .{
+        try self.queue.append(self.allocator, .{ .task = .{
             .fn_ptr = fn_ptr,
             .user_data = user_data,
             .done = null,
-        });
+        } });
     }
     awt_root.postEmptyEvent();
 }
@@ -81,11 +97,11 @@ pub fn invokeAndWait(self: *EventQueue, fn_ptr: TaskFn, user_data: *anyopaque) !
     {
         self.mutex.lockUncancelable(self.io);
         defer self.mutex.unlock(self.io);
-        try self.queue.append(self.allocator, .{
+        try self.queue.append(self.allocator, .{ .task = .{
             .fn_ptr = fn_ptr,
             .user_data = user_data,
             .done = &sync,
-        });
+        } });
     }
     awt_root.postEmptyEvent();
 
@@ -94,28 +110,59 @@ pub fn invokeAndWait(self: *EventQueue, fn_ptr: TaskFn, user_data: *anyopaque) !
     while (!sync.finished) sync.cond.waitUncancelable(self.io, &sync.mutex);
 }
 
-/// Execute every task that was queued at the time of this call.
-/// Tasks queued during drain are NOT picked up — they wait for the next drain.
+/// Post an input event to the queue. The event will be dispatched by
+/// `dispatch_fn(target, &event)` during the next `drain`. Used by the
+/// framework's OS input callbacks to defer dispatch off the GLFW
+/// callback path and into the regular event loop, so that input,
+/// `invokeLater` tasks, and redraw work all happen in a known order.
+/// Safe to call from any thread (typically called from the UI thread's
+/// GLFW callback, but synthetic event injection from other threads is
+/// also valid).
+pub fn postEvent(
+    self: *EventQueue,
+    event: Event,
+    target: *anyopaque,
+    dispatch_fn: InputDispatchFn,
+) !void {
+    {
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
+        try self.queue.append(self.allocator, .{ .input = .{
+            .event       = event,
+            .target      = target,
+            .dispatch_fn = dispatch_fn,
+        } });
+    }
+    awt_root.postEmptyEvent();
+}
+
+/// Execute every item that was queued at the time of this call.
+/// Items queued during drain are NOT picked up — they wait for the next drain.
 /// Must be called from the UI thread.
 pub fn drain(self: *EventQueue) void {
-    var local: std.ArrayList(Task) = .empty;
+    var local: std.ArrayList(Item) = .empty;
     defer local.deinit(self.allocator);
 
     {
         self.mutex.lockUncancelable(self.io);
         defer self.mutex.unlock(self.io);
-        std.mem.swap(std.ArrayList(Task), &self.queue, &local);
+        std.mem.swap(std.ArrayList(Item), &self.queue, &local);
     }
 
-    for (local.items) |task| {
-        task.fn_ptr(task.user_data);
-        if (task.done) |s| {
-            s.mutex.lockUncancelable(self.io);
-            defer s.mutex.unlock(self.io);
-            s.finished = true;
-            s.cond.signal(self.io);
-        }
-    }
+    for (local.items) |*item| switch (item.*) {
+        .task => |task| {
+            task.fn_ptr(task.user_data);
+            if (task.done) |s| {
+                s.mutex.lockUncancelable(self.io);
+                defer s.mutex.unlock(self.io);
+                s.finished = true;
+                s.cond.signal(self.io);
+            }
+        },
+        .input => |*input| {
+            input.dispatch_fn(input.target, &input.event);
+        },
+    };
 }
 
 test "invokeLater enqueues and drains" {

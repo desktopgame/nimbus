@@ -205,17 +205,42 @@ Application のループが：
 これにより Window 側で「閉じる前に保存しますか?」のような確認ダイアログを差し挟む余地が生まれる。
 WindowListener 相当（機能要望）が入った時に活きる。
 
+## イベント post と dispatch
+Window の OS 入力コールバック（mouse button / cursor pos / scroll / key）は widget へ直接配送せず、**Application が持つ `EventQueue` に post する**。
+実 dispatch はイベントループの次サイクルで `EventQueue.drain` が呼び出された時に走る。
+
+具体的には：
+
+1. GLFW callback → Window の `onMouseButton` 等が起動
+2. `awt.Event` を組み立て、`event_queue.postEvent(ev, self, dispatchInputThunk)` で queue に積む
+3. callback はそこで return
+4. Application のループが `awt.waitEvents` から戻り、`event_queue.drain()` を呼ぶ
+5. drain が queue 内のアイテムを順に処理し、入力アイテムなら `dispatchInputThunk(target, &ev)` → `Window.dispatchInput(&ev)` を呼ぶ
+6. `dispatchInput` がマウスキャプチャ状態を加味して `container.processEvent` または capture 先の `processEvent` に流す
+
+この設計の理由：
+
+* `invokeLater` で投入されるタスクと入力イベントが同じ queue に並ぶので、post 順がそのまま処理順になる（順序保証）
+* 外部から `event_queue.postEvent` 経由で合成入力イベントを差し込める（テスト / マクロ / IME 等）
+* GLFW callback はキューに積むだけなのですぐ return する → コールバック中の重い処理で GLFW のイベント処理が滞らない
+
+トレードオフ：OS callback から widget まで 1 ループサイクル分の latency が乗る。
+60fps なら 16ms 未満で体感はほぼ無い。
+
+詳細は `awt/doc/event_queue.md`「入力イベントの post」も参照。
+
 ## マウスキャプチャ
 ドラッグ操作中にカーソルが widget の bounds から外れても、`.move` / `.release` を当該 widget に届け続けるための機構。
 Window が `mouse_capture: ?*Component` を保持する。
+判定は post 時ではなく **dispatch 時 (`dispatchInput` 内)** で行う。
 
 シーケンス：
 
-1. OS callback `onMouseButton` (`.press`) で event を組み立て、`container.processEvent` 経由で hit-test dispatch する
+1. `.press` event が `dispatchInput` に届く → `container.processEvent` 経由で hit-test dispatch
 2. dispatch 先の widget（例: Slider, Button）の `processEvent` が `ev.requestCapture(@ptrCast(self))` を呼ぶ
-3. dispatch 終了後、Window は `ev.capture_target` を読み取り、non-null なら `mouse_capture` に格納する
-4. 以降の `onCursorPos` は `mouse_capture` を見て、non-null なら hit-test を経由せず capture 先の `processEvent` を直接呼ぶ
-5. `onMouseButton` (`.release`) は `mouse_capture` non-null なら capture 先へ直接配送、その後 `mouse_capture = null` でクリア
+3. `dispatchInput` 内の press 処理終了後、`ev.capture_target` を読み取り、non-null なら `mouse_capture` に格納する
+4. 以降の `.move` event は `mouse_capture` が non-null なら hit-test を経由せず capture 先の `processEvent` を直接呼ぶ
+5. `.release` event も `mouse_capture` non-null なら capture 先へ直接配送、その後 `mouse_capture = null` でクリア
 
 この仕組みにより：
 

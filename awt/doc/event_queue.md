@@ -7,19 +7,32 @@ CLAUDE.md「非同期処理」セクションも参照。
 ## 型定義
 ```zig
 pub const EventQueue = struct {
-    // 内部: ミューテックスで保護されたタスクキュー + invokeAndWait 完了通知用 condvar
+    // 内部: ミューテックスで保護されたアイテムキュー + invokeAndWait 完了通知用 condvar
 
     // ... メソッド
 };
 
-pub const Task = struct {
-    fn_ptr:    *const fn (*anyopaque) void,
+pub const TaskFn = *const fn (*anyopaque) void;
+pub const InputDispatchFn = *const fn (*anyopaque, *Event) void;
+
+// 内部表現 (利用者は直接見ない)
+const Task = struct {
+    fn_ptr:    TaskFn,
     user_data: *anyopaque,
 };
+
+const InputItem = struct {
+    event:       Event,
+    target:      *anyopaque,
+    dispatch_fn: InputDispatchFn,
+};
+
+const Item = union(enum) { task: Task, input: InputItem };
 ```
 
-`Task` は内部表現で、利用者が直接見ることは無い。
-`invokeLater` / `invokeAndWait` の引数として関数ポインタ + user_data を渡せばよい。
+キューは「タスク (`invokeLater` / `invokeAndWait` の関数オブジェクト)」と「入力イベント (`postEvent`)」を同じ FIFO に並べる。
+利用者が直接 `Task` / `InputItem` を構築することは無い。
+3 つの post API のいずれかを使う。
 
 ## キューの生成
 ```zig
@@ -75,17 +88,36 @@ pub fn invokeAndWait(
 ### 診断情報
 * UI スレッドから呼ばれた場合、debug ビルドでは即 panic、release ビルドではログ `[ERROR] [event_queue] invokeAndWait called from UI thread (would deadlock)` を出して即 return する
 
+## 入力イベントの post
+```zig
+pub fn postEvent(
+    self: *EventQueue,
+    event: Event,
+    target: *anyopaque,
+    dispatch_fn: InputDispatchFn,
+) !void;
+```
+
+入力イベント (`Event`) をキューに追加して即座に return する。
+`drain` でアイテムが取り出された時点で `dispatch_fn(target, &event)` が呼ばれる。
+`target` は dispatch fn 側が解釈する不透明ポインタ。
+通常は framework 層の OS 入力コールバックが `target = *framework.Window`、`dispatch_fn = Window.dispatchInputThunk` を渡す。
+
+### 事前条件
+* どのスレッドから呼んでもよい（GLFW コールバック由来の UI スレッドからの呼び出しが典型だが、テスト用合成イベントを別スレッドから注入することも可）
+* `dispatch_fn` の指す関数は UI スレッドで実行される前提で書かれていること
+
 ## キューのドレイン
 ```zig
 pub fn drain(self: *EventQueue) void;
 ```
 
-キューに溜まっているタスクをすべて順番に実行する。
+キューに溜まっているアイテム（タスク + 入力イベント）をすべて post 順に処理する。
 UI スレッドのみが呼ぶ前提。
 通常は Application のイベントループが `awt.waitEvents` の直後に呼ぶ（`framework/doc/application.md` 参照）。
 
-実行中に新しいタスクがポストされてもこの `drain` 呼び出しの中では拾わない（その時点でキューにあったぶんだけ実行する）。
-新しいタスクは次のループ反復で拾われる。
+実行中に新しいアイテムがポストされてもこの `drain` 呼び出しの中では拾わない（その時点でキューにあったぶんだけ処理する）。
+新しいアイテムは次のループ反復で拾われる。
 
 ---
 
@@ -115,6 +147,14 @@ Application のイベントループでは：
 
 タスクが UI 状態を変えると `layout_dirty` / `paint_dirty` が立ち、ステップ 3 でその反映が走る。
 したがって「別スレッドが invokeLater で UI 更新 → 次のイベントループで自動的に再描画」が成立する。
+
+## 入力イベントとタスクを同じキューに並べる理由
+1. **単一の入口**: GLFW から来る生の入力、`invokeLater` で投入されるタスク、テスト用の合成入力イベントがすべて同じ FIFO を通る。デバッグ時に「どの順番で何が起きるか」を 1 か所だけ見ればよい
+2. **post API の公開**: `postEvent` が公開 API なので、テスト / マクロ / IME の文字確定通知 / accessibility tool 等が外部から入力イベントを差し込める（Java AWT の `EventQueue.postEvent` と同じ）
+3. **ordering の保証**: 「ボタン押下 → ハンドラ内で `invokeLater(redraw)` → 次のクリック」のような並びが post された順に厳密に再生される
+4. **mouse-move coalescing の足場**: 入力イベントもキューにあるので、将来「連続する `.move` を 1 個にまとめる」最適化を入れやすい（機能要望）
+
+トレードオフは「OS コールバックから widget に届くまで 1 イベントループ分の latency が乗る」だが、60fps なら 16ms 未満で体感はほぼ無い。
 
 ## SecondaryLoop との関係
 SecondaryLoop も内部で `awt.waitEvents` を呼ぶので、ネストしたループ中でも `invokeLater` でポストされたタスクは消化される（SecondaryLoop が drain を呼ぶ前提、`secondary_loop.md` 参照）。
@@ -180,3 +220,4 @@ if (result == .ok) doNext();
 * タスクの cancel 機能（ポスト後にキャンセル可能）
 * タスクのバッチ実行（同一タスクの重複ポストを 1 回に集約）
 * タイマー連携（`invokeAfter(duration, fn, data)`）
+* `.move` イベントの coalescing（連続する mouse move を 1 個にまとめて drain 時に最新値のみ配送）
