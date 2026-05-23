@@ -8,6 +8,7 @@ const awt = @import("awt");
 const Component = @import("Component.zig");
 const Container = @import("Container.zig");
 const BorderLayout = @import("BorderLayout.zig");
+const log = @import("log.zig");
 
 const Window = @This();
 
@@ -491,7 +492,8 @@ fn onResize(
     user_data: ?*anyopaque,
 ) callconv(.c) void {
     const win: *Window = @ptrCast(@alignCast(user_data.?));
-    win.swapchain.resize(@intCast(fb_w), @intCast(fb_h)) catch {};
+    win.swapchain.resize(@intCast(fb_w), @intCast(fb_h)) catch |err|
+        log.warn("window", "swapchain.resize ({d}x{d}) failed: {s}", .{ fb_w, fb_h, @errorName(err) });
     win.fb_w = @intCast(fb_w);
     win.fb_h = @intCast(fb_h);
     win.layout_dirty = true;
@@ -530,7 +532,8 @@ fn onMouseButton(
             .modifiers = awt.Event.Modifiers.fromCBits(modifiers),
         } },
     };
-    win.event_queue.postEvent(ev, @ptrCast(win), dispatchInputThunk) catch {};
+    win.event_queue.postEvent(ev, @ptrCast(win), dispatchInputThunk) catch |err|
+        log.warn("window", "input dropped (mouse button): {s}", .{@errorName(err)});
 }
 
 fn onCursorPos(
@@ -550,7 +553,8 @@ fn onCursorPos(
             .action = .move,
         } },
     };
-    win.event_queue.postEvent(ev, @ptrCast(win), dispatchInputThunk) catch {};
+    win.event_queue.postEvent(ev, @ptrCast(win), dispatchInputThunk) catch |err|
+        log.warn("window", "input dropped (cursor move): {s}", .{@errorName(err)});
 }
 
 fn onScroll(
@@ -570,7 +574,8 @@ fn onScroll(
             .wheel = @floatCast(dy),
         } },
     };
-    win.event_queue.postEvent(ev, @ptrCast(win), dispatchInputThunk) catch {};
+    win.event_queue.postEvent(ev, @ptrCast(win), dispatchInputThunk) catch |err|
+        log.warn("window", "input dropped (scroll): {s}", .{@errorName(err)});
 }
 
 fn onKey(
@@ -588,5 +593,6 @@ fn onKey(
             .modifiers = awt.Event.Modifiers.fromCBits(modifiers),
         } },
     };
-    win.event_queue.postEvent(ev, @ptrCast(win), dispatchInputThunk) catch {};
+    win.event_queue.postEvent(ev, @ptrCast(win), dispatchInputThunk) catch |err|
+        log.warn("window", "input dropped (key): {s}", .{@errorName(err)});
 }

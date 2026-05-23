@@ -8,6 +8,7 @@ const Container = @import("Container.zig");
 const ButtonModel = @import("ButtonModel.zig");
 const MenuItem = @import("MenuItem.zig");
 const Window = @import("Window.zig");
+const log = @import("log.zig");
 
 const Menu = @This();
 
@@ -354,7 +355,8 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
                             if (menu.open) {
                                 menu.hide();
                             } else if (menu.window) |w| {
-                                menu.show(w, .{ .x = origin.x, .y = origin.y + self.size.height }) catch {};
+                                menu.show(w, .{ .x = origin.x, .y = origin.y + self.size.height }) catch |err|
+                                    log.warn("menu", "show (bar click) failed: {s}", .{@errorName(err)});
                             }
                             ev.consume();
                         }
@@ -442,7 +444,8 @@ fn popupProcessEvent(self: *Component, ev: *Component.Event) void {
                         if (menu.window) |w| {
                             const ox = self.position.x + self.size.width;
                             const oy = self.position.y + sub.component.position.y;
-                            sub.show(w, .{ .x = ox, .y = oy }) catch {};
+                            sub.show(w, .{ .x = ox, .y = oy }) catch |err|
+                                log.warn("menu", "show (submenu hover) failed: {s}", .{@errorName(err)});
                             menu.open_child = sub;
                         }
                     }

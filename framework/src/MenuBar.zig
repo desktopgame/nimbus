@@ -5,6 +5,7 @@ const awt = @import("awt");
 const Component = @import("Component.zig");
 const Menu = @import("Menu.zig");
 const Window = @import("Window.zig");
+const log = @import("log.zig");
 
 const MenuBar = @This();
 
@@ -150,7 +151,8 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
                                     new.show(w, .{
                                         .x = origin.x,
                                         .y = origin.y + new.component.size.height,
-                                    }) catch {};
+                                    }) catch |err|
+                                        log.warn("menu", "show (bar hover-switch) failed: {s}", .{@errorName(err)});
                                     bar.open_menu = new;
                                 }
                             }

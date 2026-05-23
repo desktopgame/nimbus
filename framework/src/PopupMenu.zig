@@ -8,6 +8,7 @@ const ButtonModel = @import("ButtonModel.zig");
 const MenuItem = @import("MenuItem.zig");
 const Menu = @import("Menu.zig");
 const Window = @import("Window.zig");
+const log = @import("log.zig");
 
 const PopupMenu = @This();
 
@@ -203,7 +204,8 @@ fn popupProcessEvent(self: *Component, ev: *Component.Event) void {
                         if (pm.window) |w| {
                             const ox = self.position.x + self.size.width;
                             const oy = self.position.y + sub.component.position.y;
-                            sub.show(w, .{ .x = ox, .y = oy }) catch {};
+                            sub.show(w, .{ .x = ox, .y = oy }) catch |err|
+                                log.warn("menu", "show (popup submenu hover) failed: {s}", .{@errorName(err)});
                             pm.open_child = sub;
                         }
                     }
