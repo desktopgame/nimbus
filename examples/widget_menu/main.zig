@@ -1,9 +1,10 @@
-//! Menu demo: MenuBar with sub-menus, CheckBoxMenuItem, and a right-click
-//! PopupMenu on the content area. Verifies open / hover-switch / submenu /
-//! action-fires-dismiss / outside-click-dismiss behaviour interactively.
+//! Menu widget demo: MenuBar with sub-menus, CheckBoxMenuItem, and a
+//! right-click PopupMenu on the content area. Verifies open /
+//! hover-switch / submenu / action-fires-dismiss / outside-click-dismiss
+//! behaviour interactively.
 //!
 //! Usage:
-//!     zig build run-menu_demo
+//!     zig build run-widget_menu
 
 const std = @import("std");
 const nimbus = @import("nimbus");

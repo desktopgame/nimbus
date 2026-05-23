@@ -1,5 +1,6 @@
 # examples
 サンプル集
+framework を使うものは widget_* という名前にすること。
 
 ## hello
 awtの低レベルAPIを使用して、フォントとプリミティブ図形（矩形、円）を描画する。

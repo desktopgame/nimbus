@@ -400,15 +400,16 @@ fn popupPaint(self: *Component, g: *awt.Graphics) void {
     g.setColor(POPUP_BG_COLOR);
     g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = sz.height });
 
-    // Border (1px).
+    // Items.
+    for (menu.items.items) |item| item.paintAt(g);
+
+    // Border (1px) drawn last so item hover backgrounds don't overlap the
+    // left/right edges.
     g.setColor(POPUP_BORDER_COLOR);
     g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = 1 });
     g.fillRect(.{ .x = 0, .y = sz.height - 1, .width = sz.width, .height = 1 });
     g.fillRect(.{ .x = 0, .y = 0, .width = 1, .height = sz.height });
     g.fillRect(.{ .x = sz.width - 1, .y = 0, .width = 1, .height = sz.height });
-
-    // Items.
-    for (menu.items.items) |item| item.paintAt(g);
 }
 
 fn popupProcessEvent(self: *Component, ev: *Component.Event) void {
