@@ -359,6 +359,15 @@ fn handleMouse(tf: *TextField, ev: *Component.Event, m: awt.Event.MouseEvent) vo
 fn handleKey(tf: *TextField, ev: *Component.Event, k: awt.Event.KeyEvent) void {
     if (k.action != .press and k.action != .repeat) return;
 
+    // During IME composition the OS IME owns the keyboard. On Windows IMM32
+    // consumes virtually every navigation / edit key, so this never mattered.
+    // On macOS NSTextInputContext routes some keys (Shift+Left/Right, etc.)
+    // both to the IME (for clause narrowing) AND through GLFW's key callback,
+    // so if we react to them here too the buffer caret moves while the IME
+    // is still composing — preedit ends up painted in the middle of already-
+    // committed text. Bail out and let the composition flow drive everything.
+    if (tf.preedit_text.items.len > 0) return;
+
     const shift = k.modifiers.shift;
     const ctrl  = k.modifiers.ctrl;
 
