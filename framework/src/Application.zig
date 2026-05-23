@@ -10,6 +10,12 @@ const Button = @import("Button.zig");
 const Slider = @import("Slider.zig");
 const Frame = @import("Frame.zig");
 const Window = @import("Window.zig");
+const Menu = @import("Menu.zig");
+const MenuItem = @import("MenuItem.zig");
+const MenuBar = @import("MenuBar.zig");
+const CheckBoxMenuItem = @import("CheckBoxMenuItem.zig");
+const PopupMenu = @import("PopupMenu.zig");
+const MenuSeparator = @import("MenuSeparator.zig");
 const noto = @import("noto/fonts.zig");
 const lucide = @import("lucide/icons.zig");
 
@@ -245,11 +251,43 @@ pub fn filler(self: *Application) !*Panel {
 /// Pre-configured Panel for use as a Frame toolbar. Light grey background,
 /// horizontal BoxLayout, 32px fixed height. Add icon-only Buttons to it and
 /// place it via `BorderLayout.add(window.container, .north, &tb.container.component)`.
-pub fn toolbar(self: *Application) !*Panel {
+pub fn toolBar(self: *Application) !*Panel {
     const p = try self.panel();
     p.setBackground(awt.Graphics.Color.rgb(0.94, 0.94, 0.96));
     p.container.setLayout(@import("BoxLayout.zig").horizontal());
     p.container.component.min_size = .{ .width = 0, .height = 32 };
     p.container.component.max_size = .{ .width = std.math.inf(f32), .height = 32 };
     return p;
+}
+
+// ── menu family ──────────────────────────────────────────────────────────
+
+fn menuFont(self: *Application) awt.Graphics.TextFont {
+    return .{ .face = self.default_font, .pixel_size = 14 };
+}
+
+const menu_color = awt.Graphics.Color.rgb(0.1, 0.1, 0.1);
+
+pub fn menu(self: *Application, text: []const u8) !*Menu {
+    return try Menu.create(self.allocator, text, self.menuFont(), menu_color);
+}
+
+pub fn menuItem(self: *Application, text: []const u8) !*MenuItem {
+    return try MenuItem.create(self.allocator, text, self.menuFont(), menu_color);
+}
+
+pub fn checkBoxMenuItem(self: *Application, text: []const u8) !*CheckBoxMenuItem {
+    return try CheckBoxMenuItem.create(self.allocator, text, self.menuFont(), menu_color);
+}
+
+pub fn menuBar(self: *Application) !*MenuBar {
+    return try MenuBar.create(self.allocator, self.menuFont(), menu_color);
+}
+
+pub fn popupMenu(self: *Application) !*PopupMenu {
+    return try PopupMenu.create(self.allocator);
+}
+
+pub fn menuSeparator(self: *Application) !*MenuSeparator {
+    return try MenuSeparator.create(self.allocator);
 }

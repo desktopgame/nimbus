@@ -159,8 +159,6 @@ pub fn main(init: std.process.Init) !void {
     defer app.deinit();
 
     const frame = try app.frame("menu demo", 640, 360);
-    const font = awt.Graphics.TextFont{ .face = app.default_font, .pixel_size = 14 };
-    const black = awt.Graphics.Color.rgb(0.1, 0.1, 0.1);
 
     // Status label in the center.
     const label = try app.label("Click a menu, or right-click on the content area.");
@@ -188,24 +186,24 @@ pub fn main(init: std.process.Init) !void {
     try content.container.add(&label.component);
 
     // Set up right-click context menu via vtable override on the content panel.
-    const popup = try nimbus.PopupMenu.create(app.allocator);
-    const paste = try nimbus.MenuItem.create(app.allocator, "Paste", font, black);
+    const popup = try app.popupMenu();
+    const paste = try app.menuItem("Paste");
     paste.setIcon(ic_paste);
     try paste.getModel().addActionListener(onCtxPaste, @ptrCast(&state));
     try popup.add(&paste.component);
 
-    const del = try nimbus.MenuItem.create(app.allocator, "Delete", font, black);
+    const del = try app.menuItem("Delete");
     del.setIcon(ic_trash);
     try del.getModel().addActionListener(onCtxDelete, @ptrCast(&state));
     try popup.add(&del.component);
 
     try popup.addSeparator();
 
-    const insert = try nimbus.Menu.create(app.allocator, "Insert", font, black);
-    const ins_image = try nimbus.MenuItem.create(app.allocator, "Image", font, black);
+    const insert = try app.menu("Insert");
+    const ins_image = try app.menuItem("Image");
     try ins_image.getModel().addActionListener(onCtxInsertImage, @ptrCast(&state));
     try insert.add(&ins_image.component);
-    const ins_table = try nimbus.MenuItem.create(app.allocator, "Table", font, black);
+    const ins_table = try app.menuItem("Table");
     try ins_table.getModel().addActionListener(onCtxInsertTable, @ptrCast(&state));
     try insert.add(&ins_table.component);
     try popup.add(&insert.component);
@@ -223,7 +221,7 @@ pub fn main(init: std.process.Init) !void {
     try nimbus.BorderLayout.add(&frame.window.container, .center, &content.container.component);
 
     // Toolbar with icon-only buttons.
-    const tb = try app.toolbar();
+    const tb = try app.toolBar();
     inline for ([_]awt.Image{ ic_new, ic_open, ic_save, ic_undo, ic_redo }) |icn| {
         const tb_btn = try app.button("");
         tb_btn.setIcon(icn);
@@ -234,25 +232,25 @@ pub fn main(init: std.process.Init) !void {
     try nimbus.BorderLayout.add(&frame.window.container, .north, &tb.container.component);
 
     // Build menu bar.
-    const bar = try nimbus.MenuBar.create(app.allocator, font, black);
+    const bar = try app.menuBar();
 
     // File menu
     {
-        const file = try nimbus.Menu.create(app.allocator, "File", font, black);
-        const new_item = try nimbus.MenuItem.create(app.allocator, "New", font, black);
+        const file = try app.menu("File");
+        const new_item = try app.menuItem("New");
         new_item.setIcon(ic_new);
         try new_item.getModel().addActionListener(onFileNew, @ptrCast(&state));
         try file.add(&new_item.component);
-        const open = try nimbus.MenuItem.create(app.allocator, "Open", font, black);
+        const open = try app.menuItem("Open");
         open.setIcon(ic_open);
         try open.getModel().addActionListener(onFileOpen, @ptrCast(&state));
         try file.add(&open.component);
-        const save = try nimbus.MenuItem.create(app.allocator, "Save", font, black);
+        const save = try app.menuItem("Save");
         save.setIcon(ic_save);
         try save.getModel().addActionListener(onFileSave, @ptrCast(&state));
         try file.add(&save.component);
         try file.addSeparator();
-        const quit = try nimbus.MenuItem.create(app.allocator, "Quit", font, black);
+        const quit = try app.menuItem("Quit");
         quit.setIcon(ic_quit);
         try quit.getModel().addActionListener(onFileQuit, @ptrCast(&state));
         try file.add(&quit.component);
@@ -261,27 +259,27 @@ pub fn main(init: std.process.Init) !void {
 
     // Edit menu (with submenu)
     {
-        const edit = try nimbus.Menu.create(app.allocator, "Edit", font, black);
-        const cut = try nimbus.MenuItem.create(app.allocator, "Cut", font, black);
+        const edit = try app.menu("Edit");
+        const cut = try app.menuItem("Cut");
         cut.setIcon(ic_cut);
         try cut.getModel().addActionListener(onEditCut, @ptrCast(&state));
         try edit.add(&cut.component);
-        const copy = try nimbus.MenuItem.create(app.allocator, "Copy", font, black);
+        const copy = try app.menuItem("Copy");
         copy.setIcon(ic_copy);
         try copy.getModel().addActionListener(onEditCopy, @ptrCast(&state));
         try edit.add(&copy.component);
-        const paste2 = try nimbus.MenuItem.create(app.allocator, "Paste", font, black);
+        const paste2 = try app.menuItem("Paste");
         paste2.setIcon(ic_paste);
         try paste2.getModel().addActionListener(onEditPaste, @ptrCast(&state));
         try edit.add(&paste2.component);
         try edit.addSeparator();
 
-        const find = try nimbus.Menu.create(app.allocator, "Find", font, black);
+        const find = try app.menu("Find");
         find.setIcon(ic_search);
-        const find_one = try nimbus.MenuItem.create(app.allocator, "Find...", font, black);
+        const find_one = try app.menuItem("Find...");
         try find_one.getModel().addActionListener(onFindOne, @ptrCast(&state));
         try find.add(&find_one.component);
-        const find_next = try nimbus.MenuItem.create(app.allocator, "Find Next", font, black);
+        const find_next = try app.menuItem("Find Next");
         try find_next.getModel().addActionListener(onFindNext, @ptrCast(&state));
         try find.add(&find_next.component);
         try edit.add(&find.component);
@@ -291,11 +289,11 @@ pub fn main(init: std.process.Init) !void {
 
     // View menu (with CheckBoxMenuItem)
     {
-        const view = try nimbus.Menu.create(app.allocator, "View", font, black);
-        const grid = try nimbus.CheckBoxMenuItem.create(app.allocator, "Show Grid", font, black);
+        const view = try app.menu("View");
+        const grid = try app.checkBoxMenuItem("Show Grid");
         try grid.getModel().addActionListener(onViewGrid, @ptrCast(&state));
         try view.add(&grid.component);
-        const ruler = try nimbus.CheckBoxMenuItem.create(app.allocator, "Show Ruler", font, black);
+        const ruler = try app.checkBoxMenuItem("Show Ruler");
         ruler.setChecked(true);  // initial state
         try ruler.getModel().addActionListener(onViewRuler, @ptrCast(&state));
         try view.add(&ruler.component);

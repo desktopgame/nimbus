@@ -141,7 +141,7 @@ pub fn icon(self: *Application, id: lucide.Icon) !awt.Image;
 
 ## ツールバーの生成
 ```zig
-pub fn toolbar(self: *Application) !*Panel;
+pub fn toolBar(self: *Application) !*Panel;
 ```
 
 `Panel` を内部で生成し、ツールバー向けにプリセットを適用して返す：
@@ -150,8 +150,37 @@ pub fn toolbar(self: *Application) !*Panel;
 * レイアウト: `BoxLayout.horizontal()`
 * 高さ: 32px 固定（`min_size.height` / `max_size.height` 共に 32）
 
-返り値は普通の `*Panel` なので、`toolbar.container.add(&btn.component)` で子ボタンを追加して、`BorderLayout.add(window.container, .north, &toolbar.container.component)` で Frame 上部（メニューバーがあればその下）に取り付ける。
+返り値は普通の `*Panel` なので、`tb.container.add(&btn.component)` で子ボタンを追加して、`BorderLayout.add(window.container, .north, &tb.container.component)` で Frame 上部（メニューバーがあればその下）に取り付ける。
 専用型 `ToolBar` は作らない（Panel + BoxLayout のレシピに名前を付けただけ）。
+
+## メニュー系の生成
+```zig
+pub fn menu             (self: *Application, text: []const u8) !*Menu;
+pub fn menuItem         (self: *Application, text: []const u8) !*MenuItem;
+pub fn checkBoxMenuItem (self: *Application, text: []const u8) !*CheckBoxMenuItem;
+pub fn menuBar          (self: *Application) !*MenuBar;
+pub fn popupMenu        (self: *Application) !*PopupMenu;
+pub fn menuSeparator    (self: *Application) !*MenuSeparator;
+```
+
+各 widget の `create` をラップする。
+`menu` / `menuItem` / `checkBoxMenuItem` / `menuBar` は default font (`pixel_size = 14`) と濃いグレー (`rgb(0.1, 0.1, 0.1)`) を注入する。
+`popupMenu` / `menuSeparator` は font / color を取らないので素通しのラッパー。
+
+専用フォント・色を使いたい場合は各 widget の `create` / `createWithModel` を直接呼ぶ。
+
+利用例:
+```zig
+const bar = try app.menuBar();
+const file = try app.menu("File");
+const open = try app.menuItem("Open");
+try open.getModel().addActionListener(onOpen, &ctx);
+try file.add(&open.component);
+try file.addSeparator();
+try file.add(&(try app.menuItem("Quit")).component);
+try bar.add(file);
+try frame.setMenuBar(bar);
+```
 
 ---
 
