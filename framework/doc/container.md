@@ -3,16 +3,10 @@
 
 ## 型定義
 ```zig
-pub const LayoutElement = struct {
-    component:    *Component,
-    hint:         ?*anyopaque = null,                                       // LayoutManager 用 hint (v2〜)
-    hint_destroy: ?*const fn (*anyopaque, std.mem.Allocator) void = null,   // 任意の destroy hook
-};
-
 pub const Container = struct {
     component: Component,
     children:  std.ArrayList(LayoutElement),
-    layout:    ?*LayoutManager,                                             // v1 は null 固定
+    layout:    ?*LayoutManager,                                             // v1 は null 許容
     allocator: std.mem.Allocator,
 
     pub const vtable = Component.VTable{
@@ -25,6 +19,8 @@ pub const Container = struct {
     // ... メソッド
 };
 ```
+
+`LayoutElement` と `LayoutManager` の定義は `framework/doc/layout.md` を参照。
 
 ## 役割
 Container は Component の派生型の一つで、子 Component を所有する。
@@ -44,7 +40,7 @@ CLAUDE.md「所有権」セクションのとおり、Container が children を
 deinit で再帰的に開放する。アロケーターは Application から借用したものを使う。
 
 各子は `LayoutElement { component, hint, hint_destroy }` でラップして保持する。
-hint は LayoutManager (v2〜) が解釈するためのフィールドで、v1 では常に null。
+hint と hint_destroy の意味と所有モデルについては `framework/doc/layout.md` を参照。
 
 ```zig
 pub fn add(self: *Container, child: *Component) !void {
@@ -118,27 +114,66 @@ Container は init で `self.component.container = self` をセットする。
 これにより Application などからツリーを再帰的に辿れる。詳細は
 component.md「コンポーネントの列挙」を参照。
 
-## レイアウトと hint
-v1 では LayoutManager は未実装で、子の位置・サイズは利用者が `child.setBounds(...)` で手動指定する。
-このとき `LayoutElement.hint` は使われない (常に null)。
+## レイアウト
+Container は `layout: ?*LayoutManager` を持ち、子の bounds の計算を LayoutManager に委譲する。
+LayoutManager のインターフェイス定義は `framework/doc/layout.md`、設計方針は `{REPO_ROOT}/doc/layout-design.md` を参照。
 
-v2 以降で LayoutManager (BorderLayout / BoxLayout 等) が導入された時、
-各 LayoutManager が hint を解釈して `child.setBounds(...)` を内部で呼ぶ:
+v1 では LayoutManager の標準実装（BoxLayout / BorderLayout 等）はまだ存在せず、`layout` は null のまま運用する。
+このとき子の位置・サイズは利用者が `child.setBounds(...)` で手動指定する。
+
+### MinimumSize / MaximumSize の委譲
+Container は leaf widget と同じ `getMinSize()` / `getMaxSize()` のインターフェイスを持つが、内部では `layout` に問い合わせて返す。
+これにより利用者やレイアウトマネージャは leaf かコンテナーかを区別せずに min / max を取得できる。
 
 ```zig
-// v2 想定: BorderLayout が hint を見て位置決め
-const BorderRegion = enum { north, south, east, west, center };
-const north_hint: BorderRegion = .north;
-try container.addWithHint(&label.component, @ptrCast(&north_hint), null);
-
-// BorderLayout.layoutContainer(container) が elem.hint を見て setBounds
+pub fn getMinSize(self: *const Container) Size {
+    const lm_min = if (self.layout) |lm|
+        lm.vtable.computeMinSize(lm, self)
+    else
+        .{ .width = 0, .height = 0 };
+    // Container 自身に明示的な下限が設定されていれば、それと合成する
+    return .{
+        .width  = @max(self.component.min_size.width,  lm_min.width),
+        .height = @max(self.component.min_size.height, lm_min.height),
+    };
+}
 ```
 
-hint の所有モデルは Component.properties と同じく **opt-in destroy hook**:
-* `hint_destroy = null` (デフォルト): caller 所有、framework は触らない (上記 `&local_enum` 等)
-* `hint_destroy = fn` を渡せば Container.remove / deinit で自動 free (動的 alloc した GridBagConstraints 等)
+### setBounds は自動で doLayout を呼ぶ
+Container は自身の bounds が変更された時点で再レイアウトする。
+Swing の手動 `validate` のような呼び出しは不要。
 
-LayoutManager 本体の設計は別 doc で扱う。
+```zig
+pub fn setBounds(self: *Container, bounds: Rect) void {
+    self.component.setBounds(bounds);
+    self.doLayout();
+}
+```
+
+### 再帰は Container の責務
+LayoutManager は直接の子の bounds のみを設定する。
+孫以下への再帰は Container が担当し、それぞれの子 Container に対して `doLayout()` を呼ぶ。
+
+```zig
+pub fn doLayout(self: *Container) void {
+    if (self.layout) |lm| lm.vtable.doLayout(lm, self);
+    for (self.children.items) |elem| {
+        if (elem.component.container) |child_c| child_c.doLayout();
+    }
+}
+```
+
+### LayoutManager の差し替え
+`setLayout` で LayoutManager を差し替えることができる。
+差し替え後は再レイアウトを行う。
+古い LayoutManager の解放は呼び出し側の責務（標準提供される const シングルトンであれば不要）。
+
+```zig
+pub fn setLayout(self: *Container, layout: ?*LayoutManager) void {
+    self.layout = layout;
+    self.doLayout();
+}
+```
 
 ## ライフサイクル
 factory コード例 (内部):
