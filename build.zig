@@ -55,6 +55,7 @@ pub fn build(b: *std.Build) void {
                     "dx12_texture.c",
                     "dx12_root_signature.c",
                     "dx12_pipeline.c",
+                    "win32_ime.c",
                 },
                 .flags = c_flags,
             });
@@ -62,6 +63,7 @@ pub fn build(b: *std.Build) void {
             awt_c_mod.linkSystemLibrary("dxgi", .{});
             awt_c_mod.linkSystemLibrary("dxguid", .{});
             awt_c_mod.linkSystemLibrary("d3dcompiler_47", .{});
+            awt_c_mod.linkSystemLibrary("imm32", .{});
         },
         .macos => {
             if (optimize == .Debug) awt_c_mod.addCMacro("NM_METAL_DEBUG", "1");
@@ -82,6 +84,12 @@ pub fn build(b: *std.Build) void {
                 },
                 .flags = &.{ "-fno-objc-arc", "-Wall", "-Wextra" },
             });
+            // IME stub on macOS (real NSTextInputClient backend is future work).
+            awt_c_mod.addCSourceFiles(.{
+                .root = b.path("awt-c/src"),
+                .files = &.{"ime_stub.c"},
+                .flags = c_flags,
+            });
 
             awt_c_mod.linkFramework("Metal", .{});
             awt_c_mod.linkFramework("QuartzCore", .{});
@@ -91,7 +99,7 @@ pub fn build(b: *std.Build) void {
         else => {
             awt_c_mod.addCSourceFiles(.{
                 .root = b.path("awt-c/src"),
-                .files = &.{"dx12_stub.c"},
+                .files = &.{ "dx12_stub.c", "ime_stub.c" },
                 .flags = c_flags,
             });
         },

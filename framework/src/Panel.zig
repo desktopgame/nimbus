@@ -135,7 +135,7 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
                 if (ev.isConsumed()) return;
             }
         },
-        .focus => {},
+        .focus, .composition => {},
     }
 }
 

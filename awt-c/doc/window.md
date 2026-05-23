@@ -38,6 +38,17 @@ typedef void (*nmCursorPosCallback)(nmWindow* window, double x, double y, void* 
 typedef void (*nmScrollCallback)(nmWindow* window, double dx, double dy, void* user_data);
 typedef void (*nmKeyCallback)(nmWindow* window, nmKeyCode key, nmKeyAction action, int modifiers, void* user_data);
 typedef void (*nmCharCallback)(nmWindow* window, uint32_t codepoint, void* user_data);
+
+typedef struct nmCompositionEvent {
+    const char* text;          /* UTF-8 preedit string (borrowed) */
+    size_t      text_len;
+    size_t      target_start;  /* byte offset, 変換中クローズの開始 */
+    size_t      target_end;    /* byte offset, 変換中クローズの終了 */
+} nmCompositionEvent;
+
+typedef void (*nmCompositionCallback)(nmWindow* window,
+                                       const nmCompositionEvent* ev,
+                                       void* user_data);
 ```
 
 `nmWindow` の内部実装に関する知識は外部に漏らさない。
@@ -168,6 +179,38 @@ OS のキーボードレイアウトを通過した後の Unicode codepoint を 
 `'a'` キー押下で `'a' = 0x61`、Shift+1 で `'!' = 0x21` のように、修飾キーの効果が反映された後の文字が届く。
 ショートカット検出やカーソル移動には `nmSetKeyCallback` を使い、テキスト入力にはこちらを使う。
 `cb` に `NULL` を渡すと登録解除される。
+
+## IME composition コールバックの登録
+void nmSetCompositionCallback(nmWindow* self, nmCompositionCallback cb, void* user_data);
+
+IME の preedit（変換中文字列）が更新された時に呼ばれるコールバックを登録する。
+コールバックには現在の preedit 文字列（UTF-8）と、変換中クローズの byte 範囲（`target_start` / `target_end`）が渡される。
+
+空文字列 (`text_len == 0`) は **composition cleared**（キャンセル or 確定）のシグナル。
+確定文字列自体は既存の `nmCharCallback` で別途配送されるため、利用者は preedit overlay をクリアするだけでよい。
+
+`cb` に `NULL` を渡すと登録解除される。
+
+### 実装状況
+| プラットフォーム | 状態 |
+|---|---|
+| Windows | IMM32 + WNDPROC subclass で実装済み |
+| macOS | stub（no-op）。`NSTextInputClient` ベースの実装は将来 |
+| Linux | stub（no-op）。Wayland text-input v3 ベースの実装は将来 |
+
+## IME 候補ウィンドウ位置の設定
+void nmSetCompositionCursorPos(nmWindow* self, int x, int y, int height);
+
+IME 候補ウィンドウの表示位置を、現在のテキストキャレット位置（ウィンドウローカル ピクセル）+ 行高で OS に伝える。
+TextField 等のキャレットが移動するたびに呼ぶ想定。
+処理は軽量で、毎キー入力ごとに呼んでもパフォーマンス影響は無視できる。
+
+* Windows: `ImmSetCompositionWindow` で即時 push
+* macOS: 内部キャッシュに保存し、OS が `firstRectForCharacterRange:` で pull したとき返却（予定）
+* Linux: `zwp_text_input_v3.set_cursor_rectangle` で即時 push（予定）
+
+### 事前条件
+* `self` が non-NULL であること。違反した場合の動作は UB。
 
 ## クリップボードからの読み出し
 const char* nmGetClipboardString(nmWindow* self);

@@ -149,6 +149,27 @@ pub const FocusEvent = struct {
     gained: bool,
 };
 
+/// IME composition (preedit) update. Fired while the user is composing
+/// with an IME (Japanese / Chinese / Korean conversion etc.) and the
+/// committed result has not yet been produced.
+///
+/// `text` is the current preedit string as borrowed UTF-8 (owned by the
+/// awt-c backend, valid only for the duration of the dispatch). The
+/// `target_start` / `target_end` byte offsets mark the clause the user
+/// is actively converting — widgets should render it with extra emphasis
+/// (e.g. a thick underline). When both are equal they collapse to the
+/// preedit caret position.
+///
+/// An empty `text` (`text.len == 0`) signals "composition cleared"
+/// (cancellation or commit). The committed characters themselves arrive
+/// through `CharEvent`, so widgets need only clear their preedit overlay
+/// here and let normal char-input handling insert the text.
+pub const CompositionEvent = struct {
+    text:         []const u8,
+    target_start: usize,
+    target_end:   usize,
+};
+
 pub const MouseEvent = struct {
     x:         f32,
     y:         f32,
@@ -168,10 +189,11 @@ pub const MouseEvent = struct {
 };
 
 pub const Payload = union(enum) {
-    key:   KeyEvent,
-    char:  CharEvent,
-    mouse: MouseEvent,
-    focus: FocusEvent,
+    key:         KeyEvent,
+    char:        CharEvent,
+    mouse:       MouseEvent,
+    focus:       FocusEvent,
+    composition: CompositionEvent,
 };
 
 consumed: bool = false,
@@ -208,7 +230,7 @@ pub fn translated(self: Event, offset: Point) Event {
             .consumed = self.consumed,
             .payload  = .{ .mouse = m.translated(offset) },
         },
-        .key, .char, .focus => self,
+        .key, .char, .focus, .composition => self,
     };
 }
 

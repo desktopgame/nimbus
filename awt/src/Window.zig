@@ -49,13 +49,14 @@ pub fn swapBuffers(self: Window) void {
     c.nmSwapBuffers(self.handle);
 }
 
-pub const ResizeCallback      = c.nmWindowResizeCallback;
-pub const RefreshCallback     = c.nmWindowRefreshCallback;
-pub const MouseButtonCallback = c.nmMouseButtonCallback;
-pub const CursorPosCallback   = c.nmCursorPosCallback;
-pub const ScrollCallback      = c.nmScrollCallback;
-pub const KeyCallback         = c.nmKeyCallback;
-pub const CharCallback        = c.nmCharCallback;
+pub const ResizeCallback       = c.nmWindowResizeCallback;
+pub const RefreshCallback      = c.nmWindowRefreshCallback;
+pub const MouseButtonCallback  = c.nmMouseButtonCallback;
+pub const CursorPosCallback    = c.nmCursorPosCallback;
+pub const ScrollCallback       = c.nmScrollCallback;
+pub const KeyCallback          = c.nmKeyCallback;
+pub const CharCallback         = c.nmCharCallback;
+pub const CompositionCallback  = c.nmCompositionCallback;
 
 pub fn setResizeCallback(self: Window, cb: ResizeCallback, user_data: ?*anyopaque) void {
     c.nmSetWindowResizeCallback(self.handle, cb, user_data);
@@ -83,6 +84,20 @@ pub fn setKeyCallback(self: Window, cb: KeyCallback, user_data: ?*anyopaque) voi
 
 pub fn setCharCallback(self: Window, cb: CharCallback, user_data: ?*anyopaque) void {
     c.nmSetCharCallback(self.handle, cb, user_data);
+}
+
+/// IME preedit callback. The C-layer event struct (`*const c.nmCompositionEvent`)
+/// is passed through verbatim — convert to `awt.Event.CompositionEvent` in
+/// the bridge layer (e.g. framework.Window.onComposition).
+pub fn setCompositionCallback(self: Window, cb: CompositionCallback, user_data: ?*anyopaque) void {
+    c.nmSetCompositionCallback(self.handle, cb, user_data);
+}
+
+/// Push the current caret position (window-local pixels + line height) so
+/// the OS IME can place its candidate window appropriately. Cheap; safe
+/// to call on every caret move.
+pub fn setCompositionCursorPos(self: Window, x: i32, y: i32, height: i32) void {
+    c.nmSetCompositionCursorPos(self.handle, @intCast(x), @intCast(y), @intCast(height));
 }
 
 /// System clipboard. Returns null if the clipboard is empty or does not

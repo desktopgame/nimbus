@@ -546,6 +546,11 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
             // (B-2) directly to the gaining/losing component — they should
             // not normally arrive here via the event queue. No-op as a safety net.
         },
+        .composition => {
+            // IME preedit. v1 wiring: not yet routed to focus_owner (the
+            // TextField-side handler is the next milestone). Drop silently
+            // so awt-c can still fire the callback without breaking.
+        },
     }
 }
 

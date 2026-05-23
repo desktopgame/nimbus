@@ -14,6 +14,7 @@
 #include <stdlib.h>
 
 #include "internal.h"
+#include "window_internal.h"
 
 /* Implemented in nm_font.c (cross-platform). */
 int  nm_font_internal_init(void);
@@ -22,22 +23,10 @@ void nm_font_internal_terminate(void);
 /* Implemented in dx12_device.c (Windows) or dx12_stub.c (no-op elsewhere). */
 void nm_dxgi_report_live_objects(void);
 
-typedef struct nmWindowCallbacks {
-    nmWindowResizeCallback  resize_cb;
-    void*                   resize_user;
-    nmWindowRefreshCallback refresh_cb;
-    void*                   refresh_user;
-    nmMouseButtonCallback   mouse_button_cb;
-    void*                   mouse_button_user;
-    nmCursorPosCallback     cursor_pos_cb;
-    void*                   cursor_pos_user;
-    nmScrollCallback        scroll_cb;
-    void*                   scroll_user;
-    nmKeyCallback           key_cb;
-    void*                   key_user;
-    nmCharCallback          char_cb;
-    void*                   char_user;
-} nmWindowCallbacks;
+/* Implemented in win32_ime.c (Windows) or ime_stub.c (no-op elsewhere).
+ * Hooks per-window IME plumbing; safe to call once per nmCreateWindow. */
+void nm_ime_attach(nmWindow* w);
+void nm_ime_set_cursor_pos(nmWindow* w, int x, int y, int height);
 
 static void on_framebuffer_size(GLFWwindow* gw, int w, int h) {
     nmWindowCallbacks* cb = (nmWindowCallbacks*)glfwGetWindowUserPointer(gw);
@@ -168,6 +157,7 @@ nmWindow* nmCreateWindow(const char* title, int width, int height) {
     glfwSetScrollCallback(w, on_scroll);
     glfwSetKeyCallback(w, on_key);
     glfwSetCharCallback(w, on_char);
+    nm_ime_attach((nmWindow*)w);
     return (nmWindow*)w;
 }
 
@@ -242,6 +232,27 @@ void nmSetCharCallback(nmWindow* self, nmCharCallback cb, void* user_data) {
     if (!cbs) return;
     cbs->char_cb = cb;
     cbs->char_user = user_data;
+}
+
+void nmSetCompositionCallback(nmWindow* self, nmCompositionCallback cb, void* user_data) {
+    if (!self) return;
+    nmWindowCallbacks* cbs = (nmWindowCallbacks*)glfwGetWindowUserPointer((GLFWwindow*)self);
+    if (!cbs) return;
+    cbs->composition_cb = cb;
+    cbs->composition_user = user_data;
+}
+
+void nmSetCompositionCursorPos(nmWindow* self, int x, int y, int height) {
+    if (!self) return;
+    nmWindowCallbacks* cbs = (nmWindowCallbacks*)glfwGetWindowUserPointer((GLFWwindow*)self);
+    if (!cbs) return;
+    cbs->composition_cursor_x = x;
+    cbs->composition_cursor_y = y;
+    cbs->composition_cursor_h = height;
+    /* Hand the cached value to the platform-specific IME backend so it can
+     * push it to the OS immediately (Windows: ImmSetCompositionWindow).
+     * On macOS / Wayland this may be a no-op until the OS pulls. */
+    nm_ime_set_cursor_pos(self, x, y, height);
 }
 
 void nmPollEvents(void) {

@@ -12,10 +12,11 @@ pub const Event = struct {
     payload:        Payload,
 
     pub const Payload = union(enum) {
-        key:   KeyEvent,
-        char:  CharEvent,
-        mouse: MouseEvent,
-        focus: FocusEvent,
+        key:         KeyEvent,
+        char:        CharEvent,
+        mouse:       MouseEvent,
+        focus:       FocusEvent,
+        composition: CompositionEvent,
     };
 
     // ... メソッド
@@ -33,6 +34,12 @@ pub const CharEvent = struct {
 
 pub const FocusEvent = struct {
     gained: bool,                  // true: フォーカス獲得, false: 喪失
+};
+
+pub const CompositionEvent = struct {
+    text:         []const u8,      // 借用 UTF-8 (callback の有効期間のみ)
+    target_start: usize,           // text 内の byte offset (変換中クローズの開始)
+    target_end:   usize,           // text 内の byte offset (変換中クローズの終了)
 };
 
 pub const MouseEvent = struct {
@@ -96,7 +103,7 @@ pub fn translated(self: Event, offset: Point) Event;
 ```
 
 `payload` が `.mouse` ならその座標を `offset` で平行移動する。
-それ以外（`.key` / `.char` / `.focus`）は変更なしで返す。
+それ以外（`.key` / `.char` / `.focus` / `.composition`）は変更なしで返す。
 `consumed` フラグはコピーされる。
 
 ## 修飾キーの組み合わせ確認
@@ -232,9 +239,34 @@ OS から来るのではなく framework 側（`Window.requestFocusFor`）が生
 
 `null → Component` や `Component → null` への切り替えも有効（片側だけが dispatch される）。
 
+## CompositionEvent
+IME（日本語・中国語・韓国語入力など）の **preedit (変換中文字列)** を運ぶ。
+ユーザーが IME で入力中、確定する前の文字列がここに届く。
+
+`text` は現在の preedit 文字列の借用 UTF-8（awt-c が所有、コールバックの有効期間のみ valid）。
+ハンドラ側が保持したいなら呼び出し直後に `allocator.dupe` で複製を取る。
+
+`target_start` / `target_end` は `text` 内の **byte offset** で、利用者が今変換中のクローズ（節）を指す。
+ウィジェットはこの範囲を太い下線・濃い背景などで強調表示するのが一般的。
+`target_start == target_end` のときは「変換中の特定範囲なし」を意味し、両者は preedit 内のキャレット位置として扱える。
+
+空文字列 (`text.len == 0`) は **composition cleared** のシグナル（キャンセル or 確定）。
+**確定文字列は CharEvent で別途届く**ので、ウィジェットは preedit overlay をクリアするだけでよい（commit を二重処理しない）。
+
+OS との連携:
+* preedit string の取得 → awt-c の `nmCompositionCallback` 経由
+* IME 候補ウィンドウの位置設定 → `Window.setCompositionCursorPos(x, y, height)` でキャレット座標を push
+
+現状の実装:
+* Windows: WNDPROC subclass + IMM32 で `WM_IME_COMPOSITION` を拾う
+* macOS / Linux: stub（no-op）。`NSTextInputClient` / Wayland text-input v3 ベースの実装が将来追加される予定
+
 ## awt-c との関係
 awt-c は GLFW の C 関数ポインタ型でコールバックを受ける（`nmKeyCallback`、`nmCharCallback`、`nmMouseButtonCallback`、`nmCursorPosCallback`、`nmScrollCallback` 等）。
 これらのコールバックは個別の引数（コード / 文字 / ボタン / 座標 / スクロール量）を受け取る形になる。
+
+加えて、IME 用に `nmCompositionCallback`（GLFW にはなく awt-c 独自）がある。
+これは GLFW を経由せず、プラットフォーム別バックエンド（Windows: WNDPROC subclass、macOS: NSTextInputClient（予定）、Linux: Wayland text-input（予定））が直接 fire する。
 
 awt 層がそれらを Zig の `Event` 型に統合してから framework に渡す。
 `FocusEvent` は OS 由来ではなく framework が生成するため対応するコールバックは存在しない。
@@ -294,8 +326,8 @@ const local_event  = mouse_event.translated(local_offset);
 ```
 
 ## 機能要望
-* IME composition イベント（変換中文字列の inline 表示）
 * タッチ / ジェスチャイベント（マルチタッチ環境向け）
 * キーリピート間隔の設定
 * ドラッグ&ドロップ専用イベント
 * マウス enter / leave イベント（hover 検出用）
+* CompositionEvent の attribute 配列拡張（現状は target 1 区間のみ。色分け 4 段階等にしたい場合は struct に attribute 配列を additive に足す）

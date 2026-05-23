@@ -187,9 +187,11 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
                 if (ev.isConsumed()) return;
             }
         },
-        .focus => {
+        .focus, .composition => {
             // Focus events are delivered directly to the gaining/losing
             // component by Window.requestFocusFor — not through fan-out.
+            // Composition events will be routed to focus_owner in a future
+            // milestone; until then they fall on the floor here.
         },
     }
 }

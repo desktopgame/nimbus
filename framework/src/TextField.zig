@@ -246,6 +246,12 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
             tf.caret_visible = true;
             tf.component.repaint();
         },
+        .composition => {
+            // IME preedit. Handling (inline display, target-clause emphasis,
+            // pushing caret-pos to OS via setCompositionCursorPos) is the next
+            // milestone; for now we drop silently. Committed characters still
+            // reach us via the regular .char path.
+        },
     }
 }
 

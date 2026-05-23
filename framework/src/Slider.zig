@@ -240,7 +240,7 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
                 .scroll => {},
             }
         },
-        .key, .char, .focus => {},
+        .key, .char, .focus, .composition => {},
     }
 }
 

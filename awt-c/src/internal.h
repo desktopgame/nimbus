@@ -82,6 +82,43 @@ void nmSetScrollCallback(nmWindow* self, nmScrollCallback cb, void* user_data);
 void nmSetKeyCallback(nmWindow* self, nmKeyCallback cb, void* user_data);
 void nmSetCharCallback(nmWindow* self, nmCharCallback cb, void* user_data);
 
+/* ─── IME composition ─────────────────────────────────────────────────── */
+
+/* Preedit (under-composition) state delivered by the OS IME.
+ *
+ * `text` is the current preedit string in UTF-8 (no NUL guarantee — use
+ * `text_len`). It is owned by awt-c and valid only for the duration of the
+ * callback. Callers that need to keep it must copy.
+ *
+ * `target_start` / `target_end` are byte offsets into `text` that mark the
+ * "selection" / target clause — the part the user is currently converting.
+ * When the IME does not report one, both fall back to the caret position
+ * inside the preedit. `target_start == target_end == text_len` is valid
+ * (caret at the end, no selection).
+ *
+ * An empty `text` (`text_len == 0`) signals "composition cleared"
+ * (cancellation or commit). The committed string itself is delivered via
+ * the existing `nmCharCallback`, so consumers do not need a separate
+ * commit callback. */
+typedef struct nmCompositionEvent {
+    const char* text;
+    size_t      text_len;
+    size_t      target_start;
+    size_t      target_end;
+} nmCompositionEvent;
+
+typedef void (*nmCompositionCallback)(nmWindow* window,
+                                       const nmCompositionEvent* ev,
+                                       void* user_data);
+
+void nmSetCompositionCallback(nmWindow* self, nmCompositionCallback cb, void* user_data);
+
+/* Tell the IME where the text caret currently sits, in window-local
+ * pixels. `height` is the line height (so the candidate window can avoid
+ * overlapping the caret line). IMEs use this to position their candidate
+ * popup. Safe to call every time the caret moves; cheap. */
+void nmSetCompositionCursorPos(nmWindow* self, int x, int y, int height);
+
 /* Clipboard (system-wide; the window argument is required by the GLFW
  * surface but the clipboard itself is process / OS scoped).
  *

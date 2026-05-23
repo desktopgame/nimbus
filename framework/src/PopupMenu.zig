@@ -222,6 +222,6 @@ fn popupProcessEvent(self: *Component, ev: *Component.Event) void {
                 }
             }
         },
-        .key, .char, .focus => {},
+        .key, .char, .focus, .composition => {},
     }
 }
