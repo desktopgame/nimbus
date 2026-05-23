@@ -23,11 +23,9 @@ pub const Rect = struct {
     y: f32,
     width: f32,
     height: f32,
-};
 
-pub const Size = struct {
-    width: f32,
-    height: f32,
+    pub fn right(self: Rect) f32;   // self.x + self.width
+    pub fn bottom(self: Rect) f32;  // self.y + self.height
 };
 
 pub const Color = struct {
@@ -35,18 +33,22 @@ pub const Color = struct {
     // コンストラクタは color.md 参照
 };
 
-pub const Font = struct {
-    face: *awt.Font,
+pub const TextFont = struct {
+    face: Font,        // awt.Font の値型 (handle は借用)
     pixel_size: i32,
 
-    pub fn measureString(self: Font, s: []const u8) Size;
+    pub fn measureString(self: TextFont, s: []const u8) Font.TextSize;
 };
 ```
 
 `Color` のコンストラクタ (`rgba` / `rgb` / `bytes`) は `color.md` を参照。
+`Font` および `Font.TextSize` (`width: f32, height: f32`) は `font.md` を参照。
 
-`Font` 自体は値型で軽量に複製可能。`face` は借用 (詳細は `setFont` の項を参照)。
-`measureString` は Graphics が手元に無い場面 (レイアウト計算時など) でも文字幅を測れるよう、Font 側に置く。
+`TextFont` 自体は値型で軽量に複製可能。
+`face` は `awt.Font` を値で保持するが、`awt.Font` の中身は awt-c の handle ポインタなので、実体の所有権は handle の最初の作成者 (典型的には Application の default_font) にある (詳細は `setFont` の項を参照)。
+`measureString` は Graphics が手元に無い場面 (レイアウト計算時など) でも文字幅を測れるよう、TextFont 側に置く。
+
+なお `Component.Size` (`width: f32, height: f32`) と `Font.TextSize` は構造的に同じだが、レイヤーごとに別型として持つ (Graphics は文字寸法を `Font.TextSize`、framework のレイアウトは `Component.Size` で扱う)。
 
 ## 文字列の表現
 **UTF-8 の `[]const u8` スライス** を使う。Zig の文字列リテラルそのまま渡せる。
@@ -89,17 +91,20 @@ fn paintComponent(self: *Self, g: *Graphics) void {
 
 ## 状態の設定 / 取得
 ```zig
-pub fn setFont(self: *Graphics, font: Font) void;
-pub fn getFont(self: *Graphics) Font;
+pub fn setFont(self: *Graphics, font: TextFont) void;
+pub fn getFont(self: Graphics) ?TextFont;
 pub fn setColor(self: *Graphics, color: Color) void;
-pub fn getColor(self: *Graphics) Color;
+pub fn getColor(self: Graphics) Color;
 ```
 
 描画呼び出しは現在の color / font を参照する。`drawString` 等で都度引数に渡さない。
 
-`setFont` で渡す `Font` の `face` (`*awt.Font`) は **借用** である。
-Graphics は `face` の所有権を取らず、寿命の管理は呼び出し側 (`Application` 等で保持される default font 等) が行う。
-渡した `Font` の `face` を Graphics が参照している間に解放してはならない。
+`getFont` が `?TextFont` になっているのは、`Graphics.init` の直後は font 未設定 (`null`) の状態だから。
+`drawString` を呼ぶ前に必ず `setFont` で何らかのフォントをセットする必要がある (`current_font == null` の状態で `drawString` を呼ぶと UB)。
+
+`setFont` で渡す `TextFont` 内の `face` (`awt.Font` 値) は **借用** である。
+Graphics は `face` の awt-c handle の所有権を取らず、寿命の管理は呼び出し側 (`Application` の `default_font` 等) が行う。
+渡した `face` の handle を Graphics が参照している間に `awt.Font.deinit` してはならない。
 
 ## 描画
 ```zig
