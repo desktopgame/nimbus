@@ -156,7 +156,11 @@ Container 自身は背景描画をしない（透明）。
 
 ## イベント
 デフォルトの `vtable.processEvent` は子に dispatch する。
-`Event` 型がまだ未定義のため、現状はプレースホルダ実装のみ。
+MouseEvent の場合はヒットテスト（マウス座標が含まれる子）で対象を選び、KeyEvent はフォーカス保持子に渡す。
+渡す前にウィンドウローカル座標を子のローカル座標に変換する（`awt/doc/event.md`「座標系」参照）。
+子が `event.consume()` を呼んだら以降の子への dispatch は行わない。
+
+Event 型の詳細は `awt/doc/event.md` を参照。
 
 ## install / uninstall
 Container 固有の `install` / `uninstall` は基本 no-op。

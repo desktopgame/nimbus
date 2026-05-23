@@ -10,7 +10,7 @@ pub const Component = struct {
         install:      *const fn (*Component) void,
         uninstall:    *const fn (*Component) void,
         paint:        *const fn (*Component, *awt.Graphics) void,
-        processEvent: *const fn (*Component, *const Event) bool,
+        processEvent: *const fn (*Component, *awt.Event) void,
         destroy:      *const fn (*Component, std.mem.Allocator) void,
     };
 
@@ -31,7 +31,8 @@ pub const Component = struct {
 };
 ```
 
-※`Event` は `framework/doc/event.md` に記載予定。
+`Event` の型定義は `awt/doc/event.md` を参照。
+`processEvent` は mutable `*Event` を受け取り、消費は `event.consume()` で表現する（戻り値ではなくフィールドで管理する）。
 
 ## コンポーネントの初期化
 ```zig
