@@ -42,10 +42,10 @@ pub fn main(init: std.process.Init) !void {
 
     const frame = try app.frame("widget simple", 600, 120);
 
-    // Build a horizontal row and add it to the frame's window.
+    // Build a horizontal row and put it in the window's center region
+    // (the Window defaults to BorderLayout).
     const row = try app.container();
     row.setLayout(nimbus.BoxLayout.horizontal());
-    row.component.setGrowY(1);        // fill the window vertically
 
     const button = try app.button("Click");
     button.component.setAlignY(.center);
@@ -64,7 +64,7 @@ pub fn main(init: std.process.Init) !void {
     try row.add(&button.component);
     try row.add(&slider.component);
     try row.add(&label.component);
-    try frame.window.add(&row.component);
+    try nimbus.BorderLayout.add(&frame.window.container, .center, &row.component);
 
     var state = State{ .label = label, .slider = slider };
     try button.getModel().addActionListener(onClick, @ptrCast(&state));

@@ -5,6 +5,7 @@ const std = @import("std");
 const awt = @import("awt");
 const Component = @import("Component.zig");
 const Container = @import("Container.zig");
+const BorderLayout = @import("BorderLayout.zig");
 
 const Panel = @This();
 
@@ -34,6 +35,8 @@ pub fn init(allocator: std.mem.Allocator) Panel {
     // Override the inner Container's vtable so paint hits Panel.paint
     // (which draws bg + border + children) instead of Container.paint.
     p.container.component.vtable = &vtable;
+    // Default layout: BorderLayout. Users override via `panel.container.setLayout`.
+    p.container.layout = BorderLayout.get();
     return p;
 }
 

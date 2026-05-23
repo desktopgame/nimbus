@@ -129,6 +129,10 @@ panel.container.setLayout(box_layout);
 
 `component.md`「派生型から Component メソッドへのアクセス」と同じ方針。
 
+デフォルト LayoutManager は `BorderLayout`。
+追加設定なしで toolbar / status / sidebar / center のシェルが組める。
+別の layout を使いたい場合は `panel.container.setLayout(BoxLayout.vertical())` などで差し替える。
+
 ## install / uninstall
 Panel 固有の install / uninstall は基本 no-op。
 内部の Container はすでに `create` 時に install 済み。

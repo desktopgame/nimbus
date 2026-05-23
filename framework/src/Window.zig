@@ -7,7 +7,7 @@ const std = @import("std");
 const awt = @import("awt");
 const Component = @import("Component.zig");
 const Container = @import("Container.zig");
-const BoxLayout = @import("BoxLayout.zig");
+const BorderLayout = @import("BorderLayout.zig");
 
 const Window = @This();
 
@@ -88,9 +88,10 @@ pub fn init(
         .dirty_notify  = undefined, // filled in install
     };
     win.container.component.vtable = &vtable;
-    // Default layout: vertical box. Children fill the window width, height
-    // distributed via grow_y. Users can override via window.container.setLayout.
-    win.container.layout = BoxLayout.vertical();
+    // Default layout: BorderLayout. Lets users compose a toolbar / status /
+    // sidebar / center shell with no additional setup. Override via
+    // `window.container.setLayout` if a different layout is desired.
+    win.container.layout = BorderLayout.get();
     return win;
 }
 

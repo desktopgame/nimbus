@@ -144,6 +144,10 @@ Container は `Component` を embed しているので、推移的に「Window �
 * `window.container.component` (= Component) として汎用 walker / paint dispatch に流せる
 * LayoutManager も他の Container と同じ機構で挿せる
 
+デフォルト LayoutManager は `BorderLayout`。
+ツールバー / ステータスバー / サイドバー / center の典型シェルが追加設定なしで組める。
+別の layout を使いたければ `window.container.setLayout(...)` で差し替える。
+
 ## awt.Window との関係（名前衝突注意）
 **`awt.Window` と `framework.Window` は同名で別物**。役割は完全に違う。
 
