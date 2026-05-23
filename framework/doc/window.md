@@ -6,23 +6,37 @@ Container を embed しており、推移的に Component の派生型でもあ�
 ## 型定義
 ```zig
 pub const Window = struct {
-    container:  Container,             // Container embed = Container 派生 = 推移的に Component 派生
-    awt_window: awt.Window,
-    swapchain:  awt.Swapchain,
-    context:    *awt.Graphics.Context, // Application から借用 (programs / rings / atlas を束ねたもの)
-    app:        *Application,          // back-pointer。OS callback が Application 側の synced cache を更新するため
-    dirty_rect: ?Component.Rect,       // null = clean、それ以外 = 再描画必要領域 (絶対 pt)
-    title:      [:0]u8,                // 動的変更可能。allocator.dupeZ で所有 (C ABI 互換)
-    background: awt.Graphics.Color,    // ウィンドウのクリア色 (デフォルトはライトグレー)
-    fb_w:       i32, fb_h: i32,        // framebuffer pixel (HiDPI 用)
-    allocator:  std.mem.Allocator,
+    container:    Container,                   // メインのコンポーネントツリー (Container 派生 = 推移的に Component 派生)
+    awt_window:   awt.Window,
+    swapchain:    awt.Swapchain,
+    context:      *awt.Graphics.Context,       // Application から借用 (programs / rings / atlas を束ねたもの)
+    device:       *awt.Device,
+    app:          *anyopaque,                  // *Application back-pointer
+    event_queue:  *awt.EventQueue,             // Application 所有の queue を借用 (post 経由 dispatch)
+    menu_bar:     ?*Component,                 // 上部固定のメニューバー (Frame.setMenuBar が設定、Window は所有しない)
+    overlays:     std.ArrayList(OverlayEntry), // ポップアップ等のフローティング層 (top = 最新)
+    title:        [:0]u8,                      // 動的変更可能。allocator.dupeZ で所有 (C ABI 互換)
+    background:   awt.Graphics.Color,          // ウィンドウのクリア色 (デフォルトはライトグレー)
+    fb_w:         i32, fb_h: i32,              // framebuffer pixel (HiDPI 用)
+    cursor_x:     f32, cursor_y: f32,
+    paint_dirty:  bool,
+    layout_dirty: bool,
+    mouse_capture: ?*Component,                // ドラッグ中の capture 先 (詳細は「マウスキャプチャ」参照)
+    allocator:    std.mem.Allocator,
+    dirty_notify: Component.DirtyNotify,
 
     pub const vtable = Component.VTable{
         .install      = install,
         .uninstall    = uninstall,
-        .paint        = paintWindow,   // Container.paint と挙動が違う (後述「paint dispatch」)
+        .paint        = paintWindow,           // Container.paint と挙動が違う (後述「paint dispatch」)
         .processEvent = processEvent,
         .destroy      = destroy,
+    };
+
+    pub const OverlayEntry = struct {
+        component:  *Component,                // overlay の root (position は window-local)
+        owner:      *anyopaque,                // owner (Menu / PopupMenu)
+        on_dismiss: *const fn (*anyopaque) void,
     };
 
     // ... メソッド
@@ -98,9 +112,9 @@ v1 では実描画には反映されず（full redraw に倒す）、API とし�
 pub fn redraw(self: *Window) void;
 ```
 
-CommandBuffer を acquire し、ウィンドウ全体を描画して present する。
-`dirty_rect` を null に戻す。
-通常は Application のイベントループが「`dirty_rect != null` の時だけ」呼ぶ。利用者が直接呼ぶ機会は無い。
+CommandBuffer を acquire し、ウィンドウ全体を 3 層（container → menu_bar → overlays）の順で描画して present する（詳細は「3 つの描画 / イベント層」参照）。
+`paint_dirty` を false に戻す。
+通常は Application のイベントループが「`paint_dirty == true` の時だけ」呼ぶ。利用者が直接呼ぶ機会は無い。
 
 ## クローズリクエストの確認
 ```zig
@@ -118,6 +132,60 @@ pub fn dispose(self: *Window) void;
 OS の close フラグを立てる。
 利用者がコードからウィンドウを閉じたいときに呼ぶ。
 実際の解放はやはり Application のループが行う。
+
+## メニューバーの設定
+```zig
+pub fn setMenuBar(self: *Window, bar: ?*Component) void;
+```
+
+ウィンドウ上部に固定する Component（典型的には `&menu_bar.component`）を登録する。
+`null` を渡すと外す。
+Window は **所有しない**（Frame が所有を管理する。`frame.md` 参照）。
+
+セットすると `layout_dirty` / `paint_dirty` が立ち、次回 redraw でコンテナーが下にずれて再配置される。
+bar の `parent` は内部で `null` にセットされ、Window の dirty 伝搬経路に組み込まれる。
+
+通常は利用者が直接呼ばず `Frame.setMenuBar` 経由で呼ばれる。
+
+## オーバーレイの登録
+```zig
+pub fn addOverlay(
+    self: *Window,
+    component: *Component,
+    owner: *anyopaque,
+    on_dismiss: *const fn (*anyopaque) void,
+) !void;
+```
+
+popup / tooltip 等の浮動 UI を Window に登録する。
+`component.parent` は内部で `null` にセットされ、dirty 伝搬は Window に接続される。
+`component.position` は登録時点で**ウィンドウローカル座標**にセットしておくこと（overlay は parent を持たないので絶対座標になる）。
+
+`owner` と `on_dismiss` は dismiss 時のコールバック用。Window が外クリック / ESC で全 overlay を dismiss する際、各 entry の `on_dismiss(owner)` が呼ばれて owner が `open=false` 等の状態を更新できる。
+
+通常は Menu / PopupMenu の `show` メソッドから呼ばれる（`menu.md` / `popup_menu.md` 参照）。
+
+## オーバーレイの解除
+```zig
+pub fn removeOverlay(self: *Window, owner: *anyopaque) void;
+```
+
+指定 `owner` の overlay を登録解除する。
+`on_dismiss` は**呼ばれない**（呼び出し元が owner 自身で、自分で状態管理する前提）。
+該当が無ければ no-op。
+
+`Menu.hide()` / `PopupMenu.hide()` 内で使われる。
+
+## 全オーバーレイの dismiss
+```zig
+pub fn dismissAllOverlays(self: *Window) void;
+```
+
+登録されている overlay をすべて top から解除し、各 `on_dismiss(owner)` を呼ぶ。
+外クリック / ESC キー押下のときに Window 内部で呼ばれる。
+利用者が直接呼ぶ機会は通常ない。
+
+cascade した menu popup（File → Find → submenu）が一発で全部閉じる。
 
 ---
 
@@ -147,6 +215,74 @@ Container は `Component` を embed しているので、推移的に「Window �
 デフォルト LayoutManager は `BorderLayout`。
 ツールバー / ステータスバー / サイドバー / center の典型シェルが追加設定なしで組める。
 別の layout を使いたければ `window.container.setLayout(...)` で差し替える。
+
+## 3 つの描画 / イベント層
+Window は通常コンポーネントツリーの他に、特殊扱いされる 2 つのレイヤを持つ。
+合わせて以下の 3 層が縦に重なる：
+
+```
++------------------+
+| menu_bar         | ← 上部固定、container の外
++------------------+
+| container        | ← メインのコンポーネントツリー (BorderLayout 等で構成)
+| (children...)    |
++------------------+
+                    overlays (popup / tooltip) ← container と menu_bar の上に重なる
+```
+
+### menu_bar 層
+Frame の `setMenuBar(MenuBar)` で取り付ける、ウィンドウ最上部の固定領域。
+通常コンポーネントツリーの**外側**にあり、`Container.add` 経由ではなく Window が直接保持する。
+
+レイアウト：
+* `menu_bar.size.height` は `menu_bar.min_size.height` に固定（高さ = メニューバーの自然高）
+* `menu_bar.size.width` はウィンドウ幅いっぱい
+* `container` の bounds は `(0, bar_h, win_w, win_h - bar_h)` に詰められる（メニューバー分下にずれる）
+
+描画：
+* container を先に描き、menu_bar を後に重ね描き。これにより menu_bar が常に最前面（その下にある container 上端は menu_bar に隠れる）
+
+イベント：
+* `.move` は常に menu_bar に dispatch（カーソルがバー外に出たとき rollover をクリアするため）
+* `.press` / `.release` は menu_bar 内側のときだけ dispatch
+* menu_bar が consume すれば container へは流れない
+
+詳細な API は `menu_bar.md` / `frame.md` 参照。
+
+### オーバーレイ層
+ポップアップメニュー / ツールチップ等の浮動 UI。
+`Window.addOverlay(component, owner, on_dismiss)` で登録、`removeOverlay(owner)` で外す。
+複数の overlay を同時に登録でき、登録順に下から積み上がる（top = 最新 = サブメニュー）。
+
+特徴：
+* overlay の root component の `parent` は `null`（root として扱われる）
+* `position` は**ウィンドウローカル座標**（登録時に owner が指定）
+* `Component.absoluteOriginInWindow` は root の position も足すので、overlay 内の子の hit-test が正しく動く（`component.md` 参照）
+* 描画は container / menu_bar の**後**で、登録順（古→新）で重ねる
+* イベントは登録順の**逆**（新→古）で hit-test、最初に bounds 内に当たった overlay へ dispatch
+
+dismiss 規則：
+* overlay の bounds 外で `.press` → `dismissAllOverlays` 発火（cascade した全 popup が閉じる）
+* `.move` / scroll が overlay 外でも menu_bar の上ならそちらへ dispatch（ホバー切替を可能にする）
+* ESC キー → 全 overlay dismiss
+* overlay 内の MenuItem が action を発火 → owner（Menu / PopupMenu）の listener が `dismissAllOverlays` を呼ぶ
+
+詳細は `menu.md` / `popup_menu.md` 参照。
+
+### 3 層の dispatch 順（`dispatchInput`）
+
+```
+mouse_capture (drag continuation, 最優先)
+  ↓ なし
+overlays (top → bottom で hit-test)
+  ↓ 当たらなかったら
+menu_bar (内側のみ; .move は常に届く)
+  ↓ consume されなかったら
+container
+```
+
+overlay が open 中は menu_bar と container への .move ルートも制限される（外クリックは dismiss、ホバーは menu_bar 切替のみ）。
+詳細実装は `Window.dispatchInput` 参照。
 
 ## awt.Window との関係（名前衝突注意）
 **`awt.Window` と `framework.Window` は同名で別物**。役割は完全に違う。
@@ -179,17 +315,15 @@ Application が `WindowEntry` で per-window に保持し、毎イベントル�
 * Window struct は sync 用フィールドで汚れない
 
 ## paint dispatch
-Window の paint は他の Container と挙動が違うため、**専用 `vtable.paint`（`paintWindow`）** を持つ。
+描画の主たる経路は `Window.redraw`。
+Application のループが「`paint_dirty == true` の Window」に対して `redraw` を呼び、内部で root 用の `Graphics` を作って 3 層を順に描く（container → menu_bar → overlays。「3 つの描画 / イベント層」参照）。
 
-通常 `Component.paintAt` は親から渡された `g` に対して `g.translate(position)` してから `vtable.paint(self, g)` を呼ぶ。
-Window では `position` が OS 絶対座標なので、これをそのまま translate に使うと描画が壊れる。
+Window の `vtable.paint`（`paintWindow`）は **fallback** として残してある：
+* Window を通常の `Component` として扱った場合（例: 別の Container に embed したい等の例外用途）に呼ばれる
+* `container.children` を再帰描画するだけ。menu_bar / overlays は描かない
+* Window struct の `position` は OS 絶対座標なので、`paintAt` の `g.clip(self.getBounds())` には**通常用途では合わない**。`paintWindow` 経由のレンダリングは subwindow 的な実験用途と割り切る
 
-対処：Window は `paintAt` 経由で描画しない。
-Application のループが `window.redraw()` を直接呼び、そこで root 用の `Graphics` を作って Container の `paint` に流す。
-`position` の translate はスキップする。
-
-`paintWindow` vtable の中身は「children を再帰描画」だけ（実質 `Container.paint` と同じ）。
-`paint` を別名にしておくのは「Window は paintAt 経由で呼ばれない」という意図表明と、将来 Window 固有の描画（背景色 / 装飾）を入れる時の hook を残しておくため。
+通常用途では `paintAt` 経由は使わず、`redraw` を直接呼ぶ。
 
 ## repaint と dirty 駆動
 `Component.repaint()` / `repaintRect(r)` が呼ばれると、parent を遡って Window まで上がり、`window.dirty_rect` に union で蓄積される。
