@@ -96,7 +96,8 @@ CLAUDE.md「文字コード」「書記素クラスタ」の方針に従って�
 
 * 単一行のみ (`TextArea` は別ウィジェット)
 * 左から右に書く言語のみ (RTL は未対応)
-* codepoint 単位での挿入・削除・キャレット移動 (書記素クラスタは未対応)
+* codepoint 単位での挿入・削除・キャレット移動 (書記素クラスタ単位は将来課題。詳細は「機能要望」)
+* color emoji の表示は v1 では対象外 (フォントと描画パスの両方が要拡張、 詳細は「機能要望」)
 * IME composition の inline 表示は **Windows のみ実装済み**。macOS / Linux はバックエンド未対応 (詳細は「IME 連携」)
 * 標準編集ショートカット: `Backspace` / `Delete` / `Home` / `End` / 矢印 / `Shift+矢印` / `Ctrl+A,C,X,V`
 
@@ -200,8 +201,22 @@ IME による composition (preedit、変換中文字列) を inline で表示す
 * macOS / Linux 用 IME バックエンドの実装 (現状は Windows のみ。`awt-c/src/ime_stub.c` が no-op)
 * IME composition attribute の多段化 (現状は target 1 区間のみ。Windows IMM の CompAttr の TARGET_NOTCONVERTED / CONVERTED / INPUT 等を色分けして見せたい場合に必要)
 * `Tab` / `Shift+Tab` traversal の標準対応
-* 書記素クラスタ単位での編集 (`grapheme` クレートに相当する Zig 実装が要る)
 * 部分再描画 (キャレット点滅で全画面再描画になるのを避ける)
 * `submit` イベント (`Enter` 押下時)
 * パスワード入力モード (グリフを `•` で置換)
 * スクロール / 横方向クリッピング (現状はテキストが widget 幅を超えても切れずに描画される)
+
+### 棚上げ中 (書記素クラスタ + 絵文字)
+書記素クラスタ単位の編集と color emoji 対応は、 v1 スコープから外して将来課題に。
+背景と再開条件のメモ:
+
+* **書記素クラスタ単位の編集** — ZWJ シーケンス / 結合文字 / 肌色 modifier 等で「複数 codepoint = 1 表示単位」になるものを正しく扱いたい。Zig 標準には UAX #29 実装が無く、 既存ライブラリ [ziglyph](https://github.com/jecolon/ziglyph) も 1〜2 年メンテが止まっている。 再開条件:
+  - 活発な代替 Unicode ライブラリが出る
+  - もしくは UAX #29 を自前実装する判断をする (それなりに大きい)
+* **絵文字 (color emoji)** — 単体では出ない。 必要な作業が 3 軸あり、 どれか欠けても完成しない:
+  1. 書記素クラスタ単位の編集 (上記)
+  2. emoji フォントの追加 (例: Noto Color Emoji。 ただしフォントサイズが数 MB〜数十 MB 規模)
+  3. カラー描画パス — 現状の `GlyphAtlas` は R8 (alpha mask only)、 `text_program` も grayscale 前提。 COLR/CPAL (v0/v1) / sbix / CBDT/CBLC のいずれかをサポートし、 RGBA8 atlas + RGBA tinted text program に拡張する必要がある
+
+ユーザー視点では 「絵文字を入れると `□` が出る」 だが、 これは NotoSansJP に glyph が無いだけではなく、 描画パスとフォントの 2 重制約がかかっている (どちらか片方を直しても出ない)。
+今すぐ取り組まない判断は **2026-05-23**。
