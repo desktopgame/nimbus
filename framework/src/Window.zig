@@ -389,6 +389,7 @@ fn install(self: *Component) !void {
     win.awt_window.setScrollCallback(onScroll, @ptrCast(win));
     win.awt_window.setKeyCallback(onKey, @ptrCast(win));
     win.awt_window.setCharCallback(onChar, @ptrCast(win));
+    win.awt_window.setCompositionCallback(onComposition, @ptrCast(win));
 }
 
 fn focusControllerCallback(user_data: *anyopaque, c: ?*Component) void {
@@ -714,4 +715,30 @@ fn onChar(
     };
     win.event_queue.postEvent(ev, @ptrCast(win), dispatchInputThunk) catch |err|
         log.warn("window", "input dropped (char): {s}", .{@errorName(err)});
+}
+
+/// Composition events carry a *borrowed* UTF-8 string owned by awt-c
+/// that is only valid for the duration of this callback. We therefore
+/// dispatch synchronously to `focus_owner` instead of going through the
+/// event queue (which would defer dispatch past the borrow window).
+fn onComposition(
+    _: ?*awt.c.struct_nmWindow,
+    ev_c: ?*const awt.c.nmCompositionEvent,
+    user_data: ?*anyopaque,
+) callconv(.c) void {
+    const win: *Window = @ptrCast(@alignCast(user_data.?));
+    const c_ev = ev_c orelse return;
+    const text: []const u8 = if (c_ev.text != null and c_ev.text_len > 0)
+        c_ev.text[0..c_ev.text_len]
+    else
+        &[_]u8{};
+
+    var ev = awt.Event{ .payload = .{ .composition = .{
+        .text = text,
+        .target_start = c_ev.target_start,
+        .target_end = c_ev.target_end,
+    } } };
+    if (win.focus_owner) |fo| {
+        fo.vtable.processEvent(fo, &ev);
+    }
 }

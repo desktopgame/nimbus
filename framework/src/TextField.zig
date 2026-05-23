@@ -21,9 +21,13 @@ const DEFAULT_COLUMNS: f32 = 20;
 const BLINK_PERIOD_MS: u32 = 500;
 const BORDER_WIDTH: f32 = 1;
 
-const SELECTION_BG    = awt.Graphics.Color.rgba(0.30, 0.55, 0.95, 0.40);
-const BORDER_COLOR    = awt.Graphics.Color.rgb(0.55, 0.55, 0.55);
-const FOCUS_BORDER    = awt.Graphics.Color.rgb(0.30, 0.55, 0.95);
+const SELECTION_BG       = awt.Graphics.Color.rgba(0.30, 0.55, 0.95, 0.40);
+const BORDER_COLOR       = awt.Graphics.Color.rgb(0.55, 0.55, 0.55);
+const FOCUS_BORDER       = awt.Graphics.Color.rgb(0.30, 0.55, 0.95);
+/// Thin underline under the whole preedit (= "I am still composing").
+const PREEDIT_UNDERLINE  = awt.Graphics.Color.rgb(0.40, 0.40, 0.40);
+/// Thick underline under the target clause (= "this is what I'm converting").
+const PREEDIT_TARGET     = awt.Graphics.Color.rgb(0.20, 0.20, 0.20);
 
 component:      Component,
 app:            *Application,
@@ -40,6 +44,12 @@ caret_color:    awt.Graphics.Color,
 caret_visible:  bool,
 blink_timer_id: ?Application.TimerId,
 has_focus:      bool,
+/// IME preedit (composition) state. Empty when not composing. The bytes
+/// are an owned copy of what the IME most recently reported (the C-side
+/// pointer is only valid for one callback, so we copy on receipt).
+preedit_text:         std.ArrayList(u8),
+preedit_target_start: usize,
+preedit_target_end:   usize,
 allocator:      std.mem.Allocator,
 
 pub const vtable = Component.VTable{
@@ -77,6 +87,9 @@ pub fn create(
         .caret_visible  = true,
         .blink_timer_id = null,
         .has_focus      = false,
+        .preedit_text         = .empty,
+        .preedit_target_start = 0,
+        .preedit_target_end   = 0,
         .allocator      = allocator,
     };
     tf.applyMetrics();
@@ -220,8 +233,41 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     g.setColor(tf.color);
     g.drawString(tf.text.items, PADDING_X, PADDING_Y);
 
-    // Caret (only when focused and currently visible during blink).
-    if (tf.has_focus and tf.caret_visible) {
+    // IME preedit (composition string). Rendered inline at the caret
+    // position so it visually flows with surrounding text. Underlines
+    // signal "this is provisional": a thin one under the whole preedit,
+    // a thicker one under the target clause being converted.
+    if (tf.has_focus and tf.preedit_text.items.len > 0) {
+        const caret_x = tf.xAtByte(tf.caret_byte);
+
+        g.setFont(tf.font);
+        g.setColor(tf.color);
+        g.drawString(tf.preedit_text.items, caret_x, PADDING_Y);
+
+        const pre_w = tf.measureUtf8(tf.preedit_text.items);
+        const underline_y = sz.height - PADDING_Y;
+        g.setColor(PREEDIT_UNDERLINE);
+        g.fillRect(.{ .x = caret_x, .y = underline_y - 1, .width = pre_w, .height = 1 });
+
+        if (tf.preedit_target_end > tf.preedit_target_start and
+            tf.preedit_target_end <= tf.preedit_text.items.len)
+        {
+            const t0 = tf.measureUtf8(tf.preedit_text.items[0..tf.preedit_target_start]);
+            const t1 = tf.measureUtf8(tf.preedit_text.items[0..tf.preedit_target_end]);
+            g.setColor(PREEDIT_TARGET);
+            g.fillRect(.{
+                .x = caret_x + t0,
+                .y = underline_y - 2,
+                .width = t1 - t0,
+                .height = 2,
+            });
+        }
+    }
+
+    // Caret. Hide while composing — the OS IME / candidate window
+    // owns the visual cursor inside the preedit, and drawing our own
+    // would just be noise.
+    if (tf.has_focus and tf.caret_visible and tf.preedit_text.items.len == 0) {
         const cx = tf.xAtByte(tf.caret_byte);
         g.setColor(tf.caret_color);
         g.fillRect(.{
@@ -245,12 +291,16 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
             // on focus gain (no awkward off→on flicker).
             tf.caret_visible = true;
             tf.component.repaint();
+            if (f.gained) tf.pushCaretToIme();
         },
-        .composition => {
-            // IME preedit. Handling (inline display, target-clause emphasis,
-            // pushing caret-pos to OS via setCompositionCursorPos) is the next
-            // milestone; for now we drop silently. Committed characters still
-            // reach us via the regular .char path.
+        .composition => |comp| {
+            tf.preedit_text.clearRetainingCapacity();
+            if (comp.text.len > 0) {
+                tf.preedit_text.appendSlice(tf.allocator, comp.text) catch {};
+            }
+            tf.preedit_target_start = comp.target_start;
+            tf.preedit_target_end = comp.target_end;
+            tf.component.repaint();
         },
     }
 }
@@ -259,6 +309,7 @@ fn destroy(self: *Component, allocator: std.mem.Allocator) void {
     const tf: *TextField = @fieldParentPtr("component", self);
     self.deinit();
     tf.text.deinit(allocator);
+    tf.preedit_text.deinit(allocator);
     allocator.destroy(tf);
 }
 
@@ -280,6 +331,7 @@ fn handleMouse(tf: *TextField, ev: *Component.Event, m: awt.Event.MouseEvent) vo
                 tf.component.requestFocus();
                 tf.caret_visible = true;
                 tf.component.repaint();
+                tf.pushCaretToIme();
                 ev.consume();
             }
         },
@@ -393,7 +445,26 @@ fn handleChar(tf: *TextField, ev: *Component.Event, ch: awt.Event.CharEvent) voi
 fn afterEdit(tf: *TextField, ev: *Component.Event) void {
     tf.caret_visible = true;
     tf.component.repaint();
+    tf.pushCaretToIme();
     ev.consume();
+}
+
+/// Tell the OS IME where the caret currently sits (in OS screen-relative
+/// pixels via the awt.Window helper, which expects window-local). The IME
+/// uses this to anchor its candidate window beneath the caret. No-op if
+/// the widget is not attached to a Window.
+fn pushCaretToIme(self: *TextField) void {
+    const w = self.parentWindow() orelse return;
+    const origin = self.component.absoluteOriginInWindow();
+    const caret_x = origin.x + self.xAtByte(self.caret_byte);
+    const caret_y = origin.y + PADDING_Y;
+    self.font.face.setPixelSize(self.font.pixel_size);
+    const line_h = self.font.face.metrics().line_height;
+    w.awt_window.setCompositionCursorPos(
+        @intFromFloat(caret_x),
+        @intFromFloat(caret_y),
+        @intFromFloat(line_h),
+    );
 }
 
 // ── selection / edit helpers ─────────────────────────────────────────────
@@ -483,6 +554,29 @@ fn hitTestByteAt(self: TextField, x_local: f32) usize {
         i += byte_len;
     }
     return self.text.items.len;
+}
+
+/// Sum of advance widths for the UTF-8 bytes in `s`. Used to measure
+/// substrings (preedit, target clause) without the PADDING_X offset that
+/// `xAtByte` adds.
+fn measureUtf8(self: TextField, s: []const u8) f32 {
+    self.font.face.setPixelSize(self.font.pixel_size);
+    var x: f32 = 0;
+    var i: usize = 0;
+    while (i < s.len) {
+        const byte_len = std.unicode.utf8ByteSequenceLength(s[i]) catch {
+            i += 1;
+            continue;
+        };
+        if (i + byte_len > s.len) break;
+        const cp = std.unicode.utf8Decode(s[i .. i + byte_len]) catch {
+            i += byte_len;
+            continue;
+        };
+        x += self.font.face.glyphAdvance(cp);
+        i += byte_len;
+    }
+    return x;
 }
 
 /// Return the widget-local x pixel position of the left edge of the

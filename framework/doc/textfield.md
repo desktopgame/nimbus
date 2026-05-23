@@ -1,6 +1,6 @@
 #  textfield
 単一行のテキスト入力ウィジェット。
-キャレットの点滅、選択範囲のハイライト、クリップボード連携を内包する。
+キャレットの点滅、選択範囲のハイライト、クリップボード連携、IME composition (preedit) 表示を内包する。
 
 ## 型定義
 ```zig
@@ -17,6 +17,9 @@ pub const TextField = struct {
     caret_visible:  bool,                    // タイマーが toggle する
     blink_timer_id: ?Application.TimerId,    // install で setInterval、uninstall で clearTimer
     has_focus:      bool,                    // focus_owner が自分なら true
+    preedit_text:         std.ArrayList(u8), // IME 変換中文字列 (UTF-8 コピー)
+    preedit_target_start: usize,             // preedit_text 内の変換中クローズ開始 byte offset
+    preedit_target_end:   usize,             // 同上、終了 byte offset
     allocator:      std.mem.Allocator,
 };
 ```
@@ -94,7 +97,7 @@ CLAUDE.md「文字コード」「書記素クラスタ」の方針に従って�
 * 単一行のみ (`TextArea` は別ウィジェット)
 * 左から右に書く言語のみ (RTL は未対応)
 * codepoint 単位での挿入・削除・キャレット移動 (書記素クラスタは未対応)
-* IME 最小: composition string の inline 表示は機能要望 (ASCII 入力は動く)
+* IME composition の inline 表示は **Windows のみ実装済み**。macOS / Linux はバックエンド未対応 (詳細は「IME 連携」)
 * 標準編集ショートカット: `Backspace` / `Delete` / `Home` / `End` / 矢印 / `Shift+矢印` / `Ctrl+A,C,X,V`
 
 `Enter` は単一行なので無視する (将来 `submit` イベントを発火する余地は残す)。
@@ -159,17 +162,43 @@ orphan 状態 (`window` に attach されていない) では no-op。
 フォーム幅に伸ばしたい場合は `field.component.setGrowX(1)` を呼ぶ。
 「ウィジェットの自然サイズ」と「レイアウト戦略 (どれを伸ばすか)」を分離する設計で、利用者が用途別にコントロールできる。
 
+## IME 連携
+IME による composition (preedit、変換中文字列) を inline で表示する。
+全文確定はせず、ユーザーが Enter / Space で確定するまでフィールド本体の `text` バッファには入らない。
+確定文字列は通常の `CharEvent` 経路で flow する (重複処理しない)。
+
+仕組み:
+* awt-c が `nmCompositionCallback` でフレームワークに preedit を渡す
+* `framework.Window.onComposition` が `focus_owner` に同期 dispatch (preedit の文字列は OS が所有しコールバック寿命のみ valid のため、queue 経由せずその場で配送)
+* TextField が `processEvent .composition` を受けたら、`preedit_text` に UTF-8 でコピー + `target_start` / `target_end` を保持
+* `paint` 時にキャレット位置に preedit を inline 描画 + 全体に細い下線 + target 区間に太い下線
+* preedit 中はキャレット (`|`) を描画しない (IME 側がキャレット表示を担う)
+* caret が動くたび (キー編集 / クリック / フォーカス獲得時) に `Window.setCompositionCursorPos` で OS に位置を push → 候補ウィンドウがキャレット直下に出る
+
+実装状況:
+| OS | 状態 |
+|---|---|
+| Windows | IMM32 (`WM_IME_COMPOSITION` + `ImmGetCompositionStringW`) で動作 |
+| macOS | バックエンド未実装 (no-op stub)。`NSTextInputClient` ベースの実装は将来 |
+| Linux | バックエンド未実装 (no-op stub)。Wayland text-input v3 ベースの実装は将来 |
+
 ## 描画順序
 1. 背景塗り (`background`)
-2. 選択範囲のハイライト (`SELECTION_BG`、半透明青)
-3. テキスト (`drawString`)
-4. キャレット (`has_focus && caret_visible` のときだけ 1px 縦線)
+2. 枠線 (`BORDER_COLOR` / `FOCUS_BORDER`、focus 状態で色が変わる)
+3. 選択範囲のハイライト (`SELECTION_BG`、半透明青)
+4. テキスト (`drawString`)
+5. preedit (composition、`has_focus && preedit_text 非空` のとき)
+   - 5a. preedit テキストをキャレット位置に inline 描画
+   - 5b. 全体に細い下線 (`PREEDIT_UNDERLINE`)
+   - 5c. target 区間に太い下線 (`PREEDIT_TARGET`)
+6. キャレット (`has_focus && caret_visible && preedit_text 空` のときだけ 1px 縦線)
 
 ## 機能要望
 * `ChangeListener` (`addChangeListener` / `removeChangeListener`) — 内容変更時の通知。現状は呼び出し側が tick タイマー等で polling
 * `setColumns(n: u32)` — `'M'` ベースの幅算出を桁数で外から指定
 * `setPlaceholder(text)` — 空のときに薄く表示するヒント
-* IME composition string の inline 表示
+* macOS / Linux 用 IME バックエンドの実装 (現状は Windows のみ。`awt-c/src/ime_stub.c` が no-op)
+* IME composition attribute の多段化 (現状は target 1 区間のみ。Windows IMM の CompAttr の TARGET_NOTCONVERTED / CONVERTED / INPUT 等を色分けして見せたい場合に必要)
 * `Tab` / `Shift+Tab` traversal の標準対応
 * 書記素クラスタ単位での編集 (`grapheme` クレートに相当する Zig 実装が要る)
 * 部分再描画 (キャレット点滅で全画面再描画になるのを避ける)
