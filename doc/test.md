@@ -6,9 +6,9 @@ nimbus のテストの種類と典型的な書き方についてのドキュメ�
 | 種別 | 配置 | 用途 |
 |---|---|---|
 | 埋め込み単体テスト | `awt/src/**/*.zig` / `framework/src/**/*.zig` 内の `test "..."` ブロック | モジュール内のロジック単体検証 |
-| スナップショットテスト | `awt/tests/snapshot_test.zig` と `awt/tests/scenes.zig` | レンダリングの結果画像をゴールデン画像と比較する回帰テスト |
-| framework レイアウトテスト（予定） | `framework/tests/layout_test.zig` （未実装） | レイアウトマネージャの数値検証 |
-| framework スナップショットテスト（予定） | `awt/tests/scenes.zig` に framework シーンを追加 | ウィジェットの実描画結果の回帰テスト |
+| awt スナップショットテスト | `awt/tests/snapshot_test.zig` + `awt/tests/scenes.zig` + `awt/tests/fixtures/` | awt 直叩きでの描画結果をゴールデン画像と比較 |
+| framework レイアウトテスト | `framework/tests/box_layout_test.zig` / `framework/tests/border_layout_test.zig` | レイアウトマネージャの bounds を数値アサート（GPU 不要） |
+| framework スナップショットテスト | `framework/tests/snapshot_test.zig` + `framework/tests/scenes.zig` + `framework/tests/fixtures/` | ウィジェットツリーのレイアウト + 描画結果をゴールデン画像と比較 |
 
 ## 埋め込み単体テスト
 Zig 標準の `test "..."` ブロックをソースファイル内に直接書く。`zig build test` がモジュールの root から到達できる全テストを実行する。
@@ -27,20 +27,23 @@ test "backend version reports GLFW 3.4" {
 
 ## スナップショットテスト
 レンダリング結果は数値で表現できないため、ゴールデン画像との比較で回帰を検出する。
+awt 側と framework 側で**同じ機構**を使い、対象が「awt の primitive 直叩き」か「framework のウィジェットツリー」かだけが違う。
 
 ### しくみ
-1. `awt/tests/scenes.zig` で `Scene` を一つ定義する。シーンは決定的な描画関数と画像サイズを持つ。
-2. `awt/tests/snapshot_test.zig` のランナーがオフスクリーンレンダーターゲットを作って描画する。
-3. 結果を RGBA8 として CPU に読み戻し、`awt/tests/fixtures/<scene_name>.png` と比較する。
+1. `scenes.zig` で `Scene` を一つ定義する。シーンは決定的な描画関数と画像サイズを持つ。
+2. `snapshot_test.zig` のランナーがオフスクリーンレンダーターゲットを作って描画する。
+3. 結果を RGBA8 として CPU に読み戻し、`fixtures/<scene_name>.png` と比較する。
 4. 一致したら成功、異なれば `tmp/snapshot_failures/<scene_name>_{actual,diff}.png` を書き出して失敗する。
 
-### シーンを追加する
-`awt/tests/scenes.zig` に `Scene` を追加し、`all` に登録する。
+### awt 側 (`awt/tests/`)
+awt の primitive (`fillRect` / `drawString` / `fillCircle` 等) を直接呼んでシーンを組み立てる。
+framework は経由しない。描画バックエンド (DX12 / Metal) の出力をそのまま検証するイメージ。
 
 ```zig
-fn paintMyScene(g: *awt.Graphics) void {
-    g.setColor(awt.Graphics.Color.rgb(1, 0, 0));
-    g.fillRect(.{ .x = 10, .y = 10, .width = 80, .height = 40 });
+// awt/tests/scenes.zig
+fn paintMyScene(ctx: PaintContext) anyerror!void {
+    ctx.g.setColor(awt.Graphics.Color.rgb(1, 0, 0));
+    ctx.g.fillRect(.{ .x = 10, .y = 10, .width = 80, .height = 40 });
 }
 
 pub const my_scene = Scene{
@@ -49,28 +52,50 @@ pub const my_scene = Scene{
     .height = 100,
     .paint = paintMyScene,
 };
-
-pub const all = [_]Scene{
-    basic_shapes,
-    my_scene,           // ← 追加
-};
 ```
 
-`snapshot_test.zig` の `test "snapshot: ..."` ブロックを 1 つ追加する。
-
 ```zig
+// awt/tests/snapshot_test.zig
 test "snapshot: my_scene" {
     try runScene(scenes.my_scene);
 }
 ```
 
-これだけで、人間が目視確認しつつ視覚的な回帰検出のループに乗る。
 追加したシーンは `examples/snapshot` でも `zig build run-snapshot -- tmp/out.png my_scene` のように単体で表示できる。
+
+### framework 側 (`framework/tests/`)
+framework の `Container` / `Panel` / `Button` / `Label` / `TextField` などを組み合わせてシーンを組む。
+レイアウトを走らせてから描画した結果が fixture と比較される。
+
+レイアウトテストと対応するシーンを置いておくと、数値アサートが落ちたときに「画像でどう崩れているか」がそのまま分かる（`box_horizontal_pack.png` ↔ `box_layout_test::"horizontal: 3 fixed-size children pack from the left"` のような対応関係）。
+
+```zig
+// framework/tests/scenes.zig
+fn paintMyLayout(ctx: PaintContext) anyerror!void {
+    var setup = try Setup.init(ctx);
+    defer setup.deinit();
+    setup.container.setLayout(nimbus.BoxLayout.horizontal());
+
+    const red = try coloredLeaf(ctx.allocator, 50, 30, awt.Graphics.Color.rgb(0.9, 0.3, 0.3));
+    try setup.container.add(&red.container.component);
+
+    setup.paint();
+}
+
+pub const my_layout = Scene{
+    .name   = "my_layout",
+    .width  = 400,
+    .height = 80,
+    .paint  = paintMyLayout,
+};
+```
+
+`scenes.zig` 内に `coloredLeaf` / `Setup` のような小さなヘルパーが既にあるので、新規シーンの実装は数行で済む。
 
 ### fixture のライフサイクル
 * **初回実行**: fixture が存在しないため、ランナーは現在の描画結果をそのまま fixture として書き込み、テストはパスする。人間が目視確認してから commit する。
 * **二回目以降**: fixture と比較する。±1 LSB（チャンネルあたり ±1）の差は許容する。GPU ドライバごとに丸めが異なるため。
-* **意図的な変更時**: シーンや描画ロジックを変えた直後はすべての fixture が古いので失敗する。`zig build update-snapshots` で再生成し、`git diff awt/tests/fixtures/` で意図通りの変化か確認してから commit する。
+* **意図的な変更時**: シーンや描画ロジックを変えた直後はすべての fixture が古いので失敗する。`zig build update-snapshots` で awt / framework 両方の fixture を一括再生成し、`git diff awt/tests/fixtures/ framework/tests/fixtures/` で意図通りの変化か確認してから commit する。
 
 ### 失敗時の挙動
 `tmp/snapshot_failures/<scene_name>_actual.png` と `tmp/snapshot_failures/<scene_name>_diff.png` の 2 枚が書き出される。
@@ -89,64 +114,57 @@ test "snapshot: my_scene" {
 
 許容差を超えた箇所が 1 つでもあれば失敗。
 
-## framework レイアウトテスト（予定）
-`Frame` / `Application` / レイアウトマネージャが入った後に書く予定。
-レイアウトはコンテナのサイズと子の preferred size から子の bounds を計算する純粋な関数のはずなので、GPU 不要の数値アサーションでテストできる。
+## framework レイアウトテスト
+レイアウトは「コンテナのサイズと子の min / max / grow から子の bounds を計算する純粋な関数」なので、GPU 不要の数値アサーションで検証できる。
+レイアウトマネージャ 1 種類につき 1 ファイル（`box_layout_test.zig` / `border_layout_test.zig` ...）を置く方針。
+
+### 書き方
+GPU や font を要求しない `Panel` を固定サイズの leaf として使う（`Panel.create` → `setMinSize` / `setMaxSize` で固定）。これにより `awt.init` も font ロードも不要で、テストが軽くて速い。
 
 ```zig
-// framework/tests/layout_test.zig (予定)
-test "BoxLayout vertical: 等分割" {
-    var container = Container.init(allocator);
-    defer container.deinit();
-    container.setLayout(BoxLayout.vertical());
+// framework/tests/box_layout_test.zig
+fn leaf(allocator: std.mem.Allocator, w: f32, h: f32) !*Panel {
+    const p = try Panel.create(allocator);
+    p.container.component.setMinSize(.{ .width = w, .height = h });
+    p.container.component.setMaxSize(.{ .width = w, .height = h });
+    return p;
+}
 
-    // 子を 3 つ追加
-    const a = try Label.create(allocator, "a", font, color);
-    const b = try Label.create(allocator, "b", font, color);
-    const c = try Label.create(allocator, "c", font, color);
-    try container.add(&a.component);
-    try container.add(&b.component);
-    try container.add(&c.component);
+fn expectBounds(c: *const Component, x: f32, y: f32, w: f32, h: f32) !void {
+    const b = c.getBounds();
+    try std.testing.expectApproxEqAbs(x, b.x, 0.001);
+    try std.testing.expectApproxEqAbs(y, b.y, 0.001);
+    try std.testing.expectApproxEqAbs(w, b.width, 0.001);
+    try std.testing.expectApproxEqAbs(h, b.height, 0.001);
+}
 
-    container.component.setBounds(.{ .x = 0, .y = 0, .width = 100, .height = 60 });
-    container.doLayout();
+test "horizontal: 3 fixed-size children pack from the left" {
+    const a = std.testing.allocator;
+    const root = try Container.create(a);
+    defer root.component.vtable.destroy(&root.component, a);
+    root.setLayout(BoxLayout.horizontal());
 
-    try expectEqual(Rect{ .x = 0, .y = 0,  .width = 100, .height = 20 }, a.component.getBounds());
-    try expectEqual(Rect{ .x = 0, .y = 20, .width = 100, .height = 20 }, b.component.getBounds());
-    try expectEqual(Rect{ .x = 0, .y = 40, .width = 100, .height = 20 }, c.component.getBounds());
+    const l1 = try leaf(a, 50, 30);
+    const l2 = try leaf(a, 80, 40);
+    try root.add(&l1.container.component);
+    try root.add(&l2.container.component);
+
+    root.setBounds(.{ .x = 0, .y = 0, .width = 400, .height = 100 });
+
+    try expectBounds(&l1.container.component,  0, 0, 50, 30);
+    try expectBounds(&l2.container.component, 50, 0, 80, 40);
 }
 ```
 
 レイアウトのバグはほぼこのレベルの数値アサーションで捕まる。失敗メッセージから「どの子のどの座標が想定とどう違うか」が瞬時に分かるため、スナップショットより診断しやすい。
 
-## framework スナップショットテスト（予定）
-レイアウト + 描画 + テキスト計測 + クリッピングが絡む結合バグや、ルックアンドフィールに依存する見た目の回帰は、数値アサーションでは捉えにくい。これは既存の `awt/tests/scenes.zig` に framework シーンを追加する形で対応する予定。
-
-たとえばシーン関数を framework 経由の形に拡張する。
-
-```zig
-// awt/tests/scenes.zig (将来の拡張案)
-pub const Scene = union(enum) {
-    raw: struct {
-        name: []const u8,
-        width: i32,
-        height: i32,
-        paint: *const fn (g: *awt.Graphics) void,
-    },
-    framework: struct {
-        name: []const u8,
-        width: i32,
-        height: i32,
-        build: *const fn (allocator) anyerror!*Container,
-    },
-};
-```
-
-ランナーは `framework` シーンの場合、`build` で得た `Container` の bounds を画像サイズに設定してレイアウトを走らせ、そのまま `Component.paintAt(g)` でオフスクリーンに描画する。残りの fixture 比較ロジックは raw シーンと完全に共通でよい。
-
-利点は 2 つ。スナップショットテスト基盤がそのまま使いまわせること、そして framework 経由の見た目が `examples/snapshot` で確認できるようになること。
+### スナップショットとの対応
+意図的に、数値テストと **同じレイアウト** を framework スナップショットシーンとしても置いている。
+たとえば上の "horizontal: 3 fixed-size children pack from the left" は `framework/tests/fixtures/box_horizontal_pack.png` を見れば一目でわかる。
+数値だけでは「正しい配置とは何か」が分かりにくいので、レビュー時 / 設計時の補助として画像を併用する形。
 
 ## 機能要望
 * fuzz テストの導入（テキスト周りなど）
 * CI でのスナップショットテスト fixture diff の自動表示
-* レイアウトのプロパティテスト（preferred size を制約変化させた時の不変条件チェック）
+* レイアウトのプロパティテスト（min / max / grow を変化させた時の不変条件チェック）
+* インタラクションテスト基盤 — 合成イベント (`postEvent`) → 状態 / 描画 のアサート（TextField のキャレット位置遷移、Slider のドラッグ等を回帰テスト化したい）
