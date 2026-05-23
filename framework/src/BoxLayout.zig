@@ -64,6 +64,15 @@ fn growMain(o: Orientation, c: *const Component) f32 {
     };
 }
 
+/// Cross-axis alignment for `c` in a box of orientation `o`.
+/// In a horizontal box the cross axis is y → read align_y; vertical → align_x.
+fn crossAlign(o: Orientation, c: *const Component) Component.Alignment {
+    return switch (o) {
+        .horizontal => c.align_y,
+        .vertical   => c.align_x,
+    };
+}
+
 fn doLayout(self: *LayoutManager, container: *Container) void {
     const this: *BoxLayout = @fieldParentPtr("base", self);
     const ori = this.orientation;
@@ -97,16 +106,26 @@ fn doLayout(self: *LayoutManager, container: *Container) void {
         }
         if (main > child_max) main = child_max;
 
-        // Cross axis: stretch to container, clamped by child min/max.
+        // Cross axis sizing + alignment.
         const child_cmin = crossOf(ori, child.min_size);
         const child_cmax = crossOf(ori, child.max_size);
-        var cross: f32 = cross_size;
+        const align_v = crossAlign(ori, child);
+        var cross: f32 = switch (align_v) {
+            .stretch => cross_size,
+            else     => child_cmin,    // start / center / end use min size
+        };
         if (cross > child_cmax) cross = child_cmax;
         if (cross < child_cmin) cross = child_cmin;
 
+        const cross_pos: f32 = switch (align_v) {
+            .stretch, .start => 0,
+            .center          => (cross_size - cross) / 2,
+            .end             => cross_size - cross,
+        };
+
         const bounds: Component.Rect = switch (ori) {
-            .horizontal => .{ .x = pos, .y = 0, .width = main, .height = cross },
-            .vertical   => .{ .x = 0, .y = pos, .width = cross, .height = main },
+            .horizontal => .{ .x = pos, .y = cross_pos, .width = main, .height = cross },
+            .vertical   => .{ .x = cross_pos, .y = pos, .width = cross, .height = main },
         };
 
         if (child.container) |child_container| {

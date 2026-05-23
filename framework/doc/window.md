@@ -12,7 +12,8 @@ pub const Window = struct {
     context:    *awt.Graphics.Context, // Application から借用 (programs / rings / atlas を束ねたもの)
     app:        *Application,          // back-pointer。OS callback が Application 側の synced cache を更新するため
     dirty_rect: ?Component.Rect,       // null = clean、それ以外 = 再描画必要領域 (絶対 pt)
-    title:      []u8,                  // 動的変更可能。allocator.dupe で所有
+    title:      [:0]u8,                // 動的変更可能。allocator.dupeZ で所有 (C ABI 互換)
+    background: awt.Graphics.Color,    // ウィンドウのクリア色 (デフォルトはライトグレー)
     fb_w:       i32, fb_h: i32,        // framebuffer pixel (HiDPI 用)
     allocator:  std.mem.Allocator,
 
@@ -60,6 +61,21 @@ OS への反映は次のイベントループ末尾の `syncOsState` で行う�
 ```zig
 pub fn getTitle(self: Window) []const u8;
 ```
+
+## 背景色の取得
+```zig
+pub fn getBackground(self: Window) awt.Graphics.Color;
+```
+
+## 背景色の設定
+```zig
+pub fn setBackground(self: *Window, color: awt.Graphics.Color) void;
+```
+
+ウィンドウのクリア色（毎フレームの最初に塗る色）を設定する。
+デフォルトはライトグレー `(0.94, 0.94, 0.94)`。
+hello のような awt 直叩きでクリア色を自分で管理するアプリでは使用されない。
+framework 経由の Frame / Window はこの値で `cb.clearColor` を実行する。
 
 ## 再描画の要求
 ```zig

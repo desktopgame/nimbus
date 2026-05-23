@@ -18,6 +18,7 @@ context:      *awt.Graphics.Context,
 device:       *awt.Device,
 app:          *anyopaque,                 // *Application (avoid circular import)
 title:        [:0]u8,
+background:   awt.Graphics.Color,
 fb_w:         i32,
 fb_h:         i32,
 cursor_x:     f32,
@@ -63,6 +64,7 @@ pub fn init(
         .device       = device,
         .app          = app_ptr,
         .title        = title_dup,
+        .background   = awt.Graphics.Color.rgb(0.94, 0.94, 0.94),
         .fb_w         = fb.width,
         .fb_h         = fb.height,
         .cursor_x     = 0,
@@ -111,6 +113,15 @@ pub fn getTitle(self: Window) []const u8 {
     return self.title;
 }
 
+pub fn getBackground(self: Window) awt.Graphics.Color {
+    return self.background;
+}
+
+pub fn setBackground(self: *Window, color: awt.Graphics.Color) void {
+    self.background = color;
+    self.paint_dirty = true;
+}
+
 pub fn repaint(self: *Window) void {
     self.paint_dirty = true;
     awt.postEmptyEvent();
@@ -154,7 +165,7 @@ pub fn redraw(self: *Window) void {
 
     cb.begin();
     cb.bindRenderTarget(self.swapchain.getTarget());
-    cb.clearColor(0.1, 0.1, 0.15, 1.0);
+    cb.clearColor(self.background.r, self.background.g, self.background.b, self.background.a);
     cb.clearStencil(0);
 
     const win_size = self.awt_window.size();

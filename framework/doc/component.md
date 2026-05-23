@@ -21,6 +21,8 @@ pub const Component = struct {
     max_size:   Size,                           // レイアウト上限 (デフォルト inf,inf)
     grow_x:     f32,                            // 水平方向の余白分配重み (デフォルト 0)
     grow_y:     f32,                            // 垂直方向の余白分配重み (デフォルト 0)
+    align_x:    Alignment,                      // 水平方向のアラインメント (デフォルト stretch)
+    align_y:    Alignment,                      // 垂直方向のアラインメント (デフォルト stretch)
     parent:     ?*Component,
     container:  ?*Container,                    // Container embed のみ self を指す
     name:       ?[]const u8,                    // Java AWT 互換
@@ -34,6 +36,17 @@ pub const Component = struct {
 `Event` の型定義は `awt/doc/event.md` を参照。
 `processEvent` は mutable `*Event` を受け取り、消費は `event.consume()` で表現する（戻り値ではなくフィールドで管理する）。
 
+`Alignment` はレイアウトが交差軸に沿った位置決めに使う列挙：
+
+```zig
+pub const Alignment = enum { start, center, end, stretch };
+```
+
+* `stretch` — コンテナの当該軸サイズいっぱいに広げる（v1 デフォルト、min/max でクランプ）
+* `start` — 当該軸の低い側（上端 / 左端）に詰める、サイズは min
+* `center` — 中央寄せ、サイズは min
+* `end` — 当該軸の高い側（下端 / 右端）に詰める、サイズは min
+
 ## コンポーネントの初期化
 ```zig
 pub fn init(allocator: std.mem.Allocator) Component;
@@ -41,7 +54,7 @@ pub fn init(allocator: std.mem.Allocator) Component;
 
 デフォルト値で `Component` のフィールドを初期化する。
 `vtable` は呼び出し側（ウィジェットの `create` または factory）が後からセットする責務を持つ。
-`min_size = (0, 0)`、`max_size = (inf, inf)`、`grow_x = grow_y = 0` で初期化される。
+`min_size = (0, 0)`、`max_size = (inf, inf)`、`grow_x = grow_y = 0`、`align_x = align_y = .stretch` で初期化される。
 
 ## コンポーネントの後片付け
 ```zig
@@ -120,6 +133,32 @@ pub fn setGrowY(self: *Component, weight: f32) void;
 pub fn getGrowY(self: *const Component) f32;
 ```
 
+## 水平方向アラインメントの設定
+```zig
+pub fn setAlignX(self: *Component, a: Alignment) void;
+```
+
+水平方向のアラインメントを更新する。値が変わったら layout_dirty + paint_dirty を立てる。
+垂直 box などコンテナの主軸が y のとき、コンテナはこの値を見て子の水平位置を決める。
+
+## 水平方向アラインメントの取得
+```zig
+pub fn getAlignX(self: *const Component) Alignment;
+```
+
+## 垂直方向アラインメントの設定
+```zig
+pub fn setAlignY(self: *Component, a: Alignment) void;
+```
+
+垂直方向のアラインメントを更新する。値が変わったら layout_dirty + paint_dirty を立てる。
+水平 box などコンテナの主軸が x のとき、コンテナはこの値を見て子の垂直位置を決める。
+
+## 垂直方向アラインメントの取得
+```zig
+pub fn getAlignY(self: *const Component) Alignment;
+```
+
 ## 名前の設定
 ```zig
 pub fn setName(self: *Component, name: ?[]const u8) void;
@@ -193,8 +232,11 @@ LayoutManager が子の bounds を計算するための入力として、4 つ�
 | `max_size` | `Size` | `(inf, inf)` | これより大きいサイズにはならない |
 | `grow_x` | `f32` | `0` | 水平方向に余白があるときの分配重み |
 | `grow_y` | `f32` | `0` | 垂直方向に余白があるときの分配重み |
+| `align_x` | `Alignment` | `.stretch` | 水平方向の配置（コンテナの主軸が y のとき適用） |
+| `align_y` | `Alignment` | `.stretch` | 垂直方向の配置（コンテナの主軸が x のとき適用） |
 
 `min_size` / `max_size` はハード境界であり、grow による分配は max を超えない。
+`align_x` / `align_y` は当該軸がコンテナの**交差軸**になっているレイアウトが解釈する（BoxLayout 等）。
 
 ### コンテンツ依存の min_size
 Label のようにテキスト幅から自然な min_size が決まるウィジェットでは、ウィジェット側 (`Label.setText` など) が自前で `component.min_size` を計算してセットする。

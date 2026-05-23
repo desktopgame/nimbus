@@ -22,6 +22,14 @@ pub const Rect = awt.Graphics.Rect;
 /// without an explicit awt import.
 pub const Event = awt.Event;
 
+/// Cross-axis alignment used by layouts (e.g. BoxLayout reads this on each
+/// child when assigning the cross-axis position). Semantics:
+/// * `stretch` — fill the container's cross dimension (clamped by min/max)
+/// * `start`   — pin to the cross-axis low edge (top / left), size = min
+/// * `center`  — center on the cross axis, size = min
+/// * `end`     — pin to the cross-axis high edge (bottom / right), size = min
+pub const Alignment = enum { start, center, end, stretch };
+
 pub const VTable = struct {
     install:      *const fn (self: *Component) void,
     uninstall:    *const fn (self: *Component) void,
@@ -50,6 +58,8 @@ min_size:   Size,
 max_size:   Size,
 grow_x:     f32,
 grow_y:     f32,
+align_x:    Alignment,
+align_y:    Alignment,
 parent:     ?*Component,
 container:  ?*Container,
 name:       ?[]const u8,
@@ -65,6 +75,8 @@ pub fn init(allocator: std.mem.Allocator, vtable: *const VTable) Component {
         .max_size   = .{ .width = std.math.inf(f32), .height = std.math.inf(f32) },
         .grow_x     = 0,
         .grow_y     = 0,
+        .align_x    = .stretch,
+        .align_y    = .stretch,
         .parent     = null,
         .container  = null,
         .name       = null,
@@ -149,6 +161,26 @@ pub fn getGrowY(self: *const Component) f32 {
 pub fn setGrowY(self: *Component, w: f32) void {
     if (self.grow_y == w) return;
     self.grow_y = w;
+    self.markLayoutDirty();
+}
+
+pub fn getAlignX(self: *const Component) Alignment {
+    return self.align_x;
+}
+
+pub fn setAlignX(self: *Component, a: Alignment) void {
+    if (self.align_x == a) return;
+    self.align_x = a;
+    self.markLayoutDirty();
+}
+
+pub fn getAlignY(self: *const Component) Alignment {
+    return self.align_y;
+}
+
+pub fn setAlignY(self: *Component, a: Alignment) void {
+    if (self.align_y == a) return;
+    self.align_y = a;
     self.markLayoutDirty();
 }
 

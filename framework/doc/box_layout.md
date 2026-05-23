@@ -64,21 +64,27 @@ CSS flexbox の「再分配ループ」は採用しない。
 利用者が余白を確実に埋めたい場合は **Filler**（`filler.md` 参照）を末尾に置く。
 
 ## 交差軸の処理
-各子の交差軸サイズは次のように決める。
+各子の交差軸サイズと位置は、子の `align_x` / `align_y`（コンテナの主軸に応じて参照する軸が決まる）で決まる。
 
-```
-child.cross = clamp(container.cross, child.min.cross, child.max.cross)
-```
+| Orientation | 参照する align | 意味 |
+|---|---|---|
+| `.horizontal` | `align_y` | 子の垂直方向の配置 |
+| `.vertical` | `align_x` | 子の水平方向の配置 |
 
-つまり「コンテナーの交差サイズに合わせて引き伸ばす、ただし子の min / max でクランプ」。
-これにより：
+`Alignment` の値ごとの挙動：
 
-* 子の cross_max = inf（典型）なら、コンテナーの交差サイズいっぱいに広がる
-* 子の cross_max が固定値（例: 高さ 32 のボタン）なら、その値で頭打ち
-* 子の cross_min より小さくはならない
+| 値 | 交差軸サイズ | 交差軸位置 |
+|---|---|---|
+| `.stretch`（デフォルト） | コンテナの交差サイズ（min / max でクランプ） | 0（左端 / 上端） |
+| `.start` | `min` | 0 |
+| `.center` | `min` | `(container_cross - child_min) / 2` |
+| `.end` | `min` | `container_cross - child_min` |
 
-交差軸方向の位置は常に 0（コンテナー上端 / 左端揃え）。
-将来「中央揃え」「下端揃え」を追加する余地は機能要望参照。
+子の cross max が無限（典型）なら `.stretch` でコンテナ交差サイズに広がる。
+固定値（例: 高さ 32 のボタン）なら `.stretch` でも max でクランプされる。
+`.start` / `.center` / `.end` は常に `min` サイズで配置される。
+
+利用者はウィジェットの作成後 `widget.component.setAlignY(.center)` のように指定する。
 
 ## computeMinSize の計算
 | 軸 | 計算 |
@@ -170,6 +176,18 @@ try center.add(&app.filler().component);
 // → content が中央に来る
 ```
 
+水平ボックスで子を垂直中央に揃える例（背の高い行に短いボタンを置く場合など）。
+
+```zig
+const row = try app.container();
+row.setLayout(BoxLayout.horizontal());
+row.component.setBounds(.{ .x = 0, .y = 0, .width = 600, .height = 80 });
+
+const btn = try app.button("OK");
+btn.component.setAlignY(.center);    // 80px 行の中で min 高さで垂直中央
+try row.add(&btn.component);
+```
+
 ネスト（vertical の中に horizontal）。
 
 ```zig
@@ -189,7 +207,6 @@ try root.add(&status.component);
 ```
 
 ## 機能要望
-* 交差軸方向のアラインメント（center / end / stretch の選択）
 * 主軸方向の justify-content 相当（space-between / space-around / center 等を Filler なしで指定）
 * 子の間に固定ギャップを入れるオプション（`spacing: f32`）
 * min が container を超えた場合の挙動（現状は overflow、将来 clip / scroll の選択肢）
