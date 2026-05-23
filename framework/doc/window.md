@@ -205,6 +205,27 @@ Application のループが：
 これにより Window 側で「閉じる前に保存しますか?」のような確認ダイアログを差し挟む余地が生まれる。
 WindowListener 相当（機能要望）が入った時に活きる。
 
+## マウスキャプチャ
+ドラッグ操作中にカーソルが widget の bounds から外れても、`.move` / `.release` を当該 widget に届け続けるための機構。
+Window が `mouse_capture: ?*Component` を保持する。
+
+シーケンス：
+
+1. OS callback `onMouseButton` (`.press`) で event を組み立て、`container.processEvent` 経由で hit-test dispatch する
+2. dispatch 先の widget（例: Slider, Button）の `processEvent` が `ev.requestCapture(@ptrCast(self))` を呼ぶ
+3. dispatch 終了後、Window は `ev.capture_target` を読み取り、non-null なら `mouse_capture` に格納する
+4. 以降の `onCursorPos` は `mouse_capture` を見て、non-null なら hit-test を経由せず capture 先の `processEvent` を直接呼ぶ
+5. `onMouseButton` (`.release`) は `mouse_capture` non-null なら capture 先へ直接配送、その後 `mouse_capture = null` でクリア
+
+この仕組みにより：
+
+* Slider のつまみをドラッグして widget 外に出ても値が追従する
+* Button を押下後にドラッグで外に出て戻す挙動（Swing と同じ「ドラッグで取り消し」）が成立する
+* 解放イベントが必ず press と同じ widget に届く（pressed 状態がクリーンアップされる）
+
+awt 層は capture state を持たず、Event 型に「capture を要求するためのフィールドとメソッド」を提供するだけ（`awt/doc/event.md` 「マウスキャプチャ」参照）。
+routing 自体は Window の責務。
+
 ## イベントループとの関係
 
 ### グローバル singleton は不要

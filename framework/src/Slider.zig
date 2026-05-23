@@ -221,6 +221,7 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
                     if (m.button == .left) {
                         slider.dragging = true;
                         slider.model.setValue(slider.posToValue(lx, ly));
+                        ev.requestCapture(@ptrCast(self));
                         ev.consume();
                     }
                 },

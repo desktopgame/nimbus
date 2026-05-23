@@ -172,6 +172,7 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
                     if (m.button == .left and inside) {
                         button.model.setPressed(true);
                         button.model.setArmed(true);
+                        ev.requestCapture(@ptrCast(self));
                         ev.consume();
                     }
                 },

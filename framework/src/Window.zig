@@ -25,6 +25,11 @@ cursor_x:     f32,
 cursor_y:     f32,
 paint_dirty:  bool,
 layout_dirty: bool,
+/// Mouse-capture target. While non-null, `.move` and `.release` events
+/// bypass hit-testing and go straight to this component. Set when a
+/// widget calls `ev.requestCapture(&self.component)` from a `.press`
+/// handler; cleared on the matching `.release`.
+mouse_capture: ?*Component,
 allocator:    std.mem.Allocator,
 dirty_notify: Component.DirtyNotify,
 
@@ -67,12 +72,13 @@ pub fn init(
         .background   = awt.Graphics.Color.rgb(0.94, 0.94, 0.94),
         .fb_w         = fb.width,
         .fb_h         = fb.height,
-        .cursor_x     = 0,
-        .cursor_y     = 0,
-        .paint_dirty  = true,
-        .layout_dirty = true,
-        .allocator    = allocator,
-        .dirty_notify = undefined, // filled in install
+        .cursor_x      = 0,
+        .cursor_y      = 0,
+        .paint_dirty   = true,
+        .layout_dirty  = true,
+        .mouse_capture = null,
+        .allocator     = allocator,
+        .dirty_notify  = undefined, // filled in install
     };
     win.container.component.vtable = &vtable;
     // Default layout: vertical box. Children fill the window width, height
@@ -305,7 +311,23 @@ fn onMouseButton(
             .modifiers = awt.Event.Modifiers.fromCBits(modifiers),
         } },
     };
+
+    if (ev_action == .release and win.mouse_capture != null) {
+        // Route release directly to the captured target, then clear capture.
+        const cap = win.mouse_capture.?;
+        cap.vtable.processEvent(cap, &ev);
+        win.mouse_capture = null;
+        return;
+    }
+
     win.container.component.vtable.processEvent(&win.container.component, &ev);
+
+    // On press, a widget may have requested capture for the subsequent drag.
+    if (ev_action == .press) {
+        if (ev.capture_target) |t| {
+            win.mouse_capture = @ptrCast(@alignCast(t));
+        }
+    }
 }
 
 fn onCursorPos(
@@ -325,6 +347,12 @@ fn onCursorPos(
             .action = .move,
         } },
     };
+    if (win.mouse_capture) |cap| {
+        // Bypass hit-test: send drag straight to the capture target so
+        // the user can drag outside the widget's bounds without losing it.
+        cap.vtable.processEvent(cap, &ev);
+        return;
+    }
     win.container.component.vtable.processEvent(&win.container.component, &ev);
 }
 

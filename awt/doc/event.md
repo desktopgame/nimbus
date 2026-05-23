@@ -7,8 +7,9 @@
 ## 型定義
 ```zig
 pub const Event = struct {
-    consumed: bool = false,
-    payload:  Payload,
+    consumed:       bool        = false,
+    capture_target: ?*anyopaque = null,  // マウスキャプチャ要求の格納先 (詳細は「マウスキャプチャ」参照)
+    payload:        Payload,
 
     pub const Payload = union(enum) {
         key:   KeyEvent,
@@ -96,6 +97,21 @@ pub fn has(self: Modifiers, m: Modifiers) bool;
 `self` に `m` のすべての true ビットが含まれているかを返す。
 `mods.has(.{ .ctrl = true })` のように使う。
 
+## マウスキャプチャの要求
+```zig
+pub fn requestCapture(self: *Event, target: *anyopaque) void;
+```
+
+`capture_target` に `target` を設定する。
+`.press` の dispatch 中に呼ばれることを想定。
+target は通常 `&self.component` を渡す（呼び出し元の widget 自身）。
+
+framework 側の dispatcher（`framework.Window`）はこのフラグを press 後に観測し、以降の `.move` / `.release` イベントを hit-test なしで `target` へ直接配送する。
+`.release` で自動的に解除される。
+
+awt 層は型を持たないので `*anyopaque` で受け取る。
+framework 側が `*Component` にキャストし直す。
+
 ---
 
 ## 消費モデル
@@ -151,6 +167,23 @@ awt 層は座標計算ロジック自体を持たず、`Event.translated(offset)
 
 修飾キーの状態は `Modifiers` 経由で取得する方が普通（`KeyEvent.modifiers.ctrl == true` 等）。
 修飾キー自体の押下を検知したいときだけ `KeyCode.shift_left` 等を見る。
+
+## マウスキャプチャ
+ドラッグ操作（Slider つまみのドラッグ、Button の押下中ドラッグ取り消し等）では、カーソルが widget の bounds 外に出ても `.move` / `.release` を受け取り続ける必要がある。
+hit-test ベースの素朴な dispatch では、カーソルが外れた瞬間にイベントが届かなくなりドラッグが途切れる。
+
+これを解決するのが「マウスキャプチャ」。
+具体的な流れ：
+
+1. widget の `processEvent` が `.press` を受け取り、ドラッグ中の追跡が必要だと判断する
+2. `ev.requestCapture(@ptrCast(self))` を呼ぶ（`self` は `*Component`）
+3. framework 側 dispatcher が press 終了後にこの値を読み取り、capture state に保存する
+4. 以降の `.move` イベントは hit-test を経由せず capture 先へ直接配送される
+5. `.release` イベントも capture 先へ直接配送され、その後 capture state はクリアされる
+
+awt 層自身は capture state を持たない。
+awt は型を提供するだけで、実際の routing は framework の責務。
+詳細は `framework/doc/window.md`「マウスキャプチャ」を参照。
 
 ## MouseAction の意味
 | `action` | `button` | `wheel` | 意味 |

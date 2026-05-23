@@ -159,6 +159,14 @@ pub const Payload = union(enum) {
 
 consumed: bool = false,
 payload:  Payload,
+/// Mouse-capture request. A widget that wants to receive subsequent
+/// drag (`move`) and `release` events regardless of cursor position
+/// calls `requestCapture(&self.component)` from its `.press` handler.
+/// The framework dispatcher (Window) reads this after dispatch and
+/// installs the capture; future `.move` / `.release` events are routed
+/// directly to `capture_target` until the release fires.
+/// Stored as `*anyopaque` because awt cannot depend on framework's Component.
+capture_target: ?*anyopaque = null,
 
 pub fn consume(self: *Event) void {
     self.consumed = true;
@@ -166,6 +174,13 @@ pub fn consume(self: *Event) void {
 
 pub fn isConsumed(self: Event) bool {
     return self.consumed;
+}
+
+/// Request that subsequent drag / release events for the current mouse
+/// gesture be routed to `target` (typically `&self.component`).
+/// Has no effect outside of `.press` dispatch.
+pub fn requestCapture(self: *Event, target: *anyopaque) void {
+    self.capture_target = target;
 }
 
 /// Translate the event by `offset` if it carries position data
