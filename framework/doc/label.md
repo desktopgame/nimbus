@@ -1,6 +1,6 @@
 # label
-ラベルについての設計ノート。テキストを 1 行描画するだけのもっとも単純な widget。
-
+ラベルについての設計ノート。
+テキストを 1 行描画するだけのもっとも単純な leaf widget。
 v1 で唯一のビルトイン leaf widget として、Component / Container / vtable 周りの動作検証も兼ねる。
 
 ## 型定義
@@ -23,128 +23,121 @@ pub const Label = struct {
 };
 ```
 
-## 役割
-* テキスト 1 行を `(0, 0)` (component ローカル) を起点に描画
-* フォント・色は setter で動的変更可能
-* テキスト寸法から `component.min_size` を自動算出（LayoutManager がこれを下限として使う）
-
-## 描画
-vtable.paint は単純に Graphics の API を叩く:
-
+## ラベルの生成
 ```zig
-fn paint(self: *Component, g: *awt.Graphics) void {
-    const label: *Label = @fieldParentPtr("component", self);
-    g.setFont(label.font);
-    g.setColor(label.color);
-    g.drawString(label.text, 0, 0);  // top-of-bbox at component origin (graphics.md の方針)
-}
+pub fn create(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    font: awt.Graphics.TextFont,
+    color: awt.Graphics.Color,
+) !*Label;
 ```
 
-`\n` を含む文字列は `drawString` 側で無視される (graphics.md 通り)。複数行描画は v2 で
-別 widget (TextArea / MultilineLabel) として扱う。
+allocator で `Label` を確保し、`text` を dup して所有し、vtable をセット、install まで実行して返す。
+`component.min_size` は `font.measureString(text)` から算出してセットされる。
 
-## install / uninstall
-ビルトイン Label の install/uninstall は no-op。Label 自身の状態 (text / font / color) は
-`Label.init` で全部セットされる。 install hook は「カスタム vtable がプロパティに自前 state を
-登録したい」場合のためにあるもので、ビルトインでは使わない (component.md 参照)。
+### 事前条件
+* `font.face` の寿命が Label と同じか長いこと（通常は Application の `default_font` を借用）
+
+### 失敗時の保証
+途中で失敗した場合、`create` 内で確保したメモリはすべて関数内で解放される。
+呼び出し側に後片付け責任は発生しない（awt-c の `nmCreateXxx` と同じセマンティクス）。
+
+## ラベルの破棄
+```zig
+fn destroy(self: *Component, allocator: std.mem.Allocator) void;
+```
+
+`Label.vtable.destroy` として登録される。
+`@fieldParentPtr` で外側の `*Label` に戻し、内部状態を解放して `allocator.destroy(label)` まで行う。
+
+利用者が直接呼ぶ機会は通常無い。
+Container に add された Label は、Container.deinit が `elem.component.vtable.destroy(...)` を通じてこの経路を起動する。
+スタンドアロンで使うなら `label.component.vtable.destroy(&label.component, allocator)` を呼ぶ。
+
+## テキストの取得
+```zig
+pub fn getText(self: Label) []const u8;
+```
+
+Label が保持している text の slice を返す。
+ポインタは Label が deinit されるまで有効。
+
+## テキストの更新
+```zig
+pub fn setText(self: *Label, text: []const u8) !void;
+```
+
+引数の `text` を dup し直して古いものを free する。
+`component.min_size` を新しい text の寸法で再計算する。
+レイアウト変化と再描画は `setMinSize` が自動で dirty を立てるので、別途 repaint 不要。
+
+## フォントの取得
+```zig
+pub fn getFont(self: Label) awt.Graphics.TextFont;
+```
+
+## フォントの設定
+```zig
+pub fn setFont(self: *Label, font: awt.Graphics.TextFont) void;
+```
+
+`font` を保持し、現在の text を新しい font で測りなおして `component.min_size` を再計算する。
+
+## 色の取得
+```zig
+pub fn getColor(self: Label) awt.Graphics.Color;
+```
+
+## 色の設定
+```zig
+pub fn setColor(self: *Label, color: awt.Graphics.Color) void;
+```
+
+`color` を保持して再描画を要求する。
+レイアウトには影響しない（dirty は paint のみ）。
+
+---
 
 ## text の所有
-Label が `allocator.dupe` で複製を持つ。setter は古い text を free して新しい dup を保持し、テキスト寸法を測りなおして `component.min_size` を更新する。
+text は Label が `allocator.dupe` で複製して所有する。
+利用者は文字列の寿命を気にせず `label.setText("hello")` のような literal も渡せる。
+コストは数十バイトの memcpy なので無視できる。
 
-```zig
-pub fn setText(self: *Label, text: []const u8) !void {
-    const new_text = try self.allocator.dupe(u8, text);
-    self.allocator.free(self.text);
-    self.text = new_text;
-    self.component.setMinSize(self.font.measureString(self.text).asSize());
-    // setMinSize が layout_dirty + paint_dirty を立てるため、別途 repaint は不要
-}
-```
-
-理由: Swing JLabel の String と同じ「Label が持つ」セマンティクス。利用者は文字列の寿命を
-考えずに `label.setText("hello")` を書ける。コストは数十バイトの memcpy なので無視できる。
-
-利用者が寿命を保証できるケース (literal `"hello"` や静的バッファ) で dup を avoid したい場合は、
-将来 `setTextBorrowed(text)` を追加する余地はある。v1 では一律 dup で割り切る。
-
-## font と color
-font は値型 `awt.Graphics.TextFont = { face: *awt.Font, pixel_size: i32 }`。
-Label は値で持ち、`face` ポインタは Application 寿命の `default_font` を借用する。
-
-```zig
-pub fn getText(self: Label) []const u8 { return self.text; }
-
-pub fn setFont(self: *Label, font: awt.Graphics.TextFont) void {
-    self.font = font;
-    self.component.setMinSize(self.font.measureString(self.text).asSize());
-}
-pub fn getFont(self: Label) awt.Graphics.TextFont { return self.font; }
-
-pub fn setColor(self: *Label, color: awt.Graphics.Color) void {
-    self.color = color;
-    self.component.repaint();    // 見た目だけの変更。レイアウトは変わらない
-}
-pub fn getColor(self: Label) awt.Graphics.Color { return self.color; }
-```
-
-Component メソッド (setBounds / repaint / setName 等) は委譲しない。
-親フィールド経由で `label.component.setBounds(...)` のように書く
-(詳細は component.md「派生型から Component メソッドへのアクセス」)。
-
-初期値は Application のデフォルト (default_font + 黒) を factory で注入する。
+Swing `JLabel` の `String` と同じ「ラベルが持つ」セマンティクスである。
 
 ## MinimumSize の自動算出
 Label は `component.min_size` を「現在の text を現在の font で描画したときに必要な寸法」に保つ責任を負う。
-更新タイミングは次の 3 箇所のみ:
+更新タイミングは次の 3 箇所のみ。
 
-* `Label.init` — text と font の初期値から算出してセット
+* `create` — 初期値から算出してセット
 * `setText` — 新しい text の寸法を測ってセット
 * `setFont` — 新しい font で現在の text の寸法を測ってセット
 
-利用者がさらに大きな下限を指定したい場合は `component.setMinSize(...)` で上書きできるが、その後 `setText` / `setFont` を呼ぶと Label が再度計算した値で上書きされる。
+利用者がさらに大きな下限を指定したい場合は `component.setMinSize(...)` で上書きできるが、その後 `setText` / `setFont` を呼ぶと Label が再計算した値で上書きされる。
+`max_size` / `grow_x` / `grow_y` は Label からは触らない（利用者が `Component` の setter で設定する）。
 
-`max_size` / `grow_x` / `grow_y` は Label からは触らない。
-利用者が用途に応じて Component の setter で設定する（デフォルトは `inf, inf, 0, 0` で「下限テキスト寸法、上限なし、伸びない」となる）。
+## 描画
+`vtable.paint` は `Graphics` に対して font / color を設定したのち、`drawString` を `(0, 0)` を起点に呼ぶ。
+`(0, 0)` は component ローカル座標で、`graphics.md` の方針に従って top-of-bounding-box が原点に合う。
+
+`\n` を含む文字列は `drawString` が無視する（`graphics.md` 参照）。
+複数行描画は別 widget（TextArea 等）として扱う方針。
+
+## install / uninstall
+ビルトイン Label の install / uninstall は no-op。
+Label の状態（text / font / color）はすべて `create` でセット済みであり、install hook は「カスタム vtable がプロパティに自前 state を登録したい」場合のための拡張点である（component.md 参照）。
 
 ## ライフサイクル
-factory コード例 (内部):
+`create` が allocator 確保・init・vtable 登録・install をひとまとめに行う（component.md「ライフサイクル」と同じ pattern）。
+Application 経由のファクトリ `app.label(text)` は `create` をラップして default_font と黒色を注入する（application.md 参照）。
 
-```zig
-pub fn label(self: *Application, text: []const u8) !*Label {
-    const lbl = try self.allocator.create(Label);
-    lbl.* = try Label.init(self.allocator, text, self.default_font, awt.Graphics.Color.rgb(0, 0, 0));
-    lbl.component.vtable = &Label.vtable;
-    lbl.component.vtable.install(&lbl.component);
-    return lbl;
-}
-```
-
-`Label.init` は text を `allocator.dupe` で複製し、`component.min_size` を `font.measureString(text)` から算出してセットする。
-失敗時は `allocator.create` で確保したメモリを解放してエラーを返す責任を持つ (awt-c の Create 関数失敗時セマンティクスと同様、強い例外保証)。
-
-deinit では:
-1. `component.deinit()` で uninstall + properties cleanup
-2. `allocator.free(self.text)` で text の dup を解放
-
-順序は `component.deinit` が先 (vtable.uninstall がプロパティを参照する可能性があるため)。
-
-Label 自身のメモリ解放は `vtable.destroy` が担当する (component.md「メモリ解放」参照)。
-`Label.destroy` は `@fieldParentPtr` で外側に戻し、`label.deinit()` + `allocator.destroy(label)` を呼ぶ:
-
-```zig
-fn destroy(self: *Component, allocator: std.mem.Allocator) void {
-    const label: *Label = @fieldParentPtr("component", self);
-    label.deinit();
-    allocator.destroy(label);
-}
-```
-
-Container が子として保持している Label については、Container.deinit が
-`elem.component.vtable.destroy(elem.component, self.allocator)` を呼ぶことで
-この経路を通って free される。
+破棄経路は `vtable.destroy` 経由（component.md「メモリ解放」参照）。
+内部の deinit 順序は `component.deinit()` → `allocator.free(text)`。
+`component.deinit` が先である理由は `vtable.uninstall` がプロパティを参照する可能性があるため。
 
 ## 拡張ポイント
-利用者がビルトイン Label の見た目を変えたい時は (component.md / lookandfeel.md の方針通り):
+ビルトイン Label の見た目を変えたい場合の選択肢（component.md / lookandfeel.md の方針に従う）。
 
 * **個別差替**: `lbl.component.setVTable(&my_label_vt)` で 1 個だけ paint を差替
 * **一斉差替**: `app.replaceVTable(&Label.vtable, &my_label_vt)` で全 Label を差替
@@ -153,9 +146,46 @@ Container が子として保持している Label については、Container.de
 
 framework としては Label 自身に theme / L&F 機構を入れない。
 
+## 利用例
+Application 経由の典型コード。
+
+```zig
+var app = try nimbus.Application.init(allocator);
+defer app.deinit();
+
+const frame = try app.frame("hello", 800, 600);
+
+const label = try app.label("こんにちは!");
+label.setColor(awt.Graphics.Color.rgb(1, 0, 0));      // 赤に変更
+try frame.window.add(&label.component);
+
+// 後からテキスト更新
+try label.setText("更新後");
+
+try app.run();
+```
+
+直接 `Label.create` を使うパターン（Application 経由でない場合、例えばテストやスタンドアロン描画）。
+
+```zig
+const label = try Label.create(
+    allocator,
+    "framework Label",
+    .{ .face = font, .pixel_size = 24 },
+    awt.Graphics.Color.rgb(1, 1, 0),
+);
+defer label.component.vtable.destroy(&label.component, allocator);
+
+label.component.setBounds(.{ .x = 30, .y = 30, .width = 400, .height = 32 });
+// あとは container に add するか、直接 paintAt(&g) で描画
+```
+
+Component メソッド（`setBounds` 等）は委譲を生やしていないので、`label.component.setBounds(...)` の形で親フィールド経由で呼ぶ（component.md「派生型から Component メソッドへのアクセス」参照）。
+
 ## 機能要望
-* 改行 (`\n`) 対応 — 現状 `drawString` が無視するため対応なし。複数行は別 widget (TextArea / MultilineLabel 等) で扱う。
-* horizontal / vertical alignment — SwingConstants 相当を導入。
-* icon / image 同時表示 — Swing JLabel の icon 機能。
-* HTML / rich text — 当面スコープ外。
-* mnemonic / accelerator — キーイベント整備後。
+* 改行 (`\n`) 対応 — 現状 `drawString` が無視するため対応なし。複数行は別 widget で扱う
+* horizontal / vertical alignment — SwingConstants 相当を導入
+* icon / image 同時表示 — Swing `JLabel` の icon 機能
+* HTML / rich text — 当面スコープ外
+* mnemonic / accelerator — キーイベント整備後
+* `setTextBorrowed(text)` — 利用者が寿命を保証できるケースで dup を回避するための入口
