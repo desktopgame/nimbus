@@ -255,14 +255,16 @@ pub fn paintAt(self: *Component, parent_g: *awt.Graphics) void {
     self.vtable.paint(self, &g);
 }
 
-/// Walk parent chain to compute the absolute origin of `self` within its
-/// root component (typically the Window). Stops at the root (parent == null),
-/// so the result is the offset from the root's local origin.
+/// Walk parent chain to compute the absolute origin of `self` within the
+/// window. Sums each ancestor's `position`, including the root's. The root
+/// is typically Window's container (position 0,0), or an overlay's popup
+/// root which has a non-zero window-local position. By always summing
+/// (no special-case for root), overlay subtrees hit-test correctly without
+/// further coordinate translation.
 pub fn absoluteOriginInWindow(self: *const Component) Point {
     var p: Point = .{ .x = 0, .y = 0 };
     var node: ?*const Component = self;
     while (node) |cur| {
-        if (cur.parent == null) break; // root reached; do not add its position
         p.x += cur.position.x;
         p.y += cur.position.y;
         node = cur.parent;

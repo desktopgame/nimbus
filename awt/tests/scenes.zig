@@ -331,6 +331,41 @@ fn paintNested(ctx: PaintContext) anyerror!void {
 
 /// All scenes the snapshot runner should cover. Add entries here when
 /// introducing a new scene; the runner generates one test per entry.
+// menu bar (closed) on top of a content panel
+pub const menu_bar_closed = Scene{
+    .name = "menu_bar_closed",
+    .width = 500,
+    .height = 80,
+    .paint = paintMenuBarClosed,
+};
+
+fn paintMenuBarClosed(ctx: PaintContext) anyerror!void {
+    var setup = try FrameworkSetup.init(ctx);
+    defer setup.deinit();
+
+    const font = awt.Graphics.TextFont{ .face = ctx.font, .pixel_size = 14 };
+    const color = awt.Graphics.Color.rgb(0.1, 0.1, 0.1);
+
+    const bar = try framework.MenuBar.create(ctx.allocator, font, color);
+    // Build 3 menus (closed, just labels visible).
+    inline for ([_][]const u8{ "File", "Edit", "Help" }) |label_text| {
+        const menu = try framework.Menu.create(ctx.allocator, label_text, font, color);
+        try bar.add(menu);
+    }
+
+    // Lay out the bar at top, full width.
+    bar.component.setBounds(.{
+        .x = 0, .y = 0,
+        .width = @floatFromInt(ctx.width),
+        .height = bar.component.min_size.height,
+    });
+
+    bar.component.paintAt(ctx.g);
+
+    // Cleanup (no overlays since no menu opened).
+    bar.component.vtable.destroy(&bar.component, ctx.allocator);
+}
+
 pub const all = [_]Scene{
     basic_shapes,
     layout_horizontal_buttons,
@@ -340,4 +375,5 @@ pub const all = [_]Scene{
     layout_panel_decoration,
     layout_nested,
     layout_border_shell,
+    menu_bar_closed,
 };

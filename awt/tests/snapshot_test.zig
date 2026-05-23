@@ -63,6 +63,10 @@ test "snapshot: layout_border_shell" {
     try runScene(scenes.layout_border_shell);
 }
 
+test "snapshot: menu_bar_closed" {
+    try runScene(scenes.menu_bar_closed);
+}
+
 fn runScene(scene: scenes.Scene) !void {
     const allocator = std.testing.allocator;
 

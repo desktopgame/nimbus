@@ -11,6 +11,21 @@ const BorderLayout = @import("BorderLayout.zig");
 
 const Window = @This();
 
+/// Floating overlay (menu popup, tooltip, etc.) drawn above the container
+/// and menu_bar. Hit-tested first; outside-press dismisses everything.
+pub const OverlayEntry = struct {
+    /// Root component of the overlay subtree. Its `position` is window-local
+    /// (the overlay's top-left), parent must be null. Children's
+    /// `absoluteOriginInWindow` walks up and includes the root's position,
+    /// so window-local mouse coords hit-test correctly.
+    component:  *Component,
+    /// Opaque owner (Menu / PopupMenu) for the dismiss callback.
+    owner:      *anyopaque,
+    /// Called when the overlay is removed (by outside-press, ESC, or
+    /// programmatic dismissAllOverlays). Owner updates its `open` state.
+    on_dismiss: *const fn (*anyopaque) void,
+};
+
 container:    Container,
 awt_window:   awt.Window,
 swapchain:    awt.Swapchain,
@@ -22,6 +37,15 @@ app:          *anyopaque,                 // *Application (avoid circular import
 /// so input / invokeLater / redraw all serialize through the same
 /// queue (see `framework/doc/window.md`「イベント post と dispatch」).
 event_queue:  *awt.EventQueue,
+/// Optional top-strip menu bar. Generic `*Component` (typically the
+/// `&MenuBar.component` set via Frame.setMenuBar). Not owned by Window —
+/// Frame manages lifetime. When non-null, the container is laid out
+/// below it (container.position.y = menu_bar.size.height).
+menu_bar:     ?*Component,
+/// Floating overlays (popups). Bottom = first opened, top = most recent.
+overlays:     std.ArrayList(OverlayEntry),
+/// Dirty-notify pointer used by overlays/menu_bar that share Window's
+/// repaint propagation (same value the container's root uses via property).
 title:        [:0]u8,
 background:   awt.Graphics.Color,
 fb_w:         i32,
@@ -75,6 +99,8 @@ pub fn init(
         .device        = device,
         .app           = app_ptr,
         .event_queue   = event_queue,
+        .menu_bar      = null,
+        .overlays      = .empty,
         .title         = title_dup,
         .background    = awt.Graphics.Color.rgb(0.94, 0.94, 0.94),
         .fb_w          = fb.width,
@@ -96,6 +122,9 @@ pub fn init(
 }
 
 pub fn deinit(self: *Window) void {
+    // Overlays are not owned (Menu/PopupMenu owners hold them) — just drop the list.
+    // menu_bar is owned by Frame, not Window — do not destroy.
+    self.overlays.deinit(self.allocator);
     self.container.deinit();      // drops children + container component
     self.swapchain.deinit();
     self.awt_window.deinit();
@@ -160,14 +189,19 @@ pub fn dispose(self: *Window) void {
 /// Render one frame and clear paint_dirty. Called by Application.run().
 pub fn redraw(self: *Window) void {
     if (self.layout_dirty) {
-        // Resync the root container to the current window size before painting.
         const win_size = self.awt_window.size();
-        const new_bounds = Component.Rect{
-            .x = 0, .y = 0,
-            .width = @floatFromInt(win_size.width),
-            .height = @floatFromInt(win_size.height),
-        };
-        self.container.setBounds(new_bounds);
+        const win_w: f32 = @floatFromInt(win_size.width);
+        const win_h: f32 = @floatFromInt(win_size.height);
+        const bar_h: f32 = if (self.menu_bar) |bar| bar.min_size.height else 0;
+
+        if (self.menu_bar) |bar| {
+            bar.setBounds(.{ .x = 0, .y = 0, .width = win_w, .height = bar_h });
+        }
+        self.container.setBounds(.{
+            .x = 0, .y = bar_h,
+            .width = win_w,
+            .height = @max(0, win_h - bar_h),
+        });
         self.layout_dirty = false;
     }
 
@@ -192,10 +226,17 @@ pub fn redraw(self: *Window) void {
         self.fb_h,
     );
 
-    // Paint children directly (skip Window's own paint translate since it
-    // would attempt to translate by component.position which is unused here).
+    // 1. Container children
     for (self.container.children.items) |elem| {
         elem.component.paintAt(&g);
+    }
+    // 2. menu_bar (above container)
+    if (self.menu_bar) |bar| {
+        bar.paintAt(&g);
+    }
+    // 3. Overlays (above everything; bottom = oldest, top = newest)
+    for (self.overlays.items) |entry| {
+        entry.component.paintAt(&g);
     }
 
     cb.end();
@@ -203,6 +244,69 @@ pub fn redraw(self: *Window) void {
     self.swapchain.present();
 
     self.paint_dirty = false;
+}
+
+// ── menu_bar / overlays management ───────────────────────────────────────
+
+/// Set or clear the top-strip menu bar. The component is **not owned** by
+/// Window — caller (Frame) handles lifetime. Pass null to remove.
+/// Triggers re-layout (container y-offset adjusts to bar height).
+pub fn setMenuBar(self: *Window, bar: ?*Component) void {
+    if (bar) |b| {
+        b.parent = null;
+        // Wire dirty-notify so child repaint/markLayoutDirty propagates up
+        // to this Window (the menu_bar is a separate root, not inside container).
+        b.putProperty(@typeName(Component.DirtyNotify), @ptrCast(&self.dirty_notify), null) catch {};
+    }
+    self.menu_bar = bar;
+    self.layout_dirty = true;
+    self.paint_dirty = true;
+    awt.postEmptyEvent();
+}
+
+/// Register an overlay. The component's `parent` will be set to null and
+/// dirty-notify wired to this Window. Position should already be set
+/// (window-local coordinates).
+pub fn addOverlay(
+    self: *Window,
+    component: *Component,
+    owner: *anyopaque,
+    on_dismiss: *const fn (*anyopaque) void,
+) !void {
+    component.parent = null;
+    component.putProperty(@typeName(Component.DirtyNotify), @ptrCast(&self.dirty_notify), null) catch {};
+    try self.overlays.append(self.allocator, .{
+        .component = component,
+        .owner = owner,
+        .on_dismiss = on_dismiss,
+    });
+    self.paint_dirty = true;
+    awt.postEmptyEvent();
+}
+
+/// Remove the overlay registered by `owner`. No-op if not found.
+/// Does NOT call on_dismiss (caller is presumably the owner itself).
+pub fn removeOverlay(self: *Window, owner: *anyopaque) void {
+    var i: usize = 0;
+    while (i < self.overlays.items.len) : (i += 1) {
+        if (self.overlays.items[i].owner == owner) {
+            _ = self.overlays.orderedRemove(i);
+            self.paint_dirty = true;
+            awt.postEmptyEvent();
+            return;
+        }
+    }
+}
+
+/// Dismiss every overlay, top-down, invoking each on_dismiss callback so
+/// owners can update their `open` state. Used for outside-click / ESC.
+pub fn dismissAllOverlays(self: *Window) void {
+    while (self.overlays.items.len > 0) {
+        const top = self.overlays.pop().?;
+        top.on_dismiss(top.owner);
+    }
+    self.paint_dirty = true;
+    awt.postEmptyEvent();
 }
 
 // ── dirty notify wiring ──────────────────────────────────────────────────
@@ -265,11 +369,15 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
 }
 
 /// Dispatch an input event to this window's component tree, honoring
-/// the mouse-capture state. Called from EventQueue.drain via the
-/// thunk below when an event posted by an OS callback fires.
+/// mouse capture, overlays (popups), and the optional menu bar. Order:
+///   1. mouse_capture (drag continuation)
+///   2. overlays (top-down hit-test; outside-press dismisses all)
+///   3. menu_bar
+///   4. container
 pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
     switch (ev.payload) {
         .mouse => |m| {
+            // 1. Mouse-capture priority (active drag).
             if (m.action == .release and self.mouse_capture != null) {
                 const cap = self.mouse_capture.?;
                 cap.vtable.processEvent(cap, ev);
@@ -281,6 +389,57 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
                 cap.vtable.processEvent(cap, ev);
                 return;
             }
+
+            // 2. Overlays (top-down).
+            if (self.overlays.items.len > 0) {
+                var hit_overlay = false;
+                var i: usize = self.overlays.items.len;
+                while (i > 0) {
+                    i -= 1;
+                    const entry = self.overlays.items[i];
+                    if (entry.component.containsWindowPoint(m.x, m.y)) {
+                        entry.component.vtable.processEvent(entry.component, ev);
+                        hit_overlay = true;
+                        if (m.action == .press) {
+                            if (ev.capture_target) |t| {
+                                self.mouse_capture = @ptrCast(@alignCast(t));
+                            }
+                        }
+                        break;
+                    }
+                }
+                if (!hit_overlay) {
+                    if (m.action == .press) {
+                        // Outside-click while popup is open: dismiss all,
+                        // swallow the click (do not propagate to bar/container).
+                        self.dismissAllOverlays();
+                    }
+                    // Hover/scroll outside overlay is also swallowed while
+                    // popup is open (typical menu modal feel).
+                    return;
+                }
+                // If consumed, we're done. Otherwise still don't bubble below
+                // overlays — overlays are modal.
+                return;
+            }
+
+            // 3. menu_bar (above container if no overlay handled the event).
+            if (self.menu_bar) |bar| {
+                if (bar.containsWindowPoint(m.x, m.y)) {
+                    bar.vtable.processEvent(bar, ev);
+                    if (m.action == .press) {
+                        if (ev.capture_target) |t| {
+                            self.mouse_capture = @ptrCast(@alignCast(t));
+                        }
+                    }
+                    if (ev.isConsumed()) return;
+                }
+                // For .move that's not over the bar, still let it through
+                // (a Menu in the bar may want to know hover-off — but for
+                // v1 we just let the bar see only events inside its bounds).
+            }
+
+            // 4. Container.
             self.container.component.vtable.processEvent(&self.container.component, ev);
             if (m.action == .press) {
                 if (ev.capture_target) |t| {
@@ -289,6 +448,21 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
             }
         },
         .key => {
+            // Overlays first (e.g., ESC closes top overlay).
+            if (self.overlays.items.len > 0) {
+                const top = self.overlays.items[self.overlays.items.len - 1];
+                top.component.vtable.processEvent(top.component, ev);
+                if (ev.isConsumed()) return;
+                if (ev.payload.key.code == .escape and ev.payload.key.action == .press) {
+                    self.dismissAllOverlays();
+                    return;
+                }
+                return;  // modal: don't propagate
+            }
+            if (self.menu_bar) |bar| {
+                bar.vtable.processEvent(bar, ev);
+                if (ev.isConsumed()) return;
+            }
             self.container.component.vtable.processEvent(&self.container.component, ev);
         },
     }

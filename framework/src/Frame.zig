@@ -3,10 +3,13 @@
 const std = @import("std");
 const awt = @import("awt");
 const Window = @import("Window.zig");
+const MenuBar = @import("MenuBar.zig");
 
 const Frame = @This();
 
-window: Window,
+window:    Window,
+menu_bar:  ?*MenuBar = null,
+owns_menu: bool = false,
 
 pub fn init(
     allocator: std.mem.Allocator,
@@ -24,9 +27,55 @@ pub fn init(
 }
 
 pub fn deinit(self: *Frame) void {
+    // Tear down menu bar before window so its overlay state is consistent.
+    if (self.menu_bar) |bar| {
+        if (self.owns_menu) {
+            bar.component.vtable.destroy(&bar.component, self.window.allocator);
+        }
+        self.menu_bar = null;
+    }
     self.window.deinit();
 }
 
 pub fn asWindow(self: *Frame) *Window {
     return &self.window;
+}
+
+// ── menu bar ─────────────────────────────────────────────────────────────
+
+pub fn setMenuBar(self: *Frame, bar: ?*MenuBar) void {
+    // Tear down previous.
+    if (self.menu_bar) |old| {
+        if (self.owns_menu) {
+            old.component.vtable.destroy(&old.component, self.window.allocator);
+        }
+    }
+    self.menu_bar = bar;
+    self.owns_menu = bar != null;
+    if (bar) |b| {
+        b.setWindow(&self.window);
+        self.window.setMenuBar(&b.component);
+    } else {
+        self.window.setMenuBar(null);
+    }
+}
+
+pub fn setMenuBarBorrowed(self: *Frame, bar: ?*MenuBar) void {
+    if (self.menu_bar) |old| {
+        if (self.owns_menu) {
+            old.component.vtable.destroy(&old.component, self.window.allocator);
+        }
+    }
+    self.menu_bar = bar;
+    self.owns_menu = false;
+    if (bar) |b| {
+        b.setWindow(&self.window);
+        self.window.setMenuBar(&b.component);
+    } else {
+        self.window.setMenuBar(null);
+    }
+}
+
+pub fn getMenuBar(self: Frame) ?*MenuBar {
+    return self.menu_bar;
 }
