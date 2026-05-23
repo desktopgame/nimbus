@@ -11,6 +11,8 @@ icon slot にチェックマーク（チェック時のみ）を描画する。
 pub const CheckBoxMenuItem = struct {
     component:  Component,
     text:       []const u8,
+    font:       awt.Graphics.TextFont,
+    color:      awt.Graphics.Color,
     model:      *ButtonModel,         // selected = checked 状態として流用
     owns_model: bool,
     allocator:  std.mem.Allocator,

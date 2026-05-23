@@ -11,15 +11,22 @@ Swing の `JMenu` 相当。
 
 ## 型定義
 ```zig
+pub const Mode = enum { bar, item };
+
 pub const Menu = struct {
-    component:  Component,
+    component:  Component,                     // バー/行として描画される本体
+    popup_root: Component,                     // 開いた popup の root (overlay として Window に登録)
     text:       []const u8,
     icon:       ?awt.Image,
+    font:       awt.Graphics.TextFont,
+    color:      awt.Graphics.Color,
     items:      std.ArrayList(*Component),    // MenuItem / CheckBoxMenuItem / MenuSeparator / Menu
     model:      *ButtonModel,                  // enabled / armed / rollover (ButtonModel 流用)
     owns_model: bool,
+    mode:       Mode,                          // bar (バー上のラベル) / item (行ラベル + サブメニュー矢印)
     open:       bool,                          // popup 表示中か
-    popup:      ?*Container,                   // 表示中の popup の内部 Container (overlay と同一)
+    open_child: ?*Menu,                        // 開いているサブメニュー (なければ null)
+    window:     ?*Window,                      // overlay 登録先 (`setWindow` で配線)
     allocator:  std.mem.Allocator,
 
     pub const vtable = Component.VTable{
@@ -31,6 +38,9 @@ pub const Menu = struct {
     };
 };
 ```
+
+`popup_root` は通常コンポーネントツリーに含まれず、`show` 時に Window の overlays 層に登録される独立 root。
+`mode` は親コンテキスト (MenuBar / 親 Menu) が `setMode` でセットする。
 
 ## Menu の生成
 ```zig

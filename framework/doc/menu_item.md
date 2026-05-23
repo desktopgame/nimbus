@@ -10,6 +10,8 @@ pub const MenuItem = struct {
     component:  Component,
     text:       []const u8,
     icon:       ?awt.Image,           // null なら icon slot は空白（揃いは保つ）
+    font:       awt.Graphics.TextFont,
+    color:      awt.Graphics.Color,
     model:      *ButtonModel,         // enabled / armed / rollover / action は ButtonModel 流用
     owns_model: bool,
     allocator:  std.mem.Allocator,

@@ -328,11 +328,12 @@ Window の `vtable.paint`（`paintWindow`）は **fallback** として残して�
 通常用途では `paintAt` 経由は使わず、`redraw` を直接呼ぶ。
 
 ## repaint と dirty 駆動
-`Component.repaint()` / `repaintRect(r)` が呼ばれると、parent を遡って Window まで上がり、`window.dirty_rect` に union で蓄積される。
-これは `framework.Component` で実装する責務。
+`Component.repaint()` / `repaintRect(r)` が呼ばれると、parent を遡って Window まで上がり、`window.paint_dirty = true` がセットされる。
+これは `Component.markDirty` → `DirtyNotify.paint` 経由で `Window.notifyPaint` を叩く配線で実装している (`framework/src/Window.zig:314-318`)。
 
-`dirty_rect` の扱いは graphics 層に伝えるシザーのヒントとして使う。
-v1 では full redraw に倒すが、API としては rect 単位で受けられるようにしておく（`component.md`「repaint」参照）。
+v1 では「rect 単位の dirty 蓄積」は行わず、`paint_dirty` の bool 1 個でフル再描画する。
+`Component.repaintRect(r)` は API として用意してあるが、`r` は無視されて `repaint` と等価になる (`framework/src/Component.zig:212-215`、`framework/src/Window.zig:174-177`)。
+将来 rect 単位で受けて部分再描画に倒す余地のため、API シグネチャだけ rect 引数を保持してある（機能要望）。
 
 ## close 処理
 GLFW が close リクエストを受け取ると `awt_window.shouldClose()` が `true` になる。

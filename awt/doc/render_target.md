@@ -124,7 +124,7 @@ cb.end();
 cb.submit(dev);
 
 // readback は内部で GPU 完了待ちをするので、 submit 後すぐ呼んで良い
-try rt.readbackToPng(allocator, 800, 600, "tmp/snap.png");
+try rt.readbackToPng(allocator, io, 800, 600, "tmp/snap.png");
 ```
 
 このパターンは `Application` / `Frame` / `Swapchain` を経由しないので、 ウィンドウが画面に出ない。

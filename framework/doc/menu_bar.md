@@ -11,7 +11,10 @@ Swing の `JMenuBar` 相当。
 pub const MenuBar = struct {
     component: Component,
     menus:     std.ArrayList(*Menu),
-    open:      ?*Menu,                  // 現在 popup を展開中の Menu (なければ null)
+    open_menu: ?*Menu,                  // 現在 popup を展開中の Menu (なければ null)
+    font:      awt.Graphics.TextFont,   // 配下の Menu ラベル描画用
+    color:     awt.Graphics.Color,
+    window:    ?*Window,                // overlay 登録先 (`setWindow` で配線)
     allocator: std.mem.Allocator,
 
     pub const vtable = Component.VTable{

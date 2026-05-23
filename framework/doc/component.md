@@ -75,8 +75,10 @@ pub fn setBounds(self: *Component, bounds: Rect) void;
 
 ## bounds の取得
 ```zig
-pub fn getBounds(self: *const Component) Rect;
+pub fn getBounds(self: Component) Rect;
 ```
+
+値レシーバ。`Component` は中身が小さい (ポインタ数個 + プリミティブ) ので値で受けても安価。
 
 ## 再描画の要求
 ```zig
@@ -91,19 +93,21 @@ paint_dirty を立てる。レイアウトには影響しない。
 pub fn setMinSize(self: *Component, size: Size) void;
 ```
 
-下限を更新する。値が変わったら layout_dirty + paint_dirty を立てる。
+下限を更新する。値が変わったら `markLayoutDirty` を呼ぶ (ルートまで遡って Window の layout_dirty + paint_dirty が立つ)。
 
 ## 最小サイズの取得
 ```zig
 pub fn getMinSize(self: *const Component) Size;
 ```
 
+(他の getter / Container 側の embed フィールド参照のため、こちらは `*const` 受け取り。)
+
 ## 最大サイズの設定
 ```zig
 pub fn setMaxSize(self: *Component, size: Size) void;
 ```
 
-上限を更新する。値が変わったら layout_dirty + paint_dirty を立てる。
+上限を更新する。値が変わったら `markLayoutDirty` を呼ぶ (ルートまで遡って Window の layout_dirty + paint_dirty が立つ)。
 
 ## 最大サイズの取得
 ```zig
@@ -115,7 +119,7 @@ pub fn getMaxSize(self: *const Component) Size;
 pub fn setGrowX(self: *Component, weight: f32) void;
 ```
 
-水平方向の余白分配重みを更新する。値が変わったら layout_dirty + paint_dirty を立てる。
+水平方向の余白分配重みを更新する。値が変わったら `markLayoutDirty` を呼ぶ (ルートまで遡って Window の layout_dirty + paint_dirty が立つ)。
 
 ## 水平方向 grow の取得
 ```zig
@@ -127,7 +131,7 @@ pub fn getGrowX(self: *const Component) f32;
 pub fn setGrowY(self: *Component, weight: f32) void;
 ```
 
-垂直方向の余白分配重みを更新する。値が変わったら layout_dirty + paint_dirty を立てる。
+垂直方向の余白分配重みを更新する。値が変わったら `markLayoutDirty` を呼ぶ (ルートまで遡って Window の layout_dirty + paint_dirty が立つ)。
 
 ## 垂直方向 grow の取得
 ```zig
@@ -139,7 +143,7 @@ pub fn getGrowY(self: *const Component) f32;
 pub fn setAlignX(self: *Component, a: Alignment) void;
 ```
 
-水平方向のアラインメントを更新する。値が変わったら layout_dirty + paint_dirty を立てる。
+水平方向のアラインメントを更新する。値が変わったら `markLayoutDirty` を呼ぶ (ルートまで遡って Window の layout_dirty + paint_dirty が立つ)。
 垂直 box などコンテナの主軸が y のとき、コンテナはこの値を見て子の水平位置を決める。
 
 ## 水平方向アラインメントの取得
@@ -152,7 +156,7 @@ pub fn getAlignX(self: *const Component) Alignment;
 pub fn setAlignY(self: *Component, a: Alignment) void;
 ```
 
-垂直方向のアラインメントを更新する。値が変わったら layout_dirty + paint_dirty を立てる。
+垂直方向のアラインメントを更新する。値が変わったら `markLayoutDirty` を呼ぶ (ルートまで遡って Window の layout_dirty + paint_dirty が立つ)。
 水平 box などコンテナの主軸が x のとき、コンテナはこの値を見て子の垂直位置を決める。
 
 ## 垂直方向アラインメントの取得
@@ -171,8 +175,10 @@ pub fn setName(self: *Component, name: ?[]const u8) void;
 
 ## 名前の取得
 ```zig
-pub fn getName(self: *const Component) ?[]const u8;
+pub fn getName(self: Component) ?[]const u8;
 ```
+
+値レシーバ (`getBounds` と同じ理由)。
 
 ## VTable の差し替え
 ```zig

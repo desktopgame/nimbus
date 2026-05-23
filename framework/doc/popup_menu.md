@@ -9,17 +9,17 @@ Swing の `JPopupMenu` 相当。
 ## 型定義
 ```zig
 pub const PopupMenu = struct {
-    items:     std.ArrayList(*Component),    // MenuItem / CheckBoxMenuItem / MenuSeparator / Menu
-    open:      bool,                          // 表示中か
-    popup:     ?*Container,                   // 表示中の popup 用 Container
-    anchor:    Component.Point,               // 表示中の左上座標 (window-local)
-    window:    ?*Window,                      // 表示先の Window
-    allocator: std.mem.Allocator,
+    popup_root: Component,                     // overlay 登録時の root component
+    items:      std.ArrayList(*Component),     // MenuItem / CheckBoxMenuItem / MenuSeparator / Menu
+    open:       bool,                          // 表示中か
+    open_child: ?*Menu,                        // hover で開いているサブメニュー (なければ null)
+    window:     ?*Window,                      // 表示先の Window
+    allocator:  std.mem.Allocator,
 };
 ```
 
-PopupMenu は `Component` 派生では**ない**。
-コンポーネントツリーには直接入らず、`show` で初めて overlay として Window に登録される。
+PopupMenu それ自体は `Component` の派生では**ない** (`component:` フィールドを持たない)。
+代わりに内部に `popup_root` という独立した Component を持ち、`show` 時にそれを overlay として Window に登録する。
 利用者は普段の `Container.add` ではなく、別の所有経路で持ち回す。
 
 ## PopupMenu の生成
@@ -68,10 +68,11 @@ pub fn show(self: *PopupMenu, window: *Window, x: f32, y: f32) !void;
 ```
 
 `(x, y)` を左上として popup を開く（window ローカル座標）。
-内部で popup 用 Container を生成（既存があれば再利用）、`items` を縦並び BoxLayout で配置、Window の overlays 層に登録する。
+内部で `popup_root.position` を `(x, y)` にセットし、`items` を縦並びに配置、Window の overlays 層に登録する。
 画面端で見切れる場合は反対側に反転（v1 はクライアント領域内に収まるよう reposition）。
 
-`open = true`、`window = window`、`anchor = (x, y)` を記録する。
+`open = true`、`window = window` を記録する。
+表示位置は `popup_root.position` に直接持つので別途 `anchor` フィールドは持たない。
 
 ### 事前条件
 * 既に `open = true` の場合は no-op（または同じ位置で再表示扱い）
@@ -82,8 +83,8 @@ pub fn hide(self: *PopupMenu) void;
 ```
 
 popup を Window の overlays 層から外す。
-`open = false`、`window = null` にする。
-popup Container は破棄せず再利用のため保持する。
+`open = false` にする (`window` は次回 `show` で再利用するためクリアしない)。
+`popup_root` は破棄せず再利用のため保持する。
 
 ## item を追加した時点で popup を開いている場合
 通常、`add` は popup が閉じている時に呼ぶ前提。
@@ -112,7 +113,7 @@ PopupMenu 自身は dismiss callback を受け取って `hide` を呼ぶだけ�
 
 ## item クリックでの自動 dismiss
 PopupMenu の item が ActionListener を発火したら自動的に `hide` する。
-これは PopupMenu が各 item の model に install 時に ActionListener を登録して検知する。
+これは PopupMenu の `add` 内部で item の model に内部 ActionListener を登録することで実現する。
 利用者が ActionListener を追加する時、PopupMenu の listener と独立に動く（fire は両方に飛ぶ）。
 
 サブメニュー（Menu を popup の中に入れた場合）は item ではなく Menu なので、Menu 自身の popup を開くだけで PopupMenu は閉じない（カスケード popup を維持する）。
@@ -121,14 +122,17 @@ PopupMenu の item が ActionListener を発火したら自動的に `hide` す�
 右クリックメニュー（コンテキストメニュー）。
 
 ```zig
+const font  = awt.Graphics.TextFont{ .face = app.default_font, .pixel_size = 14 };
+const black = awt.Graphics.Color.rgb(0.1, 0.1, 0.1);
+
 const ctx_menu = try PopupMenu.create(allocator);
 defer ctx_menu.destroy();
 
-try ctx_menu.add(&(try MenuItem.create(allocator, "Cut")).component);
-try ctx_menu.add(&(try MenuItem.create(allocator, "Copy")).component);
-try ctx_menu.add(&(try MenuItem.create(allocator, "Paste")).component);
+try ctx_menu.add(&(try MenuItem.create(allocator, "Cut",        font, black)).component);
+try ctx_menu.add(&(try MenuItem.create(allocator, "Copy",       font, black)).component);
+try ctx_menu.add(&(try MenuItem.create(allocator, "Paste",      font, black)).component);
 try ctx_menu.addSeparator();
-try ctx_menu.add(&(try MenuItem.create(allocator, "Select All")).component);
+try ctx_menu.add(&(try MenuItem.create(allocator, "Select All", font, black)).component);
 
 // あるウィジェットの processEvent 内で右クリックを検知して表示
 fn processEvent(self: *Component, ev: *Event) void {
@@ -145,8 +149,8 @@ fn processEvent(self: *Component, ev: *Event) void {
 
 ```zig
 const dropdown = try PopupMenu.create(allocator);
-try dropdown.add(&(try MenuItem.create(allocator, "Option A")).component);
-try dropdown.add(&(try MenuItem.create(allocator, "Option B")).component);
+try dropdown.add(&(try MenuItem.create(allocator, "Option A", font, black)).component);
+try dropdown.add(&(try MenuItem.create(allocator, "Option B", font, black)).component);
 
 const btn = try app.button("Choose ▾");
 try btn.getModel().addActionListener(struct {
@@ -163,9 +167,9 @@ try btn.getModel().addActionListener(struct {
 ```zig
 const ctx_menu = try PopupMenu.create(allocator);
 
-const insert = try Menu.create(allocator, "Insert");
-try insert.add(&(try MenuItem.create(allocator, "Image")).component);
-try insert.add(&(try MenuItem.create(allocator, "Table")).component);
+const insert = try Menu.create(allocator, "Insert", font, black);
+try insert.add(&(try MenuItem.create(allocator, "Image", font, black)).component);
+try insert.add(&(try MenuItem.create(allocator, "Table", font, black)).component);
 
 try ctx_menu.add(&insert.component);  // Menu を submenu として
 try ctx_menu.add(&(try MenuItem.create(allocator, "Delete")).component);

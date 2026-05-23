@@ -155,16 +155,16 @@ try app.run();   // event loop。close で抜ける
 Frame 直に setter / add を生やしていないので、`frame.window.xxx` 経由で呼ぶ。
 `&frame.window` は `*Window` として他の API に渡せる。
 
-メニューバーを取り付ける例。
+メニューバーを取り付ける例 (Application factory 経由で font / color 注入を省略)。
 
 ```zig
-const bar = try MenuBar.create(app.allocator);
+const bar = try app.menuBar();
 
-const file = try Menu.create(app.allocator, "File");
-try file.add(&(try MenuItem.create(app.allocator, "Open")).component);
-try file.add(&(try MenuItem.create(app.allocator, "Save")).component);
+const file = try app.menu("File");
+try file.add(&(try app.menuItem("Open")).component);
+try file.add(&(try app.menuItem("Save")).component);
 try file.addSeparator();
-try file.add(&(try MenuItem.create(app.allocator, "Quit")).component);
+try file.add(&(try app.menuItem("Quit")).component);
 
 try bar.add(file);
 try frame.setMenuBar(bar);  // 所有権が Frame に移る

@@ -173,6 +173,10 @@ pub fn frame(self: *Application, title: []const u8, w: u32, h: u32) !*Frame {
     const f = try self.allocator.create(Frame);
     errdefer self.allocator.destroy(f);
     f.* = try Frame.init(self.allocator, @ptrCast(self), self.event_queue, title, w, h, &self.device, &self.context);
+    // Frame.init succeeded; from here on any failure must run Frame.deinit to
+    // release Window / Swapchain / title_dup (install can fail with OOM since
+    // it allocates DirtyNotify property; windows.append can also fail).
+    errdefer f.deinit();
 
     // The Window vtable's install() does container linkup + OS callback wiring.
     try Window.vtable.install(&f.window.container.component);

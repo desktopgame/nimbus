@@ -198,21 +198,16 @@ pub fn main() !void {
         .{ .face = font, .pixel_size = 24 },
         awt.Graphics.Color.rgb(1, 1, 0),
     );
-    defer {
-        fw_label.component.deinit();
-        fw_label.component.vtable.destroy(&fw_label.component, gpa);
-    }
+    // vtable.destroy handles deinit + allocator.destroy in one call.
+    defer fw_label.component.vtable.destroy(&fw_label.component, gpa);
     fw_label.component.setBounds(.{ .x = 30, .y = 610, .width = 400, .height = 32 });
 
-    // Container + 子 Label 2 個、右下に配置。
-    const fw_container = try gpa.create(Container);
-    fw_container.* = Container.init(gpa);
-    try Container.vtable.install(&fw_container.component);
+    // Container + 子 Label 2 個、右下に配置。Container.create handles
+    // alloc + init + install in one shot.
+    const fw_container = try Container.create(gpa);
     fw_container.component.setBounds(.{ .x = 430, .y = 605, .width = 350, .height = 60 });
-    defer {
-        fw_container.deinit();
-        gpa.destroy(fw_container);
-    }
+    // Destroys the container and (recursively) any children added below.
+    defer fw_container.component.vtable.destroy(&fw_container.component, gpa);
 
     const child_a = try Label.create(
         gpa,

@@ -42,3 +42,15 @@ void nmDestroyDevice(nmDevice* self);
 
 ### 事前条件
 * `self` が NULL のとき、なにも実行せずに終了する。
+
+## GPU 完了待ち
+void nmWaitDeviceIdle(nmDevice* self);
+
+デバイス上で投入済みのすべての作業 (コマンドバッファ submit、フェンス signal 等) が完了するまで CPU をブロックする。
+シャットダウン直前 (Application.deinit 系) や、リソース再構築 (resize 等) の前に「使用中の GPU リソースが安全に破棄できる状態」を保証するために使う。
+
+### 事前条件
+* `self` が non-NULL であること。違反した場合の動作は UB。
+
+### 診断情報
+* 通常ケースで明示的なログは出さない。GPU 側のエラーは debug layer (`NM_DX12_DEBUG`) が拾う。
