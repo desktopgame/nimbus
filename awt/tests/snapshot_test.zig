@@ -59,6 +59,10 @@ test "snapshot: layout_nested" {
     try runScene(scenes.layout_nested);
 }
 
+test "snapshot: layout_border_shell" {
+    try runScene(scenes.layout_border_shell);
+}
+
 fn runScene(scene: scenes.Scene) !void {
     const allocator = std.testing.allocator;
 

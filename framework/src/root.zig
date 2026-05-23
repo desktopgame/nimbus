@@ -8,6 +8,7 @@ pub const Label = @import("Label.zig");
 pub const LayoutManager = @import("LayoutManager.zig");
 pub const ChangeListenerList = @import("ChangeListenerList.zig");
 pub const BoxLayout = @import("BoxLayout.zig");
+pub const BorderLayout = @import("BorderLayout.zig");
 pub const Panel = @import("Panel.zig");
 pub const BoundedRangeModel = @import("BoundedRangeModel.zig");
 pub const Slider = @import("Slider.zig");

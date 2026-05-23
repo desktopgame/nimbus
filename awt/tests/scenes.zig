@@ -243,6 +243,43 @@ fn paintPanelDecoration(ctx: PaintContext) anyerror!void {
     }
 }
 
+// border layout: toolbar / status / sidebar / content shell
+pub const layout_border_shell = Scene{
+    .name = "layout_border_shell",
+    .width = 500,
+    .height = 300,
+    .paint = paintBorderShell,
+};
+
+fn paintBorderShell(ctx: PaintContext) anyerror!void {
+    var setup = try FrameworkSetup.init(ctx);
+    defer setup.deinit();
+
+    setup.container.setLayout(framework.BorderLayout.get());
+
+    const toolbar = try framework.Panel.create(ctx.allocator);
+    toolbar.setBackground(awt.Graphics.Color.rgb(0.85, 0.85, 0.85));
+    toolbar.container.component.min_size = .{ .width = 0, .height = 32 };
+
+    const status = try framework.Panel.create(ctx.allocator);
+    status.setBackground(awt.Graphics.Color.rgb(0.4, 0.4, 0.5));
+    status.container.component.min_size = .{ .width = 0, .height = 24 };
+
+    const sidebar = try framework.Panel.create(ctx.allocator);
+    sidebar.setBackground(awt.Graphics.Color.rgb(0.92, 0.92, 0.94));
+    sidebar.container.component.min_size = .{ .width = 120, .height = 0 };
+
+    const content = try framework.Panel.create(ctx.allocator);
+    content.setBackground(awt.Graphics.Color.rgb(1, 1, 1));
+
+    try framework.BorderLayout.add(setup.container, .north,  &toolbar.container.component);
+    try framework.BorderLayout.add(setup.container, .south,  &status.container.component);
+    try framework.BorderLayout.add(setup.container, .west,   &sidebar.container.component);
+    try framework.BorderLayout.add(setup.container, .center, &content.container.component);
+
+    setup.paint();
+}
+
 // nested: vertical box of (horizontal toolbar + grow body + footer)
 pub const layout_nested = Scene{
     .name = "layout_nested",
@@ -302,4 +339,5 @@ pub const all = [_]Scene{
     layout_centered,
     layout_panel_decoration,
     layout_nested,
+    layout_border_shell,
 };
