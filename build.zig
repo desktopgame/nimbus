@@ -180,6 +180,7 @@ pub fn build(b: *std.Build) void {
     addExample(b, "widget_simple", framework_mod, null, target, optimize);
     addExample(b, "widget_menu", framework_mod, null, target, optimize);
     addExample(b, "widget_textfield", framework_mod, null, target, optimize);
+    addExample(b, "widget_textarea", framework_mod, null, target, optimize);
     addExample(b, "widget_checkbox", framework_mod, null, target, optimize);
     addExample(b, "widget_radio", framework_mod, null, target, optimize);
     addExample(b, "widget_combobox", framework_mod, null, target, optimize);

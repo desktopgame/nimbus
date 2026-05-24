@@ -104,6 +104,18 @@ pub fn setUnitIncrement(self: *ScrollPane, px: f32) void;
 ホイール 1 ノッチで動くスクロール量。
 将来ビューが `Scrollable` で行高などのヒントを出せるようになれば、 そちらを優先する余地を残す (機能要望)。
 
+## 矩形を可視域へスクロール
+```zig
+pub fn scrollRectToVisible(self: *ScrollPane, rect: Component.Rect) void;
+```
+
+`rect` (ビューのローカル座標、 0 = ビュー左上) がビューポート内に入るよう、 必要最小限だけスクロールする。
+ビューが自分のキャレットなどを見せ続けるために使う (例: `TextArea` のキャレット追従)。
+ビューポートより大きい矩形は先頭側に寄せる。
+スクロール量は内部でモデルの有効範囲にクランプされる。
+
+ビューはこれを直接呼ぶのではなく、 `Component.enclosingScrollController` で囲っている `ScrollPane` を見つけて経由する (後述「ScrollController の設置」)。
+
 ## ChangeListener
 ```zig
 pub fn addChangeListener   (self: *ScrollPane, fn_ptr: ChangeListenerList.ListenerFn, user_data: *anyopaque) !void;
@@ -151,7 +163,8 @@ pub fn removeChangeListener(self: *ScrollPane, fn_ptr: ChangeListenerList.Listen
 
 このときビュー側に課す契約は **「幅が変わったら (= `setBounds` で新しい幅を受けたら) 内容を測り直して自分の `min_size.height` を更新すること」**。
 nimbus に汎用の height-for-width クエリは無いので、 「ScrollPane が幅をセット → ビューが高さを再計算 → ScrollPane が読む」 の 2 段でそれを代用する。
-通常の (折り返さない) ビューはサイズが幅に依存しないので、 この契約は自動的に満たされる。
+ビューがこの再計算をフックする口が `Component.VTable.reshape` (`component.md` 参照)。 `setBounds` でサイズが変わると `reshape` が呼ばれるので、 折り返しビューはそこで新しい幅に合わせて reflow し `min_size.height` を更新する。 `ScrollPane` は直後に `effectiveMinSize` を読む。
+通常の (折り返さない) ビューはサイズが幅に依存しないので、 `reshape` を実装する必要はなく、 この契約は自動的に満たされる。
 
 これにより `TextArea` の 2 モードが**公開 API を変えずに**載る:
 
@@ -173,6 +186,12 @@ nimbus に汎用の height-for-width クエリは無いので、 「ScrollPane �
 `ScrollPane` の `min_size` は**コンテンツの大きさに依存しない** (依存させるとスクロールの意味が無い)。
 初版では小さめの既定推奨サイズを返し、 利用者が `setGrowX/Y` やレイアウトで広げて使う想定。
 `BorderLayout.center` に置く、 あるいは `setGrowX(1)` + `setGrowY(1)` で領域いっぱいに広げるのが典型。
+
+## ScrollController の設置
+`ScrollPane` は生成時に `Component.ScrollController` プロパティを **`viewport` のコンポーネント** に install する (`component.md`「スクロール連携」参照)。
+`viewport` はビューの親なので、 ビューが `enclosingScrollController` で親方向にたどると最初にこれが見つかる。
+コールバックは `scrollRectToVisible` へ委譲する。
+これにより `TextArea` のようなビューが、 `ScrollPane` への直接依存なしにキャレット追従を実現できる。
 
 ## 寿命
 `ScrollPane` は `view` / `hbar` / `vbar` / 内部 `viewport` をすべて所有し、 `destroy` で再帰的に解放する。

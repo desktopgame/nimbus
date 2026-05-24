@@ -35,6 +35,8 @@ pub const Frame = @import("Frame.zig");
 pub const Dialog = @import("Dialog.zig");
 pub const Application = @import("Application.zig");
 pub const TextField = @import("TextField.zig");
+pub const TextArea = @import("TextArea.zig");
+pub const GapBuffer = @import("GapBuffer.zig");
 
 test {
     std.testing.refAllDecls(@This());

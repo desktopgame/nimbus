@@ -42,6 +42,9 @@ v_model:        BoundedRangeModel,
 h_policy:       Policy,
 v_policy:       Policy,
 unit_increment: f32,
+/// Installed as a property on `viewport.component` so the scrolled view can
+/// request `scrollRectToVisible` (e.g. TextArea caret follow). See Component.
+scroll_controller: Component.ScrollController,
 allocator:      std.mem.Allocator,
 
 const ScrollLayout = struct {
@@ -78,8 +81,10 @@ pub fn create(allocator: std.mem.Allocator, view: *Component) !*ScrollPane {
         .h_policy       = .as_needed,
         .v_policy       = .as_needed,
         .unit_increment = DEFAULT_UNIT_INCREMENT,
+        .scroll_controller = .{ .user_data = undefined, .scroll_rect_to_visible = scrollRectToVisibleImpl },
         .allocator      = allocator,
     };
+    sp.scroll_controller.user_data = @ptrCast(sp);
     errdefer {
         sp.v_model.deinit();
         sp.h_model.deinit();
@@ -97,6 +102,13 @@ pub fn create(allocator: std.mem.Allocator, view: *Component) !*ScrollPane {
     sp.viewport = try Container.create(allocator);
     errdefer sp.viewport.component.vtable.destroy(&sp.viewport.component, allocator);
     try sp.viewport.children.ensureTotalCapacity(allocator, 1);
+    // Let the view reach us for caret follow / scrollRectToVisible. Stored on
+    // the viewport (the view's parent), found via enclosingScrollController.
+    try sp.viewport.component.putProperty(
+        @typeName(Component.ScrollController),
+        @ptrCast(&sp.scroll_controller),
+        null,
+    );
 
     sp.hbar = try ScrollBar.createWithModel(allocator, .horizontal, &sp.h_model);
     errdefer sp.hbar.component.vtable.destroy(&sp.hbar.component, allocator);
@@ -169,6 +181,37 @@ pub fn setVerticalPolicy(self: *ScrollPane, policy: Policy) void {
 
 pub fn setUnitIncrement(self: *ScrollPane, px: f32) void {
     self.unit_increment = px;
+}
+
+/// Scroll the minimum amount so that `rect` — expressed in the view's local
+/// coordinates (0 = view top-left) — lies within the viewport. Used by views
+/// like TextArea to keep the caret visible. Over-large rects pin to the
+/// leading edge.
+pub fn scrollRectToVisible(self: *ScrollPane, rect: Component.Rect) void {
+    const vp_w = self.viewport.component.size.width;
+    const vp_h = self.viewport.component.size.height;
+    var sx = self.getScrollX();
+    var sy = self.getScrollY();
+
+    if (rect.x < sx) {
+        sx = rect.x;
+    } else if (rect.x + rect.width > sx + vp_w) {
+        sx = rect.x + rect.width - vp_w;
+    }
+    if (rect.y < sy) {
+        sy = rect.y;
+    } else if (rect.y + rect.height > sy + vp_h) {
+        sy = rect.y + rect.height - vp_h;
+    }
+
+    // setScrollX/Y clamp against the model's valid range.
+    self.setScrollX(sx);
+    self.setScrollY(sy);
+}
+
+fn scrollRectToVisibleImpl(user_data: *anyopaque, rect: Component.Rect) void {
+    const self: *ScrollPane = @ptrCast(@alignCast(user_data));
+    self.scrollRectToVisible(rect);
 }
 
 /// Fires when either axis's scroll position changes.

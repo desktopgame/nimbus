@@ -24,6 +24,7 @@ const CheckBoxMenuItem = @import("CheckBoxMenuItem.zig");
 const PopupMenu = @import("PopupMenu.zig");
 const MenuSeparator = @import("MenuSeparator.zig");
 const TextField = @import("TextField.zig");
+const TextArea = @import("TextArea.zig");
 const noto = @import("noto/fonts.zig");
 const lucide = @import("lucide/icons.zig");
 
@@ -685,6 +686,16 @@ pub fn menuSeparator(self: *Application) !*MenuSeparator {
 /// UTF-8 buffer; pass `""` for an empty field.
 pub fn textField(self: *Application, initial_text: []const u8) !*TextField {
     return try TextField.create(
+        self.allocator,
+        self,
+        .{ .face = self.default_font, .pixel_size = 14 },
+        awt.Graphics.Color.rgb(0, 0, 0),
+        initial_text,
+    );
+}
+
+pub fn textArea(self: *Application, initial_text: []const u8) !*TextArea {
+    return try TextArea.create(
         self.allocator,
         self,
         .{ .face = self.default_font, .pixel_size = 14 },

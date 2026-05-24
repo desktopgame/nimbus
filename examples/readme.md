@@ -17,6 +17,9 @@ frameworkのAPIを使用して、メニュー、ポップアップメニュー�
 ## widget_textfield
 frameworkのAPIを使用して、テキストフィールドを表示する。あわせて、空Panelを使って余白（margin相当）を作るレシピのデモも兼ねる。
 
+## widget_textarea
+frameworkのAPIを使用して、複数行のテキストエリアを `ScrollPane` に入れて表示・編集する。ボタンで折り返し（line wrap）の on/off を切り替えられ、折り返しなしは水平＋垂直スクロール、ありは垂直のみになる。編集中にキャレットが見えるよう自動スクロールする（キャレット追従）デモも兼ねる。
+
 ## widget_checkbox
 frameworkのAPIを使用して、チェックボックスを縦に並べ、ラベルでチェック状態をミラー表示する。
 

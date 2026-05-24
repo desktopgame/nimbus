@@ -58,6 +58,13 @@ pub const VTable = struct {
     /// Called by Container.deinit after `uninstall` + property cleanup. The implementation
     /// is expected to `@fieldParentPtr` back to the outer type and call `allocator.destroy`.
     destroy:      *const fn (self: *Component, allocator: std.mem.Allocator) void,
+    /// Optional: called by `setBounds` when the component's *size* changes (not
+    /// on pure moves). Lets a view recompute size-dependent state — e.g. a
+    /// wrapping TextArea reflows to the new width and updates its
+    /// `min_size.height`. This is the height-for-width mechanism ScrollPane
+    /// relies on (`scrollpane.md`). `new_size` equals `self.size` at call time.
+    /// Default null = no reaction.
+    reshape:      ?*const fn (self: *Component, new_size: Size) void = null,
 };
 
 pub const Property = struct {
@@ -143,8 +150,14 @@ pub fn setBounds(self: *Component, r: Rect) void {
     const moved =
         self.position.x != r.x or self.position.y != r.y or
         self.size.width != r.width or self.size.height != r.height;
+    const resized = self.size.width != r.width or self.size.height != r.height;
     self.position = .{ .x = r.x, .y = r.y };
     self.size = .{ .width = r.width, .height = r.height };
+    // Notify size-dependent views (e.g. wrapping TextArea) before flagging
+    // dirty — the reshape impl may itself call setMinSize → markLayoutDirty.
+    if (resized) {
+        if (self.vtable.reshape) |reshape| reshape(self, self.size);
+    }
     if (moved) self.markLayoutDirty();
 }
 
@@ -268,6 +281,27 @@ pub const FocusController = struct {
     user_data:         *anyopaque,
     request_focus_for: *const fn (*anyopaque, ?*Component) void,
 };
+
+/// Property type a `ScrollPane` installs on its viewport so a scrolled view can
+/// ask to be scrolled without a direct framework→ScrollPane dependency cycle
+/// (same pattern as `DirtyNotify` / `FocusController`). A view (e.g. TextArea)
+/// calls `enclosingScrollController()` and passes a rect in its own local
+/// coordinates to bring into view.
+pub const ScrollController = struct {
+    user_data:              *anyopaque,
+    scroll_rect_to_visible: *const fn (*anyopaque, Rect) void,
+};
+
+/// Nearest enclosing `ScrollController` found by walking ancestors (not self).
+/// Null when the component is not inside a `ScrollPane`.
+pub fn enclosingScrollController(self: *Component) ?*ScrollController {
+    var node: ?*Component = self.parent;
+    while (node) |cur| {
+        if (cur.getTyped(ScrollController)) |sc| return sc;
+        node = cur.parent;
+    }
+    return null;
+}
 
 // ── name (debug) ─────────────────────────────────────────────────────────
 

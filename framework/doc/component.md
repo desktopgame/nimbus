@@ -12,6 +12,7 @@ pub const Component = struct {
         paint:        *const fn (*Component, *awt.Graphics) void,
         processEvent: *const fn (*Component, *awt.Event) void,
         destroy:      *const fn (*Component, std.mem.Allocator) void,
+        reshape:      ?*const fn (*Component, Size) void = null, // オプショナル。サイズ変化時に呼ばれる
     };
 
     vtable:     *const VTable,                  // ★ 書き換え可能 (個別差替 / 一斉差替)
@@ -292,8 +293,14 @@ VTable のカスタマイズポイントは以下の 5 つ。
 | `paint` | 描画ロジック |
 | `processEvent` | イベント処理ロジック |
 | `destroy` | メモリ解放（L&F カスタマイズではなく内部責務） |
+| `reshape` | オプショナル。サイズ依存の状態を作り直す hook |
 
 `destroy` だけは L&F の範疇ではなく、Zig の制約から必要な内部責務（後述「メモリ解放」を参照）。
+
+`reshape` は `?*const fn (*Component, Size) void` で、デフォルト `null`（多くのウィジェットは未設定）。
+`setBounds` でサイズが変わったとき（純粋な移動では呼ばれない）に `self.size` 確定後・dirty フラグ設定前に呼ばれる。
+幅に依存して内容サイズが変わるビュー、典型的には折り返しモードの `TextArea` が、新しい幅で内容を測り直して `min_size.height` を更新するのに使う（`ScrollPane` の height-for-width 機構。`scrollpane.md` 参照）。
+`null` のときは何もしない。
 
 ## プロパティ
 VTable の差し替えだけでは「コンポーネントが追加の独自状態を持ち、イベントで変化する」ような拡張に対応できない。
@@ -428,6 +435,25 @@ pub const FocusController = struct {
 ```
 
 利用者がこの型に触る必要はない (Window が install / 利用する内部仕掛け)。
+
+## スクロール連携 (ScrollController)
+`FocusController` / `DirtyNotify` と同じパターンで、スクロールされるビューが囲っている `ScrollPane` に「この矩形を可視域に入れて」と依頼するための仕掛け。
+framework→ScrollPane の直接依存を避けるためプロパティ経由にする。
+
+```zig
+pub const ScrollController = struct {
+    user_data:              *anyopaque,
+    // rect はビューのローカル座標 (0 = ビュー左上)。
+    scroll_rect_to_visible: *const fn (*anyopaque, Rect) void,
+};
+
+pub fn enclosingScrollController(self: *Component) ?*ScrollController;
+```
+
+`ScrollPane` が自分の viewport コンポーネントにこのプロパティを install する (`scrollpane.md` 参照)。
+ビュー (例: `TextArea`) は `enclosingScrollController` で親方向に最も近いものを探し、キャレット矩形を渡してスクロールを依頼する。
+`ScrollPane` の外で使われている場合は `null` が返り、追従は no-op になる。
+`enclosingScrollController` は自分自身は対象に含めず、親から上を探す。
 
 ## install / uninstall
 `install` を呼んだら必ず対応する `uninstall` も呼び出さなければならない。
