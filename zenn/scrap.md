@@ -9,6 +9,7 @@ https://github.com/desktopgame/nimbus
     * いや、Netbeans とか jEdit とか RText とか、Swing製のすごいアプリはあるんですが…
 * wxWidgets / GTK など他の代替があるのでは？
     * 実際それでもいいかも。自分で設計してみるのが面白そう、というのもモチベーション。
+    * 設計だけで、コードは全て CLAUDE が書いていますが
 
 実現したいこと
 * クロスプラットフォーム / ネイティブバイナリ は必須。
@@ -30,3 +31,21 @@ https://github.com/desktopgame/nimbus
 テキストフィールドのデモ
 ![テキストフィールドのデモ画像](scrap_demo3.png)
 ![テキストフィールドのデモ画像](scrap_demo4.png)
+
+---
+
+設計判断についてのメモ
+
+Swing には Application 型がありません。
+私は Swing のこの設計が好きだったのですが、よくよく調べていくと Application 型を提供するべきだと思いました。
+
+例えば、
+* Qt なら QApplication クラスがある
+* wxWidgets なら wxApp クラスがある
+* GTK なら GtkApplication クラスがある
+
+で、実は Swing 、というか Swing Application Framework （これは結局頓挫したっぽいのですが）も Application クラスを提供しています。
+
+これのメリットは、本質的にグローバルなものの置き場所を用意できる、ということでしょうか。
+イベントキューやアロケーターなど、グローバルにいろんなところから触りたいものの置き場所にできます。
+こういう置き場所がないと、グローバル変数として置いといて直接依存することになります。 java.awt.EventQueue などが実際そうですが。
