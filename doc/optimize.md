@@ -26,42 +26,44 @@
 
 ---
 
-## 未: min/max サイズのキャッシュ
+## 済: min/max サイズのキャッシュ (2026-05-24 実装済み)
 
-### 観察
-`Component.effectiveMinSize` / `effectiveMaxSize` はコンテナーの場合、
-`getMinSize → computeMinSize → 各子の effectiveMinSize → …` とサブツリー全体を再帰測定する。
-これがキャッシュされないため、次の重複が起きる。
+### 実装
+`Container` に `min_cache` / `max_cache` (`?Component.Size`, デフォルト null) を追加し、
+`getMinSize` / `getMaxSize` が `computeMinSize` / `computeMaxSize` の結果をメモ化する。
+公開シグネチャは不変 — `*const Container` のまま `@constCast` でメモを書く
+(メモは不変サブツリーの純関数なので論理的に const、Container 実体は可変なので安全)。
+無効化は `Component.markDirty` の root への遡上経路に差し込み、通過するコンテナーの
+キャッシュを null にする。これは「変更ノードの祖先 = サブツリー計測が変わり得るコンテナー」と一致する。
+葉の min は従来どおり都度読む (キャッシュ対象は Container の computeMinSize のみ) ので葉の stale は起きない。
 
-* `BoxLayout.doLayout` は pass1 で全子の min を測り、pass2 で同じ min を再度測り、さらに max も測る。
-  同一 doLayout 内で min を 2 回計算している。
-* 上位コンテナーの測定が下位コンテナーの測定を内包するので、ネストすると測定回数が深さに対して急増する。
+正しさの前提: min/max を変える変更は必ず `markLayoutDirty` を通る。
+現状の全ウィジェット (Label/Button/TextField/Slider/CheckBox/ComboBox) はこれを満たす
+(直接代入は init/applyMetrics 内で、公開セッターは後で markLayoutDirty を撃つ)。
+新しい葉ウィジェットを足すときもこの規約を守ること。
 
-### やりたいこと
-測定結果をキャッシュし、`markLayoutDirty` で無効化する (Swing の `invalidate` 相当)。
+### 計測 (widget_layoutcost)
+| tree | nodes | before | after | 倍率 |
+|---|---|---|---|---|
+| depth 6 | 1,093 | 755 µs | 107 µs | 7.1× |
+| depth 9 | 29,524 | 29,697 µs | 3,199 µs | 9.3× |
+| depth 10 | 88,573 | 108,799 µs | 14,665 µs | 7.4× |
 
-### データ構造 (案)
-`Container` にキャッシュフィールドを持たせる。
+深いほど効く (除去した冗長計測が O(depth) だったため)。1 パス内で各ノードの
+computeMinSize/MaxSize がちょうど 1 回になり、測定全体が O(n×depth) → O(n) になった。
+なお `setBounds` 由来の moved 無効化は毎回 root まで遡上するが、レイアウトは top-down で
+「子を読んでから子の bounds を確定」する順序なので、子のキャッシュは読んだ後にしか無効化されず
+ヒット率は保たれる (祖先のキャッシュだけが落ちる)。
 
-```zig
-min_cache: ?Component.Size = null,
-max_cache: ?Component.Size = null,
-```
+### 次のボトルネック候補
+キャッシュで測定が O(n) になった結果、`setBounds` ごとに走る `markDirty` の root 遡上
+(O(depth) × ノード数 = O(n×depth)) が相対的に効いてくるはず。これは次項「部分再レイアウト」の
+dirty 管理を入れ替えるときに一緒に解消できる見込み。
 
-* `getMinSize` / `getMaxSize` はキャッシュがあればそれを返し、なければ計算して格納。
-* `markLayoutDirty` (または専用の `invalidateSize`) でキャッシュを `null` に戻す。
-  親方向への伝播が必要 — 子のサイズが変われば親の集計も変わるため。
-
-### ライフタイム / 制約
-* キャッシュは純粋な導出値であり、所有リソースを持たない (解放処理は不要)。
-* 無効化の伝播漏れがあると stale なサイズで誤レイアウトする。
-  「サイズに影響する変更 (add/remove/min・max/grow/align 変更, 子サイズ変化) は必ず無効化を呼ぶ」を不変条件にする。
-* 短期の妥協案として、まず `BoxLayout.doLayout` の pass1 結果を
-  children 長の一時スクラッチ配列に蓄えて pass2 で再利用するだけでも、同一パス内の二重測定は消える。
-  キャッシュ本体より前に入れられる安価な一手。
-
-### スコープ外
-* インクリメンタルな部分測定 (変わった子だけ測り直す) はここでは扱わない。次項と合わせて検討する。
+### 残課題 / スコープ外
+* インクリメンタルな部分測定 (変わった子だけ測り直す) は未対応。次項「部分再レイアウト」と合わせて検討する。
+* 短期の妥協案だった「pass1 の結果をスクラッチ配列に蓄えて pass2 で再利用」は、
+  キャッシュ本体が入ったので不要になった (pass2 はキャッシュヒットで O(1))。
 
 ---
 
@@ -95,8 +97,10 @@ max_cache: ?Component.Size = null,
 ---
 
 ## 優先順位の提案
-1. **短期スクラッチ再利用** (BoxLayout pass1→pass2) — 安価・低リスク・即効。
-2. **サイズキャッシュ + 無効化** — 効果大。無効化漏れに注意し、テストで不変条件を固める。
-3. **部分再レイアウト** — アーキテクチャ判断を伴う。ベンチで必要性が見えてから着手する。
+1. ~~短期スクラッチ再利用~~ — サイズキャッシュで吸収済み。不要。
+2. ~~サイズキャッシュ + 無効化~~ — **実装済み (2026-05-24)。6〜9× 改善を確認。**
+3. **部分再レイアウト** — 残る最大項目。`markDirty` の root 遡上 (O(n×depth)) もここで一緒に解消できる見込み。
+   アーキテクチャ判断を伴うので、ベンチで必要性が見えてから着手する。
 
-いずれもベンチマーク (深いネスト・多子のシーン) を先に用意し、効果を数値で確認してから入れるのが望ましい。
+計測は `examples/widget_layoutcost` を使う (深いネスト・多子のシーンを構築し、強制再レイアウトの所要時間を表示)。
+新しい最適化を入れる前後でこのサンプルの per-relayout を比較し、効果を数値で確認すること。

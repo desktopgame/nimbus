@@ -312,6 +312,12 @@ fn markDirty(c: *Component, kind: DirtyKind) void {
     // Walk up to the root component; that's where dirty flags live (Frame).
     var node: ?*Component = c;
     while (node) |cur| {
+        // A layout change invalidates the memoized min/max size of every
+        // container on the path to the root — those are exactly the subtrees
+        // whose measurement could have changed. See `doc/optimize.md`.
+        if (kind == .layout) {
+            if (cur.container) |cont| cont.invalidateSizeCache();
+        }
         if (cur.parent == null) {
             // Root reached. Check whether it has the dirty notify property.
             if (cur.getTyped(DirtyNotify)) |notify| {

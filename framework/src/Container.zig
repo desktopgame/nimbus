@@ -17,6 +17,13 @@ component: Component,
 children:  std.ArrayList(LayoutElement),
 layout:    ?*LayoutManager,
 allocator: std.mem.Allocator,
+/// Memoized layout-computed min/max size (the result of the layout manager's
+/// `computeMinSize`/`computeMaxSize`, which walks the whole subtree). Null when
+/// stale. Invalidated by `Component.markDirty` on every container along the
+/// path from a changed node up to the root — i.e. exactly the containers whose
+/// subtree measurement could have changed. See `doc/optimize.md`.
+min_cache: ?Component.Size = null,
+max_cache: ?Component.Size = null,
 
 pub const vtable = Component.VTable{
     .install      = install,
@@ -101,26 +108,44 @@ pub fn getLayout(self: *const Container) ?*LayoutManager {
 
 pub fn setLayout(self: *Container, layout: ?*LayoutManager) void {
     self.layout = layout;
+    // The cached size belongs to the previous layout manager; drop it before
+    // the doLayout below reads getMinSize.
+    self.invalidateSizeCache();
     self.doLayout();
     self.component.markLayoutDirty();
 }
 
 pub fn getMinSize(self: *const Container) Component.Size {
-    const lm_min: Component.Size = if (self.layout) |lm|
-        lm.vtable.computeMinSize(lm, self)
-    else
-        .{ .width = 0, .height = 0 };
+    const lm_min: Component.Size = if (self.layout) |lm| blk: {
+        if (self.min_cache) |c| break :blk c;
+        const m = lm.vtable.computeMinSize(lm, self);
+        // Logically const: the memo is a pure function of the (unchanged)
+        // subtree. The Container instance is genuinely mutable; only this
+        // pointer is const, so @constCast is safe here.
+        @constCast(self).min_cache = m;
+        break :blk m;
+    } else .{ .width = 0, .height = 0 };
     return .{
         .width  = @max(self.component.min_size.width, lm_min.width),
         .height = @max(self.component.min_size.height, lm_min.height),
     };
 }
 
+/// Drop the memoized min/max sizes. Called from `Component.markDirty` for every
+/// container on the path to the root whenever something layout-affecting
+/// changes below it.
+pub fn invalidateSizeCache(self: *Container) void {
+    self.min_cache = null;
+    self.max_cache = null;
+}
+
 pub fn getMaxSize(self: *const Container) Component.Size {
-    const lm_max: Component.Size = if (self.layout) |lm|
-        lm.vtable.computeMaxSize(lm, self)
-    else
-        .{ .width = std.math.inf(f32), .height = std.math.inf(f32) };
+    const lm_max: Component.Size = if (self.layout) |lm| blk: {
+        if (self.max_cache) |c| break :blk c;
+        const m = lm.vtable.computeMaxSize(lm, self);
+        @constCast(self).max_cache = m;
+        break :blk m;
+    } else .{ .width = std.math.inf(f32), .height = std.math.inf(f32) };
     // Symmetric with `getMinSize`: combine the explicit field with the
     // layout-computed value. For max we take the *smaller* of the two
     // ("both bounds must hold"), so an explicit `setMaxSize` actually
