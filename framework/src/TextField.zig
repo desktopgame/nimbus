@@ -44,6 +44,12 @@ caret_color:    awt.Graphics.Color,
 caret_visible:  bool,
 blink_timer_id: ?Application.TimerId,
 has_focus:      bool,
+/// Horizontal scroll offset in pixels, measured from the text start (>= 0).
+/// On-screen x of a glyph = PADDING_X + glyphXAtByte(b) - scroll_x. Kept so
+/// the caret stays visible once the text outgrows the field width.
+/// Recomputed by `ensureCaretVisible` whenever the caret moves (and as a
+/// safety net at paint time, since width is only known after layout).
+scroll_x:       f32,
 /// IME preedit (composition) state. Empty when not composing. The bytes
 /// are an owned copy of what the IME most recently reported (the C-side
 /// pointer is only valid for one callback, so we copy on receipt).
@@ -87,6 +93,7 @@ pub fn create(
         .caret_visible  = true,
         .blink_timer_id = null,
         .has_focus      = false,
+        .scroll_x       = 0,
         .preedit_text         = .empty,
         .preedit_target_start = 0,
         .preedit_target_end   = 0,
@@ -213,14 +220,29 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     g.fillRect(.{ .x = 0, .y = 0, .width = BORDER_WIDTH, .height = sz.height });
     g.fillRect(.{ .x = sz.width - BORDER_WIDTH, .y = 0, .width = BORDER_WIDTH, .height = sz.height });
 
+    // Keep scroll_x consistent with the caret now that the width is known
+    // (layout runs before paint). This is the authoritative recompute;
+    // edit/click paths also call it so the IME caret push is up to date.
+    tf.ensureCaretVisible();
+
+    // Everything below (selection / text / preedit / caret) is drawn through
+    // a Graphics clipped to the inner content rect [PADDING_X, width-PADDING_X],
+    // so scrolled glyphs never paint over the padding or the border. The
+    // child Graphics' origin is shifted to (PADDING_X, 0), so content x is
+    // expressed as `glyphXAtByte(b) - scroll_x` (0-based from the text start).
+    const inner_w = sz.width - PADDING_X * 2;
+    if (inner_w <= 0) return;
+    var cg = g.clip(.{ .x = PADDING_X, .y = 0, .width = inner_w, .height = sz.height });
+    const sx = tf.scroll_x;
+
     // Selection highlight (if non-empty).
     const sel_start = tf.selectionStartByte();
     const sel_end = tf.selectionEndByte();
     if (sel_end > sel_start) {
-        const x0 = tf.xAtByte(sel_start);
-        const x1 = tf.xAtByte(sel_end);
-        g.setColor(SELECTION_BG);
-        g.fillRect(.{
+        const x0 = tf.glyphXAtByte(sel_start) - sx;
+        const x1 = tf.glyphXAtByte(sel_end) - sx;
+        cg.setColor(SELECTION_BG);
+        cg.fillRect(.{
             .x = x0,
             .y = PADDING_Y,
             .width = x1 - x0,
@@ -229,33 +251,33 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     }
 
     // Text. `drawString` takes the top-left of the bbox (graphics.md: top-of-bbox派).
-    g.setFont(tf.font);
-    g.setColor(tf.color);
-    g.drawString(tf.text.items, PADDING_X, PADDING_Y);
+    cg.setFont(tf.font);
+    cg.setColor(tf.color);
+    cg.drawString(tf.text.items, -sx, PADDING_Y);
 
     // IME preedit (composition string). Rendered inline at the caret
     // position so it visually flows with surrounding text. Underlines
     // signal "this is provisional": a thin one under the whole preedit,
     // a thicker one under the target clause being converted.
     if (tf.has_focus and tf.preedit_text.items.len > 0) {
-        const caret_x = tf.xAtByte(tf.caret_byte);
+        const caret_x = tf.glyphXAtByte(tf.caret_byte) - sx;
 
-        g.setFont(tf.font);
-        g.setColor(tf.color);
-        g.drawString(tf.preedit_text.items, caret_x, PADDING_Y);
+        cg.setFont(tf.font);
+        cg.setColor(tf.color);
+        cg.drawString(tf.preedit_text.items, caret_x, PADDING_Y);
 
         const pre_w = tf.measureUtf8(tf.preedit_text.items);
         const underline_y = sz.height - PADDING_Y;
-        g.setColor(PREEDIT_UNDERLINE);
-        g.fillRect(.{ .x = caret_x, .y = underline_y - 1, .width = pre_w, .height = 1 });
+        cg.setColor(PREEDIT_UNDERLINE);
+        cg.fillRect(.{ .x = caret_x, .y = underline_y - 1, .width = pre_w, .height = 1 });
 
         if (tf.preedit_target_end > tf.preedit_target_start and
             tf.preedit_target_end <= tf.preedit_text.items.len)
         {
             const t0 = tf.measureUtf8(tf.preedit_text.items[0..tf.preedit_target_start]);
             const t1 = tf.measureUtf8(tf.preedit_text.items[0..tf.preedit_target_end]);
-            g.setColor(PREEDIT_TARGET);
-            g.fillRect(.{
+            cg.setColor(PREEDIT_TARGET);
+            cg.fillRect(.{
                 .x = caret_x + t0,
                 .y = underline_y - 2,
                 .width = t1 - t0,
@@ -268,9 +290,9 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     // owns the visual cursor inside the preedit, and drawing our own
     // would just be noise.
     if (tf.has_focus and tf.caret_visible and tf.preedit_text.items.len == 0) {
-        const cx = tf.xAtByte(tf.caret_byte);
-        g.setColor(tf.caret_color);
-        g.fillRect(.{
+        const cx = tf.glyphXAtByte(tf.caret_byte) - sx;
+        cg.setColor(tf.caret_color);
+        cg.fillRect(.{
             .x = cx,
             .y = PADDING_Y,
             .width = CARET_WIDTH,
@@ -290,6 +312,7 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
             // Restart blink at "visible" so the caret appears immediately
             // on focus gain (no awkward off→on flicker).
             tf.caret_visible = true;
+            if (f.gained) tf.ensureCaretVisible();
             tf.component.repaint();
             if (f.gained) tf.pushCaretToIme();
         },
@@ -330,6 +353,7 @@ fn handleMouse(tf: *TextField, ev: *Component.Event, m: awt.Event.MouseEvent) vo
                 ev.requestCapture(@ptrCast(&tf.component));
                 tf.component.requestFocus();
                 tf.caret_visible = true;
+                tf.ensureCaretVisible();
                 tf.component.repaint();
                 tf.pushCaretToIme();
                 ev.consume();
@@ -348,6 +372,7 @@ fn handleMouse(tf: *TextField, ev: *Component.Event, m: awt.Event.MouseEvent) vo
                 if (pos != tf.caret_byte) {
                     tf.caret_byte = pos;
                     tf.caret_visible = true;
+                    tf.ensureCaretVisible();
                     tf.component.repaint();
                 }
             }
@@ -453,6 +478,7 @@ fn handleChar(tf: *TextField, ev: *Component.Event, ch: awt.Event.CharEvent) voi
 
 fn afterEdit(tf: *TextField, ev: *Component.Event) void {
     tf.caret_visible = true;
+    tf.ensureCaretVisible();
     tf.component.repaint();
     tf.pushCaretToIme();
     ev.consume();
@@ -465,7 +491,7 @@ fn afterEdit(tf: *TextField, ev: *Component.Event) void {
 fn pushCaretToIme(self: *TextField) void {
     const w = self.parentWindow() orelse return;
     const origin = self.component.absoluteOriginInWindow();
-    const caret_x = origin.x + self.xAtByte(self.caret_byte);
+    const caret_x = origin.x + PADDING_X + self.glyphXAtByte(self.caret_byte) - self.scroll_x;
     const caret_y = origin.y + PADDING_Y;
     self.font.face.setPixelSize(self.font.pixel_size);
     const line_h = self.font.face.metrics().line_height;
@@ -474,6 +500,34 @@ fn pushCaretToIme(self: *TextField) void {
         @intFromFloat(caret_y),
         @intFromFloat(line_h),
     );
+}
+
+/// Adjust `scroll_x` so the caret stays inside the visible content area
+/// [0, inner_w] (in text-start coordinates). Scrolls right when the caret
+/// runs past the right edge, left when it precedes the left edge, then
+/// clamps so we never scroll before the start or leave dead space on the
+/// right when the tail could shift back into view. No-op before the widget
+/// has been laid out (width 0).
+fn ensureCaretVisible(self: *TextField) void {
+    const inner_w = self.component.size.width - PADDING_X * 2;
+    if (inner_w <= 0) return;
+
+    const caret_x = self.glyphXAtByte(self.caret_byte);
+    // Reserve CARET_WIDTH at the right so the caret itself is not clipped
+    // by the content rect's right edge.
+    if (caret_x - self.scroll_x > inner_w - CARET_WIDTH) {
+        self.scroll_x = caret_x - (inner_w - CARET_WIDTH);
+    } else if (caret_x - self.scroll_x < 0) {
+        self.scroll_x = caret_x;
+    }
+
+    // +CARET_WIDTH: the trailing caret sits just past the last glyph, so the
+    // scrollable content effectively extends that far — otherwise a caret at
+    // end-of-text would be clipped at the right boundary.
+    const end_x = self.glyphXAtByte(self.text.items.len);
+    const max_scroll = @max(0, end_x + CARET_WIDTH - inner_w);
+    if (self.scroll_x > max_scroll) self.scroll_x = max_scroll;
+    if (self.scroll_x < 0) self.scroll_x = 0;
 }
 
 // ── selection / edit helpers ─────────────────────────────────────────────
@@ -543,9 +597,14 @@ fn parentWindow(self: *TextField) ?*@import("Window.zig") {
 /// (widget-local pixels). When `x_local` falls inside a glyph, we split at
 /// the half-width — so clicking the right half of a character places the
 /// caret after it. Returns text.items.len if `x_local` is past every glyph.
+/// Accounts for the horizontal scroll offset: a click maps to the glyph
+/// position `x_local - PADDING_X + scroll_x` in text-start coordinates.
 fn hitTestByteAt(self: TextField, x_local: f32) usize {
     self.font.face.setPixelSize(self.font.pixel_size);
-    var cur_x: f32 = PADDING_X;
+    // Iterate in 0-based text-start coordinates; shift the click target by
+    // the scroll offset so it lines up with the on-screen glyph positions.
+    const target = x_local - PADDING_X + self.scroll_x;
+    var cur_x: f32 = 0;
     var i: usize = 0;
     while (i < self.text.items.len) {
         const byte_len = std.unicode.utf8ByteSequenceLength(self.text.items[i]) catch {
@@ -558,7 +617,7 @@ fn hitTestByteAt(self: TextField, x_local: f32) usize {
             continue;
         };
         const adv = self.font.face.glyphAdvance(cp);
-        if (x_local < cur_x + adv * 0.5) return i;
+        if (target < cur_x + adv * 0.5) return i;
         cur_x += adv;
         i += byte_len;
     }
@@ -588,12 +647,14 @@ fn measureUtf8(self: TextField, s: []const u8) f32 {
     return x;
 }
 
-/// Return the widget-local x pixel position of the left edge of the
-/// glyph starting at `byte_pos`. `byte_pos == text.items.len` returns the
-/// position after the last glyph (where the trailing caret sits).
-fn xAtByte(self: TextField, byte_pos: usize) f32 {
+/// Return the x pixel offset of the left edge of the glyph starting at
+/// `byte_pos`, measured from the text start (0-based, NOT including
+/// PADDING_X or the scroll offset). `byte_pos == text.items.len` returns the
+/// position after the last glyph (where the trailing caret sits). Callers
+/// add `PADDING_X` and subtract `scroll_x` to get an on-screen position.
+fn glyphXAtByte(self: TextField, byte_pos: usize) f32 {
     self.font.face.setPixelSize(self.font.pixel_size);
-    var x: f32 = PADDING_X;
+    var x: f32 = 0;
     var i: usize = 0;
     while (i < byte_pos and i < self.text.items.len) {
         const byte_len = std.unicode.utf8ByteSequenceLength(self.text.items[i]) catch {

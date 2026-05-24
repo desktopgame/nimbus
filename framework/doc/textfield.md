@@ -183,6 +183,21 @@ IME による composition (preedit、変換中文字列) を inline で表示す
 | macOS | `NSTextInputClient` (`setMarkedText:` / `firstRectForCharacterRange:`) を runtime subclass で intercept (`awt-c/src/cocoa_ime.m`) |
 | Linux | バックエンド未実装 (no-op stub)。Wayland text-input v3 ベースの実装は将来 |
 
+## クリッピングと横スクロール
+描画はコンポーネント単位でクリッピングされる。
+`Component.paintAt` が各コンポーネントの `getBounds` でクリップした子 `Graphics` を作って `paint` に渡すため (`graphics.md` のシザー参照)、TextField の描画も自動的に入力欄の矩形内へクリップされる。
+テキストが widget 幅を超えても枠外へはみ出さない。
+**このクリッピングは既に動作しており、TextField 側で追加実装する必要はない。**
+
+一方、**横スクロールは未実装**。
+現状 `xAtByte` はテキスト先頭 (`PADDING_X`) からの絶対 x 位置をそのまま返すので、入力がフィールド幅を超えるとキャレットや末尾付近の文字がクリップ境界の外へ出てしまい、入力中の箇所が見えなくなる。
+
+実装すべきこと:
+* 水平スクロールオフセット (例: `scroll_x: f32`) を状態に持ち、描画時にテキスト / 選択 / preedit / キャレットの x へ一律に反映する。
+* キャレットが常に可視範囲に収まるようオフセットを調整する (キャレットが右端を超えたら左へ、左端より手前なら右へスクロール)。`afterEdit` / クリック / フォーカス獲得など caret が動くたびに再計算する。
+* ヒットテスト (`hitTestByteAt`) もスクロールオフセットを加味して逆変換する。
+* クリッピング自体は `paintAt` が既に担保しているので、スクロール導入後もはみ出しは枠内に収まる。
+
 ## 描画順序
 1. 背景塗り (`background`)
 2. 枠線 (`BORDER_COLOR` / `FOCUS_BORDER`、focus 状態で色が変わる)
@@ -204,7 +219,7 @@ IME による composition (preedit、変換中文字列) を inline で表示す
 * 部分再描画 (キャレット点滅で全画面再描画になるのを避ける)
 * `submit` イベント (`Enter` 押下時)
 * パスワード入力モード (グリフを `•` で置換)
-* スクロール / 横方向クリッピング (現状はテキストが widget 幅を超えても切れずに描画される)
+* 横スクロール (キャレット追従) — 「クリッピングと横スクロール」セクション参照。クリッピング自体は paintAt により実装済みで、 未実装なのはスクロールのみ
 
 ### 棚上げ中 (書記素クラスタ + 絵文字)
 書記素クラスタ単位の編集と color emoji 対応は、 v1 スコープから外して将来課題に。
