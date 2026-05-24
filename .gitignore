@@ -1,5 +1,8 @@
 .DS_Store
 
+# zig build run-widget_scroll > run.log 2>&1
+run.log
+
 #
 # Vendor
 #
