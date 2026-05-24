@@ -1,0 +1,351 @@
+//! Scroll pane. See `framework/doc/scrollpane.md`.
+//!
+//! Shows one owned `view` through a smaller viewport, scrolling the overflow.
+//! Built by composition: it embeds a `Container` (whose children are the
+//! viewport + two `ScrollBar`s) and overrides that container's vtable so it
+//! can intercept the wheel. The viewport is itself a plain `Container` holding
+//! the view at a negative offset — clipping (via `paintAt`) and event gating
+//! (via `containsWindowPoint`) then fall out of the existing machinery, so no
+//! bespoke clip / hit-test code is needed.
+
+const std = @import("std");
+const awt = @import("awt");
+const Component = @import("Component.zig");
+const Container = @import("Container.zig");
+const ScrollBar = @import("ScrollBar.zig");
+const BoundedRangeModel = @import("BoundedRangeModel.zig");
+const LayoutManager = @import("LayoutManager.zig");
+const ChangeListenerList = @import("ChangeListenerList.zig");
+
+const ScrollPane = @This();
+
+pub const Policy = enum { as_needed, always, never };
+
+const DEFAULT_UNIT_INCREMENT: f32 = 40;
+/// Modest floor so the pane is usable in a layout without demanding the
+/// content's full size; callers grow it via setGrowX/Y or BorderLayout.center.
+const DEFAULT_MIN: f32 = 48;
+
+// `container` MUST be the first field: the public Component is
+// `container.component`, and methods recover `*ScrollPane` via
+// `@fieldParentPtr("container", ...)`.
+container:      Container,
+layout:         ScrollLayout,
+view:           *Component,        // owned (lives inside `viewport`)
+viewport:       *Container,        // child of `container`; owns `view`
+hbar:           *ScrollBar,        // child of `container`; borrows `h_model`
+vbar:           *ScrollBar,        // child of `container`; borrows `v_model`
+/// Scroll state. Owned here (not by the bars) so teardown order is safe: the
+/// bars are destroyed first by `container.deinit`, then these are deinited.
+h_model:        BoundedRangeModel,
+v_model:        BoundedRangeModel,
+h_policy:       Policy,
+v_policy:       Policy,
+unit_increment: f32,
+allocator:      std.mem.Allocator,
+
+const ScrollLayout = struct {
+    base: LayoutManager,
+};
+
+pub const vtable = Component.VTable{
+    .install      = install,
+    .uninstall    = uninstall,
+    .paint        = Container.vtable.paint, // paint children (viewport + bars)
+    .processEvent = processEvent,
+    .destroy      = destroy,
+};
+
+const scroll_layout_vtable = LayoutManager.VTable{
+    .doLayout       = layoutDoLayout,
+    .computeMinSize = layoutComputeMinSize,
+    .computeMaxSize = layoutComputeMaxSize,
+};
+
+pub fn create(allocator: std.mem.Allocator, view: *Component) !*ScrollPane {
+    const sp = try allocator.create(ScrollPane);
+    errdefer allocator.destroy(sp);
+
+    sp.* = .{
+        .container      = Container.init(allocator),
+        .layout         = .{ .base = .{ .vtable = &scroll_layout_vtable } },
+        .view           = view,
+        .viewport        = undefined,
+        .hbar            = undefined,
+        .vbar            = undefined,
+        .h_model        = BoundedRangeModel.init(allocator, 0, 0, 0),
+        .v_model        = BoundedRangeModel.init(allocator, 0, 0, 0),
+        .h_policy       = .as_needed,
+        .v_policy       = .as_needed,
+        .unit_increment = DEFAULT_UNIT_INCREMENT,
+        .allocator      = allocator,
+    };
+    errdefer {
+        sp.v_model.deinit();
+        sp.h_model.deinit();
+    }
+    // Wire the embedded container to behave as the ScrollPane component.
+    sp.container.component.vtable = &vtable;
+    sp.container.component.container = &sp.container;
+    sp.container.layout = &sp.layout.base;
+
+    // Reserve capacity up front so the appends below are infallible — this
+    // keeps the errdefers simple (all fallible work happens before anything is
+    // handed to `container`, which owns it on success).
+    try sp.container.children.ensureTotalCapacity(allocator, 3);
+
+    sp.viewport = try Container.create(allocator);
+    errdefer sp.viewport.component.vtable.destroy(&sp.viewport.component, allocator);
+    try sp.viewport.children.ensureTotalCapacity(allocator, 1);
+
+    sp.hbar = try ScrollBar.createWithModel(allocator, .horizontal, &sp.h_model);
+    errdefer sp.hbar.component.vtable.destroy(&sp.hbar.component, allocator);
+    sp.vbar = try ScrollBar.createWithModel(allocator, .vertical, &sp.v_model);
+    errdefer sp.vbar.component.vtable.destroy(&sp.vbar.component, allocator);
+
+    // Room for both listeners on each model (the bar added its own in
+    // createWithModel; ScrollPane adds one more).
+    try sp.h_model.change_listeners.items.ensureTotalCapacity(allocator, 2);
+    try sp.v_model.change_listeners.items.ensureTotalCapacity(allocator, 2);
+
+    // ── commit: no failures past this point ──────────────────────────────
+    sp.viewport.add(view) catch unreachable;
+    sp.container.add(&sp.viewport.component) catch unreachable;
+    sp.container.add(&sp.hbar.component) catch unreachable;
+    sp.container.add(&sp.vbar.component) catch unreachable;
+    sp.h_model.addChangeListener(onScrollChange, @ptrCast(sp)) catch unreachable;
+    sp.v_model.addChangeListener(onScrollChange, @ptrCast(sp)) catch unreachable;
+
+    return sp;
+}
+
+// ── public API ───────────────────────────────────────────────────────────
+
+/// The public Component (for `setGrowX/Y`, adding to a parent, etc.). The
+/// ScrollPane embeds a Container, so this is `&self.container.component`.
+pub fn asComponent(self: *ScrollPane) *Component {
+    return &self.container.component;
+}
+
+pub fn getView(self: ScrollPane) *Component {
+    return self.view;
+}
+
+pub fn setView(self: *ScrollPane, view: *Component) void {
+    self.viewport.remove(self.view); // detach (no destroy)
+    self.view.vtable.destroy(self.view, self.allocator);
+    self.view = view;
+    self.viewport.add(view) catch {}; // capacity retained from the removed slot
+    self.h_model.setValue(0);
+    self.v_model.setValue(0);
+    self.container.component.markLayoutDirty();
+}
+
+pub fn getScrollX(self: ScrollPane) f32 {
+    return @floatFromInt(self.h_model.value);
+}
+
+pub fn getScrollY(self: ScrollPane) f32 {
+    return @floatFromInt(self.v_model.value);
+}
+
+pub fn setScrollX(self: *ScrollPane, px: f32) void {
+    self.h_model.setValue(toI32(px));
+}
+
+pub fn setScrollY(self: *ScrollPane, px: f32) void {
+    self.v_model.setValue(toI32(px));
+}
+
+pub fn setHorizontalPolicy(self: *ScrollPane, policy: Policy) void {
+    self.h_policy = policy;
+    self.container.component.markLayoutDirty();
+}
+
+pub fn setVerticalPolicy(self: *ScrollPane, policy: Policy) void {
+    self.v_policy = policy;
+    self.container.component.markLayoutDirty();
+}
+
+pub fn setUnitIncrement(self: *ScrollPane, px: f32) void {
+    self.unit_increment = px;
+}
+
+/// Fires when either axis's scroll position changes.
+pub fn addChangeListener(
+    self: *ScrollPane,
+    fn_ptr: ChangeListenerList.ListenerFn,
+    user_data: *anyopaque,
+) !void {
+    try self.h_model.addChangeListener(fn_ptr, user_data);
+    errdefer self.h_model.removeChangeListener(fn_ptr, user_data);
+    try self.v_model.addChangeListener(fn_ptr, user_data);
+}
+
+pub fn removeChangeListener(
+    self: *ScrollPane,
+    fn_ptr: ChangeListenerList.ListenerFn,
+    user_data: *anyopaque,
+) void {
+    self.h_model.removeChangeListener(fn_ptr, user_data);
+    self.v_model.removeChangeListener(fn_ptr, user_data);
+}
+
+// ── internal ─────────────────────────────────────────────────────────────
+
+fn toI32(f: f32) i32 {
+    return @intFromFloat(@max(0, @round(f)));
+}
+
+fn fromComponent(self: *Component) *ScrollPane {
+    const c: *Container = @fieldParentPtr("component", self);
+    return @fieldParentPtr("container", c);
+}
+
+/// Measure the view's laid-out size given the available viewport. Honors the
+/// view's optional `scrollable` hint: a tracked axis is forced to the viewport
+/// size (and the view is reflowed so its free-axis size can be re-read — the
+/// height-for-width path a wrapping TextArea will use); an untracked axis uses
+/// `max(natural, viewport)` so small content fills the viewport and large
+/// content scrolls.
+fn measureView(self: *ScrollPane, vp_w: f32, vp_h: f32) Component.Size {
+    const sc = self.view.scrollable orelse Component.Scrollable{};
+    const nat = self.view.effectiveMinSize();
+    var w: f32 = if (sc.tracks_viewport_width) vp_w else @max(nat.width, vp_w);
+    var h: f32 = if (sc.tracks_viewport_height) vp_h else @max(nat.height, vp_h);
+    if (sc.tracks_viewport_width or sc.tracks_viewport_height) {
+        // Reflow at the tracked dimension(s), then re-read the free axis.
+        self.view.setBounds(.{ .x = 0, .y = 0, .width = w, .height = h });
+        const re = self.view.effectiveMinSize();
+        if (sc.tracks_viewport_width) h = @max(re.height, vp_h);
+        if (sc.tracks_viewport_height) w = @max(re.width, vp_w);
+    }
+    return .{ .width = w, .height = h };
+}
+
+// ── layout (ScrollLayout vtable) ───────────────────────────────────────────
+
+fn layoutDoLayout(_: *LayoutManager, container: *Container) void {
+    const self: *ScrollPane = @fieldParentPtr("container", container);
+    const W = container.component.size.width;
+    const H = container.component.size.height;
+    const T = ScrollBar.THICKNESS;
+
+    // Decide bar visibility. The vertical bar steals width (and vice-versa),
+    // which can change the other axis's need — settle with a couple passes.
+    var show_v = self.v_policy == .always;
+    var show_h = self.h_policy == .always;
+    var iter: u8 = 0;
+    while (iter < 2) : (iter += 1) {
+        const vp_w = @max(0, W - (if (show_v) T else 0));
+        const vp_h = @max(0, H - (if (show_h) T else 0));
+        const sz = self.measureView(vp_w, vp_h);
+        if (self.v_policy == .as_needed) show_v = sz.height > vp_h;
+        if (self.h_policy == .as_needed) show_h = sz.width > vp_w;
+        if (self.v_policy == .never) show_v = false;
+        if (self.h_policy == .never) show_h = false;
+    }
+
+    const vp_w = @max(0, W - (if (show_v) T else 0));
+    const vp_h = @max(0, H - (if (show_h) T else 0));
+    const view_size = self.measureView(vp_w, vp_h);
+
+    // Scroll state: range = content size, extent = viewport size. Set extent
+    // to 0 first so setRange does not clamp against a stale extent.
+    self.v_model.setExtent(0);
+    self.v_model.setRange(0, toI32(view_size.height));
+    self.v_model.setExtent(toI32(vp_h));
+    self.h_model.setExtent(0);
+    self.h_model.setRange(0, toI32(view_size.width));
+    self.h_model.setExtent(toI32(vp_w));
+
+    // View at its measured size, offset by the (clamped) scroll value.
+    const ox: f32 = @floatFromInt(self.h_model.value);
+    const oy: f32 = @floatFromInt(self.v_model.value);
+    self.view.setBounds(.{ .x = -ox, .y = -oy, .width = view_size.width, .height = view_size.height });
+
+    // Viewport + bars in disjoint rects (Component.setBounds: the outer
+    // doLayout recursion handles the viewport's own child layout).
+    self.viewport.component.setBounds(.{ .x = 0, .y = 0, .width = vp_w, .height = vp_h });
+    self.vbar.component.setBounds(if (show_v)
+        .{ .x = vp_w, .y = 0, .width = T, .height = vp_h }
+    else
+        .{ .x = 0, .y = 0, .width = 0, .height = 0 });
+    self.hbar.component.setBounds(if (show_h)
+        .{ .x = 0, .y = vp_h, .width = vp_w, .height = T }
+    else
+        .{ .x = 0, .y = 0, .width = 0, .height = 0 });
+}
+
+fn layoutComputeMinSize(_: *LayoutManager, _: *const Container) Component.Size {
+    return .{ .width = DEFAULT_MIN, .height = DEFAULT_MIN };
+}
+
+fn layoutComputeMaxSize(_: *LayoutManager, _: *const Container) Component.Size {
+    return .{ .width = std.math.inf(f32), .height = std.math.inf(f32) };
+}
+
+// ── scroll wiring ──────────────────────────────────────────────────────────
+
+fn onScrollChange(user_data: *anyopaque) void {
+    const self: *ScrollPane = @ptrCast(@alignCast(user_data));
+    // Cheap update: just move the view; no relayout needed.
+    self.view.position = .{
+        .x = -@as(f32, @floatFromInt(self.h_model.value)),
+        .y = -@as(f32, @floatFromInt(self.v_model.value)),
+    };
+    self.container.component.repaint();
+}
+
+fn handleWheel(self: *ScrollPane, m: awt.Event.MouseEvent) void {
+    const step = toI32(self.unit_increment);
+    const delta: i32 = if (m.wheel > 0) -step else step;
+    if (m.modifiers.shift) {
+        self.h_model.setValue(self.h_model.value + delta);
+    } else {
+        self.v_model.setValue(self.v_model.value + delta);
+    }
+}
+
+// ── vtable impl ──────────────────────────────────────────────────────────
+
+fn install(self: *Component) !void {
+    const c: *Container = @fieldParentPtr("component", self);
+    self.container = c;
+}
+
+fn uninstall(self: *Component) void {
+    const sp = fromComponent(self);
+    // Remove our scroll listeners while the models are still alive (the bars
+    // are torn down earlier by container.deinit; the models outlive them).
+    sp.h_model.removeChangeListener(onScrollChange, @ptrCast(sp));
+    sp.v_model.removeChangeListener(onScrollChange, @ptrCast(sp));
+}
+
+fn processEvent(self: *Component, ev: *Component.Event) void {
+    // Let children (bars, then viewport → view) handle it first.
+    Container.vtable.processEvent(self, ev);
+    if (ev.isConsumed()) return;
+    // An unconsumed wheel over the content scrolls the pane.
+    switch (ev.payload) {
+        .mouse => |m| {
+            if (m.action == .scroll) {
+                fromComponent(self).handleWheel(m);
+                ev.consume();
+            }
+        },
+        else => {},
+    }
+}
+
+fn destroy(self: *Component, allocator: std.mem.Allocator) void {
+    const c: *Container = @fieldParentPtr("component", self);
+    const sp: *ScrollPane = @fieldParentPtr("container", c);
+    // container.deinit destroys children (viewport → view, hbar, vbar) and
+    // runs component.deinit → uninstall (which unsubscribes from the models
+    // while they are still alive). Then free the models we own.
+    c.deinit();
+    sp.v_model.deinit();
+    sp.h_model.deinit();
+    allocator.destroy(sp);
+}

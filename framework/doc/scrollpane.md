@@ -65,7 +65,7 @@ const sp = try app.scrollPane(&content.component);
 * `view` がまだどのコンテナーにも add されていないこと (multi-mount は未対応)。
 
 ## 破棄
-`vtable.destroy(&sp.component, allocator)` で破棄する。
+`vtable.destroy(sp.asComponent(), allocator)` で破棄する。
 `view` (および推移的にその子)、 `hbar` / `vbar`、 内部 `viewport` をすべて解放する。
 通常は親コンテナーの `deinit` 経由で間接的に呼ばれる。
 
@@ -195,10 +195,10 @@ for (0..50) |i| {
 }
 
 const sp = try app.scrollPane(&content.component);
-sp.component.setGrowX(1);
-sp.component.setGrowY(1);
+sp.asComponent().setGrowX(1);
+sp.asComponent().setGrowY(1);
 
-try nimbus.BorderLayout.add(&frame.window.container, .center, &sp.component);
+try nimbus.BorderLayout.add(&frame.window.container, .center, sp.asComponent());
 ```
 
 ## 機能要望

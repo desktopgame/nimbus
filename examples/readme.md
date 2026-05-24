@@ -31,3 +31,6 @@ frameworkのAPIを使用して、モーダルダイアログ（OK/Cancel で結�
 
 ## widget_window
 frameworkのAPIを使用して、2つのボタンからウィンドウ自身の位置とサイズをコード側で変更する。イベントループ末尾でのジオメトリ同期（`setPos`/`setSize` → OS への push）のデモを兼ねる。
+
+## widget_scroll
+frameworkのAPIを使用して、ウィンドウより大きいラベルのグリッドを `ScrollPane` に入れ、縦横にスクロールする。ホイール（Shift+ホイールで横）、バーのドラッグ／トラッククリックを試せる。

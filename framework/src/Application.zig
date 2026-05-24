@@ -11,6 +11,8 @@ const CheckBox = @import("CheckBox.zig");
 const RadioButton = @import("RadioButton.zig");
 const ButtonGroup = @import("ButtonGroup.zig");
 const ComboBox = @import("ComboBox.zig");
+const ScrollBar = @import("ScrollBar.zig");
+const ScrollPane = @import("ScrollPane.zig");
 const Slider = @import("Slider.zig");
 const Frame = @import("Frame.zig");
 const Dialog = @import("Dialog.zig");
@@ -599,6 +601,21 @@ pub fn slider(
     max: i32,
 ) !*Slider {
     return try Slider.create(self.allocator, orientation, min, value, max);
+}
+
+pub fn scrollBar(
+    self: *Application,
+    orientation: ScrollBar.Orientation,
+    min: i32,
+    value: i32,
+    max: i32,
+) !*ScrollBar {
+    return try ScrollBar.create(self.allocator, orientation, min, value, max);
+}
+
+/// Wrap `view` in a scroll pane. `view` ownership transfers to the pane.
+pub fn scrollPane(self: *Application, view: *Component) !*ScrollPane {
+    return try ScrollPane.create(self.allocator, view);
 }
 
 /// Get a built-in lucide icon as a GPU `awt.Image`, decoding + uploading on

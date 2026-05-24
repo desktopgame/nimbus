@@ -30,6 +30,17 @@ pub const Event = awt.Event;
 /// * `end`     — pin to the cross-axis high edge (bottom / right), size = min
 pub const Alignment = enum { start, center, end, stretch };
 
+/// Optional hint a view sets on itself to tell an enclosing `ScrollPane` that
+/// it should track the viewport's size on an axis instead of using its own
+/// natural size there. A wrapping `TextArea`, for example, sets
+/// `tracks_viewport_width = true` so it reflows to the viewport width and only
+/// scrolls vertically. Held as a plain optional field (not a property) because
+/// it is an intrinsic, static attribute of the view. See `scrollpane.md`.
+pub const Scrollable = struct {
+    tracks_viewport_width:  bool = false,
+    tracks_viewport_height: bool = false,
+};
+
 pub const VTable = struct {
     /// One-time setup after the component is placed in its container (or for
     /// the root, immediately after construction). May fail if it allocates
@@ -66,6 +77,9 @@ grow_x:     f32,
 grow_y:     f32,
 align_x:    Alignment,
 align_y:    Alignment,
+/// Scroll-tracking hint read by an enclosing `ScrollPane`. Null = use the
+/// view's natural size on both axes (default). See `Scrollable`.
+scrollable: ?Scrollable,
 parent:     ?*Component,
 container:  ?*Container,
 /// True if this component can receive keyboard focus. Default false:
@@ -87,6 +101,7 @@ pub fn init(allocator: std.mem.Allocator, vtable: *const VTable) Component {
         .grow_y     = 0,
         .align_x    = .stretch,
         .align_y    = .stretch,
+        .scrollable = null,
         .parent     = null,
         .container  = null,
         .focusable  = false,
