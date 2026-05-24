@@ -35,8 +35,12 @@ pub fn init(allocator: std.mem.Allocator) ButtonGroup {
 }
 
 pub fn deinit(self: *ButtonGroup) void {
-    for (self.members.items) |m| {
-        m.removeChangeListener(onMemberChange, @ptrCast(self));
+    // Detach every member still alive. A member destroyed before us (e.g.
+    // its Window closed and Application.run tore down the widget tree)
+    // already removed itself via the group hook, so it is no longer in
+    // `members` and we never touch its freed listener list.
+    while (self.members.items.len > 0) {
+        self.detach(self.members.items[0]);
     }
     self.members.deinit(self.allocator);
     self.prev_selected.deinit(self.allocator);
@@ -58,6 +62,9 @@ pub fn add(self: *ButtonGroup, model: *ToggleButtonModel) !void {
     try self.prev_selected.append(self.allocator, model.isSelected());
     errdefer _ = self.prev_selected.pop();
     try model.addChangeListener(onMemberChange, @ptrCast(self));
+    // Install the back-channel so the model can detach itself if it is
+    // destroyed before the group (see ToggleButtonModel.GroupHook).
+    model.setGroupHook(.{ .ctx = @ptrCast(self), .on_deinit = onMemberDeinit });
 
     if (model.isSelected()) {
         self.clearOthers(model);
@@ -66,15 +73,32 @@ pub fn add(self: *ButtonGroup, model: *ToggleButtonModel) !void {
 
 /// Remove `model` from the group. Idempotent.
 pub fn remove(self: *ButtonGroup, model: *ToggleButtonModel) void {
+    self.detach(model);
+}
+
+/// Drop `model` from the group: clear its hook, unsubscribe its change
+/// listener, and remove the parallel `members` / `prev_selected` entries.
+/// No-op if `model` is not a member. Safe to call from the model's own
+/// `deinit` (listener lists are still valid at that point).
+fn detach(self: *ButtonGroup, model: *ToggleButtonModel) void {
     var i: usize = 0;
     while (i < self.members.items.len) : (i += 1) {
         if (self.members.items[i] == model) {
+            model.setGroupHook(null);
+            model.removeChangeListener(onMemberChange, @ptrCast(self));
             _ = self.members.orderedRemove(i);
             _ = self.prev_selected.orderedRemove(i);
-            model.removeChangeListener(onMemberChange, @ptrCast(self));
             return;
         }
     }
+}
+
+/// GroupHook callback: a member model is being destroyed. Detach it so a
+/// later `ButtonGroup.deinit` (or any group operation) never dereferences
+/// the freed model.
+fn onMemberDeinit(ctx: *anyopaque, model: *ToggleButtonModel) void {
+    const self: *ButtonGroup = @ptrCast(@alignCast(ctx));
+    self.detach(model);
 }
 
 /// Currently-selected member, or null if none.
@@ -133,9 +157,8 @@ fn onMemberChange(user_data: *anyopaque) void {
 test "selecting a member deselects others" {
     const a = std.testing.allocator;
 
-    // IMPORTANT: declare the models BEFORE the group so the group's
-    // `defer deinit` fires first (LIFO) — otherwise the group would try
-    // to removeChangeListener on already-freed listener lists.
+    // Either teardown order is safe (see the "member destroyed before the
+    // group" test); here the models simply outlive the group.
     var m1 = ToggleButtonModel.init(a);
     defer m1.deinit();
     var m2 = ToggleButtonModel.init(a);
@@ -161,6 +184,36 @@ test "selecting a member deselects others" {
     try std.testing.expect(!m3.isSelected());
 
     try std.testing.expectEqual(@as(?*ToggleButtonModel, &m2), g.getSelected());
+}
+
+test "member destroyed before the group detaches itself (no use-after-free)" {
+    const a = std.testing.allocator;
+
+    // Reverse of the usual order: the group is declared FIRST, so its
+    // `defer deinit` runs LAST — after the models are gone. This mirrors a
+    // real app where Application.run frees the widget tree on window close
+    // while the ButtonGroup lives in the caller's stack frame. The group
+    // hook must keep this from touching freed listener lists.
+    var g = ButtonGroup.init(a);
+    defer g.deinit();
+
+    {
+        var m1 = ToggleButtonModel.init(a);
+        defer m1.deinit();
+        var m2 = ToggleButtonModel.init(a);
+        defer m2.deinit();
+
+        try g.add(&m1);
+        try g.add(&m2);
+        m1.setSelected(true);
+
+        // m1, m2 deinit here (LIFO) — each detaches from g via the hook.
+    }
+
+    // Both members have unhooked themselves; the group is now empty and its
+    // deinit is a plain free.
+    try std.testing.expectEqual(@as(usize, 0), g.members.items.len);
+    try std.testing.expectEqual(@as(?*ToggleButtonModel, null), g.getSelected());
 }
 
 test "adding a pre-selected member clears previous selection" {

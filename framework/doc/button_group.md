@@ -12,6 +12,9 @@ pub const ButtonGroup = struct {
 };
 ```
 
+`add` 時に各 member の `ToggleButtonModel` に group hook (`setGroupHook`) を仕込む。
+これにより member が group より先に破棄されても、 member の `deinit` から group が通知を受けて自分の参照を外せる (後述の「寿命」参照)。
+
 `prev_selected` は内部実装の詳細 (`ChangeListener` の signature が source model を渡さないので、 「false → true へ transition した member」 を判定するために spec snapshot を持つ)。
 
 ## 生成
@@ -33,12 +36,13 @@ defer { group.deinit(); allocator.destroy(group); }
 pub fn deinit(self: *ButtonGroup) void;
 ```
 
-各 member から `ChangeListener` を解除し、 内部の `members` / `prev_selected` を解放する。
+まだ生きている各 member から `ChangeListener` を解除し、 group hook を外し、 内部の `members` / `prev_selected` を解放する。
 
-**寿命の注意**: `deinit` は各 member の listener 配列にアクセスする。
-member (= owning RadioButton / CheckBox / model) が先に destroy / deinit されていると use-after-free になる。
-**ButtonGroup の deinit は member より前** に呼ぶこと。
-defer を使う場合、 group の defer を後に書けば LIFO により先に実行される (`widget_radio` example 参照)。
+**寿命**: group と member (= owning RadioButton / CheckBox / model) の破棄順序はどちらが先でも安全。
+- group が先: `deinit` が生きている member の listener を解除する。
+- member が先: member の `deinit` が group hook 経由で group に通知し、 group は自分の `members` からその member を取り除く。 そのため後で走る group の `deinit` は freed なモデルに触れない。
+
+これは特に重要で、 GUI アプリでは典型的に `Application.run` がウィンドウ close 時にウィジェットツリー (= radio とそのモデル) を破棄する一方、 `ButtonGroup` は呼び出し側のスタックに残って `run` 復帰後の defer で破棄される。 つまり member が先に死ぬのが普通であり、 hook なしでは use-after-free になっていた。
 
 ## メンバーの追加
 ```zig
