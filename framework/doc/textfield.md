@@ -17,6 +17,7 @@ pub const TextField = struct {
     caret_visible:  bool,                    // タイマーが toggle する
     blink_timer_id: ?Application.TimerId,    // install で setInterval、uninstall で clearTimer
     has_focus:      bool,                    // focus_owner が自分なら true
+    scroll_x:       f32,                     // 水平スクロール量 (px、テキスト先頭起点、>= 0)
     preedit_text:         std.ArrayList(u8), // IME 変換中文字列 (UTF-8 コピー)
     preedit_target_start: usize,             // preedit_text 内の変換中クローズ開始 byte offset
     preedit_target_end:   usize,             // 同上、終了 byte offset
@@ -184,19 +185,22 @@ IME による composition (preedit、変換中文字列) を inline で表示す
 | Linux | バックエンド未実装 (no-op stub)。Wayland text-input v3 ベースの実装は将来 |
 
 ## クリッピングと横スクロール
-描画はコンポーネント単位でクリッピングされる。
-`Component.paintAt` が各コンポーネントの `getBounds` でクリップした子 `Graphics` を作って `paint` に渡すため (`graphics.md` のシザー参照)、TextField の描画も自動的に入力欄の矩形内へクリップされる。
-テキストが widget 幅を超えても枠外へはみ出さない。
-**このクリッピングは既に動作しており、TextField 側で追加実装する必要はない。**
+入力がフィールド幅を超えると、キャレットが常に見えるよう内容を水平スクロールする。
 
-一方、**横スクロールは未実装**。
-現状 `xAtByte` はテキスト先頭 (`PADDING_X`) からの絶対 x 位置をそのまま返すので、入力がフィールド幅を超えるとキャレットや末尾付近の文字がクリップ境界の外へ出てしまい、入力中の箇所が見えなくなる。
+`scroll_x` (テキスト先頭からのスクロール量、px、`>= 0`) を状態に持ち、画面上の glyph x を `PADDING_X + glyphXAtByte(b) - scroll_x` で表す。
+`glyphXAtByte` はテキスト先頭起点 (0 ベース、`PADDING_X` も `scroll_x` も含まない) の x オフセットを返し、描画側で `PADDING_X` の加算 (内側クリップ用子 `Graphics` の原点平行移動で吸収) と `scroll_x` の減算を行う。
 
-実装すべきこと:
-* 水平スクロールオフセット (例: `scroll_x: f32`) を状態に持ち、描画時にテキスト / 選択 / preedit / キャレットの x へ一律に反映する。
-* キャレットが常に可視範囲に収まるようオフセットを調整する (キャレットが右端を超えたら左へ、左端より手前なら右へスクロール)。`afterEdit` / クリック / フォーカス獲得など caret が動くたびに再計算する。
-* ヒットテスト (`hitTestByteAt`) もスクロールオフセットを加味して逆変換する。
-* クリッピング自体は `paintAt` が既に担保しているので、スクロール導入後もはみ出しは枠内に収まる。
+キャレット追従は `ensureCaretVisible` が担う:
+* キャレットが可視域を右に超えたら右へ、左に出たら左へ `scroll_x` を寄せる (末尾キャレットが右端で切れないよう `CARET_WIDTH` ぶん余裕を確保)。
+* 先頭より手前へはスクロールせず、末尾が戻せるのに無駄に右へ寄らないようクランプする。
+* caret が動くたび (`afterEdit` / クリック / ドラッグ / フォーカス獲得) に呼ぶ。加えて **`paint` 冒頭でも呼ぶ** — 幅はレイアウト後にしか確定しないため、ここが権威ある再計算になる (`setText` / リサイズ / 長い初期テキストもこれで自動補正される)。
+
+ヒットテスト (`hitTestByteAt`) はクリック位置を `x_local - PADDING_X + scroll_x` に変換してから glyph を引き当てる。
+`pushCaretToIme` (IME 候補ウィンドウの位置) も `scroll_x` を反映する。
+
+クリッピングはコンポーネント単位で行われる。
+`Component.paintAt` が各コンポーネントの `getBounds` でクリップした子 `Graphics` を作って `paint` に渡す (`graphics.md` のシザー参照) のに加え、TextField はテキスト / 選択 / preedit / キャレットを内側コンテンツ矩形 `[PADDING_X, width - PADDING_X]` にクリップした子 `Graphics` 経由で描く。
+これによりスクロール時に左の文字がパディングや枠線の上へはみ出さない (背景と枠線は全体の `Graphics` に描画)。
 
 ## 描画順序
 1. 背景塗り (`background`)
@@ -219,7 +223,6 @@ IME による composition (preedit、変換中文字列) を inline で表示す
 * 部分再描画 (キャレット点滅で全画面再描画になるのを避ける)
 * `submit` イベント (`Enter` 押下時)
 * パスワード入力モード (グリフを `•` で置換)
-* 横スクロール (キャレット追従) — 「クリッピングと横スクロール」セクション参照。クリッピング自体は paintAt により実装済みで、 未実装なのはスクロールのみ
 
 ### 棚上げ中 (書記素クラスタ + 絵文字)
 書記素クラスタ単位の編集と color emoji 対応は、 v1 スコープから外して将来課題に。
