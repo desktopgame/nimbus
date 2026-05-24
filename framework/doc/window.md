@@ -213,7 +213,7 @@ nimbus のトップレベル階層:
 ```
 framework.Window (抽象トップレベル、Container 派生)
   ├─ framework.Frame    (独立トップレベル、タイトルバー / 最大化最小化)
-  └─ framework.Dialog   (オーナー必須、モーダル / モードレス)   ← v2
+  └─ framework.Dialog   (オーナー必須、モーダル / モードレス。`dialog.md`)
 ```
 
 Swing と同じく Window を抽象基底にし、Frame と Dialog を並列の派生型として持つ。
@@ -480,7 +480,6 @@ window.dispose();
 ```
 
 ## 機能要望
-* Dialog（オーナー必須、モーダル / モードレス）
 * WindowListener 相当（close 確認、minimize 通知等）
 * 複数モニタ対応（モニタ選択、移動時の DPI 変化対応）
 * アニメーション駆動（`requestAnimationFrame` 相当の連続再描画）

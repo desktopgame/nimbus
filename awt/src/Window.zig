@@ -23,7 +23,33 @@ pub fn shouldClose(self: Window) bool {
     return c.nmShouldClose(self.handle);
 }
 
+/// Set or clear the OS close flag. Clearing (false) lets a window that was
+/// closed via its X button be reused — e.g. re-showing a reusable dialog.
+pub fn setShouldClose(self: Window, value: bool) void {
+    c.nmSetShouldClose(self.handle, value);
+}
+
 pub const Size = struct { width: i32, height: i32 };
+pub const Point = struct { x: i32, y: i32 };
+
+/// Window position in logical screen units (top-left, relative to the
+/// virtual screen). Pairs with `setPos`; used e.g. to center a dialog.
+pub fn pos(self: Window) Point {
+    var x: c_int = 0;
+    var y: c_int = 0;
+    c.nmGetWindowPos(self.handle, &x, &y);
+    return .{ .x = @intCast(x), .y = @intCast(y) };
+}
+
+pub fn setPos(self: Window, x: i32, y: i32) void {
+    c.nmSetWindowPos(self.handle, @intCast(x), @intCast(y));
+}
+
+/// Show or hide the OS window. Dialogs are created hidden and toggled on
+/// show / close (they are not destroyed on close, unlike Frames).
+pub fn setVisible(self: Window, visible: bool) void {
+    c.nmSetWindowVisible(self.handle, visible);
+}
 
 /// Logical window size in points — what was requested at `init`. On HiDPI
 /// displays this is smaller than `framebufferSize`; user-facing drawing

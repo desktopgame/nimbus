@@ -64,6 +64,11 @@ mouse_capture: ?*Component,
 /// delivered only to this component (instead of fan-out via container).
 /// Cleared automatically if the owning component is detached.
 focus_owner:  ?*Component,
+/// When true, `dispatchInput` drops all user input for this window. Set by
+/// Application while a modal Dialog is active on a *different* window (the
+/// modal one stays false). This is how nimbus implements per-window modality
+/// since GLFW/OS do not (see `dialog.md`「モーダル入力ブロック」).
+input_blocked: bool,
 allocator:    std.mem.Allocator,
 dirty_notify: Component.DirtyNotify,
 focus_controller: Component.FocusController,
@@ -117,6 +122,7 @@ pub fn init(
         .layout_dirty  = true,
         .mouse_capture    = null,
         .focus_owner      = null,
+        .input_blocked    = false,
         .allocator        = allocator,
         .dirty_notify     = undefined,     // filled in install
         .focus_controller = undefined,     // filled in install
@@ -423,6 +429,10 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
 ///   3. menu_bar
 ///   4. container
 pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
+    // Modality gate: a modal Dialog elsewhere blocks all input to this window.
+    // Composition/focus are internal-ish but blocking everything is simplest
+    // and a blocked window should not be the focus/IME target anyway.
+    if (self.input_blocked) return;
     switch (ev.payload) {
         .mouse => |m| {
             // 1. Mouse-capture priority (active drag).

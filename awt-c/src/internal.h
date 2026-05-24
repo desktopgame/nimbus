@@ -37,6 +37,9 @@ typedef struct nmWindow nmWindow;
 nmWindow* nmCreateWindow(const char* title, int width, int height);
 void nmDestroyWindow(nmWindow* self);
 bool nmShouldClose(nmWindow* self);
+/* Set or clear the OS close flag. Clearing (false) lets a window that was
+ * closed via its X button be reused (e.g. re-showing a dialog). */
+void nmSetShouldClose(nmWindow* self, bool value);
 void nmSwapBuffers(nmWindow* self);
 
 typedef void (*nmWindowResizeCallback)(nmWindow* window, int width, int height, void* user_data);
@@ -136,6 +139,15 @@ void        nmSetClipboardString(nmWindow* self, const char* utf8);
  * framebuffer size. Use these values for any DPI-independent coordinates
  * exposed to user drawing code. */
 void nmGetWindowSize(const nmWindow* self, int* width, int* height);
+
+/* Show or hide the window. Dialogs are created hidden and toggled on
+ * show / close (they are not destroyed on close, unlike Frames). */
+void nmSetWindowVisible(nmWindow* self, bool visible);
+
+/* Window position in logical screen units (points), top-left corner relative
+ * to the virtual screen. Used e.g. to center a dialog over its owner. */
+void nmGetWindowPos(nmWindow* self, int* x, int* y);
+void nmSetWindowPos(nmWindow* self, int x, int y);
 
 /* Framebuffer pixel size. On HiDPI displays (Retina) this can differ from the
  * window's logical size — e.g. a 800x600 window has a 1600x1200 framebuffer.

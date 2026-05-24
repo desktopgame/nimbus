@@ -183,6 +183,7 @@ pub fn build(b: *std.Build) void {
     addExample(b, "widget_checkbox", framework_mod, null, target, optimize);
     addExample(b, "widget_radio", framework_mod, null, target, optimize);
     addExample(b, "widget_combobox", framework_mod, null, target, optimize);
+    addExample(b, "widget_dialog", framework_mod, null, target, optimize);
 
     // ── tests ────────────────────────────────────────────────────
     const test_step = b.step("test", "Run all unit tests");

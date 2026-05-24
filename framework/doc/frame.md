@@ -94,7 +94,7 @@ Frame の deinit 時に bar は解放されない。
 ```
 framework.Window (抽象トップレベル)
   ├─ framework.Frame    ← これ
-  └─ framework.Dialog   (機能要望: 後述)
+  └─ framework.Dialog   (オーナー必須、モーダル / モードレス。`dialog.md`)
 ```
 
 タイトルバー / 最大化最小化 / ウィンドウクローズボタン /（将来）メニューバーを持つ、オーナーを持たない独立したトップレベルウィンドウ。
@@ -115,7 +115,7 @@ Window のメソッドは `frame.window.add(...)` / `frame.window.setTitle(...)`
 
 ## なぜ Window と分けるのか
 v1 では Frame ≒ Window と書ける、と思える。
-が、Frame と Dialog（機能要望）を並列派生にする設計上、共通部分を Window に置き、Frame 固有部分を Frame に置く分離は必要。
+が、Frame と Dialog（`dialog.md`）を並列派生にする設計上、共通部分を Window に置き、Frame 固有部分を Frame に置く分離は必要。
 
 Frame の利用例（`app.frame(...)`）が広く使われる前に統合してしまうと、後で分離する時に利用者 API の変更が発生する。
 **最初から分離しておく**のが安全。
@@ -176,4 +176,3 @@ try frame.setMenuBar(bar);  // 所有権が Frame に移る
 * default close operation: 閉じた時に dispose する / hide する / アプリ終了する 等の選択（現状は dispose 固定）
 * `maximize` / `minimize` / `restore` API
 * `always on top` / `resizable` / `modal exclusion`
-* Dialog 系派生型の追加（Frame と並列の Window 派生として）

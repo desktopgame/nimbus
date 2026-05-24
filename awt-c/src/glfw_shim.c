@@ -174,6 +174,26 @@ bool nmShouldClose(nmWindow* self) {
     return glfwWindowShouldClose((GLFWwindow*)self) != 0;
 }
 
+void nmSetShouldClose(nmWindow* self, bool value) {
+    glfwSetWindowShouldClose((GLFWwindow*)self, value ? GLFW_TRUE : GLFW_FALSE);
+}
+
+void nmSetWindowVisible(nmWindow* self, bool visible) {
+    if (visible) {
+        glfwShowWindow((GLFWwindow*)self);
+    } else {
+        glfwHideWindow((GLFWwindow*)self);
+    }
+}
+
+void nmGetWindowPos(nmWindow* self, int* x, int* y) {
+    glfwGetWindowPos((GLFWwindow*)self, x, y);
+}
+
+void nmSetWindowPos(nmWindow* self, int x, int y) {
+    glfwSetWindowPos((GLFWwindow*)self, x, y);
+}
+
 void nmSwapBuffers(nmWindow* self) {
     glfwSwapBuffers((GLFWwindow*)self);
 }

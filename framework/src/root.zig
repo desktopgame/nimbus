@@ -30,6 +30,7 @@ pub const MenuBar = @import("MenuBar.zig");
 pub const PopupMenu = @import("PopupMenu.zig");
 pub const Window = @import("Window.zig");
 pub const Frame = @import("Frame.zig");
+pub const Dialog = @import("Dialog.zig");
 pub const Application = @import("Application.zig");
 pub const TextField = @import("TextField.zig");
 

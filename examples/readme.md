@@ -25,3 +25,6 @@ frameworkのAPIを使用して、ラジオボタン群を `ButtonGroup` でま�
 
 ## widget_combobox
 frameworkのAPIを使用して、ドロップダウンから1つの項目を選び、ラベルに反映する。Popup は overlay で表示。
+
+## widget_dialog
+frameworkのAPIを使用して、モーダルダイアログ（OK/Cancel で結果を返す、表示中は親をブロック）とモードレスダイアログ（親と並行して使える）を開く。ダイアログは生成して使いまわす。

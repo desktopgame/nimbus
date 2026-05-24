@@ -13,6 +13,7 @@ const ButtonGroup = @import("ButtonGroup.zig");
 const ComboBox = @import("ComboBox.zig");
 const Slider = @import("Slider.zig");
 const Frame = @import("Frame.zig");
+const Dialog = @import("Dialog.zig");
 const Window = @import("Window.zig");
 const Menu = @import("Menu.zig");
 const MenuItem = @import("MenuItem.zig");
@@ -28,10 +29,16 @@ const Application = @This();
 
 const WindowEntry = struct {
     window:  *Window,
-    /// Free the outer widget (Frame, Dialog 等) that contains the Window.
-    /// Called when the window closes or Application.deinit runs.
+    /// Free the outer widget (Frame 等) that contains the Window.
+    /// Called when the window closes or Application.deinit runs. For caller-
+    /// owned Dialogs this is a no-op (see `dialog`); the loop routes their
+    /// close to `Dialog.close` instead of destroying them.
     outer:   *anyopaque,
     destroy: *const fn (*anyopaque, std.mem.Allocator) void,
+    /// Non-null when this entry is a Dialog. Lets the close-reaper route a
+    /// close request to `Dialog.close(.none)` instead of destroying (Dialogs
+    /// are owned by the caller, not by Application).
+    dialog:  ?*Dialog = null,
 };
 
 pub const TimerId = u32;
@@ -56,6 +63,10 @@ context:      awt.Graphics.Context,
 default_font: awt.Font,
 event_queue:  *awt.EventQueue,
 windows:      std.ArrayList(WindowEntry),
+/// Active modal Dialog windows, bottom→top. Non-empty means a modal is up:
+/// only the top window receives input (`refreshModalBlocking`). Supports
+/// nested modals (a dialog opened from a dialog).
+modal_stack:  std.ArrayList(*Window),
 timers:       std.ArrayList(Timer),
 next_timer_id: TimerId,
 /// Lazily-decoded GPU images for built-in lucide icons. Slot is null until
@@ -87,6 +98,7 @@ pub fn init(allocator: std.mem.Allocator, io: std.Io) !*Application {
 
     app.allocator = allocator;
     app.windows = .empty;
+    app.modal_stack = .empty;
     app.timers = .empty;
     app.next_timer_id = 1;
     app.icon_cache = @splat(null);
@@ -138,6 +150,7 @@ pub fn deinit(self: *Application) void {
         entry.destroy(entry.outer, self.allocator);
     }
     self.windows.deinit(self.allocator);
+    self.modal_stack.deinit(self.allocator);
 
     self.timers.deinit(self.allocator);
 
@@ -179,27 +192,123 @@ pub fn run(self: *Application) !void {
             awt.waitEvents();
         }
 
-        self.fireDueTimers();
-        self.event_queue.drain();
+        self.tickOnce();
+    }
+}
 
-        // Render dirty windows.
-        for (self.windows.items) |entry| {
-            if (entry.window.paint_dirty or entry.window.layout_dirty) {
-                entry.window.redraw();
-            }
-        }
+/// One iteration of per-window upkeep: fire due timers, drain queued input,
+/// redraw dirty windows, reap closed ones. Shared by `run` and by the
+/// `awt.SecondaryLoop` that backs modal dialogs (via `tickThunk`), so a
+/// modal loop keeps every window painting and `invokeLater` tasks flowing.
+/// Does NOT wait for events — the caller's loop owns the blocking wait.
+pub fn tickOnce(self: *Application) void {
+    self.fireDueTimers();
+    self.event_queue.drain();
 
-        // Collect closed windows.
-        var i: usize = 0;
-        while (i < self.windows.items.len) {
-            const entry = self.windows.items[i];
-            if (entry.window.shouldClose()) {
-                _ = self.windows.orderedRemove(i);
-                entry.destroy(entry.outer, self.allocator);
-            } else {
-                i += 1;
-            }
+    for (self.windows.items) |entry| {
+        if (entry.window.paint_dirty or entry.window.layout_dirty) {
+            entry.window.redraw();
         }
+    }
+
+    self.collectClosedWindows();
+}
+
+/// `awt.SecondaryLoop` tick callback shim. `ctx` is the `*Application`.
+pub fn tickThunk(ctx: *anyopaque) void {
+    const self: *Application = @ptrCast(@alignCast(ctx));
+    self.tickOnce();
+}
+
+/// Reap windows whose OS close flag is set. Frames are destroyed (Application
+/// owns them). Dialogs are caller-owned: route the close to
+/// `Dialog.close(.none)` (which unregisters + exits any modal loop) and leave
+/// the object alive. While a modal is active, only the top modal window's
+/// close is acted on — the owner cannot be torn down underneath a modal.
+fn collectClosedWindows(self: *Application) void {
+    const modal_top: ?*Window = if (self.modal_stack.items.len > 0)
+        self.modal_stack.items[self.modal_stack.items.len - 1]
+    else
+        null;
+
+    var i: usize = 0;
+    while (i < self.windows.items.len) {
+        const entry = self.windows.items[i];
+        if (!entry.window.shouldClose()) {
+            i += 1;
+            continue;
+        }
+        if (modal_top != null and entry.window != modal_top.?) {
+            // Defer: a modal is up and this is not it. Leave the close flag
+            // set; a later tick (after the modal ends) will reap it.
+            i += 1;
+            continue;
+        }
+        if (entry.dialog) |d| {
+            // close() removes this entry from `windows`; keep i (the next
+            // entry shifts into this slot).
+            d.close(.none);
+        } else {
+            _ = self.windows.orderedRemove(i);
+            entry.destroy(entry.outer, self.allocator);
+        }
+    }
+}
+
+// ── dialog / modal plumbing (used by Dialog) ──────────────────────────────
+
+fn noopDestroy(_: *anyopaque, _: std.mem.Allocator) void {}
+
+/// Register a Dialog's window in the run loop (called by `Dialog.show` /
+/// `showModal`). Unlike Frames, the entry's `destroy` is a no-op — Dialogs
+/// are caller-owned.
+pub fn registerDialog(self: *Application, d: *Dialog) !void {
+    try self.windows.append(self.allocator, .{
+        .window  = &d.window,
+        .outer   = @ptrCast(d),
+        .destroy = noopDestroy,
+        .dialog  = d,
+    });
+    // Respect any modal currently in effect (block the freshly-shown window
+    // unless it is itself the modal top).
+    self.refreshModalBlocking();
+}
+
+/// Remove a window from the run loop and the modal stack (called by
+/// `Dialog.close` / `deinit`). Idempotent.
+pub fn unregisterWindow(self: *Application, w: *Window) void {
+    var i: usize = 0;
+    while (i < self.modal_stack.items.len) : (i += 1) {
+        if (self.modal_stack.items[i] == w) {
+            _ = self.modal_stack.orderedRemove(i);
+            break;
+        }
+    }
+    i = 0;
+    while (i < self.windows.items.len) : (i += 1) {
+        if (self.windows.items[i].window == w) {
+            _ = self.windows.orderedRemove(i);
+            break;
+        }
+    }
+    self.refreshModalBlocking();
+}
+
+/// Push a window as the active modal (called by `Dialog.showModal`).
+pub fn pushModal(self: *Application, w: *Window) !void {
+    try self.modal_stack.append(self.allocator, w);
+    self.refreshModalBlocking();
+}
+
+/// Recompute per-window input blocking from the modal stack: only the top
+/// modal window (if any) accepts input; everything else is blocked.
+fn refreshModalBlocking(self: *Application) void {
+    const top: ?*Window = if (self.modal_stack.items.len > 0)
+        self.modal_stack.items[self.modal_stack.items.len - 1]
+    else
+        null;
+    for (self.windows.items) |entry| {
+        entry.window.input_blocked = (top != null and entry.window != top.?);
     }
 }
 
@@ -339,6 +448,22 @@ pub fn frame(self: *Application, title: []const u8, w: u32, h: u32) !*Frame {
     });
 
     return f;
+}
+
+/// Create a Dialog owned by `owner` (typically `&frame.window`). The Dialog
+/// is NOT shown yet — call `showModal` (blocking, returns a result) or `show`
+/// (modeless). Unlike Frame, the returned Dialog is **caller-owned**: free it
+/// with `dialog.deinit()` + `allocator.destroy(dialog)` when done (it may be
+/// reused across multiple `showModal` calls before then). See `dialog.md`.
+pub fn dialog(self: *Application, owner: *Window, title: []const u8, w: u32, h: u32) !*Dialog {
+    const d = try self.allocator.create(Dialog);
+    errdefer self.allocator.destroy(d);
+    d.* = try Dialog.init(self, owner, title, w, h, &self.device, &self.context);
+    errdefer d.deinit();
+
+    // Wire DirtyNotify / FocusController properties (same as Frame).
+    try Window.vtable.install(&d.window.container.component);
+    return d;
 }
 
 pub fn label(self: *Application, text: []const u8) !*Label {
