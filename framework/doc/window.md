@@ -341,23 +341,31 @@ DirtyNotify プロパティと同じ設計パターン。
 `framework.Window` は内部に `awt.Window` を埋め込み、UI レイヤーとして肉付けする。
 
 ## position / size のセマンティクス
-**Window では `component.position` / `component.size` は OS 絶対座標で扱う**（Swing の `Window.getBounds` が screen 座標を返すのと同じ特例）。
+2 つの座標系を**別インターフェイスに分離**する。混ぜない。
 
-通常 Component の position は parent-relative だが、Window は parent を持たない root なので「parent-relative」と「OS 絶対」は実用上区別不能。
-なら OS 座標として使うのが素直で、ツリー走査で「子の絶対 screen 座標」を計算する時に親方向に積み上げれば自然に screen pt に到達できる。
+* **コンポーネント座標**（`component.position` / `component.size`、`setBounds` / `getBounds`）: ウィンドウのクライアント矩形を基準とするローカル座標。原点は `(0, 0)`、menu_bar があればその下（コンテンツ用 root の `container.component.position` が `(0, bar_h)`）。これは Window に限らず全コンポーネントで一貫する。
+* **ウィンドウの screen ジオメトリ**（`win_pos` / `win_size`、`Window.setPos` / `setSize` / `getPos` / `getSize`）: モニタ内でのウィンドウの位置とサイズ。`framework.Window` 専用フィールドで持つ。
+
+Swing は `Window.getX/getY` が screen 座標を返す（component 座標に screen 座標を相乗りさせる）特例を持つが、nimbus はそれを採らない。
+理由: コンテンツ用 root の `container.component.position` は menu_bar 分のローカルオフセット（`redraw` で `{ .x = 0, .y = bar_h }`）として使われ、`paintAt` の clip 平行移動 (`Window.redraw`) と `absoluteOriginInWindow` のヒットテスト (`Component`) が「root の position はローカル」前提で読む。screen 座標を相乗りさせると両方壊れる。
+そこで screen ジオメトリは独立フィールドに分離し、コンポーネント座標は常にクライアントローカルに保つ。
 
 ## OS との同期（Application が責務を負う）
-Window 自身は「OS と同期済みの値」を覚えない。
-Application が `WindowEntry` で per-window に保持し、毎イベントループ末尾で diff → 差分があれば OS に push する。
-詳細は `application.md` 参照。
+`framework.Window` が希望値 (`win_pos` / `win_size`) を持ち、Application が `WindowEntry` で「OS と同期済みの値」(`synced_pos` / `synced_size`) を per-window に保持する。
+毎イベントループ末尾 (`syncWindowGeometry`) で希望値と synced を diff → 差分があれば OS に push する。
+同期は**双方向**。詳細は `application.md`「OS との同期」参照。
 
-ポイント：OS callback は `component.position/size` と Application 側の `synced_xxx` を**両方**更新する。
-これがないと「OS が動かした → 末尾の diff で push し返す」の無限ピンポンになる。
+ポイント：OS のコールバックは `win_*` と Application 側の `synced_*` を**両方**更新する（`noteOsGeometry` 経由）。
+
+* 移動: `onWindowPos` が `win_pos` を更新
+* リサイズ: `onResize` が `win_size` を更新
+
+これがないと「OS が動かした → 末尾の diff で push し返す」の無限ピンポンになり、ライブな移動 / リサイズと喧嘩する。
 
 これにより：
 * `Component.setBounds` の override 不要（通常規約のまま）
-* 同一フレーム内で setBounds を複数回呼んでも自動 coalesce（最後の値だけ push）
-* Window struct は sync 用フィールドで汚れない
+* 同一ループ内で `setPos` / `setSize` を複数回呼んでも自動 coalesce（最後の値だけ push）
+* OS ジオメトリの sync 用フィールドは `win_*` / `synced_*` に局所化される
 
 ## paint dispatch
 描画の主たる経路は `Window.redraw`。

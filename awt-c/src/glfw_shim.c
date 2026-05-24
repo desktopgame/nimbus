@@ -42,6 +42,13 @@ static void on_window_refresh(GLFWwindow* gw) {
     }
 }
 
+static void on_window_pos(GLFWwindow* gw, int x, int y) {
+    nmWindowCallbacks* cb = (nmWindowCallbacks*)glfwGetWindowUserPointer(gw);
+    if (cb && cb->move_cb) {
+        cb->move_cb((nmWindow*)gw, x, y, cb->move_user);
+    }
+}
+
 /* Map GLFW mouse button → nmMouseButton. Returns -1 for unsupported buttons. */
 static int map_mouse_button(int glfw_button) {
     switch (glfw_button) {
@@ -152,6 +159,7 @@ nmWindow* nmCreateWindow(const char* title, int width, int height) {
     glfwSetWindowUserPointer(w, cb);
     glfwSetFramebufferSizeCallback(w, on_framebuffer_size);
     glfwSetWindowRefreshCallback(w, on_window_refresh);
+    glfwSetWindowPosCallback(w, on_window_pos);
     glfwSetMouseButtonCallback(w, on_mouse_button);
     glfwSetCursorPosCallback(w, on_cursor_pos);
     glfwSetScrollCallback(w, on_scroll);
@@ -226,6 +234,10 @@ void nmSetWindowPos(nmWindow* self, int x, int y) {
     glfwSetWindowPos((GLFWwindow*)self, x, y);
 }
 
+void nmSetWindowSize(nmWindow* self, int width, int height) {
+    glfwSetWindowSize((GLFWwindow*)self, width, height);
+}
+
 void nmSwapBuffers(nmWindow* self) {
     glfwSwapBuffers((GLFWwindow*)self);
 }
@@ -244,6 +256,14 @@ void nmSetWindowRefreshCallback(nmWindow* self, nmWindowRefreshCallback cb, void
     if (!cbs) return;
     cbs->refresh_cb = cb;
     cbs->refresh_user = user_data;
+}
+
+void nmSetWindowMoveCallback(nmWindow* self, nmWindowMoveCallback cb, void* user_data) {
+    if (!self) return;
+    nmWindowCallbacks* cbs = (nmWindowCallbacks*)glfwGetWindowUserPointer((GLFWwindow*)self);
+    if (!cbs) return;
+    cbs->move_cb = cb;
+    cbs->move_user = user_data;
 }
 
 void nmSetMouseButtonCallback(nmWindow* self, nmMouseButtonCallback cb, void* user_data) {

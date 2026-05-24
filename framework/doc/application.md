@@ -258,17 +258,27 @@ GLFW は `glfwInit` がプロセス単位なので、Application も実質シン
 Window 系のファクトリは追加で `windows` リストへの append が要る。
 ウィジェット系のファクトリはウィジェットの `create` をラップするだけ（default font / color を注入する）。
 
-## OS との同期 (機能要望)
-v1 では未実装。
-将来は各イベントループ末尾で、すべての WindowEntry について以下の比較を行う予定。
+## OS との同期
+位置とサイズの同期は実装済みで、**双方向**（コード → OS、OS → コード）に動く。
+各イベントループ末尾 (`tickOnce` → `syncWindowGeometry`) で、すべての `WindowEntry` について以下の比較を行う。
 
-* `window.component.position != synced_pos` → `awt_window.setPos(...)` で OS に push、`synced_pos` を更新
-* `window.component.size != synced_size` → `awt_window.setSize(...)` で OS に push、`synced_size` を更新
-* `window.title != synced_title` → `awt_window.setTitle(...)` で OS に push、`synced_title` を更新
+* `window.getPos() != synced_pos` → `awt_window.setPos(...)` で OS に push、`synced_pos` を更新
+* `window.getSize() != synced_size` → `awt_window.setSize(...)` で OS に push、`synced_size` を更新
 
-OS callback（ドラッグ / リサイズ等）は `component.position/size` と `synced_xxx` を**両方**更新する想定。
-これがないと「OS が動かした → 末尾の diff で push し返す」の無限ピンポンになる。
-現状の `Window.setTitle` / `Window.dispose` は best-effort no-op、または awt-c が直接 push する暫定実装になっている (`window.md` 参照)。
+ウィンドウ側の希望値は `framework.Window` の `win_pos` / `win_size` が保持する（利用者は `setPos` / `setSize` で更新する）。
+`WindowEntry` 側の `synced_pos` / `synced_size` は「OS と同期済みの値」を覚える。
+登録時 (`frame` / `registerDialog`) は両者を初期ジオメトリで揃えておく。
+
+逆方向（OS 由来の移動 / リサイズ。利用者によるドラッグ等）は、それぞれのコールバックが値を書き戻す。
+
+* 移動: `Window.onWindowPos` が `win_pos` を新しい screen 位置に更新
+* リサイズ: `Window.onResize` が `win_size` を実サイズに更新
+
+いずれも続けて `Application.noteOsGeometry` を呼び、`synced_*` も同時に更新する。
+これがないと「OS が動かした → 末尾の diff で push し返す」の無限ピンポンになり、ライブな移動 / リサイズと喧嘩する。
+
+タイトルの同期は未実装（機能要望）。
+現状の `Window.setTitle` は awt-c が直接 push する暫定実装。
 
 ## イベントキュー（invokeLater / invokeAndWait）
 別スレッドから UI を触る唯一の正規ルート。CLAUDE.md「非同期処理」セクションを参照。

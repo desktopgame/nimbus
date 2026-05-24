@@ -45,6 +45,13 @@ pub fn setPos(self: Window, x: i32, y: i32) void {
     c.nmSetWindowPos(self.handle, @intCast(x), @intCast(y));
 }
 
+/// Resize the window to `width` x `height` logical points (the same units
+/// `size` reports). Fires the resize callback. Pairs with `setSize` driven
+/// from the framework layer's window-geometry sync.
+pub fn setSize(self: Window, width: i32, height: i32) void {
+    c.nmSetWindowSize(self.handle, @intCast(width), @intCast(height));
+}
+
 /// Show or hide the OS window. Dialogs are created hidden and toggled on
 /// show / close (they are not destroyed on close, unlike Frames).
 pub fn setVisible(self: Window, visible: bool) void {
@@ -94,6 +101,7 @@ pub fn swapBuffers(self: Window) void {
 
 pub const ResizeCallback       = c.nmWindowResizeCallback;
 pub const RefreshCallback      = c.nmWindowRefreshCallback;
+pub const MoveCallback         = c.nmWindowMoveCallback;
 pub const MouseButtonCallback  = c.nmMouseButtonCallback;
 pub const CursorPosCallback    = c.nmCursorPosCallback;
 pub const ScrollCallback       = c.nmScrollCallback;
@@ -107,6 +115,13 @@ pub fn setResizeCallback(self: Window, cb: ResizeCallback, user_data: ?*anyopaqu
 
 pub fn setRefreshCallback(self: Window, cb: RefreshCallback, user_data: ?*anyopaque) void {
     c.nmSetWindowRefreshCallback(self.handle, cb, user_data);
+}
+
+/// Window-move callback. Fires for OS-driven moves (user dragging the title
+/// bar) and programmatic `setPos`. The framework layer uses this to keep its
+/// screen-position model in sync with the OS.
+pub fn setMoveCallback(self: Window, cb: MoveCallback, user_data: ?*anyopaque) void {
+    c.nmSetWindowMoveCallback(self.handle, cb, user_data);
 }
 
 pub fn setMouseButtonCallback(self: Window, cb: MouseButtonCallback, user_data: ?*anyopaque) void {

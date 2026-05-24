@@ -28,3 +28,6 @@ frameworkのAPIを使用して、ドロップダウンから1つの項目を選�
 
 ## widget_dialog
 frameworkのAPIを使用して、モーダルダイアログ（OK/Cancel で結果を返す、表示中は親をブロック）とモードレスダイアログ（親と並行して使える）を開く。ダイアログは生成して使いまわす。
+
+## widget_window
+frameworkのAPIを使用して、2つのボタンからウィンドウ自身の位置とサイズをコード側で変更する。イベントループ末尾でのジオメトリ同期（`setPos`/`setSize` → OS への push）のデモを兼ねる。

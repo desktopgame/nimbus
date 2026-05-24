@@ -52,6 +52,13 @@ title:        [:0]u8,
 background:   awt.Graphics.Color,
 fb_w:         i32,
 fb_h:         i32,
+/// Desired window geometry in logical screen units, held at the framework
+/// layer. `setPos`/`setSize` update these; Application pushes any change to
+/// the OS at each event-loop tail (see `application.md`「OS との同期」). The
+/// OS resize callback writes the realized size back here so the loop's diff
+/// does not fight a live user resize.
+win_pos:      awt.Window.Point,
+win_size:     awt.Window.Size,
 cursor_x:     f32,
 cursor_y:     f32,
 paint_dirty:  bool,
@@ -102,6 +109,8 @@ pub fn init(
     errdefer sc.deinit();
 
     const fb = aw.framebufferSize();
+    const init_pos = aw.pos();
+    const init_size = aw.size();
 
     var win = Window{
         .container     = Container.init(allocator),
@@ -117,6 +126,8 @@ pub fn init(
         .background    = awt.Graphics.Color.rgb(0.94, 0.94, 0.94),
         .fb_w          = fb.width,
         .fb_h          = fb.height,
+        .win_pos       = init_pos,
+        .win_size      = init_size,
         .cursor_x      = 0,
         .cursor_y      = 0,
         .paint_dirty   = true,
@@ -169,6 +180,36 @@ pub fn setTitle(self: *Window, title: []const u8) !void {
 
 pub fn getTitle(self: Window) []const u8 {
     return self.title;
+}
+
+/// Move the window's top-left to (`x`, `y`) in logical screen units. The
+/// move is applied to the OS at the next event-loop tail by Application's
+/// geometry sync — `getPos` reflects the requested value immediately.
+pub fn setPos(self: *Window, x: i32, y: i32) void {
+    self.win_pos = .{ .x = x, .y = y };
+    awt.postEmptyEvent();
+}
+
+/// Resize the window to `width` x `height` logical points. Applied to the OS
+/// at the next event-loop tail; triggers re-layout once the new size lands.
+pub fn setSize(self: *Window, width: i32, height: i32) void {
+    self.win_size = .{ .width = width, .height = height };
+    self.layout_dirty = true;
+    self.paint_dirty = true;
+    awt.postEmptyEvent();
+}
+
+/// Current window position in logical screen units. Tracks both code-driven
+/// `setPos` and OS-driven moves (user dragging the title bar), kept in sync
+/// by the window-move callback.
+pub fn getPos(self: Window) awt.Window.Point {
+    return self.win_pos;
+}
+
+/// Current window size in logical points. Tracks both code-driven `setSize`
+/// and user resizes (kept in sync by the OS resize callback).
+pub fn getSize(self: Window) awt.Window.Size {
+    return self.win_size;
 }
 
 pub fn getBackground(self: Window) awt.Graphics.Color {
@@ -391,6 +432,7 @@ fn install(self: *Component) !void {
     // Wire OS-level input callbacks into our dispatcher.
     win.awt_window.setResizeCallback(onResize, @ptrCast(win));
     win.awt_window.setRefreshCallback(onRefresh, @ptrCast(win));
+    win.awt_window.setMoveCallback(onWindowPos, @ptrCast(win));
     win.awt_window.setMouseButtonCallback(onMouseButton, @ptrCast(win));
     win.awt_window.setCursorPosCallback(onCursorPos, @ptrCast(win));
     win.awt_window.setScrollCallback(onScroll, @ptrCast(win));
@@ -635,10 +677,33 @@ fn onResize(
         log.warn("window", "swapchain.resize ({d}x{d}) failed: {s}", .{ fb_w, fb_h, @errorName(err) });
     win.fb_w = @intCast(fb_w);
     win.fb_h = @intCast(fb_h);
+    // Track the realized logical size in our geometry model and mark it as
+    // already synced with the OS, so Application's loop-tail diff does not
+    // push this size back (which would fight a live user resize). See
+    // `application.md`「OS との同期」.
+    win.win_size = win.awt_window.size();
+    const app: *Application = @ptrCast(@alignCast(win.app));
+    app.noteOsGeometry(win);
     win.layout_dirty = true;
     win.paint_dirty = true;
     // Trigger an immediate redraw so live resize keeps painting on Windows.
     win.redraw();
+}
+
+fn onWindowPos(
+    _: ?*awt.c.struct_nmWindow,
+    x: c_int,
+    y: c_int,
+    user_data: ?*anyopaque,
+) callconv(.c) void {
+    const win: *Window = @ptrCast(@alignCast(user_data.?));
+    // OS moved the window (user drag, or our own setPos echoing back). Write
+    // the new screen position into the geometry model and mark it synced so
+    // Application's loop-tail diff does not push it back. See
+    // `application.md`「OS との同期」.
+    win.win_pos = .{ .x = @intCast(x), .y = @intCast(y) };
+    const app: *Application = @ptrCast(@alignCast(win.app));
+    app.noteOsGeometry(win);
 }
 
 fn onRefresh(_: ?*awt.c.struct_nmWindow, user_data: ?*anyopaque) callconv(.c) void {

@@ -44,6 +44,10 @@ void nmSwapBuffers(nmWindow* self);
 
 typedef void (*nmWindowResizeCallback)(nmWindow* window, int width, int height, void* user_data);
 typedef void (*nmWindowRefreshCallback)(nmWindow* window, void* user_data);
+/* Window moved. x / y are the new top-left in logical screen units (points),
+ * the same units nmGetWindowPos reports. Fires for OS-driven moves (user drag)
+ * as well as programmatic nmSetWindowPos. */
+typedef void (*nmWindowMoveCallback)(nmWindow* window, int x, int y, void* user_data);
 
 typedef enum nmKeyAction {
     nmKeyActionRelease,
@@ -79,6 +83,7 @@ typedef void (*nmCharCallback)(nmWindow* window, uint32_t codepoint, void* user_
 
 void nmSetWindowResizeCallback(nmWindow* self, nmWindowResizeCallback cb, void* user_data);
 void nmSetWindowRefreshCallback(nmWindow* self, nmWindowRefreshCallback cb, void* user_data);
+void nmSetWindowMoveCallback(nmWindow* self, nmWindowMoveCallback cb, void* user_data);
 void nmSetMouseButtonCallback(nmWindow* self, nmMouseButtonCallback cb, void* user_data);
 void nmSetCursorPosCallback(nmWindow* self, nmCursorPosCallback cb, void* user_data);
 void nmSetScrollCallback(nmWindow* self, nmScrollCallback cb, void* user_data);
@@ -139,6 +144,11 @@ void        nmSetClipboardString(nmWindow* self, const char* utf8);
  * framebuffer size. Use these values for any DPI-independent coordinates
  * exposed to user drawing code. */
 void nmGetWindowSize(const nmWindow* self, int* width, int* height);
+
+/* Resize the window. width / height are logical screen units (points), the
+ * same units nmGetWindowSize reports. The framebuffer is resized accordingly
+ * and the resize callback (if any) fires. */
+void nmSetWindowSize(nmWindow* self, int width, int height);
 
 /* Show or hide the window. Dialogs are created hidden and toggled on
  * show / close (they are not destroyed on close, unlike Frames). */

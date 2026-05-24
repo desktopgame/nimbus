@@ -39,6 +39,13 @@ const WindowEntry = struct {
     /// close request to `Dialog.close(.none)` instead of destroying (Dialogs
     /// are owned by the caller, not by Application).
     dialog:  ?*Dialog = null,
+    /// Window geometry last synced with the OS. Compared against the Window's
+    /// desired `win_pos`/`win_size` at each loop tail; a mismatch is pushed to
+    /// the OS and recorded here. OS-driven resizes update this via
+    /// `noteOsGeometry` so the diff does not bounce back. See
+    /// `application.md`「OS との同期」.
+    synced_pos:  awt.Window.Point,
+    synced_size: awt.Window.Size,
 };
 
 pub const TimerId = u32;
@@ -204,6 +211,9 @@ pub fn run(self: *Application) !void {
 pub fn tickOnce(self: *Application) void {
     self.fireDueTimers();
     self.event_queue.drain();
+    // Push any code-driven window move/resize to the OS before painting, so
+    // the redraw below lays out against the up-to-date size.
+    self.syncWindowGeometry();
 
     for (self.windows.items) |entry| {
         if (entry.window.paint_dirty or entry.window.layout_dirty) {
@@ -212,6 +222,44 @@ pub fn tickOnce(self: *Application) void {
     }
 
     self.collectClosedWindows();
+}
+
+/// Reflect each window's desired geometry (`win_pos`/`win_size`) to the OS.
+/// Runs at the event-loop tail (`application.md`「OS との同期」): for every
+/// window, diff the model against the last-synced value and push only the
+/// fields that changed. OS-driven resizes are absorbed by `noteOsGeometry`
+/// (called from the resize callback), so a live user resize is not pushed
+/// back and the model never ping-pongs with the OS.
+fn syncWindowGeometry(self: *Application) void {
+    for (self.windows.items) |*entry| {
+        const w = entry.window;
+        const want_pos = w.getPos();
+        if (want_pos.x != entry.synced_pos.x or want_pos.y != entry.synced_pos.y) {
+            w.awt_window.setPos(want_pos.x, want_pos.y);
+            entry.synced_pos = want_pos;
+        }
+        const want_size = w.getSize();
+        if (want_size.width != entry.synced_size.width or
+            want_size.height != entry.synced_size.height)
+        {
+            w.awt_window.setSize(want_size.width, want_size.height);
+            entry.synced_size = want_size;
+        }
+    }
+}
+
+/// Mark `w`'s current geometry as already synced with the OS. Called from the
+/// window's resize callback so `syncWindowGeometry` sees no diff and does not
+/// push the size back while the user is dragging the window's edge. No-op if
+/// `w` is not (yet) registered.
+pub fn noteOsGeometry(self: *Application, w: *Window) void {
+    for (self.windows.items) |*entry| {
+        if (entry.window == w) {
+            entry.synced_pos = w.getPos();
+            entry.synced_size = w.getSize();
+            return;
+        }
+    }
 }
 
 /// Reap windows whose OS close flag is set. Frames are destroyed (Application
@@ -262,6 +310,8 @@ pub fn registerDialog(self: *Application, d: *Dialog) !void {
         .outer   = @ptrCast(d),
         .destroy = noopDestroy,
         .dialog  = d,
+        .synced_pos  = d.window.getPos(),
+        .synced_size = d.window.getSize(),
     });
     // Respect any modal currently in effect (block the freshly-shown window
     // unless it is itself the modal top).
@@ -453,6 +503,9 @@ pub fn frame(self: *Application, title: []const u8, w: u32, h: u32) !*Frame {
         .window  = &f.window,
         .outer   = @ptrCast(f),
         .destroy = dtor,
+        // Model == OS at creation: seed synced from the window's initial geometry.
+        .synced_pos  = f.window.getPos(),
+        .synced_size = f.window.getSize(),
     });
 
     return f;

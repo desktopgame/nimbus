@@ -8,6 +8,7 @@ typedef struct nmWindow nmWindow;
 
 typedef void (*nmWindowResizeCallback)(nmWindow* window, int width, int height, void* user_data);
 typedef void (*nmWindowRefreshCallback)(nmWindow* window, void* user_data);
+typedef void (*nmWindowMoveCallback)(nmWindow* window, int x, int y, void* user_data);
 
 typedef enum nmKeyAction {
     nmKeyActionRelease,
@@ -110,6 +111,12 @@ void nmGetWindowSize(const nmWindow* self, int* width, int* height);
 ### 事前条件
 * `width` / `height` がいずれも NULL でないこと。違反した場合の動作は UB。
 
+## ウィンドウサイズの変更
+void nmSetWindowSize(nmWindow* self, int width, int height);
+
+ウィンドウサイズを論理ポイント単位で変更する。単位は `nmGetWindowSize` と同じ。
+フレームバッファも追従して変更され、登録済みのサイズ変更コールバックが発火する。
+
 ## フレームバッファサイズの取得
 void nmGetFramebufferSize(const nmWindow* self, int* width, int* height);
 
@@ -140,6 +147,15 @@ Windows の modal sizing loop 中 (利用者が枠をドラッグしている間
 `cb` に `NULL` を渡すと登録解除される。
 
 リサイズ中も描画を継続したい場合、このコールバックから描画処理を呼ぶ。
+
+## 移動コールバックの登録
+void nmSetWindowMoveCallback(nmWindow* self, nmWindowMoveCallback cb, void* user_data);
+
+ウィンドウが移動した時に呼ばれるコールバックを登録する。
+コールバックに渡される `x` / `y` は移動後の左上隅を論理ポイント単位で表す。単位は `nmGetWindowPos` と同じ。
+利用者によるドラッグ移動と、`nmSetWindowPos` によるプログラム移動の両方で発火する。
+コールバックは `self` を生成 / 操作しているスレッドと同じスレッドから同期的に呼ばれる。
+`cb` に `NULL` を渡すと登録解除される。
 
 ## マウスボタンコールバックの登録
 void nmSetMouseButtonCallback(nmWindow* self, nmMouseButtonCallback cb, void* user_data);
