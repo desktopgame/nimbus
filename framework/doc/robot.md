@@ -14,6 +14,8 @@ Robot は次の 2 チャネルを提供する。
 
 この 2 チャネルを `pump`（イベントループの単一ステップ駆動）と仮想クロックで挟み、`inject → pump → snapshot → 検証` を決定的に繰り返す。
 
+さらに、人間が実ウィンドウでアプリを操作した入力列を記録し、再生可能なテストシナリオに変換する**レコーダー**を提供する（後述「入力の記録」）。記録は実ウィンドウ、再生はヘッドレス。
+
 最終的な利用形態は**アウトプロセス JSON ドライバ**（後述「JSON ドライバ」）だが、その土台となる Zig API も同時に公開する。
 
 ## 依存関係
@@ -402,21 +404,153 @@ AI エージェントが再ビルドなしにターン毎に対話駆動でき�
 
 座標 / ピクセルは初版から使えるが、`target` による意味的指定は Component の a11y ファセットが入って初めて機能する。
 
+## 入力の記録（レコーダー）
+人間が実ウィンドウでアプリを操作した入力列を記録し、再生可能なテストシナリオに変換する。
+記録は実ウィンドウ（人間が見て操作する）、再生はヘッドレス（決定的）という非対称構成で、両者をイベント間のクロック差分が橋渡しする。
+Playwright の codegen に相当する。
+
+### 記録点
+入力は実イベントも合成イベントも `Window.dispatchInput`（および composition の同期パス）を必ず通る。
+ここに観測フックを 1 つ足し、流れるイベントを記録する。
+`DirtyNotify` / `FocusController` と同じく、Window のオプショナルなフィールドとして持たせる（グローバルにしない）。
+
+```zig
+pub const InputObserver = struct {
+    user_data: *anyopaque,
+    on_event:  *const fn (*anyopaque, *const awt.Event) void,
+};
+// Window に追加: input_observer: ?InputObserver
+```
+
+`dispatchInput` は処理の冒頭で `input_observer` が non-null なら `on_event` を呼ぶ。
+合成イベント（Robot 由来）も同じ経路を通るが、レコーダーは記録モード中の実ウィンドウにのみ装着される想定。
+
+### 型定義
+```zig
+pub const Recorder = struct {
+    app:       *Application,        // 借用
+    window:    *Window,            // 借用。観測フックを装着する対象
+    steps:     std.ArrayList(Step),
+    last_time: f64,                // 直前イベントの時刻（wait 差分の算出用）
+    allocator: std.mem.Allocator,
+};
+
+pub const Scenario = struct {
+    window_w: u32,                 // 記録時のウィンドウサイズ（再生時に一致させる）
+    window_h: u32,
+    steps:    []Step,
+};
+
+pub const Step = union(enum) {
+    wait:       u32,               // 直前ステップからの経過 ms（再生時 advanceClock + pump）
+    act:        ActStep,
+    checkpoint: Checkpoint,
+};
+
+pub const ActStep = union(enum) {
+    click:  Query,                 // 意味的に解決したクリック対象（後述「クリックの解決」）
+    move:   Component.Point,       // ドラッグ等。解決できないので座標で残す
+    down:   Component.Point,
+    up:     Component.Point,
+    key:    KeyStep,
+    type_:  []const u8,            // 確定文字列（.char 列をまとめたもの）
+    scroll: f32,
+};
+
+pub const Checkpoint = struct {
+    label:    ?[]const u8,
+    expected: NodeSnapshot,        // 記録時点の curated tree（期待状態）
+};
+```
+
+### 記録の開始 / 停止
+```zig
+pub fn init(allocator: std.mem.Allocator, app: *Application, window: *Window) !*Recorder;
+pub fn start(self: *Recorder) void;
+pub fn stop(self: *Recorder) void;
+pub fn deinit(self: *Recorder) void;
+```
+
+`init` は `Recorder` を確保し、`window.input_observer` に自身を装着する。
+`start` / `stop` で記録の on/off を切り替える（`stop` 後も装着は残り、再 `start` できる）。
+`deinit` は観測フックを外して解放する。フックを外し忘れると dangling になるため、`deinit` は必ず `window` より先に呼ぶ。
+
+### シナリオの取り出し
+```zig
+pub fn scenario(self: *Recorder) Scenario;
+pub fn writeJsonl(self: *Recorder, io: std.Io, path: []const u8) !void;
+```
+
+`scenario` は記録済みステップを `Scenario` として返す（`Recorder` が所有する steps を借用）。
+`writeJsonl` は JSON-lines 形式（後述「シナリオ形式」）でファイルに書き出す。
+
+### クリックの解決
+`.press` と `.release` が同一コンポーネント上で起きたクリックは、記録時にクリック地点をヒットテストして role + text + name に解決し、`click: Query` ステップとして残す（意味的指定。レイアウト変更に強い）。
+ヒットテストには Robot の `find` と同じ走査を使う。
+
+ドラッグ（press → move → … → release が別位置 / 別コンポーネント）や、解決先が曖昧なクリックは、解決を諦めて座標ベースの `down` / `move` / `up` ステップで残す。
+解決した `text` / `name` は元コンポーネントからの借用なので、`Recorder` 内に複製して保持する（コンポーネントが変化・破棄されても安全に）。
+
+### チェックポイントの記録
+記録中に人間が予約キー（既定 `F12`。装着時に変更可）を押すと、その入力は**ステップとして記録せず**、代わりにその時点の curated tree を `snapshotTree` で取得して `Checkpoint` として積む。
+これが再生時の期待状態（アサート）になる。
+予約キーはアプリ本来の入力と衝突しないものを選ぶ（必要なら修飾キー併用）。
+
+curated tree（role / text / rect / focused）だけをチェックポイントにするのは、安定していて偽陽性が出にくいため（詳細ダンプを golden 比較に使わない方針と整合）。
+特定フィールドの値を検証したい場合は、再生スクリプト側で `dumpNode` を名指しで確認する。
+
+## シナリオの再生
+```zig
+pub fn replay(robot: *Robot, scenario: Scenario, allocator: std.mem.Allocator) !ReplayResult;
+
+pub const ReplayResult = struct {
+    passed:    bool,
+    failures:  []CheckpointFailure,  // 一致しなかったチェックポイント
+};
+```
+
+`Scenario` のステップを順に Robot 操作へ写して再生する。
+
+* `wait` → `advanceClock(ms)` の後 `pump`。再生クロックは仮想なので、人間の長い手休めもほぼ即座に消化される（実時間 sleep は挟まない）
+* `act` → `clickOn` / `moveMouse` / `keyDown`+`keyUp` / `typeText` / `scroll` の後 `pump`
+* `checkpoint` → `snapshotTree` を取り、`expected` と構造比較。差分があれば `failures` に積む
+
+### 事前条件
+再生に使う `robot.window` は、`Scenario.window_w` / `window_h` と同じサイズで生成されていること。
+チェックポイントの `rect` 比較がサイズに依存するため、サイズが違うと座標差で偽の不一致が出る。
+
+### シナリオ形式
+JSON-lines。1 行 1 ステップで、JSON ドライバのコマンド列と同じ語彙を使う。
+したがって「記録 = この形式で書き出す」「再生 = ドライバに食わせる」がそのまま成り立ち、再生経路を二重に実装しなくてよい。
+
+```
+{"window":[800,600]}
+{"act":"click","target":{"role":"button","text":"Save"}}
+{"advance":120}
+{"act":"type","text":"hello"}
+{"checkpoint":"after-typing","tree":[{"role":"text_field","text":"hello","rect":[12,40,200,28],"focused":true}]}
+```
+
+ヘッダ行（`window`）でサイズを宣言し、以降はステップ。
+`checkpoint` 行は期待 tree を埋め込み、ドライバは再生時にその行で現在の tree と比較する。
+
 ## ライフタイム
 * `Robot` は `Application` と `Window` を**借用**する。両者より先に破棄しなければならない（`Robot` → `Window` → `Application` の順は不可）
 * `snapshotTree` / `dumpTree` の返り値は呼び出し側が `freeTree` / `freeDump` で解放する。ノード内の文字列（`name` / `text` / dump の string 値）は元 Component の文字列を**借用**するので、対応する Component が生きている間だけ有効（snapshot 後に widget を destroy したらダングリング）。文字列の所有が必要なら呼び出し側で複製する
 * 合成イベントは `postEvent` でキューにコピーされるため、`inject` 系メソッドの引数（`utf8` 等）は呼び出し後すぐ解放してよい。ただし `.composition` の借用文字列だけは同期ディスパッチなので呼び出し中のみ有効
+* `Recorder` は `Application` / `Window` を**借用**し、`window.input_observer` に自身を装着する。`deinit` で必ずフックを外す。`Window` より先に `deinit` すること（さもないと dangling フックが残る）。解決済みの `text` / `name` は複製して保持するので、元コンポーネントが破棄されてもシナリオは安全
 
 ## 制約 / 非機能要件
 * **単一 UI スレッド**: Robot のメソッドはすべて UI スレッドから呼ぶ前提（CLAUDE.md「スレッドモデル」）。`postEvent` 自体はスレッド安全だが、`pump` / `snapshotTree` は UI スレッド限定
 * **決定性が最優先**: 実時間・実 OS イベントに依存しないことを設計の主目的とする。これがフレーキーなテストとの分かれ目。詳細ダンプも生ポインタ / 関数ポインタ / アドレスを `field` に出さない（実行毎に変わり比較不能になる。「詳細ダンプのフィールド選別」参照）
 * **実入力との同一経路**: 合成イベントは独自の short-cut を作らず、必ず `postEvent` → `dispatchInput` を通す。Robot のためだけの分岐をディスパッチャに増やさない
-* **スコープ外（v1）**: OS レベルのイベント注入（実ウィンドウへの本物のクリック）、複数プロセス分散、録画 / リプレイのシリアライズ形式、スクリーンリーダー API 連携。いずれも本 doc の意味的ファセット / JSON プロトコルを土台に後付けできる形にしておく
+* **記録は実ウィンドウ / 再生はヘッドレス**: レコーダーは実ウィンドウに装着して人間の操作を採るが、再生は決定的なヘッドレス + 仮想クロックで行う。両者をイベント間のクロック差分が橋渡しする
+* **スコープ外（v1）**: OS レベルのイベント注入（実ウィンドウへの本物のクリック）、複数プロセス分散、スクリーンリーダー API 連携。いずれも本 doc の意味的ファセット / JSON プロトコルを土台に後付けできる形にしておく
 
 ## 関連 doc
 * `component.md` — Component / VTable。a11y ファセット（`role` / `accessibleText`）と詳細ダンプ用 `dump` フックの追加先
 * `application.md` — イベントループ / タイマー。pump と仮想クロックの追加先
-* `window.md` — dispatchInput / 描画。ヘッドレスサーフェスの追加先
+* `window.md` — dispatchInput / 描画。ヘッドレスサーフェスと `input_observer`（レコーダー装着点）の追加先
 * `awt/doc/event.md` — 合成する `awt.Event` の型
 * `awt/doc/event_queue.md` — `postEvent` による注入経路
 * `awt/doc/render_target.md` — ピクセル readback
@@ -429,5 +563,7 @@ AI エージェントが再ビルドなしにターン毎に対話駆動でき�
 * **段階 3**: Component の a11y ファセット（`role` / `accessibleText`）+ `snapshotTree`（curated）+ 意味的クエリ（`find` / `clickOn`）
 * **段階 3.5**: `dump` フック（ウィジェット毎にフィールド選別）+ 詳細ダンプ（`dumpTree` / `dumpNode`）。curated ツリーの上に深掘りビューを足す
 * **段階 4**: アウトプロセス JSON ドライバ + MCP サーバー化
-* 録画 / リプレイ: 一連の `act` を記録して再生するシリアライズ形式
+* **段階 5**: 入力レコーダー（`Window.input_observer` + `Recorder`）+ シナリオ再生（`replay`）。記録は実ウィンドウ、再生はヘッドレス。意味的解決とチェックポイントは段階 3 のファセットを前提とする
+* Zig テストコードの codegen: シナリオから `snapshot_test.zig` 隣に置ける Zig テスト関数を生成（v1 は JSON-lines のみ）
+* チェックポイント比較で `rect` を無視するモード: ウィンドウサイズ非依存の比較（v1 はサイズ一致前提）
 * 書記素クラスタ単位の `typeText`（v1 はコードポイント単位。CLAUDE.md「書記素クラスタ」と整合）
