@@ -186,6 +186,7 @@ pub fn build(b: *std.Build) void {
     addExample(b, "widget_dialog", framework_mod, null, target, optimize);
     addExample(b, "widget_window", framework_mod, null, target, optimize);
     addExample(b, "widget_scroll", framework_mod, null, target, optimize);
+    addExample(b, "widget_layoutcost", framework_mod, null, target, optimize);
 
     // ── tests ────────────────────────────────────────────────────
     const test_step = b.step("test", "Run all unit tests");
