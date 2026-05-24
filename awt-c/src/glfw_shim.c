@@ -186,6 +186,35 @@ void nmSetWindowVisible(nmWindow* self, bool visible) {
     }
 }
 
+void nmFocusWindow(nmWindow* self) {
+    glfwFocusWindow((GLFWwindow*)self);
+}
+
+void nmRequestWindowAttention(nmWindow* self) {
+#ifdef _WIN32
+    /* GLFW's glfwRequestWindowAttention is a single FlashWindow (one subtle
+     * caption invert) — barely visible. Use FlashWindowEx with FLASHW_ALL +
+     * a repeat count so the title bar / taskbar (and the DWM drop shadow)
+     * visibly pulse, matching native modal-dialog attention behavior.
+     * Only flashes while the window is NOT foreground, which is the case
+     * here: the user just clicked the (blocked) owner, so the owner is
+     * foreground and the dialog is behind it. */
+    FLASHWINFO fi;
+    fi.cbSize    = sizeof(fi);
+    fi.hwnd      = nm_internal_get_hwnd(self);
+    fi.dwFlags   = FLASHW_ALL;
+    fi.uCount    = 3;
+    fi.dwTimeout = 0; /* default (caret blink) rate */
+    FlashWindowEx(&fi);
+#else
+    glfwRequestWindowAttention((GLFWwindow*)self);
+#endif
+}
+
+void nmSetWindowFloating(nmWindow* self, bool floating) {
+    glfwSetWindowAttrib((GLFWwindow*)self, GLFW_FLOATING, floating ? GLFW_TRUE : GLFW_FALSE);
+}
+
 void nmGetWindowPos(nmWindow* self, int* x, int* y) {
     glfwGetWindowPos((GLFWwindow*)self, x, y);
 }

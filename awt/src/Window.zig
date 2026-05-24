@@ -51,6 +51,23 @@ pub fn setVisible(self: Window, visible: bool) void {
     c.nmSetWindowVisible(self.handle, visible);
 }
 
+/// Give the window OS input focus / bring it forward.
+pub fn focus(self: Window) void {
+    c.nmFocusWindow(self.handle);
+}
+
+/// Request user attention: flashes the window / taskbar. Used to flash a
+/// modal dialog when the user pokes its (blocked) owner.
+pub fn requestAttention(self: Window) void {
+    c.nmRequestWindowAttention(self.handle);
+}
+
+/// Toggle always-on-top. Used to keep a modal dialog above its owner since
+/// GLFW provides no OS-level window modality.
+pub fn setFloating(self: Window, floating: bool) void {
+    c.nmSetWindowFloating(self.handle, floating);
+}
+
 /// Logical window size in points — what was requested at `init`. On HiDPI
 /// displays this is smaller than `framebufferSize`; user-facing drawing
 /// coordinates should be in these units.

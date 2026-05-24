@@ -144,6 +144,17 @@ void nmGetWindowSize(const nmWindow* self, int* width, int* height);
  * show / close (they are not destroyed on close, unlike Frames). */
 void nmSetWindowVisible(nmWindow* self, bool visible);
 
+/* Give the window OS input focus / bring it forward. */
+void nmFocusWindow(nmWindow* self);
+
+/* Request user attention: flashes the window / taskbar (Win32 FlashWindowEx).
+ * Used to flash a modal dialog when the user pokes its blocked owner. */
+void nmRequestWindowAttention(nmWindow* self);
+
+/* Toggle always-on-top. Used to keep a modal dialog above its owner since
+ * GLFW provides no OS-level window modality. */
+void nmSetWindowFloating(nmWindow* self, bool floating);
+
 /* Window position in logical screen units (points), top-left corner relative
  * to the virtual screen. Used e.g. to center a dialog over its owner. */
 void nmGetWindowPos(nmWindow* self, int* x, int* y);

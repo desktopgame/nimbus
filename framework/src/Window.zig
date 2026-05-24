@@ -8,6 +8,7 @@ const awt = @import("awt");
 const Component = @import("Component.zig");
 const Container = @import("Container.zig");
 const BorderLayout = @import("BorderLayout.zig");
+const Application = @import("Application.zig");
 const log = @import("log.zig");
 
 const Window = @This();
@@ -432,7 +433,16 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
     // Modality gate: a modal Dialog elsewhere blocks all input to this window.
     // Composition/focus are internal-ish but blocking everything is simplest
     // and a blocked window should not be the focus/IME target anyway.
-    if (self.input_blocked) return;
+    if (self.input_blocked) {
+        // Poking a window behind a modal flashes the modal (Swing-style
+        // "deal with me first"). Only react to deliberate presses, not
+        // passive moves / scroll, so the dialog doesn't flash on hover.
+        if (isAttentionPoke(ev)) {
+            const app: *Application = @ptrCast(@alignCast(self.app));
+            app.flashActiveModal();
+        }
+        return;
+    }
     switch (ev.payload) {
         .mouse => |m| {
             // 1. Mouse-capture priority (active drag).
@@ -569,6 +579,18 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
 fn dispatchInputThunk(target: *anyopaque, ev: *awt.Event) void {
     const win: *Window = @ptrCast(@alignCast(target));
     win.dispatchInput(ev);
+}
+
+/// True for events that count as the user deliberately trying to interact
+/// with a window (mouse button press, key press) — used to decide whether
+/// poking a modal-blocked window should flash the modal. Excludes passive
+/// move / scroll / release so the modal does not flash on mere hover.
+fn isAttentionPoke(ev: *const awt.Event) bool {
+    return switch (ev.payload) {
+        .mouse => |m| m.action == .press,
+        .key   => |k| k.action == .press,
+        else   => false,
+    };
 }
 
 /// Walk the container subtree (children top-most-first), returning the

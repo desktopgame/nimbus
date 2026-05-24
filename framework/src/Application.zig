@@ -197,10 +197,10 @@ pub fn run(self: *Application) !void {
 }
 
 /// One iteration of per-window upkeep: fire due timers, drain queued input,
-/// redraw dirty windows, reap closed ones. Shared by `run` and by the
-/// `awt.SecondaryLoop` that backs modal dialogs (via `tickThunk`), so a
-/// modal loop keeps every window painting and `invokeLater` tasks flowing.
-/// Does NOT wait for events — the caller's loop owns the blocking wait.
+/// redraw dirty windows, reap closed ones. Shared by `run` and by the nested
+/// modal loop in `Dialog.showModal`, so a modal keeps every window painting,
+/// timers ticking, and `invokeLater` tasks flowing. Does NOT wait for events
+/// — the caller's loop owns the blocking wait.
 pub fn tickOnce(self: *Application) void {
     self.fireDueTimers();
     self.event_queue.drain();
@@ -212,12 +212,6 @@ pub fn tickOnce(self: *Application) void {
     }
 
     self.collectClosedWindows();
-}
-
-/// `awt.SecondaryLoop` tick callback shim. `ctx` is the `*Application`.
-pub fn tickThunk(ctx: *anyopaque) void {
-    const self: *Application = @ptrCast(@alignCast(ctx));
-    self.tickOnce();
 }
 
 /// Reap windows whose OS close flag is set. Frames are destroyed (Application
@@ -300,6 +294,20 @@ pub fn pushModal(self: *Application, w: *Window) !void {
     self.refreshModalBlocking();
 }
 
+/// Flash the active (top) modal window to demand attention. Called when the
+/// user pokes a window blocked behind a modal — mirrors Swing, where clicking
+/// a modal's owner flashes the dialog. No-op if no modal is active.
+pub fn flashActiveModal(self: *Application) void {
+    if (self.modal_stack.items.len == 0) return;
+    const top = self.modal_stack.items[self.modal_stack.items.len - 1];
+    // OS window-frame attention flash (Win32 FlashWindowEx → title bar +
+    // taskbar + DWM drop shadow pulse; macOS dock bounce). Matches native
+    // modal behavior. Note this is a window-frame effect: if the dialog is
+    // positioned entirely off the owner there is no in-content feedback —
+    // same as Swing/NetBeans.
+    top.awt_window.requestAttention();
+}
+
 /// Recompute per-window input blocking from the modal stack: only the top
 /// modal window (if any) accepts input; everything else is blocked.
 fn refreshModalBlocking(self: *Application) void {
@@ -374,7 +382,7 @@ fn addTimer(
 
 /// Seconds until the soonest timer fires (clamped to 0). Returns null
 /// when no timers are scheduled.
-fn earliestDueIn(self: *Application) ?f64 {
+pub fn earliestDueIn(self: *Application) ?f64 {
     if (self.timers.items.len == 0) return null;
     var soonest: f64 = self.timers.items[0].due_time;
     for (self.timers.items[1..]) |t| {

@@ -10,8 +10,13 @@ pub const Dialog = struct {
     owner:      *Window,                 // オーナーウィンドウ (必須)。中央寄せ / 「オーナーが閉じたら一緒に閉じる」の基準
     modal:      bool,                    // showModal で開かれていれば true (show なら false)
     result:     Result,                  // 閉じた時の結果。showModal の戻り値になる
-    modal_loop: ?*awt.SecondaryLoop,     // モーダル表示中だけ non-null。close から exit を呼ぶために保持
+    modal_done: bool,                    // close が立てる。showModal の入れ子ループを抜ける条件
     shown:      bool,                    // Application の windows リストに登録中か (二重 show / 二重 close 防止)
+    // 注意喚起の点滅 (flash) 用の状態
+    flash_timer:     ?Application.TimerId,
+    flash_remaining: u8,
+    flash_on:        bool,
+    base_bg:         awt.Graphics.Color, // 点滅前の背景色 (復元用)
     allocator:  std.mem.Allocator,
 };
 
@@ -24,7 +29,7 @@ pub const Result = enum(i32) {
 ```
 
 `Result` を非網羅 enum にしているのは、`ok` / `cancel` 以外の選択肢（"yes" / "no" / "apply" や、リスト選択のインデックス等）を利用者が独自コードで表現できるようにするため。
-内部的には `awt.SecondaryLoop.exec()` が返す `i32` をそのまま `@enumFromInt` する。
+`i32` backing なので、`close(@enumFromInt(my_code))` のように任意コードも流せる。
 
 `Dialog` は `Frame` と同じく `Window` を embed する。
 共通機能（タイトル、close、resize、root container、repaint）はすべて `Window` 側にあり、`Dialog` はそこに「オーナー」と「モダリティ」を足しただけの薄い派生（`window.md`「階層と依存関係」参照）。
@@ -64,8 +69,8 @@ pub fn showModal(self: *Dialog) Result;
 手順（契約として）:
 1. ウィンドウを Application の windows リストに登録する（描画とイベントのループに乗る）。
 2. `modal = true` にし、Application のモーダルスタックに自分を積む（「モーダル入力ブロック」参照）。
-3. 入れ子の `awt.SecondaryLoop` を起こし、`exec()` でブロックする。tick には Application の per-iteration 処理（drain / redraw / OS 同期）を渡す（`secondary_loop.md` 参照）。
-4. ダイアログ内のボタン等が `close(result)` を呼ぶ（または X ボタンで閉じられる）と `SecondaryLoop.exit` が走り、`exec()` が return する。
+3. タイマー対応の入れ子イベントループを回してブロックする（毎反復 `Application.tickOnce`。詳細は後述「Application との連携」）。
+4. ダイアログ内のボタン等が `close(result)` を呼ぶ（または X ボタンで閉じられる）と `modal_done` が立ち、入れ子ループを抜ける。
 5. モーダルスタックから降ろし、windows リストから外して `result` を返す。
 
 戻った時点で**ウィンドウは非表示（未登録）になるが、`Dialog` 自身と内部のウィジェットツリーは生存している**。
@@ -97,8 +102,8 @@ pub fn close(self: *Dialog, result: Result) void;
 `result` を保存してダイアログを閉じる。
 OS ウィンドウを非表示にし、windows リストから外す（破棄はしない）。
 
-* モーダル中（`modal_loop != null`）なら `SecondaryLoop.exit(@intFromEnum(result))` を呼び、`showModal` のブロックを解く。
-* モードレスなら非表示にして windows リストから外すだけ。
+* モーダル中なら `modal_done` を立てて `showModal` の入れ子ループを抜けさせる（`postEmptyEvent` で待機中のループを起こす）。
+* モードレスなら非表示にして windows リストから外すだけ（`modal_done` は無視される）。
 
 ダイアログ内の "OK" / "Cancel" ボタンのハンドラから呼ぶのが典型。
 既に閉じている（`shown == false`）なら no-op。
@@ -150,8 +155,27 @@ GLFW / OS はウィンドウ単位のモダリティを提供しないので、*
 * オーナーや他の Frame は描画は続くが、クリックやキー入力には反応しなくなる。
 * close リクエスト（X ボタン）は例外的に処理し、対象がモーダルダイアログ自身なら `close(.none)` 相当として扱う。オーナーの close はモーダル中は無視する（モーダルを閉じてから）。
 
-この機構が、`SecondaryLoop` に加えてモーダル実装で**新たに必要になる部分**。
 詳細な dispatch ルールは `window.md`「3 層の dispatch 順」を拡張する形で実装側に置く。
+
+`input_blocked` はウィジェットへの入力を止めるだけで、OS レベルのウィンドウ操作（前面化・フォーカス・移動）までは止められない（GLFW にウィンドウ単位のモーダルがない）。
+そのままだとオーナーを前面に出してモーダルを隠せてしまい「モーダルでない」感覚になるため、モーダル表示中はダイアログを **floating（常に最前面）+ focus** にしてオーナーの上に固定する（`awt.Window.setFloating` / `focus`）。
+close でこれを解除する。
+floating + `input_blocked` の二段で、「オーナーの上に必ずダイアログが見え、かつオーナーのウィジェットは反応しない」というモーダルの体感を作る。
+
+### 注意喚起の点滅
+Swing / NetBeans と同じく、**ブロックされたウィンドウをクリック / キー押下するとモーダルダイアログのウィンドウ枠を点滅させて**「こっちを先に処理して」と促す。
+`dispatchInput` がブロック時に press 系イベント（mouse press / key press）を捨てる際に `Application.flashActiveModal` → `awt.Window.requestAttention` を呼ぶ。
+move / scroll / release のような受動的イベントでは点滅させない（ホバーで点滅し続けないように）。
+
+点滅は **OS のウィンドウ枠効果**で行う（`awt.Window.requestAttention`）:
+* Windows: `FlashWindowEx`（`FLASHW_ALL`）でタイトルバー + タスクバーを数回点滅させる。DWM のドロップシャドウも一緒に点滅する。
+  GLFW 標準の `glfwRequestWindowAttention` は単発の `FlashWindow` で弱いため、awt-c 側で `FlashWindowEx` を直接呼ぶ。
+  前面でないウィンドウにだけ効くが、ここではユーザーが（ブロックされた）オーナーをクリックした直後＝オーナーが前面・ダイアログは背面なので点滅する。
+* macOS: dock アイコンのバウンス（`glfwRequestWindowAttention`）。
+
+これはウィンドウ枠の効果なので、**ダイアログがオーナーの外に完全にはみ出して配置されている場合は枠の点滅が視界に入らない**ことがある。
+これは Swing / NetBeans でも同じ挙動（ドロップシャドウ＝枠を光らせる方式の本質的な制約）であり、nimbus でも同様とする。
+ダイアログは既定でオーナー中央に出る（「位置とサイズ」参照）ので通常は問題にならない。
 
 ## Application との連携
 `Dialog` のウィンドウも `Frame` と同様、表示中は Application の `windows: ArrayList(WindowEntry)` に `*Window`（= `&dialog.window`）として登録される。
@@ -161,12 +185,12 @@ GLFW / OS はウィンドウ単位のモダリティを提供しないので、*
 * Frame は close 回収時に `destroy` まで走らせて破棄する。
 * Dialog は close 回収時に windows リストから外すだけで、`Dialog` オブジェクト本体は破棄しない（利用者所有のため）。
 
-モーダル表示中は Application の**メインループではなく `Dialog` が起こした `SecondaryLoop`** がイベントを回す。
-`SecondaryLoop` の tick に Application の `tickThunk`（= `tickOnce`: `fireDueTimers` / `drain` / dirty ウィンドウの `redraw` / close 回収）を渡すので、モーダル中もダイアログ・オーナー双方が描画され、別スレッドからの `invokeLater` も消化される（`secondary_loop.md`「EventQueue との関係」参照）。
+モーダル表示中は Application の**メインループではなく `Dialog.showModal` の中の入れ子ループ**がイベントを回す。
+この入れ子ループは `app.run` と同じく **タイマー対応**（最も近い timer の `due_time` まで `waitEventsTimeout`、なければ `waitEvents`）で、毎反復 `Application.tickOnce`（`fireDueTimers` / `drain` / dirty ウィンドウの `redraw` / close 回収）を呼ぶ。
+`close` が `modal_done` を立てるとループを抜ける。
 
-ただし `SecondaryLoop.exec` は `waitEvents`（タイムアウトなし）でブロックするため、**モーダル中はタイマーが「次のイベントが来るまで」発火しない**。
-具体的にはモーダルダイアログ内の `TextField` のキャレット点滅が、マウス移動などのイベントが来るまで止まって見える。
-タイムアウト付き `exec` が入れば解消する（`secondary_loop.md` 機能要望）。
+タイマー対応なので、モーダル中もダイアログ内 `TextField` のキャレット点滅などタイマー駆動の UI が正しく動く（`awt.SecondaryLoop` の素の `waitEvents` だとタイマーが次のイベントまで止まるため、Dialog は `SecondaryLoop` を使わず独自ループを回す）。
+モーダル中もダイアログ・オーナー双方が描画され、別スレッドからの `invokeLater` も消化される。
 
 ## 位置とサイズ
 v1 ではオーナーの中央に配置する（オーナーの bounds の中心に、ダイアログの w / h を中央寄せ）。

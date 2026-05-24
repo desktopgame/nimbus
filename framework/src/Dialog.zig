@@ -32,8 +32,8 @@ owner:      *Window,
 modal:      bool,
 /// Result set by the most recent `close`; `showModal` returns it.
 result:     Result,
-/// Non-null only while a modal loop is running, so `close` can break it.
-modal_loop: ?*awt.SecondaryLoop,
+/// Set by `close` to break the modal loop in `showModal`.
+modal_done: bool,
 /// True while registered in Application's window list (guards double
 /// show / double close).
 shown:      bool,
@@ -59,7 +59,7 @@ pub fn init(
         .owner      = owner,
         .modal      = false,
         .result     = .none,
-        .modal_loop = null,
+        .modal_done = false,
         .shown      = false,
         .allocator  = app.allocator,
     };
@@ -81,6 +81,7 @@ pub fn showModal(self: *Dialog) Result {
     if (self.shown) return self.result;
     self.modal = true;
     self.result = .none;
+    self.modal_done = false;
     // Clear a stale OS close flag so a dialog previously closed via its X
     // button can be re-shown.
     self.window.awt_window.setShouldClose(false);
@@ -92,12 +93,25 @@ pub fn showModal(self: *Dialog) Result {
     self.app.pushModal(&self.window) catch {};
     self.centerOnOwner();
     self.window.awt_window.setVisible(true);
+    // GLFW has no OS-level modality. `input_blocked` already drops widget
+    // input on the owner; floating + focus additionally keep the dialog above
+    // the owner so it cannot be raised over / hidden behind it.
+    self.window.awt_window.setFloating(true);
+    self.window.awt_window.focus();
     self.window.repaint();
 
-    var loop = awt.SecondaryLoop.init(Application.tickThunk, @ptrCast(self.app));
-    self.modal_loop = &loop;
-    _ = loop.exec(); // blocks until close() calls loop.exit
-    self.modal_loop = null;
+    // Nested event loop. Unlike `awt.SecondaryLoop` (plain waitEvents), this
+    // is timer-aware — it wakes on the soonest pending timer — so caret blink
+    // and the attention-flash animation keep ticking while modal. Exits when
+    // `close` sets `modal_done`.
+    while (!self.modal_done) {
+        if (self.app.earliestDueIn()) |delay| {
+            awt.waitEventsTimeout(@max(0, delay));
+        } else {
+            awt.waitEvents();
+        }
+        self.app.tickOnce();
+    }
     // close() (button-driven or X-routed) already unregistered + popped the
     // modal stack; nothing else to clean up here.
     return self.result;
@@ -123,10 +137,13 @@ pub fn show(self: *Dialog) !void {
 pub fn close(self: *Dialog, result: Result) void {
     if (!self.shown) return;
     self.result = result;
+    self.window.awt_window.setFloating(false);
     self.window.awt_window.setVisible(false);
     self.app.unregisterWindow(&self.window);
     self.shown = false;
-    if (self.modal_loop) |loop| loop.exit(@intFromEnum(result));
+    // Break the modal loop in `showModal` (no-op for a modeless dialog).
+    self.modal_done = true;
+    awt.postEmptyEvent();
 }
 
 // ── queries ─────────────────────────────────────────────────────────────
