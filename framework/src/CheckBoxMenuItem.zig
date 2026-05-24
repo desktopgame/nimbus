@@ -3,7 +3,7 @@
 const std = @import("std");
 const awt = @import("awt");
 const Component = @import("Component.zig");
-const ButtonModel = @import("ButtonModel.zig");
+const ToggleButtonModel = @import("ToggleButtonModel.zig");
 const MenuItem = @import("MenuItem.zig");
 
 const CheckBoxMenuItem = @This();
@@ -12,7 +12,7 @@ component:  Component,
 text:       []const u8,
 font:       awt.Graphics.TextFont,
 color:      awt.Graphics.Color,
-model:      *ButtonModel,
+model:      *ToggleButtonModel,
 owns_model: bool,
 allocator:  std.mem.Allocator,
 
@@ -30,16 +30,16 @@ pub fn create(
     font: awt.Graphics.TextFont,
     color: awt.Graphics.Color,
 ) !*CheckBoxMenuItem {
-    const model = try allocator.create(ButtonModel);
+    const model = try allocator.create(ToggleButtonModel);
     errdefer allocator.destroy(model);
-    model.* = ButtonModel.init(allocator);
+    model.* = ToggleButtonModel.init(allocator);
     errdefer model.deinit();
     return createInternal(allocator, model, true, text, font, color);
 }
 
 pub fn createWithModel(
     allocator: std.mem.Allocator,
-    model: *ButtonModel,
+    model: *ToggleButtonModel,
     text: []const u8,
     font: awt.Graphics.TextFont,
     color: awt.Graphics.Color,
@@ -49,7 +49,7 @@ pub fn createWithModel(
 
 fn createInternal(
     allocator: std.mem.Allocator,
-    model: *ButtonModel,
+    model: *ToggleButtonModel,
     owns_model: bool,
     text: []const u8,
     font: awt.Graphics.TextFont,
@@ -104,7 +104,7 @@ pub fn setChecked(self: *CheckBoxMenuItem, v: bool) void {
     self.model.setSelected(v);
 }
 
-pub fn getModel(self: CheckBoxMenuItem) *ButtonModel {
+pub fn getModel(self: CheckBoxMenuItem) *ToggleButtonModel {
     return self.model;
 }
 
@@ -128,14 +128,15 @@ fn onModelChange(user_data: *anyopaque) void {
 fn paint(self: *Component, g: *awt.Graphics) void {
     const item: *CheckBoxMenuItem = @fieldParentPtr("component", self);
     const sz = self.size;
+    const btn = &item.model.button;
 
     // Background by state.
-    const armed_pressed = item.model.armed and item.model.pressed;
-    if (item.model.enabled) {
+    const armed_pressed = btn.armed and btn.pressed;
+    if (btn.enabled) {
         if (armed_pressed) {
             g.setColor(awt.Graphics.Color.rgb(0.30, 0.55, 0.95));
             g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = sz.height });
-        } else if (item.model.rollover) {
+        } else if (btn.rollover) {
             g.setColor(awt.Graphics.Color.rgb(0.90, 0.93, 0.99));
             g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = sz.height });
         }
@@ -145,7 +146,7 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     if (item.model.isSelected()) {
         const check_color = if (armed_pressed)
             awt.Graphics.Color.rgb(1, 1, 1)
-        else if (!item.model.enabled)
+        else if (!btn.enabled)
             awt.Graphics.Color.rgb(0.55, 0.55, 0.55)
         else
             awt.Graphics.Color.rgb(0.20, 0.50, 0.90);
@@ -155,7 +156,7 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     // Label.
     const m = item.font.measureString(item.text);
     const text_color = blk: {
-        if (!item.model.enabled) break :blk awt.Graphics.Color.rgb(0.55, 0.55, 0.55);
+        if (!btn.enabled) break :blk awt.Graphics.Color.rgb(0.55, 0.55, 0.55);
         if (armed_pressed) break :blk awt.Graphics.Color.rgb(1, 1, 1);
         break :blk item.color;
     };
@@ -191,7 +192,8 @@ fn drawCheckmark(g: *awt.Graphics, x0: f32, row_h: f32, color: awt.Graphics.Colo
 
 fn processEvent(self: *Component, ev: *Component.Event) void {
     const item: *CheckBoxMenuItem = @fieldParentPtr("component", self);
-    if (!item.model.enabled) return;
+    const btn = &item.model.button;
+    if (!btn.enabled) return;
 
     switch (ev.payload) {
         .mouse => |m| {
@@ -203,17 +205,17 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
             switch (m.action) {
                 .press => {
                     if (m.button == .left and inside) {
-                        item.model.setPressed(true);
-                        item.model.setArmed(true);
+                        btn.setPressed(true);
+                        btn.setArmed(true);
                         ev.requestCapture(@ptrCast(self));
                         ev.consume();
                     }
                 },
                 .release => {
-                    if (m.button == .left and item.model.isPressed()) {
-                        const was_armed = item.model.isArmed();
-                        item.model.setPressed(false);
-                        item.model.setArmed(false);
+                    if (m.button == .left and btn.isPressed()) {
+                        const was_armed = btn.isArmed();
+                        btn.setPressed(false);
+                        btn.setArmed(false);
                         if (was_armed and inside) {
                             item.model.setSelected(!item.model.isSelected());
                             item.model.fireAction();
@@ -222,8 +224,8 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
                     }
                 },
                 .move => {
-                    if (item.model.isPressed()) item.model.setArmed(inside);
-                    item.model.setRollover(inside);
+                    if (btn.isPressed()) btn.setArmed(inside);
+                    btn.setRollover(inside);
                 },
                 .scroll => {},
             }

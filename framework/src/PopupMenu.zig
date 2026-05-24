@@ -152,7 +152,7 @@ fn modelOf(c: *Component) ?*ButtonModel {
     }
     if (c.vtable == &CheckBoxMenuItem.vtable) {
         const it: *CheckBoxMenuItem = @fieldParentPtr("component", c);
-        return it.model;
+        return &it.model.button;
     }
     return null;
 }

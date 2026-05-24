@@ -203,3 +203,88 @@ fn paintBorderFiveRegions(ctx: PaintContext) anyerror!void {
 
     setup.paint();
 }
+
+// ── toggle widgets (CheckBox / RadioButton / ComboBox) ───────────────────
+
+/// Three CheckBoxes stacked vertically: one unchecked, one checked, one
+/// disabled (so the disabled rendering is visible too).
+pub const toggle_checkboxes = Scene{
+    .name   = "toggle_checkboxes",
+    .width  = 300,
+    .height = 120,
+    .paint  = paintToggleCheckboxes,
+};
+
+fn paintToggleCheckboxes(ctx: PaintContext) anyerror!void {
+    var setup = try Setup.init(ctx);
+    defer setup.deinit();
+    setup.container.setLayout(nimbus.BoxLayout.vertical());
+
+    const font = nimbus.awt.Graphics.TextFont{ .face = ctx.font, .pixel_size = 14 };
+    const black = awt.Graphics.Color.rgb(0, 0, 0);
+
+    const cb1 = try nimbus.CheckBox.create(ctx.allocator, "Unchecked", font, black);
+    const cb2 = try nimbus.CheckBox.create(ctx.allocator, "Checked", font, black);
+    cb2.setSelected(true);
+    const cb3 = try nimbus.CheckBox.create(ctx.allocator, "Disabled (checked)", font, black);
+    cb3.setSelected(true);
+    cb3.getModel().button.setEnabled(false);
+
+    try setup.container.add(&cb1.component);
+    try setup.container.add(&cb2.component);
+    try setup.container.add(&cb3.component);
+    setup.paint();
+}
+
+/// Three RadioButtons in a group, with the middle one selected.
+pub const toggle_radios = Scene{
+    .name   = "toggle_radios",
+    .width  = 300,
+    .height = 120,
+    .paint  = paintToggleRadios,
+};
+
+fn paintToggleRadios(ctx: PaintContext) anyerror!void {
+    var setup = try Setup.init(ctx);
+    defer setup.deinit();
+    setup.container.setLayout(nimbus.BoxLayout.vertical());
+
+    const font = nimbus.awt.Graphics.TextFont{ .face = ctx.font, .pixel_size = 14 };
+    const black = awt.Graphics.Color.rgb(0, 0, 0);
+
+    const rb1 = try nimbus.RadioButton.create(ctx.allocator, "Small", font, black);
+    const rb2 = try nimbus.RadioButton.create(ctx.allocator, "Medium", font, black);
+    rb2.setSelected(true);
+    const rb3 = try nimbus.RadioButton.create(ctx.allocator, "Large", font, black);
+
+    try setup.container.add(&rb1.component);
+    try setup.container.add(&rb2.component);
+    try setup.container.add(&rb3.component);
+    setup.paint();
+}
+
+/// Closed-state ComboBox showing the currently-selected item plus the
+/// down chevron. The popup is not exercised here (it would require an
+/// open Window with overlay support).
+pub const toggle_combobox_closed = Scene{
+    .name   = "toggle_combobox_closed",
+    .width  = 300,
+    .height = 60,
+    .paint  = paintToggleComboboxClosed,
+};
+
+fn paintToggleComboboxClosed(ctx: PaintContext) anyerror!void {
+    var setup = try Setup.init(ctx);
+    defer setup.deinit();
+    setup.container.setLayout(nimbus.BoxLayout.vertical());
+
+    const font = nimbus.awt.Graphics.TextFont{ .face = ctx.font, .pixel_size = 14 };
+    const black = awt.Graphics.Color.rgb(0, 0, 0);
+
+    const items = [_][]const u8{ "Apple", "Banana", "Cherry" };
+    const combo = try nimbus.ComboBox.create(ctx.allocator, &items, font, black);
+    combo.setSelectedIndex(1);
+
+    try setup.container.add(&combo.component);
+    setup.paint();
+}

@@ -9,7 +9,6 @@ pressed:  bool = false,
 armed:    bool = false,
 rollover: bool = false,
 enabled:  bool = true,
-selected: bool = false,
 state_listeners:  ChangeListenerList,
 action_listeners: ChangeListenerList,
 
@@ -55,12 +54,9 @@ pub fn setEnabled(self: *ButtonModel, v: bool) void {
 }
 pub fn isEnabled(self: *const ButtonModel) bool { return self.enabled; }
 
-pub fn setSelected(self: *ButtonModel, v: bool) void {
-    if (self.selected == v) return;
-    self.selected = v;
-    self.state_listeners.fire();
-}
-pub fn isSelected(self: *const ButtonModel) bool { return self.selected; }
+// `selected` lives on `ToggleButtonModel` (which embeds this one). Plain
+// momentary buttons do not have a selected state, so keeping that flag
+// here previously was an unused field that confused widget authors.
 
 // ── action ───────────────────────────────────────────────────────────────
 

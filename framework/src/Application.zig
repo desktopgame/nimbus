@@ -7,6 +7,10 @@ const Container = @import("Container.zig");
 const Label = @import("Label.zig");
 const Panel = @import("Panel.zig");
 const Button = @import("Button.zig");
+const CheckBox = @import("CheckBox.zig");
+const RadioButton = @import("RadioButton.zig");
+const ButtonGroup = @import("ButtonGroup.zig");
+const ComboBox = @import("ComboBox.zig");
 const Slider = @import("Slider.zig");
 const Frame = @import("Frame.zig");
 const Window = @import("Window.zig");
@@ -358,6 +362,44 @@ pub fn button(self: *Application, text: []const u8) !*Button {
     return try Button.create(
         self.allocator,
         text,
+        .{ .face = self.default_font, .pixel_size = 14 },
+        awt.Graphics.Color.rgb(0, 0, 0),
+    );
+}
+
+pub fn checkBox(self: *Application, text: []const u8) !*CheckBox {
+    return try CheckBox.create(
+        self.allocator,
+        text,
+        .{ .face = self.default_font, .pixel_size = 14 },
+        awt.Graphics.Color.rgb(0, 0, 0),
+    );
+}
+
+pub fn radioButton(self: *Application, text: []const u8) !*RadioButton {
+    return try RadioButton.create(
+        self.allocator,
+        text,
+        .{ .face = self.default_font, .pixel_size = 14 },
+        awt.Graphics.Color.rgb(0, 0, 0),
+    );
+}
+
+/// Mutually-exclusive grouping for radio buttons. The group is allocated
+/// in Application's allocator; caller takes ownership and is responsible
+/// for `group.deinit()` + `allocator.destroy(group)` at the end (it is
+/// usually held alongside the radios in the same struct, with
+/// matching lifetime).
+pub fn buttonGroup(self: *Application) !*ButtonGroup {
+    return try ButtonGroup.create(self.allocator);
+}
+
+/// Read-only drop-down. `items` is borrowed only for the duration of
+/// the call — ComboBox copies every string internally.
+pub fn comboBox(self: *Application, items: []const []const u8) !*ComboBox {
+    return try ComboBox.create(
+        self.allocator,
+        items,
         .{ .face = self.default_font, .pixel_size = 14 },
         awt.Graphics.Color.rgb(0, 0, 0),
     );

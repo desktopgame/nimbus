@@ -41,6 +41,18 @@ test "snapshot: border_five_regions" {
     try runScene(scenes.border_five_regions);
 }
 
+test "snapshot: toggle_checkboxes" {
+    try runScene(scenes.toggle_checkboxes);
+}
+
+test "snapshot: toggle_radios" {
+    try runScene(scenes.toggle_radios);
+}
+
+test "snapshot: toggle_combobox_closed" {
+    try runScene(scenes.toggle_combobox_closed);
+}
+
 fn runScene(scene: scenes.Scene) !void {
     const allocator = std.testing.allocator;
 
