@@ -93,7 +93,16 @@ pub fn create(
     const ta = try allocator.create(TextArea);
     errdefer allocator.destroy(ta);
 
-    var text = try GapBuffer.initFromSlice(allocator, initial_text);
+    // Normalize line endings on the way in: CRLF / lone CR → LF. The line
+    // model keys on '\n', so a stray '\r' would otherwise survive in the buffer
+    // and render as a notdef box at every line end.
+    var tmp: std.ArrayList(u8) = .empty;
+    defer tmp.deinit(allocator);
+    try tmp.ensureTotalCapacity(allocator, initial_text.len);
+    for (initial_text) |b| {
+        if (b != '\r') tmp.appendAssumeCapacity(b);
+    }
+    var text = try GapBuffer.initFromSlice(allocator, tmp.items);
     errdefer text.deinit();
     const end = text.len();
 
@@ -135,7 +144,7 @@ pub fn getText(self: *TextArea) []const u8 {
 
 pub fn setText(self: *TextArea, new_text: []const u8) !void {
     self.text.clear();
-    try self.text.insert(0, new_text);
+    _ = try self.insertStripCR(0, new_text);
     self.caret = self.text.len();
     self.mark = self.caret;
     self.reflow();
@@ -474,6 +483,23 @@ fn deleteSelection(self: *TextArea) void {
     self.mark = start;
 }
 
+/// Insert `bytes` at logical `pos`, dropping '\r' so pasted CRLF / CR text
+/// becomes LF. Inserts the non-CR runs back-to-back without a temp allocation.
+/// Returns the number of bytes actually inserted (caret advance).
+fn insertStripCR(self: *TextArea, pos: usize, bytes: []const u8) !usize {
+    var inserted: usize = 0;
+    var i: usize = 0;
+    while (i < bytes.len) {
+        const run_end = std.mem.indexOfScalarPos(u8, bytes, i, '\r') orelse bytes.len;
+        if (run_end > i) {
+            try self.text.insert(pos + inserted, bytes[i..run_end]);
+            inserted += run_end - i;
+        }
+        i = if (run_end < bytes.len) run_end + 1 else run_end;
+    }
+    return inserted;
+}
+
 // ── vtable: events ─────────────────────────────────────────────────────────
 
 fn paint(self: *Component, g: *awt.Graphics) void {
@@ -494,7 +520,31 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     const sel_start = ta.selectionStart();
     const sel_end = ta.selectionEnd();
 
-    for (ta.lines.items, 0..) |ln, i| {
+    // Only draw lines that intersect the visible clip. TextArea is sized to its
+    // whole content (it relies on an enclosing ScrollPane for clipping), so
+    // without this we would push every line's glyphs into the finite per-frame
+    // vertex ring — overflowing it drops later draws (trailing lines AND the
+    // scrollbars painted afterwards) to blank. See `Graphics.clipLocalRect`.
+    const vis = g.clipLocalRect();
+    const total_lines = ta.lines.items.len;
+    var first: usize = 0;
+    if (vis.y > PADDING_Y and line_h > 0) {
+        first = @intFromFloat((vis.y - PADDING_Y) / line_h);
+    }
+    var last: usize = total_lines;
+    if (line_h > 0) {
+        const bottom = vis.y + vis.height;
+        const lf = (bottom - PADDING_Y) / line_h + 1;
+        if (lf >= 0) {
+            const li: usize = @intFromFloat(lf);
+            if (li < last) last = li;
+        }
+    }
+    if (first > total_lines) first = total_lines;
+
+    var i: usize = first;
+    while (i < last) : (i += 1) {
+        const ln = ta.lines.items[i];
         const y = PADDING_Y + @as(f32, @floatFromInt(i)) * line_h;
 
         // Selection highlight for the part of this line inside the selection.
@@ -765,8 +815,8 @@ fn pasteFromClipboard(self: *TextArea) !void {
     const w = self.parentWindow() orelse return;
     const got = w.awt_window.getClipboardString() orelse return;
     if (self.hasSelection()) self.deleteSelection();
-    try self.text.insert(self.caret, got);
-    self.caret += got.len;
+    const n = try self.insertStripCR(self.caret, got);
+    self.caret += n;
     self.mark = self.caret;
 }
 

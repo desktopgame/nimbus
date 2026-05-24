@@ -179,6 +179,20 @@ fn clipIsEmpty(self: Graphics) bool {
     return self.clip_rect.width <= 0 or self.clip_rect.height <= 0;
 }
 
+/// The visible (scissor) region expressed in this Graphics' *local* coordinate
+/// space — i.e. the same space `drawString(s, x, y)` / `fillRect` take. A view
+/// that draws many items (e.g. TextArea's lines) uses this to cull whatever
+/// falls outside, so it doesn't push off-screen geometry into the shared
+/// per-frame vertex ring (which is finite — overflowing it drops later draws).
+pub fn clipLocalRect(self: Graphics) Rect {
+    return .{
+        .x = self.clip_rect.x - self.origin_x,
+        .y = self.clip_rect.y - self.origin_y,
+        .width = self.clip_rect.width,
+        .height = self.clip_rect.height,
+    };
+}
+
 fn applyScissor(self: Graphics) void {
     const sx = @as(f32, @floatFromInt(self.fb_w)) / @as(f32, @floatFromInt(self.window_w));
     const sy = @as(f32, @floatFromInt(self.fb_h)) / @as(f32, @floatFromInt(self.window_h));
