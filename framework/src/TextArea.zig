@@ -57,6 +57,11 @@ caret_color:    awt.Graphics.Color,
 caret_visible:  bool,
 blink_timer_id: ?Application.TimerId,
 has_focus:      bool,
+/// True between a left-button press inside and its release. Gates selection-
+/// by-drag: plain hover also delivers `.move` (via the container hit-test, not
+/// only via mouse capture), so without this a focused area would extend its
+/// selection just from the cursor passing over it.
+dragging:       bool,
 line_wrap:      bool,
 /// On-screen line model, rebuilt by `reflow`.
 lines:          std.ArrayList(VisualLine),
@@ -105,6 +110,7 @@ pub fn create(
         .caret_visible  = true,
         .blink_timer_id = null,
         .has_focus      = false,
+        .dragging       = false,
         .line_wrap      = false,
         .lines          = .empty,
         .scratch        = .empty,
@@ -577,6 +583,7 @@ fn handleMouse(ta: *TextArea, ev: *Component.Event, m: awt.Event.MouseEvent) voi
                 const pos = ta.pointToCaret(lx, ly);
                 ta.caret = pos;
                 ta.mark = pos;
+                ta.dragging = true;
                 ev.requestCapture(@ptrCast(&ta.component));
                 ta.component.requestFocus();
                 ta.caret_visible = true;
@@ -587,10 +594,15 @@ fn handleMouse(ta: *TextArea, ev: *Component.Event, m: awt.Event.MouseEvent) voi
             }
         },
         .release => {
-            if (m.button == .left) ev.consume();
+            if (m.button == .left) {
+                ta.dragging = false;
+                ev.consume();
+            }
         },
         .move => {
-            if (ta.has_focus) {
+            // Only while dragging (see `dragging`): plain hover also delivers
+            // `.move`, which must not move the caret.
+            if (ta.dragging) {
                 const pos = ta.pointToCaret(lx, ly);
                 if (pos != ta.caret) {
                     ta.caret = pos;

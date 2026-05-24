@@ -44,6 +44,11 @@ caret_color:    awt.Graphics.Color,
 caret_visible:  bool,
 blink_timer_id: ?Application.TimerId,
 has_focus:      bool,
+/// True between a left-button press inside the field and its release. Gates
+/// selection-by-drag: plain hover also delivers `.move` (it reaches us via the
+/// container hit-test, not just via mouse capture), so without this flag a
+/// focused field would extend its selection just from the cursor passing over.
+dragging:       bool,
 /// Horizontal scroll offset in pixels, measured from the text start (>= 0).
 /// On-screen x of a glyph = PADDING_X + glyphXAtByte(b) - scroll_x. Kept so
 /// the caret stays visible once the text outgrows the field width.
@@ -93,6 +98,7 @@ pub fn create(
         .caret_visible  = true,
         .blink_timer_id = null,
         .has_focus      = false,
+        .dragging       = false,
         .scroll_x       = 0,
         .preedit_text         = .empty,
         .preedit_target_start = 0,
@@ -350,6 +356,7 @@ fn handleMouse(tf: *TextField, ev: *Component.Event, m: awt.Event.MouseEvent) vo
                 const pos = tf.hitTestByteAt(lx);
                 tf.caret_byte = pos;
                 tf.mark_byte = pos;
+                tf.dragging = true;
                 ev.requestCapture(@ptrCast(&tf.component));
                 tf.component.requestFocus();
                 tf.caret_visible = true;
@@ -360,14 +367,16 @@ fn handleMouse(tf: *TextField, ev: *Component.Event, m: awt.Event.MouseEvent) vo
             }
         },
         .release => {
-            if (m.button == .left) ev.consume();
+            if (m.button == .left) {
+                tf.dragging = false;
+                ev.consume();
+            }
         },
         .move => {
-            // Drag extends selection — caret moves, mark stays.
-            // We get here either via capture (drag started inside) or
-            // via plain hover; only treat as drag if mark != caret already
-            // (i.e. we own a press).
-            if (tf.has_focus) {
+            // Extend selection only while dragging (left button held since a
+            // press inside). Plain hover also delivers `.move`, so gating on
+            // `dragging` keeps a passing cursor from moving the caret.
+            if (tf.dragging) {
                 const pos = tf.hitTestByteAt(lx);
                 if (pos != tf.caret_byte) {
                     tf.caret_byte = pos;
