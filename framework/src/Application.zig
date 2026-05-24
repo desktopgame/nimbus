@@ -125,11 +125,15 @@ pub fn init(allocator: std.mem.Allocator, io: std.Io) !*Application {
     app._text_program = try awt.programs.Text.init(app.device);
     errdefer app._text_program.deinit();
 
-    app._vertex_ring = try awt.VertexRing.init(app.device, 256 * 1024);
+    // 1 MB ring ≈ 16384 text glyphs (64 B each) per frame — comfortable for a
+    // full-screen dense text view. Single UPLOAD-heap allocation, so the cost
+    // is just that one buffer. max_quads 4096 raises the single-drawString cap
+    // (one visual line) from 1024 to 4096 glyphs.
+    app._vertex_ring = try awt.VertexRing.init(app.device, 1024 * 1024);
     errdefer app._vertex_ring.deinit();
     app._uniforms = try awt.UniformBuffer.init(app.device, 64 * 1024);
     errdefer app._uniforms.deinit();
-    app._quad_index = try awt.QuadIndexBuffer.init(allocator, app.device, 1024);
+    app._quad_index = try awt.QuadIndexBuffer.init(allocator, app.device, 4096);
     errdefer app._quad_index.deinit();
     app._atlas = try awt.GlyphAtlas.init(allocator, app.device, 2048);
     errdefer app._atlas.deinit();
