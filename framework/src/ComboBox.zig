@@ -370,6 +370,11 @@ fn destroy(self: *Component, allocator: std.mem.Allocator) void {
     const cb: *ComboBox = @fieldParentPtr("component", self);
     if (cb.open) cb.hide();
     self.deinit();
+    // popup_root is a standalone Component embedded in ComboBox (not in any
+    // Container), so nothing else tears it down. `addOverlay` lazily
+    // allocates its property map (DirtyNotify / FocusController) the first
+    // time the popup opens; deinit here to free that map.
+    cb.popup_root.deinit();
     for (cb.items.items) |s| allocator.free(s);
     cb.items.deinit(allocator);
     cb.change_listeners.deinit();
