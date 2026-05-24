@@ -82,11 +82,11 @@ fn collect(container: *const Container) Slots {
 }
 
 fn setChildBounds(child: *Component, bounds: Component.Rect) void {
-    if (child.container) |c| {
-        c.setBounds(bounds);
-    } else {
-        child.setBounds(bounds);
-    }
+    // Always Component.setBounds, never Container.setBounds: the latter would
+    // eagerly re-layout the child, which Container.doLayout's trailing
+    // recursion then repeats (2^depth re-layouts). Container.doLayout owns the
+    // single recursion. See `framework/doc/optimize.md`.
+    child.setBounds(bounds);
 }
 
 fn doLayout(self: *LayoutManager, container: *Container) void {
