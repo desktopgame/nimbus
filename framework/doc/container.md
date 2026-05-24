@@ -10,6 +10,8 @@ pub const Container = struct {
     children:  std.ArrayList(LayoutElement),
     layout:    ?*LayoutManager,                                             // null なら手動配置
     allocator: std.mem.Allocator,
+    min_cache: ?Size = null,                                                // layout 由来 min のメモ。null なら未計算 / 無効
+    max_cache: ?Size = null,                                                // layout 由来 max のメモ。null なら未計算 / 無効
 
     pub const vtable = Component.VTable{
         .install      = install,
@@ -90,6 +92,7 @@ pub fn setLayout(self: *Container, layout: ?*LayoutManager) void;
 ```
 
 LayoutManager を差し替えて再レイアウトを走らせる。
+差し替え前にサイズキャッシュを無効化する（古い LayoutManager が計算したサイズは新しい LayoutManager では無効なため）。
 古い LayoutManager の解放は呼び出し側の責務（const シングルトンであれば不要）。
 
 ## 最小サイズの取得
@@ -100,12 +103,38 @@ pub fn getMinSize(self: *const Container) Size;
 `layout` が non-null ならそちらの `computeMinSize` に委譲する（null なら 0,0）。
 Container 自身に `component.min_size` が設定されていれば、その値と layout 由来の値の max を取る。
 
+`computeMinSize` の結果は `min_cache` にメモ化される。`computeMinSize` はサブツリー全体を再帰測定するため、
+キャッシュが有効な間は再計算を避ける。キャッシュは `invalidateSizeCache` で無効化される（後述）。
+メモ化のため `*const` レシーバだが内部で書き込みを行う。Container 実体は可変であり、メモは不変サブツリーの純関数なので、論理的には const のまま矛盾しない。
+
 ## 最大サイズの取得
 ```zig
 pub fn getMaxSize(self: *const Container) Size;
 ```
 
 `layout` が non-null ならそちらの `computeMaxSize` に委譲する（null なら inf,inf）。
+`getMinSize` と同様に結果を `max_cache` にメモ化する。
+
+## サイズキャッシュの無効化
+```zig
+pub fn invalidateSizeCache(self: *Container) void;
+```
+
+`min_cache` / `max_cache` を null に戻し、次回の `getMinSize` / `getMaxSize` で再計算させる。
+
+利用者がこれを直接呼ぶ必要は通常ない。`markLayoutDirty`（`component.md` 参照）が、変更されたノードからルートまでの経路上の全コンテナーに対して自動的にこれを呼ぶ。
+`add` / `remove` / `setLayout` / `setBounds` や Component 側のサイズ系セッター（`setMinSize` など）はすべて `markLayoutDirty` を経由するため、標準ウィジェットの利用ではキャッシュ整合性は自動で保たれる。
+
+利用者が直接呼ぶ／`markLayoutDirty` を撃つべきなのは、上記の経路を通らずにサイズへ影響する変更を加えたときのみ。
+具体的には次の 2 ケース。
+* 独自ウィジェットで `component.min_size` / `component.max_size` を直接代入する場合（`setMinSize` を使わず）。
+* 独自 `LayoutManager` の `computeMinSize` / `computeMaxSize` が、外部の可変状態に依存していてその状態を更新した場合。
+
+どちらの場合も、再レイアウトと再描画もまとめてトリガーする `markLayoutDirty` を呼ぶのが望ましい。
+`invalidateSizeCache` 単体ではキャッシュを落とすだけで再レイアウトは起こさない。
+
+### 事前条件
+特になし。キャッシュが既に null でも no-op として安全に呼べる。
 
 ## bounds の設定とレイアウト実行
 ```zig

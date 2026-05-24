@@ -89,6 +89,18 @@ pub fn repaint(self: *Component) void;
 paint_dirty を立てる。レイアウトには影響しない。
 ウィジェットの setter（`setColor` 等、見た目だけ変える操作）が内部的に呼ぶことを想定。
 
+## 再レイアウトの要求
+```zig
+pub fn markLayoutDirty(self: *Component) void;
+```
+
+ルートまで親をたどり、Window の layout_dirty + paint_dirty を立てる。
+あわせて、経路上の全コンテナーの `invalidateSizeCache` を呼んでサイズキャッシュを落とす（`container.md` 参照）。
+これは「変更されたノードを含むサブツリーのコンテナー」＝計測結果が変わり得るものだけが対象になる。
+
+サイズや子構成を変えるウィジェットの setter が内部的に呼ぶことを想定。
+利用者が直接呼ぶのは、標準のセッターを経由せずにサイズへ影響する変更を加えたとき（`container.md`「サイズキャッシュの無効化」のケースを参照）。
+
 ## 最小サイズの設定
 ```zig
 pub fn setMinSize(self: *Component, size: Size) void;
