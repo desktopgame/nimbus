@@ -203,8 +203,11 @@ void nmRequestWindowAttention(nmWindow* self) {
     fi.cbSize    = sizeof(fi);
     fi.hwnd      = nm_internal_get_hwnd(self);
     fi.dwFlags   = FLASHW_ALL;
-    fi.uCount    = 3;
-    fi.dwTimeout = 0; /* default (caret blink) rate */
+    fi.uCount    = 6;
+    /* Explicit fast rate. dwTimeout == 0 means the default caret-blink rate
+     * (~500ms), which looks sluggish — use a short interval for a snappy
+     * "chika-chika" flash. */
+    fi.dwTimeout = 80; /* ms between flashes */
     FlashWindowEx(&fi);
 #else
     glfwRequestWindowAttention((GLFWwindow*)self);
