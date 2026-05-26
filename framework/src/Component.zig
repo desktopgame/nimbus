@@ -65,6 +65,14 @@ pub const VTable = struct {
     /// relies on (`scrollpane.md`). `new_size` equals `self.size` at call time.
     /// Default null = no reaction.
     reshape:      ?*const fn (self: *Component, new_size: Size) void = null,
+    /// Optional: called when the mouse pointer, which was previously over this
+    /// component (or its subtree), has left it. nimbus has no OS-level
+    /// enter/leave events — this is synthesized by the routing node (Container
+    /// / Panel / List) when the hovered child changes, and propagated down a
+    /// subtree so a leaf can undo hover state (e.g. clear `rollover`).
+    /// "Enter" needs no hook: the ordinary `.move` event already reaches the
+    /// newly-hovered widget. Default null = nothing to undo.
+    mouseExited:  ?*const fn (self: *Component) void = null,
 };
 
 pub const Property = struct {

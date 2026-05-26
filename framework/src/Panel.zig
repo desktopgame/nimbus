@@ -24,6 +24,9 @@ pub const vtable = Component.VTable{
     .paint        = paint,
     .processEvent = processEvent,
     .destroy      = destroy,
+    // Panel embeds a Container and routes mouse events through it, so it
+    // reuses the Container's hover-leave propagation verbatim.
+    .mouseExited  = Container.componentMouseExited,
 };
 
 pub fn init(allocator: std.mem.Allocator) Panel {
@@ -119,15 +122,18 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
     const cont = self.container orelse return;
     switch (ev.payload) {
         .mouse => |m| {
+            var hovered: ?*Component = null;
             var i: usize = cont.children.items.len;
             while (i > 0) {
                 i -= 1;
                 const child = cont.children.items[i].component;
                 if (child.containsWindowPoint(m.x, m.y)) {
+                    if (hovered == null) hovered = child;
                     child.vtable.processEvent(child, ev);
-                    if (ev.isConsumed()) return;
+                    if (ev.isConsumed()) break;
                 }
             }
+            if (m.action == .move) cont.updateHover(hovered);
         },
         .key, .char => {
             for (cont.children.items) |elem| {

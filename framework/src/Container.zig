@@ -24,6 +24,10 @@ allocator: std.mem.Allocator,
 /// subtree measurement could have changed. See `doc/optimize.md`.
 min_cache: ?Component.Size = null,
 max_cache: ?Component.Size = null,
+/// Child the pointer is currently over, tracked so we can synthesize a
+/// `mouseExited` to it when the hovered child changes (nimbus has no OS
+/// enter/leave). Null = pointer is over no child. See `Component.mouseExited`.
+last_hovered: ?*Component = null,
 
 pub const vtable = Component.VTable{
     .install      = install,
@@ -31,6 +35,7 @@ pub const vtable = Component.VTable{
     .paint        = paint,
     .processEvent = processEvent,
     .destroy      = destroy,
+    .mouseExited  = componentMouseExited,
 };
 
 pub fn init(allocator: std.mem.Allocator) Container {
@@ -88,6 +93,7 @@ pub fn remove(self: *Container, child: *Component) void {
         const elem = self.children.items[i];
         if (elem.component == child) {
             if (elem.hint_destroy) |dh| dh(elem.hint.?, self.allocator);
+            if (self.last_hovered == child) self.last_hovered = null;
             _ = self.children.orderedRemove(i);
             child.parent = null;
             self.component.markLayoutDirty();
@@ -170,6 +176,30 @@ pub fn doLayout(self: *Container) void {
     }
 }
 
+// ── hover tracking ─────────────────────────────────────────────────────────
+
+/// Update the hovered child. When it changes, the old child is told the
+/// pointer left it (`mouseExited`), which recurses into its subtree. Shared by
+/// Panel, which embeds a Container and routes mouse events the same way.
+pub fn updateHover(self: *Container, target: ?*Component) void {
+    if (self.last_hovered == target) return;
+    if (self.last_hovered) |old| {
+        if (old.vtable.mouseExited) |f| f(old);
+    }
+    self.last_hovered = target;
+}
+
+/// `mouseExited` impl for a Container-rooted component: propagate the leave to
+/// whichever child was hovered, then forget it. Used in both `Container.vtable`
+/// and `Panel.vtable`.
+pub fn componentMouseExited(self: *Component) void {
+    const container = self.container orelse return;
+    if (container.last_hovered) |child| {
+        container.last_hovered = null;
+        if (child.vtable.mouseExited) |f| f(child);
+    }
+}
+
 // ── vtable impl ──────────────────────────────────────────────────────────
 
 fn install(self: *Component) !void {
@@ -193,15 +223,20 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
     switch (ev.payload) {
         .mouse => |m| {
             // Hit-test in reverse so top-most child (added last) gets first shot.
+            var hovered: ?*Component = null;
             var i: usize = container.children.items.len;
             while (i > 0) {
                 i -= 1;
                 const child = container.children.items[i].component;
                 if (child.containsWindowPoint(m.x, m.y)) {
+                    if (hovered == null) hovered = child;
                     child.vtable.processEvent(child, ev);
-                    if (ev.isConsumed()) return;
+                    if (ev.isConsumed()) break;
                 }
             }
+            // Track hover on moves so the previously-hovered child gets a
+            // synthesized mouseExited when the pointer moves off it.
+            if (m.action == .move) container.updateHover(hovered);
         },
         .key, .char => {
             // Key / text-input events: fan out to all children. Focus-aware

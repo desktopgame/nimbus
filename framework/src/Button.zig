@@ -34,6 +34,7 @@ pub const vtable = Component.VTable{
     .paint        = paint,
     .processEvent = processEvent,
     .destroy      = destroy,
+    .mouseExited  = mouseExited,
 };
 
 pub fn create(
@@ -286,6 +287,13 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
         },
         .key, .char, .focus, .composition => {},
     }
+}
+
+fn mouseExited(self: *Component) void {
+    const button: *Button = @fieldParentPtr("component", self);
+    // Pointer left the button: drop the hover affordance. (Armed is only set
+    // while pressed/captured, a path that bypasses this hook, so leave it.)
+    button.model.setRollover(false);
 }
 
 fn destroy(self: *Component, allocator: std.mem.Allocator) void {

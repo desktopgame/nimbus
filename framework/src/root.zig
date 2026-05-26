@@ -19,6 +19,7 @@ pub const CheckBox = @import("CheckBox.zig");
 pub const RadioButton = @import("RadioButton.zig");
 pub const ButtonGroup = @import("ButtonGroup.zig");
 pub const ComboBox = @import("ComboBox.zig");
+pub const List = @import("List.zig");
 pub const ScrollBar = @import("ScrollBar.zig");
 pub const ScrollPane = @import("ScrollPane.zig");
 pub const MenuSeparator = @import("MenuSeparator.zig");

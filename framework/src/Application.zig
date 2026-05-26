@@ -11,6 +11,7 @@ const CheckBox = @import("CheckBox.zig");
 const RadioButton = @import("RadioButton.zig");
 const ButtonGroup = @import("ButtonGroup.zig");
 const ComboBox = @import("ComboBox.zig");
+const List = @import("List.zig");
 const ScrollBar = @import("ScrollBar.zig");
 const ScrollPane = @import("ScrollPane.zig");
 const Slider = @import("Slider.zig");
@@ -596,6 +597,20 @@ pub fn comboBox(self: *Application, items: []const []const u8) !*ComboBox {
         .{ .face = self.default_font, .pixel_size = 14 },
         awt.Graphics.Color.rgb(0, 0, 0),
     );
+}
+
+/// Vertical single-selection list. `factory` produces the real cell instances
+/// (materialized for the visible range and recycled); it is borrowed, so the
+/// caller keeps it alive for the List's lifetime. The List creates and owns an
+/// empty ListModel — add items to `list.model`.
+pub fn list(self: *Application, factory: List.CellFactory) !*List {
+    return try List.create(self.allocator, factory);
+}
+
+/// Like `list`, but the List borrows a caller-supplied (typically shared)
+/// ListModel instead of creating its own.
+pub fn listWithModel(self: *Application, model: *List.ListModel, factory: List.CellFactory) !*List {
+    return try List.createWithModel(self.allocator, model, factory);
 }
 
 pub fn slider(
