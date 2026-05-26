@@ -6,6 +6,7 @@ nimbus のすべてのウィジェットのルートとなる基本型。
 ## 型定義
 ```zig
 pub const Component = struct {
+    // VTable の関数はできるだけこれ以上増やさないこと。やむを得ない場合は仕方ないけど、まずは増やさずに済む方法を考える
     pub const VTable = struct {
         install:      *const fn (*Component) anyerror!void,
         uninstall:    *const fn (*Component) void,
