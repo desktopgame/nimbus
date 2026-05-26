@@ -275,23 +275,107 @@ nimbus には OS の enter/leave が無く、 ウィジェットは受け取っ�
 
 ## 編集 (CellEditor)
 v1 List のセルは読み取り専用 (投影のみ) なので編集機構は持たない。
-セル内で **テキスト編集**が要るケース (将来の Table / Tree のセル編集) のために、 ここに方針を定め additive に足せる余地を残す。
-Swing は renderer (判子) と editor (実体) を別コンポーネントに分けるが、 ここでは JavaFX に倣い **同じ実セルが編集モードへトグルする**形にする (実セルは既にあるので別オーバーレイが要らない)。
+この節は **将来 additive に足す**編集機構の設計を定める。 セル内テキスト編集が要るのは主に Table / Tree のセルで、 List 自体には必須ではないが、 後付けで core (実セル + recycle) を作り直さずに済むよう、 型と制約をここに固定しておく。
 
-編集にまつわる状態 (キャレット位置 / 選択範囲 / IME の未確定文字列) は **編集している間だけ**実セル内の入力ウィジェットが保持し、 編集が終われば失われる。
+### editor が要るセル / 要らないセル
+セルが editor を必要とするかは、 **「view と item のあいだに未確定のズレが、 ある時間のあいだ続くか」**で決まる。
+
+| セル | view→item の書き戻し | ズレの継続時間 | editor |
+|---|---|---|---|
+| ボタン (削除等) | アクション発火＝即 item 構造変更 | ゼロ (アトミック) | 不要 |
+| チェックボックス | クリック＝即 item の bool を反転 | ゼロ (アトミック) | 不要 |
+| テキスト編集 | 数文字打つ / IME 変換中は item にまだ無い文字を view が抱える | 編集セッションのあいだ継続 | **必要** |
+
+アトミックに書き戻すセル (ボタン / チェックボックス) は editor ではなく **ただの interactive セル**で、 「状態の置き場所」の controlled 契約 (投影 + 書き戻し) だけで成立する。 editor が要るのは「確定前のスクラッチ状態を一定時間保持し、 確定 / 取り消しで決着させる」セルだけ。 この線引きが Table / Tree で「このセルは editor 化が要るか」を判断する基準になる。
+
+### モデル: 同じ実セルが編集モードへトグルする
+Swing は renderer (判子) と editor (実体) を別コンポーネントに分けるが、 ここでは JavaFX `ListView` に倣い **同じ実セルが編集モードへトグルする** (実セルは既にあるので別オーバーレイが要らない)。 表示モードではセルは item を投影するラベル等、 編集モードでは自分の部分木を入力ウィジェット (スクラッチ) に差し替える。
+
+編集にまつわる状態 (キャレット位置 / 選択範囲 / IME の未確定文字列) は **編集している間だけ**そのスクラッチが保持し、 編集が終われば失われる。
 これは pressed が recycle で消えるのと同型で、 「per-row でない一時状態は、 それを抱える文脈が終われば消える」という一貫した扱い。 失って困るのは確定テキストだけで、 それは item へ書き戻すので残る。
 
-仕組み (additive):
+### 型 (additive)
+`Cell` に編集ライフサイクルを **任意フィールド** 1 つで足す。 読み取り専用セルは null のままで、 既存セルは一切変わらない。
 
-* List に **編集中の行**を表すフィールドを 1 つ足す (`editing: ?usize`)。
-* セルに編集ライフサイクル (`startEdit` / `commitEdit` / `cancelEdit`) を足す。 `startEdit` でセル部分木を入力ウィジェットへ差し替え、 item の値で seed する。 この入力ウィジェットが **スクラッチ**で、 確定まで item を触らない。
-* **編集中のセルは `update` の投影を止める** (item から上書きすると入力中の文字が消えるため)。 これが編集を守る唯一の核。
-* `commitEdit` でスクラッチの確定値を item へ書き戻し、 model の変更を通知する。 `cancelEdit` はスクラッチを破棄して表示モードへ戻す。
+```zig
+pub const CellEdit = struct {
+    // 編集モードへ入る。 セル部分木をスクラッチ入力ウィジェットへ差し替え、
+    // item の値で seed し、 入力ウィジェットへフォーカスを要求する。
+    start:  *const fn (self: *anyopaque, ctx: CellContext) void,
+    // 確定。 スクラッチの値を item へ書き戻し、 表示モードへ戻す。
+    commit: *const fn (self: *anyopaque) void,
+    // 取り消し。 スクラッチを破棄し、 表示モードへ戻す (item は変えない)。
+    cancel: *const fn (self: *anyopaque) void,
+};
 
-次の 2 つを制約として置く (これにより recycle / identity の厄介がすべて消える):
+pub const Cell = struct {
+    component: *Component,
+    update:    *const fn (self: *anyopaque, ctx: CellContext) void,
+    destroy:   *const fn (self: *anyopaque, allocator: std.mem.Allocator) void,
+    edit:      ?CellEdit = null,   // null = 読み取り専用 (編集不可)
+    user_data: *anyopaque,
+};
+```
 
-* **同時に 2 つ以上のセルが編集状態になることはない。**
-* **編集が開始してから終了するまでの間、 そのセルがプールに返される (recycle される) ことはない。** 編集中セルが可視域外へスクロールされそうなときは、 その時点で編集を終える (commit か cancel)。
+編集の開始トリガと、 フォーカス喪失時の決着方針は設定可能にする。
+
+```zig
+pub const EditTrigger = enum {
+    double_click,            // セルのダブルクリックで開始
+    enter,                   // 選択行で Enter キーを押すと開始
+    double_click_or_enter,   // 上記どちらでも開始 (既定)
+    manual,                  // `edit(idx)` の明示呼び出しのみ
+};
+
+pub const FocusLostPolicy = enum {
+    commit,   // 編集中にフォーカスが外れたら確定 (既定)
+    cancel,   // 編集中にフォーカスが外れたら取り消し
+};
+```
+
+`List` には編集状態と設定を持つ。 読み取り専用 List では `editing` は常に null。
+
+```zig
+editing:      ?usize,            // 編集中の行 (高々 1 つ)
+edit_trigger: EditTrigger,       // 既定 .double_click_or_enter
+focus_lost:   FocusLostPolicy,   // 既定 .commit
+```
+
+操作 API:
+
+```zig
+pub fn edit(self: *List, idx: usize) void;   // その行が edit != null なら編集開始
+pub fn commitEdit(self: *List) void;          // 編集中なら確定して終了
+pub fn cancelEdit(self: *List) void;          // 編集中なら取り消して終了
+pub fn getEditing(self: List) ?usize;
+
+pub fn setEditTrigger(self: *List, t: EditTrigger) void;
+pub fn setFocusLostPolicy(self: *List, p: FocusLostPolicy) void;
+```
+
+### ライフサイクル
+* **開始** (`edit(idx)`): すでに別の行が編集中ならそれを先に確定 / 取り消ししてから、 対象行のセルの `edit.start(ctx)` を呼び `editing = idx` にする。 対象セルの `edit` が null なら no-op。
+* **編集中**: スクラッチ (入力ウィジェット) が確定前の状態を持つ。 model は触らない。 **このセルだけ `update` の投影を止める** — item から上書きするとキャレットや IME 未確定文字が消えるため。 これが編集を守る唯一の核。
+* **確定** (`commitEdit`): セルの `edit.commit` がスクラッチの確定値を item へ書き戻し、 表示モードへ戻す。 `editing = null`。 投影が再開し、 次の `update` で確定値が表示される (書き戻し済みなので一致する)。
+* **取り消し** (`cancelEdit`): `edit.cancel` がスクラッチを破棄して表示モードへ戻す。 item は変えない。
+
+item の内容が変わっても件数は変わらないので、 `ListModel.change_listeners` (構造変更通知) は発火しない。 確定後は repaint で足りる。 共有 model の他ビューへ内容変更を伝える細粒度通知は「機能要望」(`ListDataListener` 相当) の領分。
+
+### reconcile への追加
+編集中の行 (`editing`) は、 reconcile で **`update` の投影をスキップ**し、 かつ **プールへ返さない (recycle しない)**。 これにより編集中セルが別行に束縛し直されたり、 投影で入力中文字が消えたりしない。
+
+### 制約 (これにより recycle / identity の厄介がすべて消える)
+* **同時に 2 つ以上のセルが編集状態になることはない** (`editing` は単一)。 これにより未確定スクラッチを持つ実体は常に高々 1 つで、 recycle / フォーカスの競合が生じない。
+* **編集が開始してから終了するまでの間、 そのセルがプールに返される (recycle される) ことはない。** 編集中セルが可視域外へスクロールされそうなときは、 その時点で編集を終える。
+
+### 開始トリガとフォーカス喪失 (設定可能)
+* **開始トリガ** (`edit_trigger`、 既定 `.double_click_or_enter`): `double_click` はポインタ下のセル、 `enter` は選択行を編集開始する。 `double_click_or_enter` は両方受け付ける。 `manual` は `edit(idx)` のみ (UI からは開始しない)。 `setEditTrigger` で変更する。
+* **フォーカス喪失時** (`focus_lost`、 既定 `.commit`): 編集中に他所をクリックしてスクラッチがフォーカスを失ったら、 `commit` なら確定、 `cancel` なら取り消し。 JavaFX でも版により揺れた点なので明示的に持つ。 `setFocusLostPolicy` で変更する。
+
+### キー (固定)
+編集中のキーは固定で、 設定しない。
+* **Enter** = commit (確定)
+* **Escape** = cancel (取り消し)
 
 ## 寿命
 `factory` の所有者は **利用者** (typically factory を実装した view 構造体)。 List は借用するだけで `destroy` で解放しない。
