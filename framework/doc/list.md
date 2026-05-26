@@ -21,6 +21,8 @@ pub const List = struct {
     selected:         ?usize,             // 単一選択 (none = 未選択)
     row_height:       f32,                // 固定行高 (v1)
     pool:             std.ArrayList(PooledCell), // 可視範囲を覆う実セル群 (List が所有)
+    has_focus:        bool,               // キーボードフォーカス保持中か (ctx.focused 用)
+    hovered:          ?*Component,         // ポインタが乗っているセル (hover 解除用、 後述)
     change_listeners: ChangeListenerList, // 選択変更通知
     allocator:        std.mem.Allocator,
 
@@ -124,6 +126,13 @@ pub fn destroy(self: *List, allocator: std.mem.Allocator) void;
 `factory` 自身には触れない (借用。 「寿命」を参照)。
 `owns_model` が true のときのみ内部生成した `model` を解放する。
 
+## コンポーネントの取得
+```zig
+pub fn asComponent(self: *List) *Component;
+```
+
+公開 `Component` (`&self.component`) を返す。 `ScrollPane` に入れる / レイアウトに追加する際に使う。
+
 ## 選択の取得 / 設定
 ```zig
 pub fn getSelected(self: List) ?usize;
@@ -132,15 +141,16 @@ pub fn setSelected(self: *List, idx: ?usize) void;
 
 `setSelected` は範囲外なら none に丸める。
 値が変化したときだけ `change_listeners` を発火 + repaint する (不変なら no-op)。
-選択ハイライトは次回の `update` で各セルへ投影される (`ctx.selected`)。
+変化があれば、 影響する可視セル (旧選択行・新選択行) を **その場で `update` し直して** 選択表示を投影する。 加えて List 自身が選択行の背景ハイライトを描く (「描画」参照)。
 
-## 行高の設定
+## 行高の取得 / 設定
 ```zig
+pub fn getRowHeight(self: List) f32;
 pub fn setRowHeight(self: *List, h: f32) void;
 ```
 
 固定行高を更新する。
-値が変わったら `markLayoutDirty` を呼ぶ (内容の総高と可視行数が変わるため)。
+値が変わったら内容の総高 (`min_size.height`) を再計算して `markLayoutDirty` + repaint する (総高と可視行数が変わるため)。
 
 ## 選択変更リスナー
 ```zig
@@ -244,16 +254,24 @@ List 自身の `processEvent` は、 その上に行選択とキーボード操�
 
 | 入力 | 動作 |
 |---|---|
-| マウス left press (行上) | まず子 (セル) へ配送。 セルが消費すれば終わり。 消費しなければその行を選択 (`setSelected`) |
-| ↓ / ↑ キー | `selected` を移動 (端でクランプ)、 ChangeListener 発火、 必要なら可視域へスクロール |
+| マウス move | ポインタ下のセルへ配送。 加えて hover 追跡 (後述) を更新する |
+| マウス left press (行上) | まず子 (セル) へ配送。 セルが消費すれば終わり。 消費しなければその行を選択 (`setSelected`) し、 List にフォーカスを要求する (矢印キーを効かせるため) |
+| マウス wheel (scroll) | 何もしない (外側の `ScrollPane` に処理させるため消費しない) |
+| ↓ / ↑ キー | `selected` を移動 (端でクランプ)、 ChangeListener 発火、 `enclosingScrollController` 経由で可視域へスクロール |
 
 セル内ボタンの press → drag → release は、 そのボタンが `requestCapture` してキャプチャ先で完結する (`event.md`「マウスキャプチャ」)。
 List はキャプチャに関与しない (実セルなのでボタン自身の identity が安定しているため)。
 
+### hover の解除 (合成 move)
+nimbus には OS の enter/leave が無く、 ウィジェットは受け取った `.move` の inside 判定で rollover を更新する。 ポインタがセルから離れると、 そのセル内ボタンは move を受け取らなくなり rollover が固着しうる。
+そこで List は「いまポインタが乗っているセル」(`hovered`) を覚え、 **乗っているセルが変わったら、 離れた側のセルへ現在のポインタ座標 (＝もうそのセルの外) の `.move` を合成して送る**。 セルはその move を通常処理して rollover を落とし、 セルがコンテナーなら自分の子へ同じ伝播が連鎖する。 これは `Container` / `Panel` と同一の hover 解除機構 (`container.md`)。 List 自身も viewport の子なので、 ポインタが List の外へ出たときは viewport から同じ合成 move が届いて連鎖が起きる。
+
 ## 描画
 ビューポート (typically `ScrollPane`) 越しに表示される前提。
-`paint` は再調整済みの `pool` の各可視セルについて `cell.component` を `paintAt` で描く。
+`paint` はまず可視範囲を再調整 (reconcile) し、 背景を塗り、 選択行があればその矩形に背景ハイライトを描く。 その後、 `pool` の各可視セル (`cell.component`) を `paintAt` で重ねて描く。
 画面外の行はそもそもセルが割り当たっていない (プールが可視範囲しか覆わない) ので、 描画コストは行数 N ではなく可視行数に比例する。
+
+選択ハイライトを List 側で描くのは、 read-only セルが選択表示を持たなくても見た目が成立するようにするため。 セルは `ctx.selected` を受け取るので、 必要なら自前で選択時の描画を上書きしてもよい。
 
 ## 編集 (CellEditor)
 v1 List のセルは読み取り専用 (投影のみ) なので編集機構は持たない。
@@ -290,9 +308,14 @@ item の実メモリ (`*anyopaque` の指す先) は利用者の所有。 ListMo
 ```zig
 const Row = struct { name: []const u8 };
 
+// factory はセル生成時に List を参照したい (onDelete で行を消すため) が、 List は
+// factory を登録してから生成されるので、 user_data には「後から list を埋める」
+// コンテキストを渡す。 factory は最初の paint (reconcile) まで呼ばれないので間に合う。
+const Ctx = struct { app: *Application, list: *List = undefined };
+
 // 1 セルぶんの実体 (factory が行数ぶんではなく可視ぶんだけ new する)
 const TaskCell = struct {
-    root:        *Container,
+    root:        *Panel,
     label:       *Label,
     delete_btn:  *Button,
     list:        *List,
@@ -315,33 +338,39 @@ const TaskCell = struct {
 
     fn destroyCell(ud: *anyopaque, allocator: std.mem.Allocator) void {
         const self: *TaskCell = @ptrCast(@alignCast(ud));
-        self.root.asComponent().vtable.destroy(self.root.asComponent(), allocator);
+        const c = &self.root.container.component;
+        c.vtable.destroy(c, allocator);   // Panel + 子 + 子の model を解放
         allocator.destroy(self);
     }
 };
 
 // CellFactory.create: 新しいセル実体を 1 つ組み立てて返す
 fn createTaskCell(ud: *anyopaque, allocator: std.mem.Allocator) anyerror!Cell {
-    const list: *List = @ptrCast(@alignCast(ud));
+    const cx: *Ctx = @ptrCast(@alignCast(ud));
     const cell = try allocator.create(TaskCell);
-    cell.* = .{ .root = ..., .label = ..., .delete_btn = ..., .list = list };
+    cell.* = .{ .root = ..., .label = ..., .delete_btn = ..., .list = cx.list };
     // action listener はセル生成時に一度だけ登録 (user_data = このセル状態)
     try cell.delete_btn.getModel().addActionListener(TaskCell.onDelete, cell);
     return .{
-        .component = &cell.root.component,
+        .component = &cell.root.container.component,
         .update    = TaskCell.update,
         .destroy   = TaskCell.destroyCell,
         .user_data = cell,
     };
 }
 
-const list = try app.listWithModel(model, .{ .create = createTaskCell, .user_data = list_ptr });
+var ctx = Ctx{ .app = app };
+const list = try app.list(.{ .create = createTaskCell, .user_data = &ctx });
+ctx.list = list;                              // ★ List 生成後に埋める
+for (rows) |*r| try list.model.add(@ptrCast(r));
 ```
+
+チェックボックスの永続状態 (`done`) を行データへ書き戻す例を含む、 完全に動く実装は `{REPO_ROOT}/examples/widget_list` を参照。
 
 ## 機能要望
 * 複数選択 (`SelectionModel`、 Swing の `ListSelectionModel` 相当)
 * 可変行高 (累積高 / 推定で可視範囲を求める。 固定行高より可視範囲算出が複雑になる)
-* セル内 part 単位の hover ハイライト (enter/leave イベント、 `event.md` 機能要望に依存)
+* 行全体の hover ハイライト (現状は選択行のみ背景を描く。 セル内ウィジェットの rollover は「hover の解除」機構で機能するが、 行をまたぐ hover 表示は未対応)
 * 細粒度の変更通知 (`ListDataListener` 相当、 挿入 / 削除レンジを引数で渡す)
 * 抽象 `ListModel` (vtable 化して computed / 仮想モデルを許す)
 * 同じセル機構の 2 次元拡張としての Table (行 / 列)、 階層版としての Tree
