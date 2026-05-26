@@ -35,7 +35,6 @@ pub const vtable = Component.VTable{
     .paint        = paint,
     .processEvent = processEvent,
     .destroy      = destroy,
-    .mouseExited  = componentMouseExited,
 };
 
 pub fn init(allocator: std.mem.Allocator) Container {
@@ -178,26 +177,22 @@ pub fn doLayout(self: *Container) void {
 
 // ── hover tracking ─────────────────────────────────────────────────────────
 
-/// Update the hovered child. When it changes, the old child is told the
-/// pointer left it (`mouseExited`), which recurses into its subtree. Shared by
+/// Update the hovered child. When it changes, the previously-hovered child is
+/// sent a synthesized `.move` at the current (now-outside) pointer position so
+/// it re-evaluates and drops its hover state (e.g. `rollover`). If that child
+/// is itself a container, its own `.move` handling propagates the same to its
+/// hovered descendant — so leave needs no dedicated vtable hook. Shared by
 /// Panel, which embeds a Container and routes mouse events the same way.
-pub fn updateHover(self: *Container, target: ?*Component) void {
+///
+/// nimbus has no OS enter/leave; "enter" needs nothing because the ordinary
+/// `.move` already reaches the newly-hovered child.
+pub fn updateHover(self: *Container, target: ?*Component, x: f32, y: f32) void {
     if (self.last_hovered == target) return;
     if (self.last_hovered) |old| {
-        if (old.vtable.mouseExited) |f| f(old);
+        var ev = Component.Event{ .payload = .{ .mouse = .{ .x = x, .y = y, .action = .move } } };
+        old.vtable.processEvent(old, &ev);
     }
     self.last_hovered = target;
-}
-
-/// `mouseExited` impl for a Container-rooted component: propagate the leave to
-/// whichever child was hovered, then forget it. Used in both `Container.vtable`
-/// and `Panel.vtable`.
-pub fn componentMouseExited(self: *Component) void {
-    const container = self.container orelse return;
-    if (container.last_hovered) |child| {
-        container.last_hovered = null;
-        if (child.vtable.mouseExited) |f| f(child);
-    }
 }
 
 // ── vtable impl ──────────────────────────────────────────────────────────
@@ -234,9 +229,9 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
                     if (ev.isConsumed()) break;
                 }
             }
-            // Track hover on moves so the previously-hovered child gets a
-            // synthesized mouseExited when the pointer moves off it.
-            if (m.action == .move) container.updateHover(hovered);
+            // Track hover on moves so the previously-hovered child re-evaluates
+            // (and drops rollover) when the pointer moves off it.
+            if (m.action == .move) container.updateHover(hovered, m.x, m.y);
         },
         .key, .char => {
             // Key / text-input events: fan out to all children. Focus-aware

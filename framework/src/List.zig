@@ -138,7 +138,6 @@ pub const vtable = Component.VTable{
     .paint        = paint,
     .processEvent = processEvent,
     .destroy      = destroy,
-    .mouseExited  = mouseExited,
 };
 
 // ── construction ───────────────────────────────────────────────────────────
@@ -351,12 +350,14 @@ fn moveSelection(self: *List, delta: i32) void {
 }
 
 /// Mirror of `Container.updateHover` for the manually-managed cell pool: when
-/// the hovered cell changes, tell the old one the pointer left (recurses into
-/// its subtree so e.g. a button clears its rollover).
-fn updateHover(self: *List, target: ?*Component) void {
+/// the hovered cell changes, send the old cell a synthesized `.move` at the
+/// (now-outside) pointer position so its subtree re-evaluates and drops hover
+/// state (e.g. a button's rollover).
+fn updateHover(self: *List, target: ?*Component, x: f32, y: f32) void {
     if (self.hovered == target) return;
     if (self.hovered) |old| {
-        if (old.vtable.mouseExited) |f| f(old);
+        var ev = Component.Event{ .payload = .{ .mouse = .{ .x = x, .y = y, .action = .move } } };
+        old.vtable.processEvent(old, &ev);
     }
     self.hovered = target;
 }
@@ -446,8 +447,8 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
                     }
                 }
             }
-            // Track hover so the cell the pointer left gets a mouseExited.
-            if (m.action == .move) list.updateHover(hit_cell);
+            // Track hover so the cell the pointer left re-evaluates its rollover.
+            if (m.action == .move) list.updateHover(hit_cell, m.x, m.y);
 
             // Unconsumed left-press on a row selects it (and focuses the list
             // so arrow keys work). A cell child that consumed (button / check
@@ -478,14 +479,6 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
             self.repaint();
         },
         .char, .composition => {},
-    }
-}
-
-fn mouseExited(self: *Component) void {
-    const list: *List = @fieldParentPtr("component", self);
-    if (list.hovered) |cell| {
-        list.hovered = null;
-        if (cell.vtable.mouseExited) |f| f(cell);
     }
 }
 

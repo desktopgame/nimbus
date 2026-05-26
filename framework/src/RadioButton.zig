@@ -37,7 +37,6 @@ pub const vtable = Component.VTable{
     .paint        = paint,
     .processEvent = processEvent,
     .destroy      = destroy,
-    .mouseExited  = mouseExited,
 };
 
 pub fn create(
@@ -243,11 +242,6 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
         },
         .char, .focus, .composition => {},
     }
-}
-
-fn mouseExited(self: *Component) void {
-    const rb: *RadioButton = @fieldParentPtr("component", self);
-    rb.model.button.setRollover(false);
 }
 
 fn destroy(self: *Component, allocator: std.mem.Allocator) void {
