@@ -90,6 +90,18 @@ pub fn setBackground(self: *TextField, c: awt.Graphics.Color) void;
 デフォルトは白 (`rgb(1, 1, 1)`)。
 無効状態の表現や、ダークモード対応で setter を使う。
 
+## submit / cancel リスナー
+```zig
+pub fn addSubmitListener   (self: *TextField, fn_ptr: ChangeListenerList.ListenerFn, user_data: *anyopaque) !void;
+pub fn removeSubmitListener(self: *TextField, fn_ptr: ChangeListenerList.ListenerFn, user_data: *anyopaque) void;
+pub fn addCancelListener   (self: *TextField, fn_ptr: ChangeListenerList.ListenerFn, user_data: *anyopaque) void;
+pub fn removeCancelListener(self: *TextField, fn_ptr: ChangeListenerList.ListenerFn, user_data: *anyopaque) void;
+```
+
+`Enter` 押下で submit リスナーが、`Escape` 押下で cancel リスナーが発火し、 そのキーは **consume される** (バブルしない)。
+単一行フィールドの「確定 / 取り消し」シグナルで、 たとえば `List` のセルエディタが commit / cancel を繋ぐのに使う (`list.md`「編集 (CellEditor)」)。
+リスナー登録が無くても発火呼び出し自体は走る (consume だけされる)。
+
 ---
 
 ## v1 スコープ
@@ -102,7 +114,7 @@ CLAUDE.md「文字コード」「書記素クラスタ」の方針に従って�
 * IME composition の inline 表示は **Windows / macOS で実装済み**。Linux はバックエンド未対応 (詳細は「IME 連携」)
 * 標準編集ショートカット: `Backspace` / `Delete` / `Home` / `End` / 矢印 / `Shift+矢印` / `Ctrl+A,C,X,V`
 
-`Enter` は単一行なので無視する (将来 `submit` イベントを発火する余地は残す)。
+単一行なので改行は挿入せず、 `Enter` は submit、 `Escape` は cancel のシグナルとして使う (「submit / cancel リスナー」参照)。
 `Tab` / `Shift+Tab` によるフォーカス遷移は未実装 (`window.md`「フォーカス」参照)。
 
 ## キー入力の状態遷移
@@ -118,7 +130,8 @@ CLAUDE.md「文字コード」「書記素クラスタ」の方針に従って�
 | `Ctrl+C` | 選択範囲をクリップボードへコピー |
 | `Ctrl+X` | コピーしてから削除 |
 | `Ctrl+V` | クリップボードの内容をキャレット位置に挿入 (選択ありなら置換) |
-| `Enter` | v1 では無視 |
+| `Enter` | submit リスナー発火 + consume (「submit / cancel リスナー」) |
+| `Escape` | cancel リスナー発火 + consume |
 
 `.char` イベント (`CharEvent`) は「選択があれば削除 → キャレット位置に codepoint を UTF-8 で insert → キャレットを進める」。
 
@@ -221,7 +234,6 @@ IME による composition (preedit、変換中文字列) を inline で表示す
 * IME composition attribute の多段化 (現状は target 1 区間のみ。Windows IMM の CompAttr の TARGET_NOTCONVERTED / CONVERTED / INPUT 等を色分けして見せたい場合に必要)
 * `Tab` / `Shift+Tab` traversal の標準対応
 * 部分再描画 (キャレット点滅で全画面再描画になるのを避ける)
-* `submit` イベント (`Enter` 押下時)
 * パスワード入力モード (グリフを `•` で置換)
 
 ### 棚上げ中 (書記素クラスタ + 絵文字)

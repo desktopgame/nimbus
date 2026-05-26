@@ -188,6 +188,7 @@ pub fn build(b: *std.Build) void {
     addExample(b, "widget_window", framework_mod, null, target, optimize);
     addExample(b, "widget_scroll", framework_mod, null, target, optimize);
     addExample(b, "widget_list", framework_mod, null, target, optimize);
+    addExample(b, "widget_listedit", framework_mod, null, target, optimize);
     addExample(b, "widget_layoutcost", framework_mod, null, target, optimize);
 
     // ── tests ────────────────────────────────────────────────────

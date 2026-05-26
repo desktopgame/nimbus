@@ -41,5 +41,8 @@ frameworkのAPIを使用して、ウィンドウより大きいラベルのグ�
 ## widget_list
 frameworkのAPIを使用して、`List` を `ScrollPane` に入れて 40 行を表示する。各セルはチェックボックス＋ラベル＋削除ボタンを持つ実コンポーネントで、可視範囲ぶんだけ生成され、スクロールで recycle される。チェック状態は行データに永続化され recycle で他行に漏れないこと、削除が正しい行を消すこと（逆引き不要）、行選択（クリック＋上下キー）をデモする。JavaFX VirtualFlow 方式のセル設計（`framework/doc/list.md`）の検証シーン。
 
+## widget_listedit
+frameworkのAPIを使用して、`List` のセル編集（CellEditor）をデモする。各セルは表示モードでラベル、編集モードで TextField に切り替わる「同じ実セルがトグルする」JavaFX 方式。ダブルクリック or 選択+Enter で編集開始、Enter で確定、Escape で取り消し、別行クリックで commit（フォーカス喪失=commit）。編集テキストは行データへ書き戻される。`framework/doc/list.md`「編集 (CellEditor)」の検証シーン。
+
 ## widget_layoutcost
 frameworkのAPIを使用して、向きが階層ごとに交互に変わる BoxLayout コンテナーを深く・多子にネストする（デフォルト ~3万ノード）。起動時に強制再レイアウトを多数回実行してコスト（1回あたりの所要時間）を計測・表示し、さらに**毎フレーム**ツリー全体を再レイアウトし続けるのでウィンドウが目に見えてカクつく。レイアウトエンジンのベンチマーク／体感用シーン（`doc/optimize.md` 参照）。描画が律速にならないよう葉の塗りは間引いている。引数で `depth fanout iters` を指定可能（例: より重くするなら `zig build run-widget_layoutcost -- 10 3 10`、軽くして比較するなら `-- 6 3 200`）。

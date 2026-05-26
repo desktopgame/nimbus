@@ -11,6 +11,7 @@ const std = @import("std");
 const awt = @import("awt");
 const Component = @import("Component.zig");
 const Application = @import("Application.zig");
+const ChangeListenerList = @import("ChangeListenerList.zig");
 
 const TextField = @This();
 
@@ -61,6 +62,12 @@ scroll_x:       f32,
 preedit_text:         std.ArrayList(u8),
 preedit_target_start: usize,
 preedit_target_end:   usize,
+/// Fired (and the key consumed) when Enter is pressed — "submit this field".
+/// Used e.g. by a List cell editor to commit. See `textfield.md`.
+submit_listeners: ChangeListenerList,
+/// Fired (and the key consumed) when Escape is pressed — "cancel". Used e.g.
+/// by a List cell editor to revert.
+cancel_listeners: ChangeListenerList,
 allocator:      std.mem.Allocator,
 
 pub const vtable = Component.VTable{
@@ -103,6 +110,8 @@ pub fn create(
         .preedit_text         = .empty,
         .preedit_target_start = 0,
         .preedit_target_end   = 0,
+        .submit_listeners = ChangeListenerList.init(allocator),
+        .cancel_listeners = ChangeListenerList.init(allocator),
         .allocator      = allocator,
     };
     tf.applyMetrics();
@@ -141,6 +150,25 @@ pub fn getBackground(self: TextField) awt.Graphics.Color {
 pub fn setBackground(self: *TextField, c: awt.Graphics.Color) void {
     self.background = c;
     self.component.repaint();
+}
+
+/// Listener fired when Enter is pressed (the field "submits"). The key is
+/// consumed so it does not bubble. Multiple listeners allowed.
+pub fn addSubmitListener(self: *TextField, fn_ptr: ChangeListenerList.ListenerFn, user_data: *anyopaque) !void {
+    try self.submit_listeners.add(fn_ptr, user_data);
+}
+
+pub fn removeSubmitListener(self: *TextField, fn_ptr: ChangeListenerList.ListenerFn, user_data: *anyopaque) void {
+    self.submit_listeners.remove(fn_ptr, user_data);
+}
+
+/// Listener fired when Escape is pressed (the field "cancels").
+pub fn addCancelListener(self: *TextField, fn_ptr: ChangeListenerList.ListenerFn, user_data: *anyopaque) !void {
+    try self.cancel_listeners.add(fn_ptr, user_data);
+}
+
+pub fn removeCancelListener(self: *TextField, fn_ptr: ChangeListenerList.ListenerFn, user_data: *anyopaque) void {
+    self.cancel_listeners.remove(fn_ptr, user_data);
 }
 
 // ── layout ───────────────────────────────────────────────────────────────
@@ -339,6 +367,8 @@ fn destroy(self: *Component, allocator: std.mem.Allocator) void {
     self.deinit();
     tf.text.deinit(allocator);
     tf.preedit_text.deinit(allocator);
+    tf.submit_listeners.deinit();
+    tf.cancel_listeners.deinit();
     allocator.destroy(tf);
 }
 
@@ -467,7 +497,14 @@ fn handleKey(tf: *TextField, ev: *Component.Event, k: awt.Event.KeyEvent) void {
             tf.afterEdit(ev);
         },
         .enter => {
-            // v1: single-line; ignore. Future: fire `submit` ActionListener.
+            // Single-line: Enter submits. Fire listeners and consume so the
+            // key does not bubble (a List cell editor commits here).
+            tf.submit_listeners.fire();
+            ev.consume();
+        },
+        .escape => {
+            tf.cancel_listeners.fire();
+            ev.consume();
         },
         else => {},
     }

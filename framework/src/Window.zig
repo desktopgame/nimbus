@@ -552,18 +552,27 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
             }
 
             // 4. Container.
+            const focus_before = self.focus_owner;
             self.container.component.vtable.processEvent(&self.container.component, ev);
             if (m.action == .press) {
                 if (ev.capture_target) |t| {
                     self.mouse_capture = @ptrCast(@alignCast(t));
                 }
-                // Auto-focus: if the press landed on a focusable widget,
-                // make it the focus owner. We approximate "landed on" by
-                // hit-testing the container subtree against window-local
+                // Auto-focus fallback: if the press landed on a focusable
+                // widget, make it the focus owner. We approximate "landed on"
+                // by hit-testing the container subtree against window-local
                 // coords. menu_bar / overlay clicks are excluded earlier
                 // (they returned before reaching this branch).
-                if (self.findFocusableAt(m.x, m.y)) |w| self.requestFocusFor(w)
-                else self.requestFocusFor(null);
+                //
+                // Only when the dispatch did NOT already set focus itself: a
+                // widget that called requestFocus during the press wins. This
+                // matters for focus targets the child-walk cannot reach — e.g.
+                // a List materializes its cells outside the container tree, so
+                // its in-cell editor field is invisible to findFocusableAt.
+                if (self.focus_owner == focus_before) {
+                    if (self.findFocusableAt(m.x, m.y)) |w| self.requestFocusFor(w)
+                    else self.requestFocusFor(null);
+                }
             }
         },
         .key => {

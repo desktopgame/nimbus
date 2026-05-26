@@ -18,6 +18,8 @@ const DEFAULT_ROW_HEIGHT: f32 = 28;
 /// Extra rows kept materialized above/below the viewport so a scroll step does
 /// not flash an unbound cell before the next reconcile.
 const BUFFER_ROWS: usize = 2;
+/// Two presses on the same row within this window count as a double-click.
+const DOUBLE_CLICK_S: f64 = 0.4;
 
 const LIST_BG = awt.Graphics.Color.rgb(1.0, 1.0, 1.0);
 const SEL_BG  = awt.Graphics.Color.rgb(0.80, 0.87, 0.98);
@@ -35,15 +37,45 @@ pub const CellContext = struct {
     focused:  bool,
 };
 
+/// Optional edit lifecycle for a cell. Present (non-null on `Cell.edit`) only
+/// for cells that need a *durational* editing session (text editing). Cells
+/// whose write-back is atomic (button / checkbox) leave this null. See
+/// `framework/doc/list.md`「編集 (CellEditor)」.
+pub const CellEdit = struct {
+    // Enter edit mode: swap the subtree to a scratch input, seed from the item,
+    // request focus on the input.
+    start:  *const fn (self: *anyopaque, ctx: CellContext) void,
+    // Commit: write the scratch value back to the item, return to display mode.
+    commit: *const fn (self: *anyopaque) void,
+    // Cancel: discard the scratch, return to display mode (item unchanged).
+    cancel: *const fn (self: *anyopaque) void,
+};
+
 /// One real cell instance produced by a `CellFactory`. `component` is the root
 /// of the cell subtree (leaf or Container). `update` (JavaFX `updateItem`)
 /// rebinds the cell to a row. `destroy` frees both the subtree and the cell's
-/// own state struct. Owned by the List once produced.
+/// own state struct. `edit` is null for read-only cells. Owned by the List
+/// once produced.
 pub const Cell = struct {
     component: *Component,
     update:    *const fn (self: *anyopaque, ctx: CellContext) void,
     destroy:   *const fn (self: *anyopaque, allocator: std.mem.Allocator) void,
+    edit:      ?CellEdit = null,
     user_data: *anyopaque,
+};
+
+/// How an edit session begins. See `list.md`「開始トリガとフォーカス喪失」.
+pub const EditTrigger = enum {
+    double_click,
+    enter,
+    double_click_or_enter,
+    manual,
+};
+
+/// What happens to an in-progress edit when the scratch loses focus.
+pub const FocusLostPolicy = enum {
+    commit,
+    cancel,
 };
 
 /// Produces fresh cell instances on demand (when the pool must grow). Borrowed
@@ -129,6 +161,11 @@ has_focus:        bool,
 /// Cell root the pointer is currently over, for synthesizing `mouseExited`
 /// when the pointer moves off it (same role as `Container.last_hovered`).
 hovered:          ?*Component,
+editing:          ?usize,            // 編集中の行 (高々 1 つ)。 読み取り専用なら常に null
+edit_trigger:     EditTrigger,
+focus_lost:       FocusLostPolicy,
+last_click_time:  f64,               // ダブルクリック検出用 (awt.time)
+last_click_row:   ?usize,
 change_listeners: ChangeListenerList,
 allocator:        std.mem.Allocator,
 
@@ -168,6 +205,11 @@ fn createInternal(allocator: std.mem.Allocator, model: *ListModel, owns_model: b
         .pool = .empty,
         .has_focus = false,
         .hovered = null,
+        .editing = null,
+        .edit_trigger = .double_click_or_enter,
+        .focus_lost = .commit,
+        .last_click_time = 0,
+        .last_click_row = null,
         .change_listeners = ChangeListenerList.init(allocator),
         .allocator = allocator,
     };
@@ -226,6 +268,67 @@ pub fn removeChangeListener(self: *List, fn_ptr: ChangeListenerList.ListenerFn, 
     self.change_listeners.remove(fn_ptr, user_data);
 }
 
+// ── editing ────────────────────────────────────────────────────────────────
+
+pub fn getEditing(self: List) ?usize {
+    return self.editing;
+}
+
+pub fn setEditTrigger(self: *List, t: EditTrigger) void {
+    self.edit_trigger = t;
+}
+
+pub fn setFocusLostPolicy(self: *List, p: FocusLostPolicy) void {
+    self.focus_lost = p;
+}
+
+/// Begin editing `idx`. Finishes any current edit first (commit). No-op if the
+/// row is out of range or its cell is read-only (`edit == null`). Materializes
+/// the row (scrolls it into view) so it has a cell to edit.
+pub fn edit(self: *List, idx: usize) void {
+    if (idx >= self.model.getSize()) return;
+    if (self.editing != null) self.commitEdit();
+
+    self.scrollToRow(idx);
+    self.reconcile();
+    const ci = self.findCellRowIndex(idx) orelse return;
+    const cell = self.pool.items[ci].cell;
+    const e = cell.edit orelse return;   // read-only cell: nothing to edit
+    const ctx = self.cellContext(idx) orelse return;
+
+    self.editing = idx;
+    e.start(cell.user_data, ctx);
+    self.component.repaint();
+}
+
+/// Commit the in-progress edit (if any): the cell writes its scratch back to
+/// the item, returns to display mode, and the display re-projects the item.
+pub fn commitEdit(self: *List) void {
+    const idx = self.editing orelse return;
+    self.editing = null;
+    if (self.findCellRowIndex(idx)) |ci| {
+        const cell = self.pool.items[ci].cell;
+        if (cell.edit) |e| e.commit(cell.user_data);
+        self.bindCell(ci, idx); // re-project the committed item into display
+    }
+    self.component.requestFocus(); // return focus to the list for arrow keys
+    self.component.repaint();
+}
+
+/// Cancel the in-progress edit (if any): discard the scratch, return to
+/// display mode; the item is unchanged.
+pub fn cancelEdit(self: *List) void {
+    const idx = self.editing orelse return;
+    self.editing = null;
+    if (self.findCellRowIndex(idx)) |ci| {
+        const cell = self.pool.items[ci].cell;
+        if (cell.edit) |e| e.cancel(cell.user_data);
+        self.bindCell(ci, idx);
+    }
+    self.component.requestFocus();
+    self.component.repaint();
+}
+
 // ── internal helpers ───────────────────────────────────────────────────────
 
 fn eqOpt(a: ?usize, b: ?usize) bool {
@@ -267,16 +370,21 @@ fn acquireFreeCell(self: *List) !usize {
     return self.pool.items.len - 1;
 }
 
-fn bindCell(self: *List, idx: usize, row: usize) void {
-    const value = self.model.getElementAt(row) orelse return;
-    const pc = &self.pool.items[idx];
-    pc.cell.update(pc.cell.user_data, .{
+fn cellContext(self: *List, row: usize) ?CellContext {
+    const value = self.model.getElementAt(row) orelse return null;
+    return .{
         .list = self,
         .value = value,
         .index = row,
         .selected = eqOpt(self.selected, row),
         .focused = self.has_focus and eqOpt(self.selected, row),
-    });
+    };
+}
+
+fn bindCell(self: *List, idx: usize, row: usize) void {
+    const ctx = self.cellContext(row) orelse return;
+    const pc = &self.pool.items[idx];
+    pc.cell.update(pc.cell.user_data, ctx);
 }
 
 fn layoutCell(self: *List, idx: usize, row: usize, width: f32) void {
@@ -317,10 +425,18 @@ fn reconcile(self: *List) void {
     if (last > n) last = n;
     if (first > n) first = n;
 
-    // 1. Release cells whose row scrolled out of the window.
+    // An edit in progress on a row that has scrolled out of the visible
+    // window ends the edit (the constraint: an editing cell is never recycled,
+    // so we must finish before its cell could be reused). Commit per default.
+    if (self.editing) |e_idx| {
+        if (e_idx < first or e_idx >= last) self.commitEdit();
+    }
+
+    // 1. Release cells whose row scrolled out of the window — but never the
+    // editing row (it stays bound so its scratch survives).
     for (self.pool.items) |*pc| {
         if (pc.row) |r| {
-            if (r < first or r >= last) pc.row = null;
+            if ((r < first or r >= last) and !eqOpt(self.editing, r)) pc.row = null;
         }
     }
     // 2. Bind a cell to every visible row not already covered (= recycle).
@@ -450,12 +566,35 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
             // Track hover so the cell the pointer left re-evaluates its rollover.
             if (m.action == .move) list.updateHover(hit_cell, m.x, m.y);
 
-            // Unconsumed left-press on a row selects it (and focuses the list
-            // so arrow keys work). A cell child that consumed (button / check
-            // box) keeps its own behavior and focus.
-            if (m.action == .press and (m.button orelse .left) == .left and !ev.isConsumed()) {
-                self.requestFocus();
-                if (hit_row) |r| list.setSelected(r);
+            if (m.action == .press and (m.button orelse .left) == .left) {
+                const now = awt.time();
+                const dbl = hit_row != null and
+                    eqOpt(list.last_click_row, hit_row) and
+                    (now - list.last_click_time) < DOUBLE_CLICK_S;
+                list.last_click_time = now;
+                list.last_click_row = hit_row;
+
+                // Focus-lost: a press off the editing row ends the current edit.
+                if (list.editing) |e_idx| {
+                    if (!eqOpt(hit_row, e_idx)) switch (list.focus_lost) {
+                        .commit => list.commitEdit(),
+                        .cancel => list.cancelEdit(),
+                    };
+                }
+
+                // If the cell didn't consume the press, treat it as row
+                // interaction: select + focus, and maybe start editing.
+                if (!ev.isConsumed()) {
+                    self.requestFocus();
+                    if (hit_row) |r| {
+                        list.setSelected(r);
+                        const start = switch (list.edit_trigger) {
+                            .double_click, .double_click_or_enter => dbl,
+                            .enter, .manual => false,
+                        };
+                        if (start) list.edit(r);
+                    }
+                }
             }
         },
         .key => |k| {
@@ -468,6 +607,22 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
                     .arrow_up => {
                         list.moveSelection(-1);
                         ev.consume();
+                    },
+                    .enter => {
+                        // Enter on the selected row starts editing (when the
+                        // trigger allows it). While editing, the scratch field
+                        // owns focus and handles Enter itself, so List never
+                        // sees Enter in that state.
+                        if (list.editing == null) {
+                            const want = switch (list.edit_trigger) {
+                                .enter, .double_click_or_enter => true,
+                                .double_click, .manual => false,
+                            };
+                            if (want) if (list.selected) |s| {
+                                list.edit(s);
+                                ev.consume();
+                            };
+                        }
                     },
                     else => {},
                 }
