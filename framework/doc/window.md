@@ -287,6 +287,25 @@ dismiss 規則：
 
 詳細は `menu.md` / `popup_menu.md` 参照。
 
+#### 入力ポリシー（拡張予定）
+現状の overlay は上記の通り**モーダル**（ヒットテストする・外クリックで dismiss する）固定で、ポップアップ系に特化している。window 浮遊物にはもう一つ**非インタラクティブ**な系統があり（ドラッグゴースト・ツールチップ）、これらはヒットテストも dismiss もされてはいけない。
+
+そこで `OverlayEntry` に入力ポリシーを足す（modal_popup が現状、passthrough が非インタラクティブ）。
+
+```zig
+pub const OverlayEntry = struct {
+    component:  *Component,
+    owner:      *anyopaque,
+    on_dismiss: *const fn (*anyopaque) void,
+    policy:     enum { modal_popup, passthrough } = .modal_popup,
+};
+```
+
+* **描画**は両ポリシーとも従来通り（登録順に重ねる）。
+* **イベント**: passthrough の entry はヒットテストと dismiss 判定の対象外（決して consume せず、外クリックの dismiss も起こさない）。modal_popup は現状のまま。
+
+これにより、ドラッグゴースト（`dnd.md`）やツールチップを別の描画パスにせず、同じ overlay スタック・z 順・寿命に乗せられる。実装は DnD 着手時に入る（それまで未使用の variant を先行追加はしない）。
+
 ### 3 層の dispatch 順（`dispatchInput`）
 
 ```
