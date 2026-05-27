@@ -114,7 +114,7 @@ pub fn show(self: *PopupMenu, w: *Window, x: f32, y: f32) !void {
         cur_y += item.min_size.height;
     }
 
-    try w.addOverlay(&self.popup_root, @ptrCast(self), onOverlayDismiss);
+    try w.overlays.add(&self.popup_root, @ptrCast(self), onOverlayDismiss);
     self.open = true;
 }
 
@@ -124,7 +124,7 @@ pub fn hide(self: *PopupMenu) void {
         child.hide();
         self.open_child = null;
     }
-    if (self.window) |w| w.removeOverlay(@ptrCast(self));
+    if (self.window) |w| w.overlays.remove(@ptrCast(self));
     self.open = false;
     for (self.items.items) |item| item.parent = null;
 }
@@ -141,7 +141,7 @@ fn onOverlayDismiss(user_data: *anyopaque) void {
 
 fn onItemAction(user_data: *anyopaque) void {
     const self: *PopupMenu = @ptrCast(@alignCast(user_data));
-    if (self.window) |w| w.dismissAllOverlays();
+    if (self.window) |w| w.overlays.dismissAll();
 }
 
 fn modelOf(c: *Component) ?*ButtonModel {

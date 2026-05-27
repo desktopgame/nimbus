@@ -7,6 +7,7 @@ const std = @import("std");
 const awt = @import("awt");
 const Component = @import("Component.zig");
 const dnd = @import("dnd.zig");
+const OverlayManager = @import("OverlayManager.zig");
 const Container = @import("Container.zig");
 const BorderLayout = @import("BorderLayout.zig");
 const Application = @import("Application.zig");
@@ -18,32 +19,10 @@ const Window = @This();
 /// armed drag becomes active. Squared to avoid a sqrt in the hot move path.
 const DRAG_THRESHOLD_SQ: f32 = 4 * 4;
 
-/// Input model of an overlay. See `framework/doc/overlay.md`.
-pub const OverlayPolicy = enum {
-    /// Hit-tested; outside-press / ESC dismiss it. Menus, combobox popups.
-    modal_popup,
-    /// Non-interactive: skipped by hit-test and dismiss, painted only.
-    /// Drag ghosts, (future) tooltips.
-    passthrough,
-};
-
-/// Floating overlay (menu popup, drag ghost, tooltip, etc.) drawn above the
-/// container and menu_bar. `modal_popup` entries are hit-tested first and an
-/// outside-press dismisses them; `passthrough` entries are paint-only.
-pub const OverlayEntry = struct {
-    /// Root component of the overlay subtree. Its `position` is window-local
-    /// (the overlay's top-left), parent must be null. Children's
-    /// `absoluteOriginInWindow` walks up and includes the root's position,
-    /// so window-local mouse coords hit-test correctly.
-    component:  *Component,
-    /// Opaque owner (Menu / PopupMenu) for the dismiss callback.
-    owner:      *anyopaque,
-    /// Called when the overlay is removed (by outside-press, ESC, or
-    /// programmatic dismissAllOverlays). Owner updates its `open` state.
-    on_dismiss: *const fn (*anyopaque) void,
-    /// Input model. Default modal (the common popup case).
-    policy:     OverlayPolicy = .modal_popup,
-};
+// Overlay types live in `OverlayManager`. Re-exported for callers that still
+// say `Window.OverlayEntry` / `Window.OverlayPolicy`.
+pub const OverlayEntry = OverlayManager.OverlayEntry;
+pub const OverlayPolicy = OverlayManager.OverlayPolicy;
 
 container:    Container,
 awt_window:   awt.Window,
@@ -61,8 +40,8 @@ event_queue:  *awt.EventQueue,
 /// Frame manages lifetime. When non-null, the container is laid out
 /// below it (container.position.y = menu_bar.size.height).
 menu_bar:     ?*Component,
-/// Floating overlays (popups). Bottom = first opened, top = most recent.
-overlays:     std.ArrayList(OverlayEntry),
+/// Floating overlays (popups / drag ghost / tooltips). See `OverlayManager`.
+overlays:     OverlayManager,
 /// Dirty-notify pointer used by overlays/menu_bar that share Window's
 /// repaint propagation (same value the container's root uses via property).
 title:        [:0]u8,
@@ -154,7 +133,7 @@ pub fn init(
         .app           = app_ptr,
         .event_queue   = event_queue,
         .menu_bar      = null,
-        .overlays      = .empty,
+        .overlays      = OverlayManager.init(allocator),
         .title         = title_dup,
         .background    = awt.Graphics.Color.rgb(0.94, 0.94, 0.94),
         .fb_w          = fb.width,
@@ -190,7 +169,7 @@ pub fn init(
 pub fn deinit(self: *Window) void {
     // Overlays are not owned (Menu/PopupMenu owners hold them) — just drop the list.
     // menu_bar is owned by Frame, not Window — do not destroy.
-    self.overlays.deinit(self.allocator);
+    self.overlays.deinit();
     self.container.deinit();      // drops children + container component
     self.swapchain.deinit();
     self.awt_window.deinit();
@@ -330,9 +309,7 @@ pub fn redraw(self: *Window) void {
         bar.paintAt(&g);
     }
     // 3. Overlays (above everything; bottom = oldest, top = newest)
-    for (self.overlays.items) |entry| {
-        entry.component.paintAt(&g);
-    }
+    self.overlays.paintAll(&g);
 
     cb.end();
     cb.submit(self.device.*);
@@ -361,70 +338,9 @@ pub fn setMenuBar(self: *Window, bar: ?*Component) !void {
     awt.postEmptyEvent();
 }
 
-/// Register an overlay. The component's `parent` will be set to null and
-/// dirty-notify wired to this Window. Position should already be set
-/// (window-local coordinates).
-pub fn addOverlay(
-    self: *Window,
-    component: *Component,
-    owner: *anyopaque,
-    on_dismiss: *const fn (*anyopaque) void,
-) !void {
-    component.parent = null;
-    try component.putProperty(@typeName(Component.DirtyNotify), @ptrCast(&self.dirty_notify), null);
-    try component.putProperty(@typeName(Component.FocusController), @ptrCast(&self.focus_controller), null);
-    try self.overlays.append(self.allocator, .{
-        .component = component,
-        .owner = owner,
-        .on_dismiss = on_dismiss,
-    });
-    self.paint_dirty = true;
-    awt.postEmptyEvent();
-}
-
-/// Register a `passthrough` overlay (non-interactive, paint-only): a drag
-/// ghost or tooltip that floats above everything without being hit-tested or
-/// dismissed. `component.position` is window-local. Remove with `removeOverlay`
-/// (keyed by the component pointer). See `framework/doc/overlay.md`.
-pub fn addPassthroughOverlay(self: *Window, component: *Component) !void {
-    component.parent = null;
-    try self.overlays.append(self.allocator, .{
-        .component = component,
-        .owner = @ptrCast(component),
-        .on_dismiss = noopDismiss,
-        .policy = .passthrough,
-    });
-    self.paint_dirty = true;
-    awt.postEmptyEvent();
-}
-
-fn noopDismiss(_: *anyopaque) void {}
-
-/// Index of the topmost `modal_popup` overlay, or null if none is open.
-/// `passthrough` entries (ghost/tooltip) are skipped — they do not make the
-/// window modal.
-fn topModalIndex(self: *Window) ?usize {
-    var i: usize = self.overlays.items.len;
-    while (i > 0) {
-        i -= 1;
-        if (self.overlays.items[i].policy == .modal_popup) return i;
-    }
-    return null;
-}
-
-/// Remove the overlay registered by `owner`. No-op if not found.
-/// Does NOT call on_dismiss (caller is presumably the owner itself).
-pub fn removeOverlay(self: *Window, owner: *anyopaque) void {
-    var i: usize = 0;
-    while (i < self.overlays.items.len) : (i += 1) {
-        if (self.overlays.items[i].owner == owner) {
-            _ = self.overlays.orderedRemove(i);
-            self.paint_dirty = true;
-            awt.postEmptyEvent();
-            return;
-        }
-    }
-}
+// Overlay registration / removal / dismissal live on `self.overlays`
+// (OverlayManager): `self.overlays.add(...)` / `.addPassthrough(...)` /
+// `.remove(...)` / `.dismissAll()`. See `OverlayManager` / `overlay.md`.
 
 // ── focus management ────────────────────────────────────────────────────
 
@@ -447,21 +363,6 @@ pub fn requestFocusFor(self: *Window, c: ?*Component) void {
         n.vtable.processEvent(n, &ev);
         n.repaint();
     }
-}
-
-/// Dismiss every `modal_popup` overlay, top-down, invoking each on_dismiss so
-/// owners can update their `open` state. Used for outside-click / ESC.
-/// `passthrough` entries (drag ghost) are left in place.
-pub fn dismissAllOverlays(self: *Window) void {
-    var i: usize = self.overlays.items.len;
-    while (i > 0) {
-        i -= 1;
-        if (self.overlays.items[i].policy != .modal_popup) continue;
-        const e = self.overlays.orderedRemove(i);
-        e.on_dismiss(e.owner);
-    }
-    self.paint_dirty = true;
-    awt.postEmptyEvent();
 }
 
 // ── dirty notify wiring ──────────────────────────────────────────────────
@@ -502,6 +403,10 @@ fn install(self: *Component) !void {
         .request_focus_for = focusControllerCallback,
     };
     try self.putProperty(@typeName(Component.FocusController), @ptrCast(&win.focus_controller), null);
+
+    // Hand the overlay manager the notify / controller it wires onto modal
+    // overlays and uses to mark the window dirty.
+    win.overlays.wire(&win.dirty_notify, &win.focus_controller);
 
     // Wire OS-level input callbacks into our dispatcher.
     win.awt_window.setResizeCallback(onResize, @ptrCast(win));
@@ -598,12 +503,13 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
 
             // 2. Overlays (top-down). Only when a modal popup is open; the
             //    drag ghost / tooltips are passthrough and never gate input.
-            if (self.topModalIndex() != null) {
+            if (self.overlays.topModalIndex() != null) {
                 var hit_overlay = false;
-                var i: usize = self.overlays.items.len;
+                const entries = self.overlays.entries.items;
+                var i: usize = entries.len;
                 while (i > 0) {
                     i -= 1;
-                    const entry = self.overlays.items[i];
+                    const entry = entries[i];
                     if (entry.policy == .passthrough) continue; // non-interactive
                     if (entry.component.containsWindowPoint(m.x, m.y)) {
                         entry.component.vtable.processEvent(entry.component, ev);
@@ -620,7 +526,7 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
                     if (m.action == .press) {
                         // Outside-click while popup is open: dismiss all,
                         // swallow the click (do not propagate to bar/container).
-                        self.dismissAllOverlays();
+                        self.overlays.dismissAll();
                     }
                     // Hover/scroll outside overlay is also swallowed while
                     // popup is open (typical menu modal feel).
@@ -689,12 +595,12 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
                 return;
             }
             // Overlays first (e.g., ESC closes top overlay).
-            if (self.topModalIndex()) |ti| {
-                const top = self.overlays.items[ti];
+            if (self.overlays.topModalIndex()) |ti| {
+                const top = self.overlays.entries.items[ti];
                 top.component.vtable.processEvent(top.component, ev);
                 if (ev.isConsumed()) return;
                 if (ev.payload.key.code == .escape and ev.payload.key.action == .press) {
-                    self.dismissAllOverlays();
+                    self.overlays.dismissAll();
                     return;
                 }
                 return;  // modal: don't propagate
@@ -714,8 +620,8 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
             }
         },
         .char => {
-            if (self.topModalIndex()) |ti| {
-                const top = self.overlays.items[ti];
+            if (self.overlays.topModalIndex()) |ti| {
+                const top = self.overlays.entries.items[ti];
                 top.component.vtable.processEvent(top.component, ev);
                 return;  // modal
             }

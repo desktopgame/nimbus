@@ -201,13 +201,13 @@ fn show(self: *ComboBox, w: *Window) !void {
     self.hovered_index = self.selected_index;
     self.open = true;
     self.window = w;
-    try w.addOverlay(&self.popup_root, @ptrCast(self), onOverlayDismiss);
+    try w.overlays.add(&self.popup_root, @ptrCast(self), onOverlayDismiss);
     self.component.repaint();
 }
 
 fn hide(self: *ComboBox) void {
     if (!self.open) return;
-    if (self.window) |w| w.removeOverlay(@ptrCast(self));
+    if (self.window) |w| w.overlays.remove(@ptrCast(self));
     self.open = false;
     self.hovered_index = null;
     self.component.repaint();

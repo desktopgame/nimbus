@@ -14,7 +14,7 @@ pub const Window = struct {
     app:          *anyopaque,                  // *Application back-pointer
     event_queue:  *awt.EventQueue,             // Application 所有の queue を借用 (post 経由 dispatch)
     menu_bar:     ?*Component,                 // 上部固定のメニューバー (Frame.setMenuBar が設定、Window は所有しない)
-    overlays:     std.ArrayList(OverlayEntry), // ポップアップ等のフローティング層 (top = 最新)
+    overlays:     OverlayManager,              // フローティング層 (popup / ghost)。`overlay.md`
     title:        [:0]u8,                      // 動的変更可能。allocator.dupeZ で所有 (C ABI 互換)
     background:   awt.Graphics.Color,          // ウィンドウのクリア色 (デフォルトはライトグレー)
     fb_w:         i32, fb_h: i32,              // framebuffer pixel (HiDPI 用)
@@ -35,15 +35,11 @@ pub const Window = struct {
         .destroy      = destroy,
     };
 
-    pub const OverlayEntry = struct {
-        component:  *Component,                // overlay の root (position は window-local)
-        owner:      *anyopaque,                // owner (Menu / PopupMenu)
-        on_dismiss: *const fn (*anyopaque) void,
-    };
-
     // ... メソッド
 };
 ```
+
+オーバーレイ管理 (`OverlayEntry` 型、登録 / 解除 / dismiss / 描画) は `OverlayManager` モジュールへ切り出した。`Window` はそれを `overlays` フィールドとして持ち、`install` で `overlays.wire(...)` し、描画 / イベント dispatch から `window.overlays` を参照するだけ。API と詳細は `overlay.md`。
 
 ## 子の追加
 ```zig
@@ -151,45 +147,8 @@ bar の `parent` は内部で `null` にセットされ、Window の dirty 伝�
 
 通常は利用者が直接呼ばず `Frame.setMenuBar` 経由で呼ばれる。
 
-## オーバーレイの登録
-```zig
-pub fn addOverlay(
-    self: *Window,
-    component: *Component,
-    owner: *anyopaque,
-    on_dismiss: *const fn (*anyopaque) void,
-) !void;
-```
-
-popup / tooltip 等の浮動 UI を Window に登録する。
-`component.parent` は内部で `null` にセットされ、dirty 伝搬は Window に接続される。
-`component.position` は登録時点で**ウィンドウローカル座標**にセットしておくこと（overlay は parent を持たないので絶対座標になる）。
-
-`owner` と `on_dismiss` は dismiss 時のコールバック用。Window が外クリック / ESC で全 overlay を dismiss する際、各 entry の `on_dismiss(owner)` が呼ばれて owner が `open=false` 等の状態を更新できる。
-
-通常は Menu / PopupMenu の `show` メソッドから呼ばれる（`menu.md` / `popup_menu.md` 参照）。
-
-## オーバーレイの解除
-```zig
-pub fn removeOverlay(self: *Window, owner: *anyopaque) void;
-```
-
-指定 `owner` の overlay を登録解除する。
-`on_dismiss` は**呼ばれない**（呼び出し元が owner 自身で、自分で状態管理する前提）。
-該当が無ければ no-op。
-
-`Menu.hide()` / `PopupMenu.hide()` 内で使われる。
-
-## 全オーバーレイの dismiss
-```zig
-pub fn dismissAllOverlays(self: *Window) void;
-```
-
-登録されている overlay をすべて top から解除し、各 `on_dismiss(owner)` を呼ぶ。
-外クリック / ESC キー押下のときに Window 内部で呼ばれる。
-利用者が直接呼ぶ機会は通常ない。
-
-cascade した menu popup（File → Find → submenu）が一発で全部閉じる。
+## オーバーレイ
+オーバーレイの登録 / 解除 / dismiss は `OverlayManager` のメソッドで、`window.overlays.add(component, owner, on_dismiss)` / `.addPassthrough(component)` / `.remove(owner)` / `.dismissAll()` と呼ぶ。型・契約・入力ポリシーは `overlay.md`。`Window` 側はこれらを直接持たず、描画（`overlays.paintAll`）とイベント dispatch（`overlays.topModalIndex` / `.entries` を読む、外クリック / ESC で `.dismissAll`）から参照する。
 
 ## フォーカスオーナーの設定
 ```zig
@@ -269,7 +228,7 @@ Frame の `setMenuBar(MenuBar)` で取り付ける、ウィンドウ最上部の
 
 ### オーバーレイ層
 ポップアップメニュー / ツールチップ等の浮動 UI。
-`Window.addOverlay(component, owner, on_dismiss)` で登録、`removeOverlay(owner)` で外す。
+`window.overlays.add(component, owner, on_dismiss)` で登録、`window.overlays.remove(owner)` で外す（`overlay.md`）。
 複数の overlay を同時に登録でき、登録順に下から積み上がる（top = 最新 = サブメニュー）。
 
 特徴：
@@ -280,10 +239,10 @@ Frame の `setMenuBar(MenuBar)` で取り付ける、ウィンドウ最上部の
 * イベントは登録順の**逆**（新→古）で hit-test、最初に bounds 内に当たった overlay へ dispatch
 
 dismiss 規則：
-* overlay の bounds 外で `.press` → `dismissAllOverlays` 発火（cascade した全 popup が閉じる）
+* overlay の bounds 外で `.press` → `overlays.dismissAll` 発火（cascade した全 popup が閉じる）
 * `.move` / scroll が overlay 外でも menu_bar の上ならそちらへ dispatch（ホバー切替を可能にする）
 * ESC キー → 全 overlay dismiss
-* overlay 内の MenuItem が action を発火 → owner（Menu / PopupMenu）の listener が `dismissAllOverlays` を呼ぶ
+* overlay 内の MenuItem が action を発火 → owner（Menu / PopupMenu）の listener が `overlays.dismissAll` を呼ぶ
 
 詳細は `menu.md` / `popup_menu.md` 参照。
 

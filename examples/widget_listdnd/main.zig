@@ -62,7 +62,7 @@ const Reorder = struct {
         // onDrag (fired immediately after this returns).
         const data: *Row = @ptrCast(@alignCast(item));
         self.ghost.setText(data.name) catch {};
-        self.window.addPassthroughOverlay(&self.ghost.component) catch {};
+        self.window.overlays.addPassthrough(&self.ghost.component) catch {};
         return .{
             .flavor = .object,
             .ctx = item,
@@ -82,7 +82,7 @@ const Reorder = struct {
     fn onDragDone(ud: *anyopaque, performed: ?dnd.Action) void {
         _ = performed;
         const self: *Reorder = @ptrCast(@alignCast(ud));
-        self.window.removeOverlay(@ptrCast(&self.ghost.component));
+        self.window.overlays.remove(@ptrCast(&self.ghost.component));
     }
 
     fn onOver(ud: *anyopaque, e: *const dnd.DragEvent) bool {

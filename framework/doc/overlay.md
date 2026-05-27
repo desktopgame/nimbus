@@ -1,17 +1,17 @@
 # overlay
 ウィンドウ内で、通常のレイアウト階層の**上**に浮かべる UI 層。ポップアップメニュー、コンボボックスのドロップダウン、（将来の）ツールチップやドラッグ中のゴーストなどに使う。
 
-オーバーレイは `Window` が所有リストとして保持し、container / menu_bar の上に重ねて描画する。レイアウトの外（`parent = null`、ウィンドウローカル座標）に置かれるので、親のクリップや境界に縛られず画面の任意位置に出せる。
+オーバーレイは `OverlayManager`（各 `Window` が `window.overlays` として 1 つ持つ）が登録リストとして保持し、container / menu_bar の上に重ねて描画する。レイアウトの外（`parent = null`、ウィンドウローカル座標）に置かれるので、親のクリップや境界に縛られず画面の任意位置に出せる。
 
 オーバーレイには**入力モデルが 2 種類**あり、`OverlayEntry.policy` で区別する。
 
 * `modal_popup` — ヒットテストの対象。外側クリック / ESC で dismiss される。メニュー・コンボボックスのような「開いている間は他をブロックする」ポップアップ。
 * `passthrough` — 非インタラクティブ。ヒットテストも dismiss もされず、描画だけ。ドラッグ中のゴーストやツールチップのような「上に浮かぶが操作対象でない」もの。
 
-これらの API は `Window` のメソッドとして提供される（`window.md` も参照）。
+API は `OverlayManager` のメソッドで、`window.overlays.add(...)` のように呼ぶ。`OverlayManager` は Component + awt にしか依存しないので（`Window` を知らない）、Window から切り離して扱える。`Window` は `install` 時に `overlays.wire(...)` で dirty-notify / focus-controller を渡し、描画 / イベント dispatch から `window.overlays` を参照する（`window.md`）。
 
 ## 型定義
-1 つの浮動 UI を表すエントリ。`Window` が登録順のリストで保持する（top = 最新）。
+1 つの浮動 UI を表すエントリ。`OverlayManager` が登録順のリストで保持する（top = 最新）。
 
 ```zig
 pub const OverlayEntry = struct {
@@ -31,8 +31,8 @@ pub const Policy = enum {
 
 ## オーバーレイの登録
 ```zig
-pub fn addOverlay(
-    self: *Window,
+pub fn add(
+    self: *OverlayManager,
     component: *Component,
     owner: *anyopaque,
     on_dismiss: *const fn (*anyopaque) void,
@@ -41,30 +41,30 @@ pub fn addOverlay(
 
 `modal_popup` ポリシーのオーバーレイを登録する。`component.parent` は内部で `null` にされ、dirty 伝搬が Window に接続される。`component.position` は登録前にウィンドウローカル座標へセットしておくこと。
 
-`owner` / `on_dismiss` は dismiss 時のコールバック用。外クリック / ESC で Window が全 overlay を dismiss する際、各 entry の `on_dismiss(owner)` が呼ばれ、owner が `open = false` 等の状態を更新できる。
+`owner` / `on_dismiss` は dismiss 時のコールバック用。外クリック / ESC で全 overlay を dismiss する際、各 entry の `on_dismiss(owner)` が呼ばれ、owner が `open = false` 等の状態を更新できる。
 
-通常は Menu / PopupMenu の `show` から呼ばれる（`menu.md` / `popup_menu.md`）。
+通常は Menu / PopupMenu / ComboBox の `show` から `w.overlays.add(...)` の形で呼ばれる（`menu.md` / `popup_menu.md` / `combobox.md`）。
 
 ## オーバーレイの解除
 ```zig
-pub fn removeOverlay(self: *Window, owner: *anyopaque) void;
+pub fn remove(self: *OverlayManager, owner: *anyopaque) void;
 ```
 
 指定 `owner` のオーバーレイを登録解除する。`on_dismiss` は**呼ばれない**（呼び出し元が owner 自身で、自分で状態管理する前提）。該当が無ければ no-op。
 
 ## 全オーバーレイの dismiss
 ```zig
-pub fn dismissAllOverlays(self: *Window) void;
+pub fn dismissAll(self: *OverlayManager) void;
 ```
 
 登録されている `modal_popup` をすべて top から解除し、各 `on_dismiss(owner)` を呼ぶ。外クリック / ESC のとき Window 内部で呼ばれる。cascade したメニュー（File → Find → submenu）が一発で全部閉じる。`passthrough` エントリ（ドラッグゴースト）は残す。
 
 ## passthrough オーバーレイの登録
 ```zig
-pub fn addPassthroughOverlay(self: *Window, component: *Component) !void;
+pub fn addPassthrough(self: *OverlayManager, component: *Component) !void;
 ```
 
-`passthrough` ポリシーのオーバーレイ（ドラッグゴースト・ツールチップ等の非インタラクティブ浮遊物）を登録する。`component.parent` は内部で `null` にされる。`owner` / `on_dismiss` は不要（dismiss されない）。`component.position` を更新して `Window.repaint` を呼べばカーソル追従などに使える。解除は `removeOverlay(@ptrCast(component))`（owner はコンポーネントのポインタ自身）。
+`passthrough` ポリシーのオーバーレイ（ドラッグゴースト・ツールチップ等の非インタラクティブ浮遊物）を登録する。`component.parent` は内部で `null` にされる。`owner` / `on_dismiss` は不要（dismiss されない）。`component.position` を更新すればカーソル追従などに使える（再描画は司令塔が促す）。解除は `remove(@ptrCast(component))`（owner はコンポーネントのポインタ自身）。
 
 ヒットテストにも dismiss にもかからないので、下の `modal_popup` / container の操作を妨げない。
 
@@ -87,7 +87,7 @@ pub fn addPassthroughOverlay(self: *Window, component: *Component) !void;
 
 ## 座標と所有権
 * `root.position` はウィンドウローカルの絶対座標。`parent = null`。
-* オーバーレイの root component は **Window に所有されない**。owner（Menu / PopupMenu 等）が寿命を持ち、Window はリストを保持するだけで `deinit` でも component を破棄しない。`removeOverlay` でリストから外すのは owner の責任。
+* オーバーレイの root component は **所有されない**。owner（Menu / PopupMenu 等）が寿命を持ち、`OverlayManager` はリストを保持するだけで `deinit` でも component を破棄しない。`remove` でリストから外すのは owner の責任。
 
 ## 用途
 | 用途 | ポリシー | dismiss |
@@ -99,7 +99,7 @@ pub fn addPassthroughOverlay(self: *Window, component: *Component) !void;
 
 ## 実装状況
 * `modal_popup`: 実装済み（menu / combobox / popup menu）。
-* `passthrough`: 実装済み。`OverlayEntry.policy` と `addPassthroughOverlay`、ヒットテスト / dismiss で `passthrough` をスキップする分岐を入れた。**nimbus は既定ゴーストを描かない** — 利用者がゴーストを出したいとき、`DragSource.onDragStart` で `addPassthroughOverlay`、`onDrag`（ウィンドウ座標）で位置更新、`onDragDone` で `removeOverlay` する。実例は `examples/widget_listdnd`（ラベルをゴーストにする）。`dnd.md`「描画 (ゴースト / 挿入先)」を参照。
+* `passthrough`: 実装済み。`OverlayEntry.policy` と `addPassthrough`、ヒットテスト / dismiss で `passthrough` をスキップする分岐を入れた。**nimbus は既定ゴーストを描かない** — 利用者がゴーストを出したいとき、`DragSource.onDragStart` で `window.overlays.addPassthrough`、`onDrag`（ウィンドウ座標）で位置更新、`onDragDone` で `window.overlays.remove` する。実例は `examples/widget_listdnd`（ラベルをゴーストにする）。`dnd.md`「描画 (ゴースト / 挿入先)」を参照。
 
 ## 機能要望
 * z 順の明示制御 / 常時最前面の指定

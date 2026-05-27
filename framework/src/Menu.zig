@@ -218,7 +218,7 @@ pub fn show(self: *Menu, w: *Window, anchor: Component.Point) !void {
         cur_y += item.min_size.height;
     }
 
-    try w.addOverlay(&self.popup_root, @ptrCast(self), onOverlayDismiss);
+    try w.overlays.add(&self.popup_root, @ptrCast(self), onOverlayDismiss);
     self.open = true;
 }
 
@@ -228,7 +228,7 @@ pub fn hide(self: *Menu) void {
         child.hide();
         self.open_child = null;
     }
-    if (self.window) |w| w.removeOverlay(@ptrCast(self));
+    if (self.window) |w| w.overlays.remove(@ptrCast(self));
     self.open = false;
     // Clear child parents so they don't dangle.
     for (self.items.items) |item| item.parent = null;
@@ -236,7 +236,7 @@ pub fn hide(self: *Menu) void {
 
 fn onOverlayDismiss(user_data: *anyopaque) void {
     const self: *Menu = @ptrCast(@alignCast(user_data));
-    // Don't call removeOverlay (dismissAllOverlays already popped us).
+    // Don't call overlays.remove (dismissAll already popped us).
     if (self.open_child) |child| {
         child.hide();
         self.open_child = null;
@@ -247,7 +247,7 @@ fn onOverlayDismiss(user_data: *anyopaque) void {
 
 fn onItemAction(user_data: *anyopaque) void {
     const self: *Menu = @ptrCast(@alignCast(user_data));
-    if (self.window) |w| w.dismissAllOverlays();
+    if (self.window) |w| w.overlays.dismissAll();
 }
 
 fn modelOf(c: *Component) ?*ButtonModel {

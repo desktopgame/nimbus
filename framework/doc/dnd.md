@@ -173,7 +173,7 @@ source == target のときは **同じ backing 構造体が `onDrop` と `onDrag
 
 ゴーストは**入力を取らない純粋な浮遊物**なので、 `passthrough` ポリシーの overlay として乗せる (`overlay.md`)。 passthrough はヒットテストと dismiss の対象外なので、 受け側解決や capture / フォーカスと干渉しない。 アプリ側の手順:
 
-* `onDragStart` でゴーストの Component を用意し、 `window.addPassthroughOverlay(ghost)` で登録する。
+* `onDragStart` でゴーストの Component を用意し、 `window.overlays.addPassthrough(ghost)` で登録する。
 * `onDrag(x, y)` (ドラッグ中 move ごと、 **ウィンドウ座標**) でゴーストの `position` を更新する。 ドラッグ中はアプリのコンポーネントへ通常の move が届かない (司令塔が握る) ため、 位置はこの per-move フックで受け取る。
 * `onDragDone` で `removeOverlay` する (ドロップ・取り消しのどちらでも呼ばれる)。
 
@@ -330,7 +330,7 @@ const Reorder = struct {
         self.src_row = row;
         const data: *Row = @ptrCast(@alignCast(item));
         self.ghost.setText(data.name) catch {};
-        self.window.addPassthroughOverlay(&self.ghost.component) catch {};
+        self.window.overlays.addPassthrough(&self.ghost.component) catch {};
         return .{ .flavor = .object, .ctx = item, .type_tag = row_tag, .source = self.list.asComponent() };
     }
 
@@ -344,7 +344,7 @@ const Reorder = struct {
     fn onDragDone(ud: *anyopaque, performed: ?dnd.Action) void {
         _ = performed;
         const self: *Reorder = @ptrCast(@alignCast(ud));
-        self.window.removeOverlay(@ptrCast(&self.ghost.component));
+        self.window.overlays.remove(@ptrCast(&self.ghost.component));
     }
 
     fn onOver(ud: *anyopaque, e: *const dnd.DragEvent) bool {
@@ -453,7 +453,7 @@ for (rows) |*r| try list.model.add(@ptrCast(r));
 ## 機能要望
 * ドロップ先の bubbling (最近傍が拒否したら祖先の受け側へ回す)
 * 受理アクションの細分 — 受け側が「copy なら受けるが move は不可」等を返し、 カーソルを copy / move で描き分ける
-* スナップショットゴーストのヘルパ — ドラッグ元のサブツリーを**明度↓・アルファ↓のスナップショット**にしてゴーストにする定型 (`addPassthroughOverlay` + `onDrag` の上に乗るヘルパ。 現状はアプリが自前で組む)。 前提として awt 側に汎用プリミティブが 2 つ要る: (1) Component サブツリーをオフスクリーンのテクスチャへ描く (既存の RenderTarget / Texture / Image program から組み立て可)、 (2) テクスチャを RGBA 変調 (tint) して描く (明度 = ×RGB / アルファ = ×A)。 どちらもゴースト専用でなく `setEnabled(false)` の灰色化やサムネイル等にも効く汎用機能。 見た目は開始時に凍結するスナップショット方式を想定 (ライブ再描画は座標 / 状態が絡み複雑)。
+* スナップショットゴーストのヘルパ — ドラッグ元のサブツリーを**明度↓・アルファ↓のスナップショット**にしてゴーストにする定型 (`overlays.addPassthrough` + `onDrag` の上に乗るヘルパ。 現状はアプリが自前で組む)。 前提として awt 側に汎用プリミティブが 2 つ要る: (1) Component サブツリーをオフスクリーンのテクスチャへ描く (既存の RenderTarget / Texture / Image program から組み立て可)、 (2) テクスチャを RGBA 変調 (tint) して描く (明度 = ×RGB / アルファ = ×A)。 どちらもゴースト専用でなく `setEnabled(false)` の灰色化やサムネイル等にも効く汎用機能。 見た目は開始時に凍結するスナップショット方式を想定 (ライブ再描画は座標 / 状態が絡み複雑)。
 * OS ファイルドロップ — Phase 1 (glfw `.files`) / Phase 2 (native ホバー演出)。 awt の `.file_drop` イベント追加を伴う
 * ドラッグアウト (自アプリ → OS。 ファイル化してエクスプローラへ渡す)
 * 開いたフレーバ / 任意 MIME — アプリ間で独自フォーマットを運ぶ (現状の閉じた `Flavor` を超える範囲)
