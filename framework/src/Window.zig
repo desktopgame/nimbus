@@ -18,8 +18,23 @@ const Window = @This();
 /// armed drag becomes active. Squared to avoid a sqrt in the hot move path.
 const DRAG_THRESHOLD_SQ: f32 = 4 * 4;
 
-/// Floating overlay (menu popup, tooltip, etc.) drawn above the container
-/// and menu_bar. Hit-tested first; outside-press dismisses everything.
+/// Default drag-ghost size and its offset from the cursor (trails the pointer).
+const GHOST_W: f32 = 120;
+const GHOST_H: f32 = 22;
+const GHOST_OFFSET: f32 = 12;
+
+/// Input model of an overlay. See `framework/doc/overlay.md`.
+pub const OverlayPolicy = enum {
+    /// Hit-tested; outside-press / ESC dismiss it. Menus, combobox popups.
+    modal_popup,
+    /// Non-interactive: skipped by hit-test and dismiss, painted only.
+    /// Drag ghosts, (future) tooltips.
+    passthrough,
+};
+
+/// Floating overlay (menu popup, drag ghost, tooltip, etc.) drawn above the
+/// container and menu_bar. `modal_popup` entries are hit-tested first and an
+/// outside-press dismisses them; `passthrough` entries are paint-only.
 pub const OverlayEntry = struct {
     /// Root component of the overlay subtree. Its `position` is window-local
     /// (the overlay's top-left), parent must be null. Children's
@@ -31,6 +46,8 @@ pub const OverlayEntry = struct {
     /// Called when the overlay is removed (by outside-press, ESC, or
     /// programmatic dismissAllOverlays). Owner updates its `open` state.
     on_dismiss: *const fn (*anyopaque) void,
+    /// Input model. Default modal (the common popup case).
+    policy:     OverlayPolicy = .modal_popup,
 };
 
 container:    Container,
@@ -98,6 +115,10 @@ drag_transfer: dnd.Transfer,
 drag_target:   ?*Component,
 /// Whether the last `onOver` accepted (drives whether `onDrop` fires).
 drag_accepted: bool,
+/// Default drag ghost: a simple box added as a `passthrough` overlay while a
+/// drag is active and repositioned to trail the cursor. Owned as a field
+/// (stable address; never destroyed via the tree).
+drag_ghost:   Component,
 allocator:    std.mem.Allocator,
 dirty_notify: Component.DirtyNotify,
 focus_controller: Component.FocusController,
@@ -163,6 +184,7 @@ pub fn init(
         .drag_transfer    = undefined,
         .drag_target      = null,
         .drag_accepted    = false,
+        .drag_ghost       = Component.init(allocator, &ghost_vtable),
         .allocator        = allocator,
         .dirty_notify     = undefined,     // filled in install
         .focus_controller = undefined,     // filled in install
@@ -370,6 +392,36 @@ pub fn addOverlay(
     awt.postEmptyEvent();
 }
 
+/// Register a `passthrough` overlay (non-interactive, paint-only): a drag
+/// ghost or tooltip that floats above everything without being hit-tested or
+/// dismissed. `component.position` is window-local. Remove with `removeOverlay`
+/// (keyed by the component pointer). See `framework/doc/overlay.md`.
+pub fn addPassthroughOverlay(self: *Window, component: *Component) !void {
+    component.parent = null;
+    try self.overlays.append(self.allocator, .{
+        .component = component,
+        .owner = @ptrCast(component),
+        .on_dismiss = noopDismiss,
+        .policy = .passthrough,
+    });
+    self.paint_dirty = true;
+    awt.postEmptyEvent();
+}
+
+fn noopDismiss(_: *anyopaque) void {}
+
+/// Index of the topmost `modal_popup` overlay, or null if none is open.
+/// `passthrough` entries (ghost/tooltip) are skipped — they do not make the
+/// window modal.
+fn topModalIndex(self: *Window) ?usize {
+    var i: usize = self.overlays.items.len;
+    while (i > 0) {
+        i -= 1;
+        if (self.overlays.items[i].policy == .modal_popup) return i;
+    }
+    return null;
+}
+
 /// Remove the overlay registered by `owner`. No-op if not found.
 /// Does NOT call on_dismiss (caller is presumably the owner itself).
 pub fn removeOverlay(self: *Window, owner: *anyopaque) void {
@@ -407,12 +459,16 @@ pub fn requestFocusFor(self: *Window, c: ?*Component) void {
     }
 }
 
-/// Dismiss every overlay, top-down, invoking each on_dismiss callback so
+/// Dismiss every `modal_popup` overlay, top-down, invoking each on_dismiss so
 /// owners can update their `open` state. Used for outside-click / ESC.
+/// `passthrough` entries (drag ghost) are left in place.
 pub fn dismissAllOverlays(self: *Window) void {
-    while (self.overlays.items.len > 0) {
-        const top = self.overlays.pop().?;
-        top.on_dismiss(top.owner);
+    var i: usize = self.overlays.items.len;
+    while (i > 0) {
+        i -= 1;
+        if (self.overlays.items[i].policy != .modal_popup) continue;
+        const e = self.overlays.orderedRemove(i);
+        e.on_dismiss(e.owner);
     }
     self.paint_dirty = true;
     awt.postEmptyEvent();
@@ -550,13 +606,15 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
                 return;
             }
 
-            // 2. Overlays (top-down).
-            if (self.overlays.items.len > 0) {
+            // 2. Overlays (top-down). Only when a modal popup is open; the
+            //    drag ghost / tooltips are passthrough and never gate input.
+            if (self.topModalIndex() != null) {
                 var hit_overlay = false;
                 var i: usize = self.overlays.items.len;
                 while (i > 0) {
                     i -= 1;
                     const entry = self.overlays.items[i];
+                    if (entry.policy == .passthrough) continue; // non-interactive
                     if (entry.component.containsWindowPoint(m.x, m.y)) {
                         entry.component.vtable.processEvent(entry.component, ev);
                         hit_overlay = true;
@@ -641,8 +699,8 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
                 return;
             }
             // Overlays first (e.g., ESC closes top overlay).
-            if (self.overlays.items.len > 0) {
-                const top = self.overlays.items[self.overlays.items.len - 1];
+            if (self.topModalIndex()) |ti| {
+                const top = self.overlays.items[ti];
                 top.component.vtable.processEvent(top.component, ev);
                 if (ev.isConsumed()) return;
                 if (ev.payload.key.code == .escape and ev.payload.key.action == .press) {
@@ -666,8 +724,8 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
             }
         },
         .char => {
-            if (self.overlays.items.len > 0) {
-                const top = self.overlays.items[self.overlays.items.len - 1];
+            if (self.topModalIndex()) |ti| {
+                const top = self.overlays.items[ti];
                 top.component.vtable.processEvent(top.component, ev);
                 return;  // modal
             }
@@ -757,8 +815,17 @@ fn beginDrag(self: *Window, wx: f32, wy: f32) bool {
     self.dragging = true;
     self.drag_target = null;
     self.drag_accepted = false;
+    // Default ghost: a small box trailing the cursor, as a passthrough overlay
+    // (best-effort — the drag still works without it).
+    self.drag_ghost.size = .{ .width = GHOST_W, .height = GHOST_H };
+    self.positionGhost(wx, wy);
+    self.addPassthroughOverlay(&self.drag_ghost) catch {};
     self.updateDrag(wx, wy);
     return true;
+}
+
+fn positionGhost(self: *Window, wx: f32, wy: f32) void {
+    self.drag_ghost.position = .{ .x = wx + GHOST_OFFSET, .y = wy + GHOST_OFFSET };
 }
 
 /// Resolve the drop target under the cursor, drive enter/over/leave, and record
@@ -783,6 +850,9 @@ fn updateDrag(self: *Window, wx: f32, wy: f32) void {
     } else {
         self.drag_accepted = false;
     }
+    // Trail the ghost and request a repaint so it follows the cursor.
+    self.positionGhost(wx, wy);
+    self.repaint();
 }
 
 /// Release: commit the drop if accepted, then notify the source. Ends the drag.
@@ -815,10 +885,31 @@ fn cancelDrag(self: *Window) void {
 }
 
 fn endDrag(self: *Window) void {
+    self.removeOverlay(@ptrCast(&self.drag_ghost));
     self.dragging = false;
     self.drag_target = null;
     self.drag_source_c = null;
     self.drag_accepted = false;
+    self.repaint();
+}
+
+// ── default drag ghost (a `passthrough` overlay) ─────────────────────────
+const ghost_vtable = Component.VTable{
+    .install      = ghostInstall,
+    .uninstall    = ghostUninstall,
+    .paint        = ghostPaint,
+    .processEvent = ghostProcessEvent,
+    .destroy      = ghostDestroy,
+};
+
+fn ghostInstall(_: *Component) !void {}
+fn ghostUninstall(_: *Component) void {}
+fn ghostProcessEvent(_: *Component, _: *awt.Event) void {}
+fn ghostDestroy(_: *Component, _: std.mem.Allocator) void {}
+
+fn ghostPaint(self: *Component, g: *awt.Graphics) void {
+    g.setColor(awt.Graphics.Color.rgba(0.20, 0.52, 1.0, 0.5));
+    g.fillRect(.{ .x = 0, .y = 0, .width = self.size.width, .height = self.size.height });
 }
 
 /// Build a `DragEvent` with the cursor translated into `target`-local coords.
