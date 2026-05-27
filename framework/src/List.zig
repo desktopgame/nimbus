@@ -130,6 +130,24 @@ pub const ListModel = struct {
         self.change_listeners.fire();
     }
 
+    /// Move the item at `from` to insertion position `to` (0..=size, expressed
+    /// in the pre-move indexing). Used by drag-to-reorder (`dnd.md`). No-op if
+    /// `from` is out of range or the move would not change the order.
+    pub fn move(self: *ListModel, from: usize, to: usize) void {
+        const n = self.items.items.len;
+        if (from >= n) return;
+        // Inserting at `from` or just after `from` leaves the order unchanged.
+        if (to == from or to == from + 1) return;
+        const item = self.items.orderedRemove(from); // capacity retained
+        // Translate the insertion index into the post-removal array.
+        var dst = to;
+        if (dst > from) dst -= 1;
+        if (dst > self.items.items.len) dst = self.items.items.len;
+        // orderedRemove kept capacity, so inserting one element never allocates.
+        self.items.insert(self.allocator, dst, item) catch unreachable;
+        self.change_listeners.fire();
+    }
+
     pub fn getSize(self: ListModel) usize {
         return self.items.items.len;
     }

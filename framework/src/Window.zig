@@ -6,12 +6,17 @@
 const std = @import("std");
 const awt = @import("awt");
 const Component = @import("Component.zig");
+const dnd = @import("dnd.zig");
 const Container = @import("Container.zig");
 const BorderLayout = @import("BorderLayout.zig");
 const Application = @import("Application.zig");
 const log = @import("log.zig");
 
 const Window = @This();
+
+/// Squared pixel distance the cursor must travel from the press point before an
+/// armed drag becomes active. Squared to avoid a sqrt in the hot move path.
+const DRAG_THRESHOLD_SQ: f32 = 4 * 4;
 
 /// Floating overlay (menu popup, tooltip, etc.) drawn above the container
 /// and menu_bar. Hit-tested first; outside-press dismisses everything.
@@ -77,6 +82,22 @@ focus_owner:  ?*Component,
 /// modal one stays false). This is how nimbus implements per-window modality
 /// since GLFW/OS do not (see `dialog.md`「モーダル入力ブロック」).
 input_blocked: bool,
+// ── drag-and-drop controller state (see `framework/doc/dnd.md`) ──
+/// A press landed on a component with a `drag_source`; waiting to exceed the
+/// movement threshold before the drag actually starts. Null = not armed.
+drag_armed:    ?*Component,
+/// Window coords of the arming press (threshold + onDragStart origin).
+drag_start:    Component.Point,
+/// True while a drag is active (onDragStart returned a transfer).
+dragging:      bool,
+/// The source component of the active drag (for `onDragDone`).
+drag_source_c: ?*Component,
+/// The payload of the active drag. Valid only while `dragging`.
+drag_transfer: dnd.Transfer,
+/// The drop target the cursor is currently over (for enter/leave).
+drag_target:   ?*Component,
+/// Whether the last `onOver` accepted (drives whether `onDrop` fires).
+drag_accepted: bool,
 allocator:    std.mem.Allocator,
 dirty_notify: Component.DirtyNotify,
 focus_controller: Component.FocusController,
@@ -135,6 +156,13 @@ pub fn init(
         .mouse_capture    = null,
         .focus_owner      = null,
         .input_blocked    = false,
+        .drag_armed       = null,
+        .drag_start       = .{ .x = 0, .y = 0 },
+        .dragging         = false,
+        .drag_source_c    = null,
+        .drag_transfer    = undefined,
+        .drag_target      = null,
+        .drag_accepted    = false,
         .allocator        = allocator,
         .dirty_notify     = undefined,     // filled in install
         .focus_controller = undefined,     // filled in install
@@ -487,6 +515,28 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
     }
     switch (ev.payload) {
         .mouse => |m| {
+            // 0a. Active DnD drag: the controller owns move/release; normal
+            //     dispatch is suspended until the drag ends.
+            if (self.dragging) {
+                switch (m.action) {
+                    .move => self.updateDrag(m.x, m.y),
+                    .release => self.finishDrag(m.x, m.y),
+                    else => {},
+                }
+                return;
+            }
+            // 0b. Armed (pressed on a draggable): promote to an active drag once
+            //     the cursor moves past the threshold.
+            if (self.drag_armed != null and m.action == .move) {
+                const dx = m.x - self.drag_start.x;
+                const dy = m.y - self.drag_start.y;
+                if (dx * dx + dy * dy >= DRAG_THRESHOLD_SQ) {
+                    if (self.beginDrag(m.x, m.y)) return; // started → consume this move
+                    // onDragStart declined: disarm, fall through to normal move.
+                }
+            }
+            if (m.action == .release) self.drag_armed = null;
+
             // 1. Mouse-capture priority (active drag).
             if (m.action == .release and self.mouse_capture != null) {
                 const cap = self.mouse_capture.?;
@@ -573,9 +623,23 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
                     if (self.findFocusableAt(m.x, m.y)) |w| self.requestFocusFor(w)
                     else self.requestFocusFor(null);
                 }
+                // DnD: arm a drag gesture if the press landed on a draggable and
+                // nothing grabbed the mouse (a captured widget / button takes
+                // precedence). Promotion to an active drag happens on the next
+                // move past the threshold (see the `.move` handling above).
+                if (ev.capture_target == null and !ev.isConsumed()) {
+                    self.drag_armed = self.findDraggableAt(m.x, m.y);
+                    self.drag_start = .{ .x = m.x, .y = m.y };
+                }
             }
         },
         .key => {
+            // ESC cancels an active drag; all keys are swallowed while dragging.
+            if (self.dragging) {
+                const k = ev.payload.key;
+                if (k.code == .escape and k.action == .press) self.cancelDrag();
+                return;
+            }
             // Overlays first (e.g., ESC closes top overlay).
             if (self.overlays.items.len > 0) {
                 const top = self.overlays.items[self.overlays.items.len - 1];
@@ -671,6 +735,135 @@ fn destroy(self: *Component, allocator: std.mem.Allocator) void {
     const win: *Window = @fieldParentPtr("container", cont);
     win.deinit();
     allocator.destroy(win);
+}
+
+// ── drag-and-drop controller ─────────────────────────────────────────────
+// Source-agnostic entry points. v1 feeds them from the in-app mouse gesture;
+// a future OS-drop layer can call the same updateDrag/finishDrag. See
+// `framework/doc/dnd.md`「ドラッグの司令塔」.
+
+/// Promote the armed gesture to an active drag. Calls the source's
+/// `onDragStart` with the press point in source-local coords; returns true if
+/// it produced a transfer (drag started) and runs the first `updateDrag`.
+fn beginDrag(self: *Window, wx: f32, wy: f32) bool {
+    const src = self.drag_armed orelse return false;
+    self.drag_armed = null;
+    const ds = src.drag_source orelse return false;
+    const o = src.absoluteOriginInWindow();
+    const transfer = ds.onDragStart(ds.user_data, self.drag_start.x - o.x, self.drag_start.y - o.y) orelse
+        return false;
+    self.drag_transfer = transfer;
+    self.drag_source_c = src;
+    self.dragging = true;
+    self.drag_target = null;
+    self.drag_accepted = false;
+    self.updateDrag(wx, wy);
+    return true;
+}
+
+/// Resolve the drop target under the cursor, drive enter/over/leave, and record
+/// whether the current point is droppable.
+fn updateDrag(self: *Window, wx: f32, wy: f32) void {
+    const target = self.findDropTargetAt(wx, wy);
+    if (target != self.drag_target) {
+        if (self.drag_target) |old| {
+            if (old.drop_target.?.onLeave) |on_leave| on_leave(old.drop_target.?.user_data);
+        }
+        self.drag_target = target;
+        if (target) |t| {
+            if (t.drop_target.?.onEnter) |on_enter| {
+                var e = self.makeDragEvent(t, wx, wy);
+                on_enter(t.drop_target.?.user_data, &e);
+            }
+        }
+    }
+    if (target) |t| {
+        var e = self.makeDragEvent(t, wx, wy);
+        self.drag_accepted = t.drop_target.?.onOver(t.drop_target.?.user_data, &e);
+    } else {
+        self.drag_accepted = false;
+    }
+}
+
+/// Release: commit the drop if accepted, then notify the source. Ends the drag.
+fn finishDrag(self: *Window, wx: f32, wy: f32) void {
+    const dropped = self.drag_accepted and self.drag_target != null;
+    if (dropped) {
+        const t = self.drag_target.?;
+        var e = self.makeDragEvent(t, wx, wy);
+        t.drop_target.?.onDrop(t.drop_target.?.user_data, &e);
+    } else if (self.drag_target) |t| {
+        if (t.drop_target.?.onLeave) |on_leave| on_leave(t.drop_target.?.user_data);
+    }
+    if (self.drag_source_c) |src| {
+        if (src.drag_source.?.onDragDone) |on_done| {
+            on_done(src.drag_source.?.user_data, if (dropped) .move else null);
+        }
+    }
+    self.endDrag();
+}
+
+/// Cancel an active drag (ESC): clear feedback, tell the source nothing landed.
+fn cancelDrag(self: *Window) void {
+    if (self.drag_target) |t| {
+        if (t.drop_target.?.onLeave) |on_leave| on_leave(t.drop_target.?.user_data);
+    }
+    if (self.drag_source_c) |src| {
+        if (src.drag_source.?.onDragDone) |on_done| on_done(src.drag_source.?.user_data, null);
+    }
+    self.endDrag();
+}
+
+fn endDrag(self: *Window) void {
+    self.dragging = false;
+    self.drag_target = null;
+    self.drag_source_c = null;
+    self.drag_accepted = false;
+}
+
+/// Build a `DragEvent` with the cursor translated into `target`-local coords.
+/// v1 always reports `.move` (move events carry no modifiers, so copy/move
+/// switching is deferred — see `dnd.md`).
+fn makeDragEvent(self: *Window, target: *Component, wx: f32, wy: f32) dnd.DragEvent {
+    const o = target.absoluteOriginInWindow();
+    return .{
+        .x = wx - o.x,
+        .y = wy - o.y,
+        .transfer = &self.drag_transfer,
+        .action = .move,
+    };
+}
+
+fn findDraggableAt(self: *Window, x: f32, y: f32) ?*Component {
+    return findCapabilityInSubtree(&self.container.component, x, y, .drag);
+}
+
+fn findDropTargetAt(self: *Window, x: f32, y: f32) ?*Component {
+    return findCapabilityInSubtree(&self.container.component, x, y, .drop);
+}
+
+const Capability = enum { drag, drop };
+
+/// Deepest component under (`x`, `y`) carrying the requested DnD capability.
+/// Walks the container tree top-most-first (mirrors `findFocusableInSubtree`).
+/// Note: List cells live outside the container tree, so a draggable/droppable
+/// List is found at the List component itself (its `onDragStart` maps the local
+/// point to a row) — see `dnd.md`「List の行並べ替え」.
+fn findCapabilityInSubtree(c: *Component, x: f32, y: f32, cap: Capability) ?*Component {
+    if (!c.containsWindowPoint(x, y)) return null;
+    if (c.container) |cont| {
+        var i: usize = cont.children.items.len;
+        while (i > 0) {
+            i -= 1;
+            const child = cont.children.items[i].component;
+            if (findCapabilityInSubtree(child, x, y, cap)) |hit| return hit;
+        }
+    }
+    const has = switch (cap) {
+        .drag => c.drag_source != null,
+        .drop => c.drop_target != null,
+    };
+    return if (has) c else null;
 }
 
 // ── OS callback bridges ──────────────────────────────────────────────────

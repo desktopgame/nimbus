@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const awt = @import("awt");
+const dnd = @import("dnd.zig");
 
 const Component = @This();
 
@@ -87,6 +88,10 @@ align_y:    Alignment,
 /// Scroll-tracking hint read by an enclosing `ScrollPane`. Null = use the
 /// view's natural size on both axes (default). See `Scrollable`.
 scrollable: ?Scrollable,
+/// Drag-and-drop capabilities (opt-in, null = does not participate). Set
+/// externally; the `VTable` is not involved. See `framework/doc/dnd.md`.
+drag_source: ?dnd.DragSource,
+drop_target: ?dnd.DropTarget,
 parent:     ?*Component,
 container:  ?*Container,
 /// True if this component can receive keyboard focus. Default false:
@@ -109,6 +114,8 @@ pub fn init(allocator: std.mem.Allocator, vtable: *const VTable) Component {
         .align_x    = .stretch,
         .align_y    = .stretch,
         .scrollable = null,
+        .drag_source = null,
+        .drop_target = null,
         .parent     = null,
         .container  = null,
         .focusable  = false,
