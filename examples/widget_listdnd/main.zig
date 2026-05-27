@@ -10,6 +10,9 @@
 //!     List's (public) vtable and override only `paint`, calling the original
 //!     first and then drawing the line in the List's own Graphics so it scrolls
 //!     and clips for free
+//!   - the drag ghost is app-owned: nimbus draws none, so the source puts up a
+//!     label as a `passthrough` overlay in `onDragStart`, trails it in `onDrag`
+//!     (window coords), and removes it in `onDragDone`
 //!
 //! See `framework/doc/dnd.md`「List の行並べ替え」.
 //!
@@ -34,13 +37,19 @@ const Row = struct { name: []const u8 };
 /// Identifies "a Row is being dragged" so a drop target only accepts our rows.
 const row_tag = dnd.tagOf(Row);
 
+/// Offset of the ghost from the cursor (app's choice — nimbus draws no ghost).
+const GHOST_OFFSET: f32 = 12;
+
 // ── reorder controller (shared by the List's drag_source + drop_target) ──
 const Reorder = struct {
     list: *nimbus.List,
+    window: *nimbus.Window, // to (un)register the ghost overlay
+    ghost: *nimbus.Label, // app-owned ghost; shown only during a drag
     src_row: ?usize = null, // row the drag started on (set in onDragStart)
     drop_at: ?usize = null, // insertion index under the cursor (drawn by paint)
 
-    /// Drag started on the List: map the press y to a row and carry that item.
+    /// Drag started on the List: map the press y to a row, carry that item, and
+    /// put up our own ghost as a passthrough overlay (nimbus draws none).
     fn onDragStart(ud: *anyopaque, x: f32, y: f32) ?dnd.Transfer {
         _ = x;
         const self: *Reorder = @ptrCast(@alignCast(ud));
@@ -49,12 +58,31 @@ const Reorder = struct {
         const row: usize = @intFromFloat(y / h);
         const item = self.list.model.getElementAt(row) orelse return null;
         self.src_row = row;
+        // Ghost shows the dragged row's text. Position is set by the first
+        // onDrag (fired immediately after this returns).
+        const data: *Row = @ptrCast(@alignCast(item));
+        self.ghost.setText(data.name) catch {};
+        self.window.addPassthroughOverlay(&self.ghost.component) catch {};
         return .{
             .flavor = .object,
             .ctx = item,
             .type_tag = row_tag,
             .source = self.list.asComponent(),
         };
+    }
+
+    /// Per-move (window coords): trail the ghost behind the cursor.
+    fn onDrag(ud: *anyopaque, x: f32, y: f32) void {
+        const self: *Reorder = @ptrCast(@alignCast(ud));
+        self.ghost.component.position = .{ .x = x + GHOST_OFFSET, .y = y + GHOST_OFFSET };
+    }
+
+    /// Drag finished (drop or cancel): take the ghost down. The reorder itself
+    /// happens in onDrop; here we only clean up the overlay.
+    fn onDragDone(ud: *anyopaque, performed: ?dnd.Action) void {
+        _ = performed;
+        const self: *Reorder = @ptrCast(@alignCast(ud));
+        self.window.removeOverlay(@ptrCast(&self.ghost.component));
     }
 
     fn onOver(ud: *anyopaque, e: *const dnd.DragEvent) bool {
@@ -169,14 +197,25 @@ pub fn main(init: std.process.Init) !void {
     const lst = try app.list(.{ .create = createCell, .user_data = &ctx });
     lst.setRowHeight(32);
 
-    var reorder = Reorder{ .list = lst };
+    // App-owned ghost: a label that floats during a drag. nimbus draws no
+    // ghost itself — the source puts this up / takes it down via the overlay
+    // API and positions it in onDrag. Destroyed at the end (owned here).
+    const ghost = try app.label("");
+    ghost.component.size = .{ .width = 120, .height = 24 };
+    defer {
+        const gc = &ghost.component;
+        gc.vtable.destroy(gc, app.allocator);
+    }
+
+    var reorder = Reorder{ .list = lst, .window = &frame.window, .ghost = ghost };
 
     // The List is both drag source and drop target (self-reorder). Set the
     // capabilities from outside — the List widget itself is not modified.
     lst.asComponent().drag_source = .{
         .onDragStart = Reorder.onDragStart,
+        .onDrag = Reorder.onDrag,
+        .onDragDone = Reorder.onDragDone,
         .user_data = &reorder,
-        // onDragDone unused: a self-reorder completes inside onDrop.
     };
     lst.asComponent().drop_target = .{
         .onOver = Reorder.onOver,

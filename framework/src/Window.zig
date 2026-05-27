@@ -18,11 +18,6 @@ const Window = @This();
 /// armed drag becomes active. Squared to avoid a sqrt in the hot move path.
 const DRAG_THRESHOLD_SQ: f32 = 4 * 4;
 
-/// Default drag-ghost size and its offset from the cursor (trails the pointer).
-const GHOST_W: f32 = 120;
-const GHOST_H: f32 = 22;
-const GHOST_OFFSET: f32 = 12;
-
 /// Input model of an overlay. See `framework/doc/overlay.md`.
 pub const OverlayPolicy = enum {
     /// Hit-tested; outside-press / ESC dismiss it. Menus, combobox popups.
@@ -115,10 +110,6 @@ drag_transfer: dnd.Transfer,
 drag_target:   ?*Component,
 /// Whether the last `onOver` accepted (drives whether `onDrop` fires).
 drag_accepted: bool,
-/// Default drag ghost: a simple box added as a `passthrough` overlay while a
-/// drag is active and repositioned to trail the cursor. Owned as a field
-/// (stable address; never destroyed via the tree).
-drag_ghost:   Component,
 allocator:    std.mem.Allocator,
 dirty_notify: Component.DirtyNotify,
 focus_controller: Component.FocusController,
@@ -184,7 +175,6 @@ pub fn init(
         .drag_transfer    = undefined,
         .drag_target      = null,
         .drag_accepted    = false,
-        .drag_ghost       = Component.init(allocator, &ghost_vtable),
         .allocator        = allocator,
         .dirty_notify     = undefined,     // filled in install
         .focus_controller = undefined,     // filled in install
@@ -815,17 +805,8 @@ fn beginDrag(self: *Window, wx: f32, wy: f32) bool {
     self.dragging = true;
     self.drag_target = null;
     self.drag_accepted = false;
-    // Default ghost: a small box trailing the cursor, as a passthrough overlay
-    // (best-effort — the drag still works without it).
-    self.drag_ghost.size = .{ .width = GHOST_W, .height = GHOST_H };
-    self.positionGhost(wx, wy);
-    self.addPassthroughOverlay(&self.drag_ghost) catch {};
     self.updateDrag(wx, wy);
     return true;
-}
-
-fn positionGhost(self: *Window, wx: f32, wy: f32) void {
-    self.drag_ghost.position = .{ .x = wx + GHOST_OFFSET, .y = wy + GHOST_OFFSET };
 }
 
 /// Resolve the drop target under the cursor, drive enter/over/leave, and record
@@ -850,8 +831,11 @@ fn updateDrag(self: *Window, wx: f32, wy: f32) void {
     } else {
         self.drag_accepted = false;
     }
-    // Trail the ghost and request a repaint so it follows the cursor.
-    self.positionGhost(wx, wy);
+    // Hand the source the cursor position (window coords) every move, so it can
+    // drive its own ghost / feedback. nimbus draws no ghost itself.
+    if (self.drag_source_c) |src| {
+        if (src.drag_source.?.onDrag) |on_drag| on_drag(src.drag_source.?.user_data, wx, wy);
+    }
     self.repaint();
 }
 
@@ -885,31 +869,11 @@ fn cancelDrag(self: *Window) void {
 }
 
 fn endDrag(self: *Window) void {
-    self.removeOverlay(@ptrCast(&self.drag_ghost));
     self.dragging = false;
     self.drag_target = null;
     self.drag_source_c = null;
     self.drag_accepted = false;
     self.repaint();
-}
-
-// ── default drag ghost (a `passthrough` overlay) ─────────────────────────
-const ghost_vtable = Component.VTable{
-    .install      = ghostInstall,
-    .uninstall    = ghostUninstall,
-    .paint        = ghostPaint,
-    .processEvent = ghostProcessEvent,
-    .destroy      = ghostDestroy,
-};
-
-fn ghostInstall(_: *Component) !void {}
-fn ghostUninstall(_: *Component) void {}
-fn ghostProcessEvent(_: *Component, _: *awt.Event) void {}
-fn ghostDestroy(_: *Component, _: std.mem.Allocator) void {}
-
-fn ghostPaint(self: *Component, g: *awt.Graphics) void {
-    g.setColor(awt.Graphics.Color.rgba(0.20, 0.52, 1.0, 0.5));
-    g.fillRect(.{ .x = 0, .y = 0, .width = self.size.width, .height = self.size.height });
 }
 
 /// Build a `DragEvent` with the cursor translated into `target`-local coords.

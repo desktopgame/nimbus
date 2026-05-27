@@ -99,7 +99,7 @@ pub fn addPassthroughOverlay(self: *Window, component: *Component) !void;
 
 ## 実装状況
 * `modal_popup`: 実装済み（menu / combobox / popup menu）。
-* `passthrough`: 実装済み。`OverlayEntry.policy` と `addPassthroughOverlay`、ヒットテスト / dismiss で `passthrough` をスキップする分岐を入れた。最初の利用者は DnD のドラッグゴースト — ドラッグ司令塔（`Window`）が既定ゴースト（半透明の小矩形、`Window.drag_ghost`）を `addPassthroughOverlay` で乗せ、移動ごとにカーソルへ追従させ、ドラッグ終了で `removeOverlay` する。`dnd.md`「描画 (ゴースト / 挿入先)」を参照。
+* `passthrough`: 実装済み。`OverlayEntry.policy` と `addPassthroughOverlay`、ヒットテスト / dismiss で `passthrough` をスキップする分岐を入れた。**nimbus は既定ゴーストを描かない** — 利用者がゴーストを出したいとき、`DragSource.onDragStart` で `addPassthroughOverlay`、`onDrag`（ウィンドウ座標）で位置更新、`onDragDone` で `removeOverlay` する。実例は `examples/widget_listdnd`（ラベルをゴーストにする）。`dnd.md`「描画 (ゴースト / 挿入先)」を参照。
 
 ## 機能要望
 * z 順の明示制御 / 常時最前面の指定

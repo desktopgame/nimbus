@@ -88,6 +88,13 @@ pub const DragSource = struct {
     /// A drag gesture was recognized on this component at local (`x`, `y`).
     /// Build and return the transfer to carry, or null to suppress the drag.
     onDragStart: *const fn (self: *anyopaque, x: f32, y: f32) ?Transfer,
+    /// Optional: called every move while the drag is active, with the cursor in
+    /// **window** coordinates. The per-move hook for the source side (symmetric
+    /// with `DropTarget.onOver`). Use it to drive a ghost: nimbus draws none —
+    /// a source that wants one registers a `passthrough` overlay in
+    /// `onDragStart`, repositions it here, and removes it in `onDragDone`. See
+    /// `dnd.md`「描画 (ゴースト / 挿入先)」.
+    onDrag: ?*const fn (self: *anyopaque, x: f32, y: f32) void = null,
     /// Optional: the drag finished. `performed` is the action actually carried
     /// out, or null if no drop happened (cancelled / not accepted) — a move
     /// source then keeps its original.
