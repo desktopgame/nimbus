@@ -460,3 +460,5 @@ for (rows) |*r| try list.model.add(@ptrCast(r));
 * 同じセル機構の 2 次元拡張としての Table (行 / 列)、 階層版としての Tree
 * `CellEditor` (「編集」参照) — セルを編集モードへトグルする機構。 List では不要だが Table / Tree で必須
 * incremental search (キー入力で先頭一致する item へジャンプ)
+* `ListModel` の順序変更 op (`move(from, to)` / `insert(idx, item)`) — 行の drag-to-reorder に要る (`dnd.md`「List の行並べ替え」)。 現状は `clear` + `add` 再投入で代用。 モデル層の追加で List ウィジェット本体は非変更
+* drop-indicator フック — 行間の挿入線を描くための組み込みの便宜フック。 必須ではない: `List` ソースを変えずとも vtable 装飾 (元の `paint` を呼んでから線を描く) か passthrough overlay で出せる (`dnd.md`「List の行並べ替え」)。 頻用するなら標準化する候補という位置づけ

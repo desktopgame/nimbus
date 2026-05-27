@@ -273,6 +273,199 @@ const DropBox = struct {
 // };
 ```
 
+### List の行並べ替え (自身への drop)
+`List` の行をドラッグして同じ `List` の別位置に落とし、 並べ替える。 **`List` ウィジェット本体 (`paint` / `processEvent` / 選択ロジック) は書き替えずに実装できる** — ドラッグ元能力をセルの root に、 ドロップ先能力を `List` の `Component` に、 それぞれ**外から付ける**だけ。 これは能力をフィールドで持つ設計 (「能力をフィールドに置く理由」) がコンポジションで素直に拡張できることの実証でもある。
+
+非変更で済むことの内訳:
+
+* **ドラッグ元** — セルの root に `drag_source` を factory で付ける。 ジェスチャ認識は司令塔 (`Window`) がやるので `List` は関与しない (press の選択はそのまま動き、 閾値超えで drag が乗る)。
+* **ドロップ先 / 並べ替え** — `list.asComponent().drop_target` を外から設定する。 `onOver` が公開 API の `getRowHeight` で挿入位置を算出し、 `onDrop` がモデルを並べ替える。
+* **開始行の保持** — ドラッグ開始行はセルでなく**共有コントローラ**に覚える。 セルは recycle で別行へ化けるため (`list.md`「状態の置き場所」)。 source == target なので並べ替えは `onDrop` で完結し、 `onDragDone` は使わない (「自分にドロップする」)。
+
+非変更で済まないのは**モデルの順序変更**だけ — 行順を変えるので `ListModel` に順序変更 op (`move`) が要る。 モデル層の追加で、 現状 API の `clear` + `add` 再投入でも代用できる (`List` ウィジェットの挙動ではない)。
+
+挿入線の描画は、 次のいずれでも `List` ソースを変えずに出せる:
+
+* **vtable 装飾 (推奨)** — `List` の `Component.vtable` を、 「`paint` だけ拡張し他メソッドは元へ委譲する」装飾 vtable に差し替える。 拡張 `paint` は**先に元の `List.paint` を呼んでから**挿入線を描く。 線が `List` 本来の描画と同じ `Graphics` (同じ translate / clip) の上に乗るので **scroll / clip が自動で追従**する。 これは `ScrollPane` が使うのと同じ vtable substitution の手 (`scrollpane.md`)。 注意 2 点: (1) 元の vtable は**グローバルに退避**する (型で共有。 property に入れると `Component.deinit` の「property 解放 → destroy」順で装飾 `destroy` が読む前に消える); (2) `paint` 以外の委譲 stub を書く必要がある。
+* **passthrough overlay** — 薄い線を passthrough overlay として出し `onOver` で位置更新する (`window.md`「入力ポリシー」)。 vtable に触らず単純だが、 線の位置を絶対座標で計算し overlay を別管理する必要がある。
+
+drop 位置 (`drop_at`) は `Reorder` コントローラに持たせ、 `onOver` が書き `onLeave` / `onDrop` でクリアする。 vtable 装飾の `paint` からは `self.getTyped(...)` か `List` への `@fieldParentPtr` で引く。
+
+```zig
+// 前提: Component / Event / Cell / CellContext / List / Label / Application は nimbus、
+// awt (Graphics / Color / Rect) は awt モジュール。
+const Row = struct { name: []const u8 };
+const row_tag = dnd.tagOf(Row);
+
+// 並べ替えの共有コントローラ (セルではなく List に 1 つ)。
+// drag 開始行と挿入位置を覚える (recycle で消えない場所)。
+const Reorder = struct {
+    list:    *List,
+    src_row: ?usize = null,
+    drop_at: ?usize = null,   // 挿入位置 (装飾 paint が読む)
+
+    fn onOver(ud: *anyopaque, e: *const dnd.DragEvent) bool {
+        const self: *Reorder = @ptrCast(@alignCast(ud));
+        if (e.transfer.flavor != .object or e.transfer.type_tag != row_tag) return false;
+        self.drop_at = self.insertionRow(e.y);
+        self.list.asComponent().repaint();
+        return true;
+    }
+
+    fn onLeave(ud: *anyopaque) void {
+        const self: *Reorder = @ptrCast(@alignCast(ud));
+        self.drop_at = null;
+        self.list.asComponent().repaint();
+    }
+
+    fn onDrop(ud: *anyopaque, e: *const dnd.DragEvent) void {
+        const self: *Reorder = @ptrCast(@alignCast(ud));
+        const src = self.src_row orelse return;
+        const dst = self.insertionRow(e.y);
+        self.drop_at = null;
+        self.list.model.move(src, dst); // ← モデルの順序を変える (move は ListModel の追加 op)
+        self.list.asComponent().repaint();
+        // source == target なので全部ここで完結。 onDragDone は使わない
+    }
+
+    // List ローカル y → 挿入位置 (0..=getSize)。 行の上半分なら手前、 下半分なら次
+    fn insertionRow(self: *Reorder, y: f32) usize {
+        const h = self.list.getRowHeight();
+        const i: usize = @intFromFloat(@max(0.0, (y + h / 2) / h));
+        return @min(i, self.list.model.getSize());
+    }
+
+    // 装飾 paint から呼ばれ、 挿入位置に 2px の線を描く。 List 本来の paint と同じ
+    // Graphics (translate / clip) の上に乗るので scroll / clip が自動追従する。
+    fn drawLine(self: *Reorder, g: *awt.Graphics, row: usize) void {
+        const h = self.list.getRowHeight();
+        const w = self.list.asComponent().size.width;
+        const y = @as(f32, @floatFromInt(row)) * h;
+        g.setColor(awt.Color.rgb(0.20, 0.52, 1.0)); // アクセント色 (適宜)
+        g.fillRect(.{ .x = 0, .y = y - 1, .width = w, .height = 2 });
+    }
+};
+
+// ── vtable 装飾: List のソースを変えずに paint へ挿入線を足す ──
+// 元の List vtable は型で共有なのでグローバルに 1 つ退避する
+// (property に入れると Component.deinit の「property 解放 → destroy」順で
+//  装飾 destroy が読む前に消えるため。 reference: vtable decoration)。
+var list_orig_vt: *const Component.VTable = undefined;
+
+// paint 以外は元へ委譲するだけの stub
+fn fwdInstall(self: *Component) anyerror!void {
+    return list_orig_vt.install(self);
+}
+fn fwdUninstall(self: *Component) void {
+    list_orig_vt.uninstall(self);
+}
+fn fwdProcessEvent(self: *Component, ev: *Event) void {
+    list_orig_vt.processEvent(self, ev);
+}
+fn fwdDestroy(self: *Component, allocator: std.mem.Allocator) void {
+    list_orig_vt.destroy(self, allocator);
+}
+fn fwdReshape(self: *Component, new_size: Component.Size) void {
+    if (list_orig_vt.reshape) |r| r(self, new_size);
+}
+
+// 先に List 本来の描画 → その上に挿入線
+fn decorPaint(self: *Component, g: *awt.Graphics) void {
+    list_orig_vt.paint(self, g);
+    if (self.getTyped(Reorder)) |r| {
+        if (r.drop_at) |row| r.drawLine(g, row);
+    }
+}
+
+const decor_vt = Component.VTable{
+    .install      = fwdInstall,
+    .uninstall    = fwdUninstall,
+    .paint        = decorPaint,
+    .processEvent = fwdProcessEvent,
+    .destroy      = fwdDestroy,
+    .reshape      = fwdReshape,
+};
+
+// セル: 表示はラベル、 ドラッグ元として drag_source を持つ
+const RowCell = struct {
+    label:       *Label,
+    list:        *List,
+    reorder:     *Reorder,
+    current_row: usize = 0,
+
+    fn update(ud: *anyopaque, ctx: CellContext) void {
+        const self: *RowCell = @ptrCast(@alignCast(ud));
+        const row: *Row = @ptrCast(@alignCast(ctx.value));
+        self.label.setText(row.name) catch {};
+        self.current_row = ctx.index; // recycle で現在行を追従
+    }
+
+    // ドラッグ成立時: 開始行を共有コントローラへ記録し、 荷物を返す
+    fn onDragStart(ud: *anyopaque, x: f32, y: f32) ?dnd.Transfer {
+        _ = x;
+        _ = y;
+        const self: *RowCell = @ptrCast(@alignCast(ud));
+        self.reorder.src_row = self.current_row; // ★ recycle されても残る場所に保存
+        return .{
+            .flavor   = .object,
+            .ctx      = self.list.model.getElementAt(self.current_row).?,
+            .type_tag = row_tag,
+            .source   = self.list.asComponent(),
+        };
+    }
+
+    fn destroyCell(ud: *anyopaque, allocator: std.mem.Allocator) void {
+        const self: *RowCell = @ptrCast(@alignCast(ud));
+        const c = &self.label.component;
+        c.vtable.destroy(c, allocator);
+        allocator.destroy(self);
+    }
+};
+
+const Ctx = struct { app: *Application, list: *List = undefined, reorder: *Reorder = undefined };
+
+fn createRowCell(ud: *anyopaque, allocator: std.mem.Allocator) anyerror!Cell {
+    const cx: *Ctx = @ptrCast(@alignCast(ud));
+    const cell = try allocator.create(RowCell);
+    cell.* = .{ .label = try cx.app.label(""), .list = cx.list, .reorder = cx.reorder };
+    // ドラッグ元能力をセルの root に付ける (List 本体は触らない)
+    cell.label.component.drag_source = .{
+        .onDragStart = RowCell.onDragStart,
+        .user_data   = cell,
+        // onDragDone は不要 (自身への並べ替えは onDrop で完結)
+    };
+    return .{
+        .component = &cell.label.component,
+        .update    = RowCell.update,
+        .destroy   = RowCell.destroyCell,
+        .user_data = cell,
+    };
+}
+
+// ── 組み立て ──
+var reorder = Reorder{ .list = undefined };
+var ctx = Ctx{ .app = app, .reorder = &reorder };
+const list = try app.list(.{ .create = createRowCell, .user_data = &ctx });
+ctx.list = list;
+reorder.list = list;
+
+// List を drop 先にする (外から drop_target を設定。 List 本体は非変更)
+list.asComponent().drop_target = .{
+    .onOver    = Reorder.onOver,
+    .onLeave   = Reorder.onLeave,
+    .onDrop    = Reorder.onDrop,
+    .user_data = &reorder,
+};
+
+// vtable を装飾版へ差し替え、 装飾 paint が引けるよう reorder を property に置く。
+// reorder は呼び出し側所有なので destroy は null (Component には解放させない)。
+list_orig_vt = list.asComponent().vtable;
+list.asComponent().vtable = &decor_vt;
+try list.asComponent().putProperty(@typeName(Reorder), &reorder, null);
+
+for (rows) |*r| try list.model.add(@ptrCast(r));
+```
+
 ## 機能要望
 * ドロップ先の bubbling (最近傍が拒否したら祖先の受け側へ回す)
 * 受理アクションの細分 — 受け側が「copy なら受けるが move は不可」等を返し、 カーソルを copy / move で描き分ける
