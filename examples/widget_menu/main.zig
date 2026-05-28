@@ -78,54 +78,36 @@ fn onViewRuler(user_data: *anyopaque) void {
 }
 
 // ── right-click PopupMenu on content area ────────────────────────────────
+// Same vtable-decoration shape as widget_listdnd: copy Panel.vtable, override
+// only processEvent, and look up per-instance state from the Component's
+// property bag. No globals, no full delegation stubs.
 
 const ContextPanel = struct {
-    panel:     *nimbus.Panel,
-    popup:     *nimbus.PopupMenu,
-    state:     *State,
-    window:    *nimbus.Window,
-    saved_vt:  *const nimbus.Component.VTable,
-
-    var instance: ContextPanel = undefined;
+    popup:  *nimbus.PopupMenu,
+    window: *nimbus.Window,
 };
-
-pub const ctx_vtable = nimbus.Component.VTable{
-    .install      = ctxInstall,
-    .uninstall    = ctxUninstall,
-    .paint        = ctxPaint,
-    .processEvent = ctxProcessEvent,
-    .destroy      = ctxDestroy,
-};
-
-fn ctxInstall(self: *nimbus.Component) !void {
-    try ContextPanel.instance.saved_vt.install(self);
-}
-
-fn ctxUninstall(self: *nimbus.Component) void {
-    ContextPanel.instance.saved_vt.uninstall(self);
-}
-
-fn ctxPaint(self: *nimbus.Component, g: *awt.Graphics) void {
-    ContextPanel.instance.saved_vt.paint(self, g);
-}
-
-fn ctxDestroy(self: *nimbus.Component, allocator: std.mem.Allocator) void {
-    ContextPanel.instance.saved_vt.destroy(self, allocator);
-}
 
 fn ctxProcessEvent(self: *nimbus.Component, ev: *nimbus.Component.Event) void {
     switch (ev.payload) {
         .mouse => |m| {
             if (m.action == .press and m.button == .right) {
-                ContextPanel.instance.popup.show(ContextPanel.instance.window, m.x, m.y) catch {};
-                ev.consume();
-                return;
+                if (self.getTyped(ContextPanel)) |cp| {
+                    cp.popup.show(cp.window, m.x, m.y) catch {};
+                    ev.consume();
+                    return;
+                }
             }
         },
         else => {},
     }
-    ContextPanel.instance.saved_vt.processEvent(self, ev);
+    nimbus.Panel.vtable.processEvent(self, ev);
 }
+
+const ctx_vt = blk: {
+    var vt = nimbus.Panel.vtable;
+    vt.processEvent = ctxProcessEvent;
+    break :blk vt;
+};
 
 fn onCtxPaste(user_data: *anyopaque) void {
     const s: *State = @ptrCast(@alignCast(user_data));
@@ -209,14 +191,9 @@ pub fn main(init: std.process.Init) !void {
     try popup.add(&insert.component);
     defer popup.destroy();
 
-    ContextPanel.instance = .{
-        .panel    = content,
-        .popup    = popup,
-        .state    = &state,
-        .window   = &frame.window,
-        .saved_vt = content.container.component.vtable,
-    };
-    content.container.component.vtable = &ctx_vtable;
+    var ctx_panel = ContextPanel{ .popup = popup, .window = &frame.window };
+    content.container.component.vtable = &ctx_vt;
+    try content.container.component.putProperty(@typeName(ContextPanel), &ctx_panel, null);
 
     try nimbus.BorderLayout.add(&frame.window.container, .center, &content.container.component);
 
