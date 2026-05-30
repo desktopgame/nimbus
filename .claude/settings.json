@@ -22,6 +22,20 @@
       "Bash(zig build *)"
     ]
   },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/unsafe-on-edit.py"]
+          }
+        ]
+      }
+    ]
+  },
   "env": {
     "EDITOR": "code --wait",
     "VISUAL": "code --wait"

@@ -1,3 +1,7 @@
+---
+unsafe: true
+---
+
 # font
 フォントに関する設計ノート。
 freetype の薄いラッパー。指定 codepoint をビットマップにラスタライズする責務のみを持つ。
@@ -121,14 +125,6 @@ float nmGetGlyphAdvance(nmFont* self, uint32_t codepoint);
 bool nmFontHasGlyph(nmFont* self, uint32_t codepoint);
 
 フォントが指定 codepoint のグリフを持つか確認する。
-
-## awt-c で提供しないもの
-以下は上位レイヤーまたは利用者側の責任とする。
-* グリフアトラスの管理 — Zig 層で R8 テクスチャ + shelf packing として実装
-* テキストの shaping — HarfBuzz 等の連結処理は v1 未対応
-* 改行位置の決定 — line break iterator / 禁則処理は上位層
-* テキスト幅の累積計算 — 上位で glyph advance を累積
-* `nmDrawFont` 等のドロー API — 描画は `nmBuffer` / `nmPipeline` / `nmDraw` を組み合わせて上位層で実現
 
 ## 機能要望
 * 太字・斜体の合成 (`ftsynth` ベースで別 API として追加検討)
