@@ -1,3 +1,7 @@
+---
+unsafe: false
+---
+
 # device
 デバイスに関する設計ノート。
 

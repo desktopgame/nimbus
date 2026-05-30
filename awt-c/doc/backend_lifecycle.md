@@ -1,3 +1,7 @@
+---
+unsafe: false
+---
+
 # backend_lifecycle
 バックエンドのライフサイクルに関する設計ノート。
 

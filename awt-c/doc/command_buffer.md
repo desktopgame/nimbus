@@ -1,3 +1,7 @@
+---
+unsafe: false
+---
+
 # command_buffer
 コマンドバッファに関する設計ノート。
 GPU に投入するコマンドの記録単位。
