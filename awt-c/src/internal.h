@@ -176,6 +176,13 @@ void nmSetWindowPos(nmWindow* self, int x, int y);
  * to the GPU in pixel units. */
 void nmGetFramebufferSize(const nmWindow* self, int* width, int* height);
 
+/* Window's content scale (DPR). On a regular 1x display both values are 1.0;
+ * on Retina 2x they are 2.0; on Windows scaled to 150% they are 1.5.
+ * framebuffer = logical * scale. Use this when the upper layers need to
+ * convert between logical user coordinates and physical pixel coordinates
+ * (mouse coords from GLFW, font rasterization size, etc.). */
+void nmGetWindowContentScale(const nmWindow* self, float* xscale, float* yscale);
+
 /* ─── Event pump ──────────────────────────────────────────────────────── */
 
 void nmPollEvents(void);

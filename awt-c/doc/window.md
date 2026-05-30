@@ -116,6 +116,18 @@ void nmGetFramebufferSize(const nmWindow* self, int* width, int* height);
 ### 事前条件
 * `width` / `height` がいずれも NULL でないこと。違反した場合の動作は UB。
 
+## コンテンツスケールの取得
+void nmGetWindowContentScale(const nmWindow* self, float* xscale, float* yscale);
+
+ウィンドウが配置されているモニタの DPR (device pixel ratio) を取得する。
+`物理 = 論理 × スケール` の関係を持つ比率で、plain 1x display で 1.0、Retina で 2.0、Windows 150% で 1.5 など。
+通常 `*xscale == *yscale`。
+
+論理ポイント単位の値 (例えばフォントの pixel size) を物理ピクセルに変換する場合などに使う。
+
+### 事前条件
+* `xscale` / `yscale` がいずれも NULL でないこと。違反した場合の動作は UB。
+
 ## サイズ変更コールバックの登録
 void nmSetWindowResizeCallback(nmWindow* self, nmWindowResizeCallback cb, void* user_data);
 

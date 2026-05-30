@@ -910,8 +910,13 @@ fn onCursorPos(
     user_data: ?*anyopaque,
 ) callconv(.c) void {
     const win: *Window = @ptrCast(@alignCast(user_data.?));
-    win.cursor_x = @floatCast(x);
-    win.cursor_y = @floatCast(y);
+    // GLFW delivers cursor positions in framebuffer pixels on DPI-aware
+    // platforms. Widgets and bounds are in logical points, so divide by
+    // content scale at the boundary.
+    const scale: f64 = @floatCast(win.awt_window.contentScale());
+    const inv: f64 = if (scale > 0) 1.0 / scale else 1.0;
+    win.cursor_x = @floatCast(x * inv);
+    win.cursor_y = @floatCast(y * inv);
     const ev = awt.Event{
         .payload = .{ .mouse = .{
             .x = win.cursor_x,

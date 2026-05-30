@@ -368,8 +368,14 @@ pub fn drawImageScaled(self: *Graphics, image: Image, x: f32, y: f32, w: f32, h:
 pub fn drawString(self: *Graphics, s: []const u8, x: f32, y: f32) void {
     if (self.clipIsEmpty()) return;
     const font = self.current_font orelse return;
-    font.face.setPixelSize(font.pixel_size);
-    const ascender = font.face.metrics().ascender;
+    // Rasterize at framebuffer-pixel size for crisp HiDPI glyphs, then convert
+    // glyph metrics back to logical points for positioning. `scale` is 1.0 on
+    // 1x displays, 2.0 on Retina, 1.5 on Windows 150%, etc.
+    const scale: f32 = @as(f32, @floatFromInt(self.fb_w)) / @as(f32, @floatFromInt(self.window_w));
+    const inv_scale: f32 = if (scale > 0) 1.0 / scale else 1.0;
+    const phys_size: i32 = @max(1, @as(i32, @intFromFloat(@round(@as(f32, @floatFromInt(font.pixel_size)) * scale))));
+    font.face.setPixelSize(phys_size);
+    const ascender = font.face.metrics().ascender * inv_scale;
     const baseline_px_y = self.origin_y + y + ascender;
     const pen_px_x_start = self.origin_x + x;
 
@@ -393,12 +399,16 @@ pub fn drawString(self: *Graphics, s: []const u8, x: f32, y: f32) void {
         i += byte_len;
         if (cp == '\n') continue;
 
-        const info = self.ctx.atlas.getOrRasterize(font.face, font.pixel_size, cp) catch continue;
+        // Cache by phys_size so different scales don't collide.
+        const info = self.ctx.atlas.getOrRasterize(font.face, phys_size, cp) catch continue;
         if (info.bitmap_width > 0 and info.bitmap_height > 0) {
-            const w_f: f32 = @floatFromInt(info.bitmap_width);
-            const h_f: f32 = @floatFromInt(info.bitmap_height);
-            const left = pen_px_x + info.bearing_x;
-            const top = baseline_px_y - info.bearing_y;
+            // Glyph metrics from the atlas are in physical pixels — scale
+            // down to logical for quad placement; the GPU viewport will then
+            // upscale during NDC → framebuffer mapping for an exact-pixel hit.
+            const w_f: f32 = @as(f32, @floatFromInt(info.bitmap_width)) * inv_scale;
+            const h_f: f32 = @as(f32, @floatFromInt(info.bitmap_height)) * inv_scale;
+            const left = pen_px_x + info.bearing_x * inv_scale;
+            const top = baseline_px_y - info.bearing_y * inv_scale;
             const x0 = self.pxToNdcX(left);
             const x1 = self.pxToNdcX(left + w_f);
             const y0 = self.pxToNdcY(top);
@@ -414,7 +424,7 @@ pub fn drawString(self: *Graphics, s: []const u8, x: f32, y: f32) void {
             emitted += 1;
             if (emitted >= self.ctx.quad_index.max_quads) break;
         }
-        pen_px_x += info.advance_x;
+        pen_px_x += info.advance_x * inv_scale;
     }
     if (emitted == 0) return;
 

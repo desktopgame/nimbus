@@ -125,6 +125,12 @@ static void on_char(GLFWwindow* gw, unsigned int codepoint) {
 }
 
 int nmInitAwt(void) {
+#ifdef _WIN32
+    /* Per-monitor DPI awareness so the OS hands us real physical pixels
+     * instead of bitmap-scaling our swapchain. Failure (already set, or
+     * Windows < 10) is non-fatal. */
+    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+#endif
     if (glfwInit() != GLFW_TRUE) return -1;
     if (nm_font_internal_init() != 0) {
         glfwTerminate();
@@ -148,6 +154,10 @@ const char* nmGetBackendVersion(void) {
 nmWindow* nmCreateWindow(const char* title, int width, int height) {
     /* No OpenGL context: rendering is handled by the chosen backend (DX12 etc). */
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    /* Treat (width, height) as logical points: GLFW multiplies by the target
+     * monitor's content scale so the window is created at the correct physical
+     * pixel size. With this hint the framebuffer is also scaled accordingly. */
+    glfwWindowHint(GLFW_SCALE_TO_MONITOR, GLFW_TRUE);
     GLFWwindow* w = glfwCreateWindow(width, height, title, NULL, NULL);
     if (!w) return NULL;
 
@@ -361,6 +371,10 @@ void nmGetWindowSize(const nmWindow* self, int* width, int* height) {
 
 void nmGetFramebufferSize(const nmWindow* self, int* width, int* height) {
     glfwGetFramebufferSize((GLFWwindow*)self, width, height);
+}
+
+void nmGetWindowContentScale(const nmWindow* self, float* xscale, float* yscale) {
+    glfwGetWindowContentScale((GLFWwindow*)self, xscale, yscale);
 }
 
 /* ─── Internal accessors used by backend C files ──────────────────────── */

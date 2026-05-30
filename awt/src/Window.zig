@@ -32,6 +32,18 @@ pub fn setShouldClose(self: Window, value: bool) void {
 pub const Size = struct { width: i32, height: i32 };
 pub const Point = struct { x: i32, y: i32 };
 
+/// Per-window DPI content scale (a.k.a. DPR). 1.0 on plain 1x displays,
+/// 2.0 on Retina, 1.5 on Windows at 150%, etc. `framebufferSize` divided
+/// by this gives `size`. Mouse coords delivered by the OS callback are in
+/// framebuffer pixels — divide by this scale to translate to logical points.
+pub fn contentScale(self: Window) f32 {
+    var sx: f32 = 1.0;
+    var sy: f32 = 1.0;
+    c.nmGetWindowContentScale(self.handle, &sx, &sy);
+    // x and y scale are practically always equal on supported platforms.
+    return sx;
+}
+
 /// Window position in logical screen units (top-left, relative to the
 /// virtual screen). Pairs with `setPos`; used e.g. to center a dialog.
 pub fn pos(self: Window) Point {
@@ -49,7 +61,13 @@ pub fn setPos(self: Window, x: i32, y: i32) void {
 /// `size` reports). Fires the resize callback. Pairs with `setSize` driven
 /// from the framework layer's window-geometry sync.
 pub fn setSize(self: Window, width: i32, height: i32) void {
-    c.nmSetWindowSize(self.handle, @intCast(width), @intCast(height));
+    // GLFW interprets setSize args as screen coordinates which on DPI-aware
+    // Windows are physical pixels. Multiply by content scale so logical
+    // input produces the right physical window.
+    const scale = self.contentScale();
+    const w_phys: c_int = @intFromFloat(@as(f32, @floatFromInt(width)) * scale);
+    const h_phys: c_int = @intFromFloat(@as(f32, @floatFromInt(height)) * scale);
+    c.nmSetWindowSize(self.handle, w_phys, h_phys);
 }
 
 /// Show or hide the OS window. Dialogs are created hidden and toggled on
@@ -77,12 +95,17 @@ pub fn setFloating(self: Window, floating: bool) void {
 
 /// Logical window size in points — what was requested at `init`. On HiDPI
 /// displays this is smaller than `framebufferSize`; user-facing drawing
-/// coordinates should be in these units.
+/// coordinates should be in these units. Derived from framebuffer / scale
+/// because GLFW's screen-coordinate API on Windows returns pixels under
+/// per-monitor DPI awareness (so we can't trust glfwGetWindowSize alone).
 pub fn size(self: Window) Size {
-    var w: c_int = 0;
-    var h: c_int = 0;
-    c.nmGetWindowSize(self.handle, &w, &h);
-    return .{ .width = @intCast(w), .height = @intCast(h) };
+    const fb = self.framebufferSize();
+    const scale = self.contentScale();
+    if (scale <= 0) return fb;
+    return .{
+        .width = @intFromFloat(@as(f32, @floatFromInt(fb.width)) / scale),
+        .height = @intFromFloat(@as(f32, @floatFromInt(fb.height)) / scale),
+    };
 }
 
 /// Framebuffer pixel size — the actual drawable resolution. On HiDPI displays

@@ -34,6 +34,18 @@ baseline 派の API が必要になったら `drawStringAtBaseline(s, x, baselin
 `\n` を含む文字列は **改行を無視 (リテラル文字としても描かない)** する。
 複数行レンダリングが必要なら呼び出し側で行ごとに `drawString` を呼ぶ。
 
+## drawString と HiDPI
+利用者が指定する `Font.pixel_size` は **論理ポイント** だが、freetype に渡す値は **物理ピクセル** でなければクッキリ rasterize されない (= 論理サイズで rasterize すると Retina で米粒大になる)。
+`drawString` は内部で `scale = fb_w / window_w` を計算し、`pixel_size × scale` を freetype に渡す。
+
+得られたグリフのメトリクス (bitmap 幅 / 高さ / bearing / advance) はすべて物理単位なので、quad 配置時には `1/scale` を掛けて論理に戻す。
+このおかげで:
+- グリフのテクスチャは物理ピクセル等倍 (= 鮮明)
+- quad の頂点座標は論理ポイント (= NDC 変換と整合)
+- viewport がフレームバッファ全体に張ってあるので、NDC → ピクセル変換で自動的に物理スケールにマップされる (= 1 物理ピクセル = 1 物理ピクセルの bilinear なし)
+
+`GlyphAtlas` のキャッシュキーは物理 pixel size を含めるので、同じフォントが複数スケール環境に居ても衝突しない。
+
 ## 状態管理: save/restore は持たない
 `clip` が新しい Graphics を返す方式 (上述) にしたことで、`save` / `restore` に相当するネストはクリップ経由で表現できる。
 
