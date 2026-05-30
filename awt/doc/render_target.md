@@ -98,4 +98,3 @@ pub fn readbackToPng(
 * サイズ取得アクセサ (`size()` 等)。現状は生成時の寸法を利用側が覚えておく必要がある。
 * スワップチェイン由来 RT の `readback` 対応 (実ウィンドウ画面のスナップショット用途)。
 * `readbackToBmp` / `readbackToBytes` 等の他フォーマット対応。
-* 期待 PNG との diff ヘルパ (ゴールデン画像テスト用)。

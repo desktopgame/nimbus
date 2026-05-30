@@ -1,21 +1,19 @@
 //! Framework-level golden-image snapshot tests.
 //!
 //! Same harness as `awt/tests/snapshot_test.zig` (compares offscreen
-//! renders against PNG fixtures), but the scenes here come from the
-//! framework's widget tree. Fixtures live under
+//! renders against PNG fixtures via `awt.snapshot`), but the scenes here
+//! come from the framework's widget tree. Fixtures live under
 //! `framework/tests/fixtures/`; mismatches drop artifacts in
 //! `tmp/snapshot_failures/`. Set `NIMBUS_UPDATE_SNAPSHOTS=1` to
 //! regenerate every fixture.
 
 const std = @import("std");
 const awt = @import("awt");
-const zigimg = @import("zigimg");
 const scenes = @import("framework_scenes");
 
 const FIXTURE_DIR = "framework/tests/fixtures";
 const FAILURE_DIR = "tmp/snapshot_failures";
 const TOLERANCE: u8 = 1;
-const READ_BUFFER_SIZE = zigimg.io.DEFAULT_BUFFER_SIZE;
 
 var awt_initialized: bool = false;
 
@@ -160,15 +158,15 @@ fn snapshotCompare(
 
     if (shouldUpdate(allocator)) {
         try ensureDir(FIXTURE_DIR);
-        try writePng(allocator, fixture_path, actual, w, h);
+        try awt.snapshot.writePng(allocator, std.testing.io, fixture_path, actual, w, h);
         std.debug.print("[snapshot] updated: {s}\n", .{fixture_path});
         return;
     }
 
-    const expected = readPng(allocator, fixture_path, w, h) catch |err| switch (err) {
+    const expected = awt.snapshot.readPng(allocator, std.testing.io, fixture_path, w, h) catch |err| switch (err) {
         error.FileNotFound => {
             try ensureDir(FIXTURE_DIR);
-            try writePng(allocator, fixture_path, actual, w, h);
+            try awt.snapshot.writePng(allocator, std.testing.io, fixture_path, actual, w, h);
             std.debug.print(
                 "[snapshot] created: {s} (first run — review and commit)\n",
                 .{fixture_path},
@@ -179,14 +177,19 @@ fn snapshotCompare(
     };
     defer allocator.free(expected);
 
-    comparePixels(actual, expected, TOLERANCE) catch |err| {
+    const result = awt.snapshot.compare(actual, expected, .{ .tolerance = TOLERANCE });
+    if (!result.ok()) {
+        std.debug.print(
+            "[snapshot] {} channel(s) exceed tolerance +-{} (max diff {})\n",
+            .{ result.mismatch_channels, TOLERANCE, result.max_diff },
+        );
         writeFailureArtifacts(allocator, scene.name, actual, expected, w, h) catch {};
         std.debug.print(
             "[snapshot] mismatch '{s}'. artifacts under {s}/\n",
             .{ scene.name, FAILURE_DIR },
         );
-        return err;
-    };
+        return error.SnapshotPixelMismatch;
+    }
 }
 
 fn shouldUpdate(allocator: std.mem.Allocator) bool {
@@ -197,78 +200,6 @@ fn shouldUpdate(allocator: std.mem.Allocator) bool {
 
 fn ensureDir(path: []const u8) !void {
     try std.Io.Dir.cwd().createDirPath(std.testing.io, path);
-}
-
-fn comparePixels(actual: []const u8, expected: []const u8, tolerance: u8) !void {
-    if (actual.len != expected.len) {
-        std.debug.print(
-            "[snapshot] size mismatch: actual={} expected={}\n",
-            .{ actual.len, expected.len },
-        );
-        return error.SnapshotSizeMismatch;
-    }
-    var max_diff: u8 = 0;
-    var mismatch_count: usize = 0;
-    for (actual, expected) |a, e| {
-        const d: u8 = if (a > e) a - e else e - a;
-        if (d > tolerance) {
-            mismatch_count += 1;
-            if (d > max_diff) max_diff = d;
-        }
-    }
-    if (mismatch_count > 0) {
-        std.debug.print(
-            "[snapshot] {} channel(s) exceed tolerance +-{} (max diff {})\n",
-            .{ mismatch_count, tolerance, max_diff },
-        );
-        return error.SnapshotPixelMismatch;
-    }
-}
-
-fn writePng(
-    allocator: std.mem.Allocator,
-    path: []const u8,
-    rgba: []const u8,
-    w: usize,
-    h: usize,
-) !void {
-    var img = try zigimg.Image.fromRawPixels(allocator, w, h, rgba, .rgba32);
-    defer img.deinit(allocator);
-
-    var write_buffer: [READ_BUFFER_SIZE]u8 = undefined;
-    try img.writeToFilePath(
-        allocator,
-        std.testing.io,
-        path,
-        write_buffer[0..],
-        .{ .png = .{} },
-    );
-}
-
-fn readPng(
-    allocator: std.mem.Allocator,
-    path: []const u8,
-    expected_w: usize,
-    expected_h: usize,
-) ![]u8 {
-    var read_buffer: [READ_BUFFER_SIZE]u8 = undefined;
-    var img = try zigimg.Image.fromFilePath(allocator, std.testing.io, path, read_buffer[0..]);
-    defer img.deinit(allocator);
-
-    if (img.width != expected_w or img.height != expected_h) {
-        std.debug.print(
-            "[snapshot] fixture {s} has size {}x{}, expected {}x{}\n",
-            .{ path, img.width, img.height, expected_w, expected_h },
-        );
-        return error.SnapshotSizeMismatch;
-    }
-
-    try img.convert(allocator, .rgba32);
-
-    const bytes = img.rawBytes();
-    const out = try allocator.alloc(u8, bytes.len);
-    @memcpy(out, bytes);
-    return out;
 }
 
 fn writeFailureArtifacts(
@@ -288,32 +219,17 @@ fn writeFailureArtifacts(
             "{s}/{s}_actual.png",
             .{ FAILURE_DIR, name },
         );
-        try writePng(allocator, path, actual, w, h);
+        try awt.snapshot.writePng(allocator, std.testing.io, path, actual, w, h);
     }
 
-    const diff = try allocator.alloc(u8, actual.len);
-    defer allocator.free(diff);
     if (expected.len == actual.len) {
-        var i: usize = 0;
-        while (i + 3 < actual.len) : (i += 4) {
-            const dr: u8 = if (actual[i] > expected[i]) actual[i] - expected[i] else expected[i] - actual[i];
-            const dg: u8 = if (actual[i + 1] > expected[i + 1]) actual[i + 1] - expected[i + 1] else expected[i + 1] - actual[i + 1];
-            const db: u8 = if (actual[i + 2] > expected[i + 2]) actual[i + 2] - expected[i + 2] else expected[i + 2] - actual[i + 2];
-            diff[i] = amp(dr);
-            diff[i + 1] = amp(dg);
-            diff[i + 2] = amp(db);
-            diff[i + 3] = 255;
-        }
+        const diff = try awt.snapshot.diffImage(allocator, actual, expected);
+        defer allocator.free(diff);
         const path = try std.fmt.bufPrint(
             &path_buf,
             "{s}/{s}_diff.png",
             .{ FAILURE_DIR, name },
         );
-        try writePng(allocator, path, diff, w, h);
+        try awt.snapshot.writePng(allocator, std.testing.io, path, diff, w, h);
     }
-}
-
-fn amp(d: u8) u8 {
-    const scaled: u32 = @as(u32, d) * 5;
-    return if (scaled > 255) 255 else @intCast(scaled);
 }

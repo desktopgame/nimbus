@@ -227,7 +227,6 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{
             .{ .name = "awt", .module = awt_mod },
-            .{ .name = "zigimg", .module = zigimg_mod },
             .{ .name = "scenes", .module = scenes_mod },
         },
     });
@@ -264,7 +263,6 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{
             .{ .name = "awt", .module = awt_mod },
-            .{ .name = "zigimg", .module = zigimg_mod },
             .{ .name = "framework_scenes", .module = framework_scenes_mod },
         },
     });
