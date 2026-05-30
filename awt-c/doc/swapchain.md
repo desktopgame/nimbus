@@ -1,3 +1,7 @@
+---
+unsafe: true
+---
+
 # swapchain
 スワップチェインに関する設計ノート。
 ちなみに、`Swapchain` と `SwapChain` の表記がウェブ上には存在する。
@@ -13,11 +17,6 @@ awt の内部で定義された抽象化済みの型については保持して�
 ここには、ウィンドウごとに参照されるオブジェクトを保持する。
 たとえば、以下のようなもの。
 * IDXGISwapChain
-
-## バッファ構成
-ダブルバッファを提供する。
-バックバッファはスワップチェイン由来のレンダーターゲットとして公開される。
-カラー / ステンシルのフォーマットなど、レンダーターゲットとしての性質は `render_target.md` を参照。
 
 ## スワップチェインの生成
 nmSwapchain* nmCreateSwapchain(const nmDevice* device, const nmWindow* window);

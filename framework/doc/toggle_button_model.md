@@ -1,3 +1,7 @@
+---
+unsafe: true
+---
+
 # toggle_button_model
 チェックボックス / ラジオボタン / トグルメニュー項目の共通モデル。
 `ButtonModel` (押下・armed・hover・enabled) を embed し、 加えて二値の `selected` フラグを持つ。
@@ -84,23 +88,6 @@ pub fn setGroupHook(self: *ToggleButtonModel, hook: ?GroupHook) void;
 
 `group_hook` を設定 / 解除する (`null` で解除)。
 `ButtonGroup` が `add` / `remove` で呼ぶ内部向け API で、 利用者が直接呼ぶことは想定しない。
-
----
-
-## button フィールドへの直接アクセス
-press / armed / rollover / enabled の操作 / 取得には、 ラッパーを介さず `model.button.setPressed(...)` / `model.button.isEnabled()` のように **直接アクセス**する。
-Zig の慣用 (`component.md`「派生型から Component メソッドへのアクセス」と同じ方針) で、 委譲メソッドを生やさないことでボイラープレートを避ける。
-
-```zig
-// widget 側の処理イメージ
-const btn = &cb.model.button;
-if (!btn.enabled) return;
-btn.setPressed(true);
-btn.setArmed(true);
-// ... toggle 反転は ToggleButtonModel API で
-cb.model.setSelected(!cb.model.isSelected());
-cb.model.fireAction();
-```
 
 ## 機能要望
 * 三状態 (intermediate / mixed) 対応 — ツリーチェックボックス等で「子の一部だけ選択」を表現したい場合に追加 (`selected: enum { off, on, mixed }`)。 現状は二値固定

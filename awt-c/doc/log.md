@@ -1,3 +1,7 @@
+---
+unsafe: true
+---
+
 # log
 内部ログ出力に関する設計ノート。
 nimbus 内部で発生したエラー・警告・情報メッセージを利用者側に通知する仕組み。
@@ -19,15 +23,6 @@ typedef void (*nmLogCallback)(nmLogLevel level, const char* category, const char
 
 `message` は NUL 終端された UTF-8 文字列。
 コールバック呼び出しの間のみ有効で、それ以降の参照を保持したい場合は呼び出し側で複製する。
-
-## ログレベルの想定用途
-* `nmLogLevelDebug`: 開発時の詳細追跡 (リソース生成ログ等)。本番ではコールバック側でフィルタ可能。
-* `nmLogLevelInfo`: 通常の動作情報 (`"device created (adapter: ...)"` 等)。
-* `nmLogLevelWarn`: 動作は継続するが注意が必要 (廃止予定 API の使用、非推奨フォーマット等)。
-* `nmLogLevelError`: 失敗した操作のエラー詳細 (シェーダーコンパイル失敗時のエラーメッセージ等)。
-
-エラーで関数が失敗した場合は、`NULL` 返却に加えてこのチャネルに詳細メッセージが流れる。
-利用者はコールバックを設定することでエラーの原因を取得できる。
 
 ## ログコールバックの設定
 void nmSetLogCallback(nmLogCallback cb, void* user_data);

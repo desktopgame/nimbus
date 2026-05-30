@@ -1,3 +1,7 @@
+---
+unsafe: true
+---
+
 # popup_menu
 任意の位置に表示できる popup 形式のメニュー。
 Swing の `JPopupMenu` 相当。
@@ -90,33 +94,6 @@ popup を Window の overlays 層から外す。
 通常、`add` は popup が閉じている時に呼ぶ前提。
 `open == true` の状態で `add` を呼んだ時の挙動は **未定義**（debug ビルドでは assert で弾く）。
 利用者は「メニュー構成を組む → show → ユーザ操作 → hide → 必要なら構成を変える → show」の流れに従う。
-
----
-
-## Menu との関係
-PopupMenu と Menu は popup の挙動が酷似している（同じ item 型を縦に並べる、外クリックで閉じる、Escape で閉じる）。
-内部実装は popup Container の管理ロジックを共有してよい（実装の自由）。
-
-API として分かれているのは **トリガと所有モデル**が違うため：
-
-| | Menu | PopupMenu |
-|---|---|---|
-| トリガ | MenuBar クリック / 親 Menu の hover | 利用者の `show(x, y)` |
-| ラベル | あり（バー / 行のテキスト） | なし（popup 本体のみ） |
-| ツリー位置 | MenuBar / 他 Menu の子 | コンポーネントツリーに属さない |
-| Component 派生 | ○ | × |
-
-## 外クリックでの dismiss
-popup の外がクリックされたら自動で `hide` する。
-これは Window 側の overlay dispatch が「modal overlay 外のクリックは dismiss」として実装することを想定（`doc/menu-bar-requirements.md`「モーダル性」「dismiss 条件」参照）。
-PopupMenu 自身は dismiss callback を受け取って `hide` を呼ぶだけ。
-
-## item クリックでの自動 dismiss
-PopupMenu の item が ActionListener を発火したら自動的に `hide` する。
-これは PopupMenu の `add` 内部で item の model に内部 ActionListener を登録することで実現する。
-利用者が ActionListener を追加する時、PopupMenu の listener と独立に動く（fire は両方に飛ぶ）。
-
-サブメニュー（Menu を popup の中に入れた場合）は item ではなく Menu なので、Menu 自身の popup を開くだけで PopupMenu は閉じない（カスケード popup を維持する）。
 
 ## 利用例
 右クリックメニュー（コンテキストメニュー）。

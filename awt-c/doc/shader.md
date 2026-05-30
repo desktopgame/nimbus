@@ -1,3 +1,7 @@
+---
+unsafe: true
+---
+
 # shader
 シェーダーに関する設計ノート。
 頂点シェーダーとピクセルシェーダーをコンパイル / 保持する仕組みを提供する。
@@ -23,13 +27,6 @@ awt の内部で定義された抽象化済みの型については保持して�
 
 シェーダーソースの言語は現在のプラットフォームに依存する (Windows なら HLSL、macOS なら MSL)。
 複数言語の管理は呼び出し側 (awt 層) の責務。
-
-## エントリ関数名の規約
-シェーダーのエントリ関数名は `stage` ごとに固定し、呼び出し側で指定しない。
-* `nmShaderStageVertex` → `vsMain`
-* `nmShaderStagePixel` → `psMain`
-
-DX12 では `D3DCompile()` にエントリ関数名を要求されるが、nimbus 内部で上記名に固定して隠蔽する。
 
 ## シェーダーのコンパイル
 nmShader* nmCompileShader(nmShaderStage stage, const char* source);
