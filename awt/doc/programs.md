@@ -1,5 +1,5 @@
 ---
-unsafe: true
+unsafe: false
 ---
 
 # programs
@@ -53,6 +53,6 @@ pub fn ProgramFromMeta(comptime meta: ProgramMeta) type;
 `ProgramFromMeta` はメタデータから program 型を comptime で生成する。
 
 ## 機能要望
-* シェーダーの事前コンパイル (現状はランタイムコンパイル、起動時間短縮の余地)。
+* シェーダーの事前コンパイル (現状はランタイムコンパイル、起動時間短縮の余地)。優先度高。
 * 1 つの program で複数の uniform ブロック (`meta.uniforms.len > 1`) を扱う API。現状 `bindUniforms` は最初のブロックのみをバインドする。
 * メタデータからシェーダー側の宣言 (HLSL / MSL の `register` / `cbuffer` 等) を自動生成する仕組み。現状はシェーダー側を作者が手書きするので、メタデータと食い違うリスクが残る。
