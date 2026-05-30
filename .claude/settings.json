@@ -29,8 +29,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python",
-            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/unsafe-on-edit.py"]
+            "command": "uv",
+            "args": ["run", "${CLAUDE_PROJECT_DIR}/.claude/hooks/unsafe-on-edit.py"]
           }
         ]
       }
