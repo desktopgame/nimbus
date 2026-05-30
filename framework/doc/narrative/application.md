@@ -3,7 +3,7 @@ unsafe: true
 ---
 
 # application
-Application の責務・ファクトリ方針・OS との同期・イベントキュー・タイマー・SecondaryLoop・共有リソース。
+Application の責務・ファクトリ方針・OS との同期・イベントキュー・タイマー・共有リソース。
 
 ## 責務
 * アプリ全体の **アロケータ所有者**（ウィジェット / ウィンドウは全部ここの allocator で確保される）
@@ -91,15 +91,11 @@ caret 点滅、ツールチップの遅延表示、tween アニメーション�
 * タイマー登録の所有権は Application。`clearTimer` を呼ばずに widget を destroy するとコールバックが解放済みメモリを触る。widget の `uninstall` で必ず `clearTimer` を呼ぶ規約
 * 発火順は「due_time の昇順」ではなく `timers` への登録順なので、同時刻に複数 due があるケースでは登録順に発火する (ms 単位で別なら昇順と等価)
 
-## SecondaryLoop
-入れ子イベントループ。
-`Application.run()` の中からさらに小さなイベントループを回し、何らかの条件が満たされたら呼び出し元に戻る。
-Swing の SecondaryLoop / Qt の QEventLoop に相当する。
+## 入れ子イベントループ
+モーダルダイアログは `Application.run()` の中からさらに小さなイベントループを回す。
+`Dialog.showModal` がインスタンス固有の `modal_done` フラグを持ち、`Application.modal_stack` がネスト順を管理する (`framework/doc/dialog.md` 参照)。
 
-主な用途は将来追加されるモーダルダイアログの実装だが、それ以外にも「同期的に応答待ちしたいがイベントは流したい」という場面で利用者が直接使える。
-
-SecondaryLoop は awt 側のプリミティブとして提供される。
-Application は内部実装では利用しないが、必要なら利用者が直接インスタンス化して使用する。
+入れ子ループの典型的な per-iteration 処理 (`fireDueTimers` / `drain` / dirty ウィンドウの redraw / close 回収) は `Application.tickOnce` に集約されていて、メインループと同じものを使う。
 
 ## 共有リソース
 

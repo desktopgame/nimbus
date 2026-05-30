@@ -23,7 +23,6 @@ pub const programs = @import("programs.zig");
 pub const Graphics = @import("Graphics.zig");
 pub const Event = @import("Event.zig");
 pub const EventQueue = @import("EventQueue.zig");
-pub const SecondaryLoop = @import("SecondaryLoop.zig");
 pub const snapshot = @import("snapshot.zig");
 
 /// Wake the UI thread blocked in `waitEvents`. Safe from any thread.

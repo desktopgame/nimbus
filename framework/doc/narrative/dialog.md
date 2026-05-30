@@ -64,7 +64,7 @@ move / scroll / release のような受動的イベントでは点滅させな�
 この入れ子ループは `app.run` と同じく **タイマー対応**（最も近い timer の `due_time` まで `waitEventsTimeout`、なければ `waitEvents`）で、毎反復 `Application.tickOnce`（`fireDueTimers` / `drain` / dirty ウィンドウの `redraw` / close 回収）を呼ぶ。
 `close` が `modal_done` を立てるとループを抜ける。
 
-タイマー対応なので、モーダル中もダイアログ内 `TextField` のキャレット点滅などタイマー駆動の UI が正しく動く（`awt.SecondaryLoop` の素の `waitEvents` だとタイマーが次のイベントまで止まるため、Dialog は `SecondaryLoop` を使わず独自ループを回す）。
+タイマー対応なので、モーダル中もダイアログ内 `TextField` のキャレット点滅などタイマー駆動の UI が正しく動く（素の `awt.waitEvents` だけでは次のイベントが来るまで止まるため、`Application.earliestDueIn` を見て `waitEventsTimeout` で起こす形にしている）。
 モーダル中もダイアログ・オーナー双方が描画され、別スレッドからの `invokeLater` も消化される。
 
 ## 位置とサイズ

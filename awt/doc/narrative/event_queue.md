@@ -40,9 +40,6 @@ Application のイベントループでは：
 
 トレードオフは「OS コールバックから widget に届くまで 1 イベントループ分の latency が乗る」だが、60fps なら 16ms 未満で体感はほぼ無い。
 
-## SecondaryLoop との関係
-SecondaryLoop も内部で `awt.waitEvents` を呼ぶので、ネストしたループ中でも `invokeLater` でポストされたタスクは消化される（SecondaryLoop が drain を呼ぶ前提、`secondary_loop.md` 参照）。
-
 ## 期待される利用パターン
 別スレッドで時間のかかる処理を実行し、結果を UI に反映する典型。
 

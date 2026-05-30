@@ -2,7 +2,7 @@
 //! or modeless (non-blocking). See `framework/doc/dialog.md`.
 //!
 //! Modality is a show-time choice, not a separate type (mirrors Swing's
-//! JDialog): `showModal` runs a nested `awt.SecondaryLoop` and blocks the
+//! JDialog): `showModal` runs a nested timer-aware event loop and blocks the
 //! caller until `close` is called; `show` just registers the window and
 //! returns. Lifetime is caller-owned — `showModal` leaves the Dialog and its
 //! widget tree alive after returning so the caller can read widget state and
@@ -100,10 +100,9 @@ pub fn showModal(self: *Dialog) Result {
     self.window.awt_window.focus();
     self.window.repaint();
 
-    // Nested event loop. Unlike `awt.SecondaryLoop` (plain waitEvents), this
-    // is timer-aware — it wakes on the soonest pending timer — so caret blink
-    // and the attention-flash animation keep ticking while modal. Exits when
-    // `close` sets `modal_done`.
+    // Nested timer-aware event loop: wakes on the soonest pending timer so
+    // caret blink and the attention-flash animation keep ticking while modal.
+    // Exits when `close` sets `modal_done`.
     while (!self.modal_done) {
         if (self.app.earliestDueIn()) |delay| {
             awt.waitEventsTimeout(@max(0, delay));
