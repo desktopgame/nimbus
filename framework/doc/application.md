@@ -1,5 +1,5 @@
 ---
-unsafe: true
+unsafe: false
 ---
 
 # application
@@ -85,6 +85,22 @@ pub fn frame(self: *Application, title: []const u8, w: u32, h: u32) !*Frame;
 `Frame` を allocator で確保 → `Frame.init` → `windows` リストに WindowEntry を append、までを行う。
 利用者は戻り値の `*Frame` で setter / add を呼ぶだけ。
 
+## ダイアログの生成
+```zig
+pub fn dialog(
+    self: *Application,
+    owner: *Window,
+    title: []const u8,
+    w: u32,
+    h: u32,
+) !*Dialog;
+```
+
+`Dialog` を allocator で確保 → `Dialog.init` を呼ぶ。
+`owner` は親ウィンドウ (典型的には `frame.window`)。
+所有権は呼び出し側で、最後に `dialog.deinit()` + `allocator.destroy(dialog)` する必要がある (複数回の `showModal` 間で使い回せるため Application は管理しない)。
+詳細は `dialog.md`。
+
 ## ラベルの生成
 ```zig
 pub fn label(self: *Application, text: []const u8) !*Label;
@@ -108,6 +124,14 @@ pub fn panel(self: *Application) !*Panel;
 背景色と境界線はデフォルトで null（透明 / 線なし）。
 利用者が `panel.setBackground(...)` / `panel.setBorder(...)` で設定する。
 
+## フィラーの生成
+```zig
+pub fn filler(self: *Application) !*Panel;
+```
+
+`panel()` をラップし、`growX = 1` / `growY = 1` をあらかじめ設定した「余白を埋める空 Panel」を返す。
+BoxLayout の主軸方向に余白を伸縮させたいときの定型ショートカット。詳細は `filler.md`。
+
 ## ボタンの生成
 ```zig
 pub fn button(self: *Application, text: []const u8) !*Button;
@@ -116,6 +140,21 @@ pub fn button(self: *Application, text: []const u8) !*Button;
 `Button.create` をラップして default font と黒色を注入する。
 ButtonModel は内部生成される（`owns_model = true`）。
 利用者が共有 Model を使いたい場合は `Button.createWithModel` を直接呼ぶ。
+
+## 選択系ウィジェットの生成
+```zig
+pub fn checkBox    (self: *Application, text: []const u8) !*CheckBox;
+pub fn radioButton (self: *Application, text: []const u8) !*RadioButton;
+pub fn comboBox    (self: *Application, items: []const []const u8) !*ComboBox;
+pub fn buttonGroup (self: *Application) !*ButtonGroup;
+```
+
+それぞれ対応する widget の `create` をラップする。
+`checkBox` / `radioButton` / `comboBox` には default font (`pixel_size = 14`) と黒色を注入する。
+`buttonGroup` はラジオボタンの相互排他選択を束ねるためのコンテナで、利用者所有。
+
+`comboBox` の `items` は呼び出し中だけ借用され、内部で copy される。
+共有モデルを使いたい場合は各 widget の `createWithModel` を直接呼ぶ。
 
 ## スライダーの生成
 ```zig
@@ -131,6 +170,41 @@ pub fn slider(
 `Slider.create` をラップする。
 BoundedRangeModel は内部生成される（`owns_model = true`）。
 共有 Model 版は `Slider.createWithModel` を直接呼ぶ。
+
+## スクロールバーの生成
+```zig
+pub fn scrollBar(
+    self: *Application,
+    orientation: ScrollBar.Orientation,
+    min: i32,
+    value: i32,
+    max: i32,
+) !*ScrollBar;
+```
+
+`ScrollBar.create` をラップする。
+通常は `scrollPane()` 経由で間接的に使うが、独立した範囲入力 UI として直接使うこともできる。
+共有 Model 版は `ScrollBar.createWithModel` を直接呼ぶ。
+
+## スクロールペインの生成
+```zig
+pub fn scrollPane(self: *Application, view: *Component) !*ScrollPane;
+```
+
+`view` をスクロール可能な領域でラップした `ScrollPane` を返す。
+`view` の所有権はペインへ移譲される (利用者は ScrollPane の deinit に任せる)。
+詳細は `scrollpane.md`。
+
+## リストの生成
+```zig
+pub fn list           (self: *Application, factory: List.CellFactory) !*List;
+pub fn listWithModel  (self: *Application, model: *List.ListModel, factory: List.CellFactory) !*List;
+```
+
+縦方向 single-selection の `List` を返す。
+`factory` は可視範囲のセル実体を生成 / 再利用するためのコールバック (List 生存期間中は呼び出し側で生かしておく)。
+`list` は空の `ListModel` を List 自身が所有して生成、`listWithModel` は呼び出し側が用意したモデル (典型的には共有モデル) を借用する。
+詳細は `list.md`。
 
 ## ビルトインアイコンの取得
 ```zig
@@ -201,6 +275,16 @@ pub fn textField(self: *Application, initial_text: []const u8) !*TextField;
 
 詳細は `textfield.md` を参照。
 
+## テキストエリアの生成
+```zig
+pub fn textArea(self: *Application, initial_text: []const u8) !*TextArea;
+```
+
+`TextArea.create` をラップして default font (14px) と黒色を注入する。
+複数行テキスト入力 (折り返し / 改行サポート)。
+`initial_text` は内部バッファにコピーされる。
+詳細は `textarea.md` を参照。
+
 ## ワンショットタイマーの登録
 ```zig
 pub fn setTimeout(self: *Application, ms: u32, cb: TimerCallback, user_data: *anyopaque) !TimerId;
@@ -262,7 +346,6 @@ try app.run();
 ```
 
 ## 機能要望
-* `checkbox()` / `radio()` / `combo()` 等の追加ウィジェット factory — ウィジェット追加に合わせて生やす
 * 「最後のウィンドウを閉じても常駐したい」ケース向けの hook（現状は全ウィンドウ閉でループ終了）
 * `requestAnimationFrame` 相当 — vsync 同期での連続再描画 (現状のタイマーは ms オーダーの精度)
 * min-heap でタイマーを管理して `earliestDueIn` を O(1) に（現状は O(n)、数十〜数百個までは問題ない）
