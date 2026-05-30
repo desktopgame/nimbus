@@ -255,10 +255,9 @@ pub fn shouldClose(self: Window) bool {
 }
 
 pub fn dispose(self: *Window) void {
-    _ = self;
-    // GLFW does not have a "set should close" exposed via our awt-c shim yet.
-    // Workaround for v1: a future awt-c addition can wire this. Marking
-    // best-effort no-op for now (機能要望).
+    // Raise the OS close flag; Application's loop tail will see
+    // `shouldClose()` and run the normal close-collection path.
+    self.awt_window.setShouldClose(true);
 }
 
 /// Render one frame and clear paint_dirty. Called by Application.run().

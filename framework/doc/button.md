@@ -18,13 +18,16 @@ pub const ButtonModel = struct {
     armed:    bool = false,        // 押下中かつカーソルが Button 内にある (release で fire 発火)
     rollover: bool = false,        // マウスホバー中
     enabled:  bool = true,         // false なら入力無効 + 視覚的にグレーアウト
-    selected: bool = false,        // toggle button / checkbox 用 (将来)
     state_listeners:  ChangeListenerList,
     action_listeners: ChangeListenerList,
 
     // ... メソッド
 };
+```
 
+選択状態 (`selected`) は CheckBox / RadioButton / ToggleButton 等が `ToggleButtonModel` (本モデルを embed する派生) 側に持つ。素の momentary button では使わないのでここには無い。
+
+```zig
 pub const Button = struct {
     component:  Component,
     model:      *ButtonModel,

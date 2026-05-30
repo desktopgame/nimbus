@@ -62,8 +62,9 @@ pub fn run(self: *Application) !void;
 4. 各 Window の `paint_dirty` または `layout_dirty` が true なら `window.redraw()` を呼ぶ
 5. close フラグが立った Window を `windows` リストから外して `destroy`
 
-OS と Window state の同期（位置 / サイズ / タイトル）は v1 では未実装。
-将来 `WindowEntry` に `synced_xxx` を追加してループ末尾で diff push する予定（「OS との同期」参照）。
+OS と Window state の同期（位置 / サイズ）はループ末尾で `syncWindowGeometry` が行う。
+`WindowEntry.synced_pos` / `synced_size` を model と diff し、差があるところだけ awt に push する（詳細は narrative の「OS との同期」参照）。
+タイトルは頻度が低いため `Window.setTitle` 内で直接 push する。
 
 最後のウィンドウが閉じたらループ抜け（「最後のウィンドウを閉じたら exit」セマンティクス）。
 

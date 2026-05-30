@@ -131,9 +131,9 @@ true でも Window 自身は何もしない。後片付けは Application のル
 pub fn dispose(self: *Window) void;
 ```
 
-将来的には OS の close フラグを立てる API。
-v1 では awt-c に該当 API を未実装のため best-effort no-op (機能要望)。
-利用者から「プログラムからウィンドウを閉じる」操作は v1 では未サポート。
+OS の close フラグを立てる。
+直後の Application のループ末尾で `shouldClose()` が観測され、通常の close 回収パス (windows リストから外す → `destroy`) が走る。
+利用者から「プログラムからウィンドウを閉じる」操作の入口。
 
 ## メニューバーの設定
 ```zig
