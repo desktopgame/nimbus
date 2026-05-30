@@ -36,6 +36,9 @@ typedef struct nmWindow nmWindow;
 
 nmWindow* nmCreateWindow(const char* title, int width, int height);
 void nmDestroyWindow(nmWindow* self);
+/* Replace the window title shown by the OS (title bar, taskbar). Pushes the
+ * new value immediately. `title` must be NUL-terminated UTF-8. */
+void nmSetWindowTitle(nmWindow* self, const char* title);
 bool nmShouldClose(nmWindow* self);
 /* Set or clear the OS close flag. Clearing (false) lets a window that was
  * closed via its X button be reused (e.g. re-showing a dialog). */

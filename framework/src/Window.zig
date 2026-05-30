@@ -191,10 +191,10 @@ pub fn addWithHint(
 
 pub fn setTitle(self: *Window, title: []const u8) !void {
     const new_title = try self.allocator.dupeZ(u8, title);
+    errdefer self.allocator.free(new_title);
+    self.awt_window.setTitle(new_title);
     self.allocator.free(self.title);
     self.title = new_title;
-    // Title is pushed to OS by awt.Window directly here; no Application sync
-    // mechanism implemented in v1 (window.md describes one for future).
 }
 
 pub fn getTitle(self: Window) []const u8 {

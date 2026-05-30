@@ -57,8 +57,8 @@ Window 系のファクトリは追加で `windows` リストへの append が要
 いずれも続けて `Application.noteOsGeometry` を呼び、`synced_*` も同時に更新する。
 これがないと「OS が動かした → 末尾の diff で push し返す」の無限ピンポンになり、ライブな移動 / リサイズと喧嘩する。
 
-タイトルの同期は未実装（機能要望）。
-現状の `Window.setTitle` は awt-c が直接 push する暫定実装。
+タイトルは `Window.setTitle` が直接 awt-c に push する (loop-tail sync は経由しない)。
+頻度が低いため一貫性より素直さを優先した。
 
 ## イベントキュー（invokeLater / invokeAndWait）
 別スレッドから UI を触る唯一の正規ルート。CLAUDE.md「非同期処理」セクションを参照。

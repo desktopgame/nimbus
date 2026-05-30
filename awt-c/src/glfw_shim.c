@@ -188,6 +188,10 @@ void nmDestroyWindow(nmWindow* self) {
     free(cb);
 }
 
+void nmSetWindowTitle(nmWindow* self, const char* title) {
+    glfwSetWindowTitle((GLFWwindow*)self, title);
+}
+
 bool nmShouldClose(nmWindow* self) {
     return glfwWindowShouldClose((GLFWwindow*)self) != 0;
 }

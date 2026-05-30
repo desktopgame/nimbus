@@ -19,6 +19,13 @@ pub fn deinit(self: *Window) void {
     self.handle = undefined;
 }
 
+/// Replace the window's OS-visible title (title bar, taskbar). Pushes
+/// the new value immediately; no event-loop sync diff is involved since
+/// title changes are rare.
+pub fn setTitle(self: Window, title: [:0]const u8) void {
+    c.nmSetWindowTitle(self.handle, title.ptr);
+}
+
 pub fn shouldClose(self: Window) bool {
     return c.nmShouldClose(self.handle);
 }

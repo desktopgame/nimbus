@@ -70,9 +70,8 @@ pub fn addWithHint(
 pub fn setTitle(self: *Window, title: []const u8) !void;
 ```
 
-タイトル文字列を dup し直して保持する。
-v1 では OS への push は未実装 (内部バッファだけ更新する no-op に近い挙動)。
-将来は Application のイベントループ末尾の sync 機構で OS に反映される予定 (`application.md`「OS との同期」参照)。
+タイトル文字列を dup し直して保持し、即座に OS のタイトルバー / タスクバーへ反映する。
+位置・サイズと違って頻繁に呼ばれない想定なので、Application のイベントループ末尾 sync 経由ではなく直接 push する。
 
 ## タイトルの取得
 ```zig

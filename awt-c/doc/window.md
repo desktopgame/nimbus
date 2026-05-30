@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # window
@@ -79,6 +79,15 @@ void nmDestroyWindow(nmWindow* self);
 ### 事前条件
 * `self` が NULL のとき、なにも実行せずに終了する。
 * `self` に関連付けられたスワップチェインが残っていないこと。違反した場合の動作は UB。
+
+## ウィンドウタイトルの変更
+void nmSetWindowTitle(nmWindow* self, const char* title);
+
+OS のタイトルバー / タスクバーに表示される文字列を `title` に差し替える。即時反映。
+
+### 事前条件
+* `self` が non-NULL であること。違反した場合の動作は UB。
+* `title` が NUL 終端された UTF-8 文字列であること。違反した場合の動作は UB。
 
 ## ウィンドウを閉じるべきか
 bool nmShouldClose(nmWindow* self);
@@ -252,8 +261,6 @@ void nmSetClipboardString(nmWindow* self, const char* utf8);
 * `utf8` が NUL 終端された UTF-8 文字列であること。違反した場合の動作は UB。
 
 ## 機能要望
-* DPI スケール係数の単独取得 API (現状は論理 / 実ピクセルの 2 値から逆算が必要)。
 * ウィンドウ状態の取得 / 変更 API (最小化、最大化、フォーカス、可視性)。
-* タイトルの後付け変更 API。
 * フルスクリーンモードへの切替。
 * 複数モニタ環境におけるモニタ選択 API。
