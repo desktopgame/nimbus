@@ -1,5 +1,5 @@
 ---
-unsafe: true
+unsafe: false
 ---
 
 # textarea
@@ -120,3 +120,4 @@ pub fn setBackground(self: *TextArea, c: awt.Graphics.Color) void;
 * `setColumns` / `setRows` で推奨サイズを桁・行数指定。
 * 部分再描画 (キャレット点滅で全体再描画になるのを避ける)。
 * 書記素クラスタ単位の編集 / color emoji (`textfield.md`「棚上げ中」と同じ条件)。
+* TextFieldと同じようなIME制御があれば切り出し
