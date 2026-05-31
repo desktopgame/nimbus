@@ -1,5 +1,5 @@
 ---
-unsafe: true
+unsafe: false
 ---
 
 # layout
@@ -53,6 +53,16 @@ computeMinSize: *const fn (*LayoutManager, *const Container) Size;
 純粋関数として扱われる。
 `*const Container` で受け取る理由は、計算によってコンテナーや子の状態を変更しないことを型で示すため。
 
+### キャッシュ
+戻り値は `Container` 側で memoize される (`min_cache`、 `container.md` 参照)。
+同じ layout サイクル内で `computeMinSize` が複数回呼ばれてもキャッシュヒットで即座に返るため、 深さ `D` のツリーを top-down で `doLayout` 走査する際の重複計算が抑えられる (キャッシュ無しでは深い兄弟ノードが各階層で再走査され `O(N×D)`、 キャッシュ有りで実質 `O(N)`)。
+
+キャッシュ無効化は `markLayoutDirty` がパス上の祖先 Container すべてに対して `invalidateSizeCache` を呼ぶことで自動的に行われる (= 変更されたサブツリーを含む Container のキャッシュだけが落ちる、 兄弟サブツリーには影響しない)。
+LayoutManager 実装者から見るとキャッシュは透過で、 純粋関数として書いてさえいれば正しく動く。 逆に **純粋性を破る (副作用で観測可能な状態を変える、 内部状態に依存する乱数を返す、 等) と古いキャッシュ値が返ってバグになる**。
+
+LayoutManager 自身が独自キャッシュを持つ必要は通常ない (`deinit` 不要、 const シングルトンで提供できる)。
+複雑な内部キャッシュを持つ場合は `markLayoutDirty` の通知が LayoutManager まで届かない点に注意 (= 自前で dirty 管理を入れる必要がある)。
+
 ## コンテナーの最大サイズを計算する
 ```zig
 computeMaxSize: *const fn (*LayoutManager, *const Container) Size;
@@ -60,6 +70,8 @@ computeMaxSize: *const fn (*LayoutManager, *const Container) Size;
 
 このレイアウトでコンテナーが取りうる最大サイズを返す。
 無制限の場合は両軸に `std.math.inf(f32)` を入れる。
+
+キャッシュおよび純粋性に関する規約は `computeMinSize` と同じ (`max_cache` 側に memoize される)。
 
 ## LayoutManager 自身の解放
 ```zig
@@ -149,8 +161,6 @@ fn doLayout(self: *LayoutManager, container: *Container) void {
 ```
 
 ## 機能要望
-* 組み込み BoxLayout（horizontal / vertical）
-* 組み込み BorderLayout（NORTH / SOUTH / EAST / WEST / CENTER）
 * 組み込み GridBagLayout 相当
 * 宣言的レイアウト API（手続き型 LayoutManager をラップする DSL 風 API）
-* レイアウト結果のキャッシュとサブツリー部分再計算
+* サブツリー単位の部分再レイアウト (validate root 相当)。 ある subtree より上には dirty を伝播させず、 そのサブツリー内だけで `doLayout` を完結させる仕組み。 現状は Window 全体が 1 単位で、 N が大きくなったときの最適化余地
