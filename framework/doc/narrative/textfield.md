@@ -1,5 +1,5 @@
 ---
-unsafe: true
+unsafe: false
 ---
 
 # textfield
@@ -35,6 +35,8 @@ CLAUDE.md「文字コード」「書記素クラスタ」の方針に従って�
 | `Escape` | cancel リスナー発火 + consume |
 
 `.char` イベント (`CharEvent`) は「選択があれば削除 → キャレット位置に codepoint を UTF-8 で insert → キャレットを進める」。
+
+TODO: KeyStroke, InputMap, ActionMapなど整備される可能性あり。
 
 ## マウス入力
 | アクション | 動作 |

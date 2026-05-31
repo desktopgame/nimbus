@@ -1,5 +1,5 @@
 ---
-unsafe: true
+unsafe: false
 ---
 
 # textarea
@@ -32,6 +32,8 @@ CLAUDE.md「文字コード」「書記素クラスタ」の方針に従う:
 `.char` イベントは「選択があれば削除 → キャレット位置に codepoint を挿入 → キャレットを進める」。
 
 `↑` / `↓` のカーソル列は毎回現在のキャレット位置から再計算する (sticky column は持たない。将来課題)。
+
+TODO: KeyStroke, InputMap, ActionMapなど整備される可能性あり。
 
 ## マウス入力
 | アクション | 動作 |
