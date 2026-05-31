@@ -17,3 +17,8 @@ const char* nmLastErrorMessage(void);
 
 /* ── backend ── */
 const char* nmGetBackendVersion(void);
+
+/* ── event accessors (for the opaque `event` in listener callbacks) ── */
+/* kind: 0 = change, 1 = action */
+int nmEventKind(const void* event);
+void* nmEventSource(const void* event);

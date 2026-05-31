@@ -18,10 +18,16 @@ const char* nmLastErrorMessage(void);
 /* ── backend ── */
 const char* nmGetBackendVersion(void);
 
+/* ── event accessors (for the opaque `event` in listener callbacks) ── */
+/* kind: 0 = change, 1 = action */
+int nmEventKind(const void* event);
+void* nmEventSource(const void* event);
+
 /* ── opaque handles ── */
 typedef struct nmComponent nmComponent;
 typedef struct nmContainer nmContainer;
 typedef struct nmButton nmButton;
+typedef struct nmComboBox nmComboBox;
 typedef struct nmFrame nmFrame;
 typedef struct nmApplication nmApplication;
 
@@ -30,6 +36,9 @@ typedef struct { float r; float g; float b; float a; } nmColor;
 
 /* ── enums ── */
 typedef enum { nmAlignment_start, nmAlignment_center, nmAlignment_end, nmAlignment_stretch } nmAlignment;
+
+/* ── event-handler callbacks ── */
+typedef struct { void (*fn)(void* userdata, const void* event); void* userdata; } nmChangeListener;
 
 /* ── functions ── */
 nmButton* nmAppButton(nmApplication* self, const char* text);
@@ -42,6 +51,7 @@ void nmComponentSetGrowX(nmComponent* self, float v);
 float nmComponentGetGrowX(nmComponent* self);
 void nmComponentSetAlignX(nmComponent* self, nmAlignment a);
 nmAlignment nmComponentGetAlignX(nmComponent* self);
+int nmComboBoxOnChange(nmComboBox* self, nmChangeListener* cb);
 
 /* ── upcasts ── */
 nmComponent* nmButtonAsComponent(nmButton* self);

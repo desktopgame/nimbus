@@ -44,6 +44,20 @@ export fn nmGetBackendVersion() [*:0]const u8 {
     return @ptrCast(awt.c.nmAwtBackendVersion());
 }
 
+// ── event accessors ──────────────────────────────────────────────────────
+// Listener callbacks receive the semantic event as an opaque `const void*`
+// (the native ChangeListenerList.Event passed straight through; see approach C
+// in doc/c_api_codegen.md). These read its fields without copying. Hand-written
+// because Event is a fixed framework type (source pointer + enum), not a
+// codegen-friendly scalar struct.
+export fn nmEventKind(event: *const framework.ChangeListenerList.Event) c_int {
+    return @intFromEnum(event.kind); // 0 = change, 1 = action
+}
+
+export fn nmEventSource(event: *const framework.ChangeListenerList.Event) ?*anyopaque {
+    return event.source; // the firing Model
+}
+
 // ── generated exports (do not edit; regenerate with `zig build apigen`) ──
 
 const nmColor = extern struct { r: f32, g: f32, b: f32, a: f32, };
@@ -53,6 +67,14 @@ comptime {
     std.debug.assert(@intFromEnum(framework.Component.Alignment.center) == 1);
     std.debug.assert(@intFromEnum(framework.Component.Alignment.end) == 2);
     std.debug.assert(@intFromEnum(framework.Component.Alignment.stretch) == 3);
+}
+
+const nmChangeListener = extern struct {
+    fn_ptr: ?*const fn (?*anyopaque, ?*const anyopaque) callconv(.c) void,
+    userdata: ?*anyopaque,
+};
+fn nm_trampoline_nmChangeListener(box: *nmChangeListener, e: *const framework.ChangeListenerList.Event) void {
+    if (box.fn_ptr) |f| f(box.userdata, e);
 }
 
 export fn nmAppButton(self: *framework.Application, text: [*:0]const u8) ?*framework.Button {
@@ -108,6 +130,14 @@ export fn nmComponentSetAlignX(self: *framework.Component, a: c_int) void {
 
 export fn nmComponentGetAlignX(self: *framework.Component) c_int {
     return @intFromEnum(self.getAlignX());
+}
+
+export fn nmComboBoxOnChange(self: *framework.ComboBox, cb: *nmChangeListener) c_int {
+    self.addChangeListener(nmChangeListener, nm_trampoline_nmChangeListener, cb) catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
 }
 
 export fn nmButtonAsComponent(self: *framework.Button) *framework.Component {

@@ -43,3 +43,17 @@ export fn nmLastErrorMessage() [*:0]const u8 {
 export fn nmGetBackendVersion() [*:0]const u8 {
     return @ptrCast(awt.c.nmAwtBackendVersion());
 }
+
+// ── event accessors ──────────────────────────────────────────────────────
+// Listener callbacks receive the semantic event as an opaque `const void*`
+// (the native ChangeListenerList.Event passed straight through; see approach C
+// in doc/c_api_codegen.md). These read its fields without copying. Hand-written
+// because Event is a fixed framework type (source pointer + enum), not a
+// codegen-friendly scalar struct.
+export fn nmEventKind(event: *const framework.ChangeListenerList.Event) c_int {
+    return @intFromEnum(event.kind); // 0 = change, 1 = action
+}
+
+export fn nmEventSource(event: *const framework.ChangeListenerList.Event) ?*anyopaque {
+    return event.source; // the firing Model
+}

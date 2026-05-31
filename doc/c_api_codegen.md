@@ -254,36 +254,36 @@ IR には `enums`（`name` と `members`＝名前＋値）を出すので、Pyth
 * `destructors` — 汎用デストラクタ一覧（`type` のハンドルを破棄する `c` 関数）。
 * `callbacks` — 後述。コールバック型の一覧。現状は空配列だが、契約として常に存在する。
 
-## コールバック / イベントハンドラ（apigen 側は未実装・方式は確定）
+## コールバック / イベントハンドラ（実装済み・案 C）
 リスナー登録のような「関数ポインタを渡す」API を、1 つの宣言で各レイヤーへ展開する。
+ネイティブ前提は整っている: Model のリスナーは `fn(user_data: *anyopaque, event: *const Event) void`
+に統一され、保存・dispatch 形が C_ABI 契約の形そのもの（`framework/doc/model.md` / `doc/typed_callbacks.md`）。
 
-ネイティブ前提は整った（2026-05-31）: Model のリスナーは `fn(user_data: *anyopaque, event: *const Event) void`
-に統一され、保存・dispatch 形が C_ABI 契約の形そのものになっている（`framework/doc/model.md` /
-`doc/typed_callbacks.md`）。`Event { source, kind }` は C 側では値構造体 `nmEvent` として出せる。
-
-**方式は案 C（バインディング所有のコールバックボックス + 固定トランポリン）に決定。**
-理由は呼び出し規約とライフタイムの整理（`callconv(.c)` を native に持ち込まない / shim でヒープ確保しない）。
-
-スペック（予定）:
+スペック:
 ```
-callback ChangeListener = fn (nmEvent)     # userdata に加えて渡る引数（イベント）
+callback nmChangeListener = ChangeListenerList.Event   # native の event 型
 
-fn nmSliderOnChange = Slider.addChangeListener (&self, cb:ChangeListener) -> void !err
+fn nmComboBoxOnChange = ComboBox.addChangeListener (&self, cb:nmChangeListener) -> void !err
 ```
-各レイヤーの形:
+`cb:nmChangeListener` という **1 引数**が各レイヤーでこう展開される:
 
 | レイヤー | 形 |
 |---|---|
-| C ABI | `typedef struct { void (*fn)(void*, const nmEvent*); void* userdata; } nmChangeListener;` の**ポインタ**を渡す |
-| preamble | `(T, f)` 署名ごとに Zig 規約トランポリン 1 本。native の `*const Event` を `nmEvent` に変換して box の C 関数を呼ぶ。`callconv(.c)` はこの box の `fn` フィールド型 1 か所だけ |
-| Zig シム | `self.addChangeListener(T, トランポリン, box)` を呼ぶ（box が user_data） |
+| C ABI | `typedef struct {{ void (*fn)(void* userdata, const void* event); void* userdata; }} nmChangeListener;` の**ポインタ**を渡す。event は不透明 `const void*`（`nmEventKind`/`nmEventSource` で読む） |
+| Zig（生成） | 署名ごとに box (`extern struct`) と Zig 規約トランポリン `fn(*box, *const NativeEvent)` を生成。トランポリンは型付きリスナーそのものなので **typed `addXxxListener(T, f, ud)` にそのまま渡せる**（raw 登録不要）。`callconv(.c)` は box の `fn` フィールド型 1 か所だけ |
+| Zig シム | `self.addChangeListener(nmChangeListener, nm_trampoline_nmChangeListener, cb)` を呼ぶ（cb が user_data） |
 | Python / JS | **1 つの呼び出し可能オブジェクト**。box をバインディングが所有し、クロージャを userdata に詰め、`remove` 時に解放 |
 
-IR ではこの引数を `{"type":"callback","callback":"ChangeListener","role":"event_handler"}` と印し、
-`callbacks` 配列に署名（追加引数の型）を出す。署名ごとに C 関数ポインタ型 + box + トランポリンが 1 セット。
+event を C 側へ変換せず**不透明ポインタのまま渡す**のが要点（native の `*const Event` をそのまま）。
+フィールドは preamble 手書きのアクセサ（`nmEventKind` / `nmEventSource`）で読む。Event は固定の
+framework 型（source ポインタ + enum）で codegen 向きのスカラ構造体でないため、これだけ手書き。
 
-> 現状: 方式・文法・IR 表現は確定。apigen のコード生成（box/トランポリン/2 引数展開）は未実装。
-> 値戻り＋エラーの組み合わせ（`setTimeout` の `!TimerId` 等）の表現は別途。
+IR ではこの引数を `{"type":"callback","callback":"nmChangeListener","role":"event_handler"}` と印し、
+`callbacks` 配列に出す（署名ごとに box + トランポリン + C 関数ポインタ型が 1 セット）。検証:
+`ComboBox.addChangeListener` を生成 → libnimbus ビルド成功（トランポリンが typed 登録に型整合）。
+
+> 未対応: event に追加の typed 引数を持つコールバック（現状 nimbus のリスナーは event 1 個のみ）。
+> 値戻り＋エラーを伴う登録（`setTimeout` の `!TimerId` 等）。リスナーの `remove`（解除）エクスポート。
 
 ## init / deinit（コンストラクタ・デストラクタ）の見せ方
 Zig には 2 つの生成の流儀がある。
@@ -362,14 +362,15 @@ CLAUDE.md「エラーのC_ABIでの表現」に従う。
 * 値構造体（`struct` 宣言、`extern` 生成 + フィールド詰め替え、引数・戻り）。
 * `cast`（アップキャスト）と `destroy`（汎用デストラクタ）。
 * 所有権タグ `@owned` / `@borrowed` / `@transfer`（→ IR `ownership`）。
-* バインディング IR（`bindings/nimbus_api.json`）: 型・継承・`structs`・関数のクラス
-  対応づけ・ターゲット言語名・`casts`・`destructors`・`callbacks`（空配列）。
+* コールバック / イベントハンドラ（`callback` 宣言、案 C の box + トランポリン、event は不透明 + 手書きアクセサ）。
+* バインディング IR（`bindings/nimbus_api.json`）: 型・継承・`structs`・`enums`・`callbacks`・
+  関数のクラス対応づけ・ターゲット言語名・`casts`・`destructors`。
 
 未対応（文法・IR は本書で確定済みだがコード生成が未実装、もしくは文法ごと今後）:
 
-* コールバック / イベントハンドラ（上記専用セクション）。文法・IR 確定、コード生成未実装。
 * `@ctor` / `@dtor` で `nmCreateXxx` / `nmDestroyXxx` を型側 IR に紐づける案
   （現状はファクトリ + 汎用デストラクタで代替）。
+* コールバックの拡張: event に追加 typed 引数を持つ署名、登録の `remove`（解除）エクスポート。
 * 値構造体の拡張: ネスト構造体・配列・enum フィールド、値戻り＋エラーの組み合わせ。
 * enum の拡張: 明示値・非連続値・フラグ（ビット或）。
 * 値（スカラ/enum/struct）戻り＋エラーの組み合わせ（out 引数かセンチネルか要決定。現状は失敗なしのみ）。

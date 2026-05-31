@@ -16,6 +16,14 @@
 #       native enum (e.g. Component.Alignment) makes a reorder/rename a build
 #       error. Used as an arg (<name>:<CName>) or return (-> <CName>).
 #
+#   callback <CName> = <NativeEventType>
+#       An event-handler callback. C side: a `{ fn, userdata }` box (typedef
+#       <CName>), passed by pointer; the event is delivered as an opaque
+#       `const void*` (read via nmEvent* accessors in the preamble). A generated
+#       Zig trampoline plugs into the typed addXxxListener. Use as an arg
+#       (<name>:<CName>). <NativeEventType> is framework-relative (the event the
+#       native listener delivers, e.g. ChangeListenerList.Event).
+#
 #   opaque <ZigType> [: <Parent>]
 #       Declares an opaque handle. Emitted as
 #           typedef struct nm<ZigType> nm<ZigType>;
@@ -54,6 +62,7 @@
 opaque Component
 opaque Container : Component
 opaque Button    : Component
+opaque ComboBox  : Component
 opaque Frame
 opaque Application
 
@@ -65,6 +74,11 @@ struct nmColor { r:f32 g:f32 b:f32 a:f32 }
 # Enum: crosses the ABI as an int. Member order must match the native enum;
 # a comptime check (against Component.Alignment) makes a mismatch a build error.
 enum nmAlignment = Component.Alignment { start center end stretch }
+
+# Event-handler callback. native event = ChangeListenerList.Event; the C side
+# passes a { fn, userdata } box pointer and receives the event as an opaque
+# const void* (read via nmEventKind / nmEventSource).
+callback nmChangeListener = ChangeListenerList.Event
 
 fn nmAppButton     = Application.button (&self, text:str) -> *Button !null @owned
 fn nmButtonSetText = Button.setText     (&self, text:str) -> void    !err
@@ -79,6 +93,9 @@ fn nmComponentSetGrowX = Component.setGrowX  (&self, v:f32) -> void
 fn nmComponentGetGrowX = Component.getGrowX  (&self) -> f32
 fn nmComponentSetAlignX = Component.setAlignX (&self, a:nmAlignment) -> void
 fn nmComponentGetAlignX = Component.getAlignX (&self) -> nmAlignment
+
+# Event handler: the cb box is registered via the typed addChangeListener.
+fn nmComboBoxOnChange = ComboBox.addChangeListener (&self, cb:nmChangeListener) -> void !err
 
 # Upcast to the embedded Component (one-line `return &self.<field>`). Lets a
 # binding reach Container methods on any widget and feed nmComponentDestroy.

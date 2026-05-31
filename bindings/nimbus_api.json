@@ -3,6 +3,7 @@
     { "name": "Component", "c": "nmComponent", "extends": null },
     { "name": "Container", "c": "nmContainer", "extends": "Component" },
     { "name": "Button", "c": "nmButton", "extends": "Component" },
+    { "name": "ComboBox", "c": "nmComboBox", "extends": "Component" },
     { "name": "Frame", "c": "nmFrame", "extends": null },
     { "name": "Application", "c": "nmApplication", "extends": null }
   ],
@@ -12,7 +13,9 @@
   "enums": [
     { "name": "nmAlignment", "members": [{ "name": "start", "value": 0 }, { "name": "center", "value": 1 }, { "name": "end", "value": 2 }, { "name": "stretch", "value": 3 }] }
   ],
-  "callbacks": [],
+  "callbacks": [
+    { "name": "nmChangeListener", "event": "opaque" }
+  ],
   "functions": [
     {
       "c": "nmAppButton",
@@ -123,6 +126,17 @@
       "params": [],
       "ret": { "type": "enum", "enum": "nmAlignment" },
       "fail": null
+    },
+    {
+      "c": "nmComboBoxOnChange",
+      "owner": "ComboBox",
+      "method": "addChangeListener",
+      "names": { "py": "add_change_listener", "js": "addChangeListener" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "cb", "type": "callback", "callback": "nmChangeListener", "role": "event_handler" }],
+      "ret": { "type": "void" },
+      "fail": "err"
     }
   ],
   "casts": [

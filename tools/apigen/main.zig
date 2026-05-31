@@ -67,6 +67,8 @@ const ArgType = union(enum) {
     scalar: Scalar,
     /// Enum argument; payload is the declared ABI enum name (e.g. "nmAlignment").
     enum_ref: []const u8,
+    /// Event-handler callback; payload is the declared ABI callback name (e.g. "nmChangeListener").
+    callback: []const u8,
 };
 
 /// Function return shape.
@@ -142,6 +144,17 @@ const Destructor = struct {
     ztype: []const u8,
 };
 
+/// `callback <CName> = <NativeEventType>` — an event-handler callback.
+/// The C side passes a `{ fn, userdata }` box (approach C); a generated
+/// Zig-callconv trampoline bridges to the typed listener registration.
+/// `native_event` (framework-relative, e.g. "ChangeListenerList.Event") is the
+/// event type the native listener delivers; it crosses to C as an opaque
+/// `const void*` (read via hand-written accessors in the preamble).
+const CallbackDecl = struct {
+    cname: []const u8,
+    native_event: []const u8,
+};
+
 const Opaque = struct {
     name: []const u8,
     /// Single-inheritance parent (the `: <Parent>` clause), or null.
@@ -152,10 +165,17 @@ const Model = struct {
     opaques: std.ArrayList(Opaque) = .empty,
     structs: std.ArrayList(Struct) = .empty,
     enums: std.ArrayList(EnumDecl) = .empty,
+    callbacks: std.ArrayList(CallbackDecl) = .empty,
     funcs: std.ArrayList(Func) = .empty,
     casts: std.ArrayList(Cast) = .empty,
     destructors: std.ArrayList(Destructor) = .empty,
 
+    fn findCallback(self: *const Model, name: []const u8) bool {
+        for (self.callbacks.items) |c| {
+            if (std.mem.eql(u8, c.cname, name)) return true;
+        }
+        return false;
+    }
     fn findStruct(self: *const Model, name: []const u8) ?*const Struct {
         for (self.structs.items) |*s| {
             if (std.mem.eql(u8, s.cname, name)) return s;
@@ -193,6 +213,7 @@ pub fn main(init: std.process.Init) !void {
         model.structs.deinit(gpa);
         for (model.enums.items) |*e| e.members.deinit(gpa);
         model.enums.deinit(gpa);
+        model.callbacks.deinit(gpa);
         model.opaques.deinit(gpa);
         model.casts.deinit(gpa);
         model.destructors.deinit(gpa);
@@ -252,6 +273,12 @@ fn parse(gpa: std.mem.Allocator, spec: []const u8, model: *Model) !void {
             try parseStruct(gpa, line_no, tokens.items, model);
         } else if (std.mem.eql(u8, kw, "enum")) {
             try parseEnum(gpa, line_no, tokens.items, model);
+        } else if (std.mem.eql(u8, kw, "callback")) {
+            // callback <CName> = <NativeEventType>
+            const items = tokens.items;
+            if (items.len != 4 or !std.mem.eql(u8, items[2], "="))
+                return fail(line_no, "callback expects '<CName> = <NativeEventType>'");
+            try model.callbacks.append(gpa, .{ .cname = items[1], .native_event = items[3] });
         } else if (std.mem.eql(u8, kw, "fn")) {
             try parseFn(gpa, line_no, tokens.items, model);
         } else if (std.mem.eql(u8, kw, "cast")) {
@@ -378,6 +405,7 @@ fn parseArgType(model: *const Model, s: []const u8) ?ArgType {
     if (std.mem.eql(u8, s, "str")) return .str;
     if (s.len > 1 and s[0] == '*') return .{ .handle = s[1..] };
     if (Scalar.parse(s)) |sc| return .{ .scalar = sc };
+    if (model.findCallback(s)) return .{ .callback = s };
     if (model.findStruct(s) != null) return .{ .struct_ref = s };
     if (model.findEnum(s)) return .{ .enum_ref = s };
     return null;
@@ -514,6 +542,15 @@ fn emitHeader(
         }
     }
 
+    if (model.callbacks.items.len > 0) {
+        try buf.appendSlice(gpa, "\n/* ── event-handler callbacks ── */\n");
+        for (model.callbacks.items) |c| {
+            // box: caller's function pointer + its userdata. `event` is opaque
+            // (read with nmEvent* accessors). Passed by pointer.
+            try print(gpa, buf, "typedef struct {{ void (*fn)(void* userdata, const void* event); void* userdata; }} {s};\n", .{c.cname});
+        }
+    }
+
     try buf.appendSlice(gpa, "\n/* ── functions ── */\n");
     for (model.funcs.items) |*f| {
         try emitHeaderProto(gpa, buf, f);
@@ -561,6 +598,7 @@ fn emitHeaderProto(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), f: *const Fu
             .struct_ref => |sn| try print(gpa, buf, "{s} {s}", .{ sn, a.name }),
             .scalar => |sc| try print(gpa, buf, "{s} {s}", .{ sc.cName(), a.name }),
             .enum_ref => |en| try print(gpa, buf, "{s} {s}", .{ en, a.name }),
+            .callback => |cn| try print(gpa, buf, "{s}* {s}", .{ cn, a.name }),
         }
         wrote = true;
     }
@@ -603,6 +641,27 @@ fn emitZig(
             try print(gpa, buf, "    std.debug.assert(@intFromEnum(framework.{s}.{s}) == {d});\n", .{ e.native, m, idx });
         }
         try buf.appendSlice(gpa, "}\n");
+    }
+
+    // Event-handler callbacks (approach C). Each declares an ABI box
+    // ({fn, userdata}) and a Zig-callconv trampoline. The trampoline is a typed
+    // listener `fn(*box, *const NativeEvent)` so it plugs straight into the
+    // typed `addXxxListener(T, f, ud)` — no raw registration needed. The native
+    // event crosses to C as an opaque `const void*` (read via preamble
+    // accessors); no per-event conversion here. `callconv(.c)` appears only on
+    // the box's `fn_ptr` field (the genuinely C-supplied pointer).
+    for (model.callbacks.items) |c| {
+        try print(gpa, buf,
+            \\
+            \\const {s} = extern struct {{
+            \\    fn_ptr: ?*const fn (?*anyopaque, ?*const anyopaque) callconv(.c) void,
+            \\    userdata: ?*anyopaque,
+            \\}};
+            \\fn nm_trampoline_{s}(box: *{s}, e: *const framework.{s}) void {{
+            \\    if (box.fn_ptr) |f| f(box.userdata, e);
+            \\}}
+            \\
+        , .{ c.cname, c.cname, c.cname, c.native_event });
     }
 
     for (model.funcs.items) |*f| {
@@ -648,6 +707,7 @@ fn emitZigShim(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), model: *const Mo
             .scalar => |sc| try print(gpa, buf, "{s}: {s}", .{ a.name, sc.zigName() }),
             // Enums cross as int; convert at the call site.
             .enum_ref => try print(gpa, buf, "{s}: c_int", .{a.name}),
+            .callback => |cn| try print(gpa, buf, "{s}: *{s}", .{ a.name, cn }),
         }
         wrote = true;
     }
@@ -687,6 +747,9 @@ fn emitZigShim(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), model: *const Mo
             .struct_ref => |sn| try appendStructLiteral(gpa, &call, a.name, model.findStruct(sn).?),
             .scalar => try call.appendSlice(gpa, a.name),
             .enum_ref => try print(gpa, &call, "@enumFromInt({s})", .{a.name}),
+            // 1 callback arg expands to (comptime T=box, comptime f=trampoline, ud=box)
+            // fed to the typed addXxxListener.
+            .callback => |cn| try print(gpa, &call, "{s}, nm_trampoline_{s}, {s}", .{ cn, cn, a.name }),
         }
     }
     try call.appendSlice(gpa, ")");
@@ -777,9 +840,14 @@ fn emitJson(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), model: *const Model
     }
     try buf.appendSlice(gpa, if (model.enums.items.len == 0) "],\n" else "\n  ],\n");
 
-    // callbacks (none codegen'd yet; the array is part of the contract so
-    // consumers can rely on its presence). See doc/c_api_codegen.md.
-    try buf.appendSlice(gpa, "  \"callbacks\": [],\n");
+    // callbacks (event-handler boxes). C fn = void(*)(void* userdata, const void* event);
+    // the event is opaque, read via nmEvent* accessors (see preamble).
+    try buf.appendSlice(gpa, "  \"callbacks\": [");
+    for (model.callbacks.items, 0..) |c, idx| {
+        try buf.appendSlice(gpa, if (idx == 0) "\n" else ",\n");
+        try print(gpa, buf, "    {{ \"name\": \"{s}\", \"event\": \"opaque\" }}", .{c.cname});
+    }
+    try buf.appendSlice(gpa, if (model.callbacks.items.len == 0) "],\n" else "\n  ],\n");
 
     // functions
     try buf.appendSlice(gpa, "  \"functions\": [");
@@ -848,6 +916,7 @@ fn emitJsonFunc(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), f: *const Func)
             .struct_ref => |sn| try print(gpa, buf, "\"type\": \"struct\", \"struct\": \"{s}\"", .{sn}),
             .scalar => |sc| try print(gpa, buf, "\"type\": \"{s}\"", .{sc.zigName()}),
             .enum_ref => |en| try print(gpa, buf, "\"type\": \"enum\", \"enum\": \"{s}\"", .{en}),
+            .callback => |cn| try print(gpa, buf, "\"type\": \"callback\", \"callback\": \"{s}\", \"role\": \"event_handler\"", .{cn}),
         }
         if (ownStr(a.ownership)) |o| try print(gpa, buf, ", \"ownership\": \"{s}\"", .{o});
         try buf.appendSlice(gpa, " }");
