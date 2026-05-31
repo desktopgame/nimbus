@@ -1,5 +1,5 @@
 ---
-unsafe: true
+unsafe: false
 ---
 
 # model
@@ -28,6 +28,8 @@ nimbus は汎用的な抽象 Model 型を提供しない。
 
 共通するのは「`ChangeListenerList` を embed する」「変更があったら `fire()` を呼ぶ」だけ。
 状態の型 / 変更の意味 / setter の名前は Model 個別に決める。
+
+TODO: ChangeListenerListが何の意図に使われるのか？（Changeでは分からない。再描画を伝える？）
 
 ## 標準的な Model の実装パターン
 新規 Model を作るときの標準パターンは以下。
