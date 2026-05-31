@@ -247,22 +247,24 @@ fn fromComponent(self: *Component) *ScrollPane {
 
 /// Measure the view's laid-out size given the available viewport. Honors the
 /// view's optional `scrollable` hint: a tracked axis is forced to the viewport
-/// size (and the view is reflowed so its free-axis size can be re-read — the
-/// height-for-width path a wrapping TextArea will use); an untracked axis uses
-/// `max(natural, viewport)` so small content fills the viewport and large
-/// content scrolls.
+/// size; an untracked axis uses `max(natural, viewport)` so small content fills
+/// the viewport and large content scrolls. When the view is width-tracking AND
+/// exposes a `SizeQuery`, the height is asked via `minHeightForWidth(w)` — a
+/// pure query that does not mutate the view (replaces the old reshape-based
+/// "set bounds then re-read effectiveMinSize" round trip).
 fn measureView(self: *ScrollPane, vp_w: f32, vp_h: f32) Component.Size {
     const sc = self.view.scrollable orelse Component.Scrollable{};
     const nat = self.view.effectiveMinSize();
-    var w: f32 = if (sc.tracks_viewport_width) vp_w else @max(nat.width, vp_w);
+    const w: f32 = if (sc.tracks_viewport_width) vp_w else @max(nat.width, vp_w);
     var h: f32 = if (sc.tracks_viewport_height) vp_h else @max(nat.height, vp_h);
-    if (sc.tracks_viewport_width or sc.tracks_viewport_height) {
-        // Reflow at the tracked dimension(s), then re-read the free axis.
-        self.view.setBounds(.{ .x = 0, .y = 0, .width = w, .height = h });
-        const re = self.view.effectiveMinSize();
-        if (sc.tracks_viewport_width) h = @max(re.height, vp_h);
-        if (sc.tracks_viewport_height) w = @max(re.width, vp_w);
+    if (sc.tracks_viewport_width) {
+        if (self.view.size_query) |sq| {
+            h = @max(sq.minHeightForWidth(self.view, w), vp_h);
+        }
     }
+    // No width-for-height equivalent in v1 (no widget defines it); the
+    // untracked-height branch above already supplies `nat.width`, which is
+    // what the previous reshape-based path also fell back to.
     return .{ .width = w, .height = h };
 }
 
@@ -293,14 +295,13 @@ fn layoutDoLayout(_: *LayoutManager, container: *Container) void {
     const vp_h = @max(0, H - (if (show_h) T else 0));
     const view_size = self.measureView(vp_w, vp_h);
 
-    // Scroll state: range = content size, extent = viewport size. Set extent
-    // to 0 first so setRange does not clamp against a stale extent.
-    self.v_model.setExtent(0);
-    self.v_model.setRange(0, toI32(view_size.height));
-    self.v_model.setExtent(toI32(vp_h));
-    self.h_model.setExtent(0);
-    self.h_model.setRange(0, toI32(view_size.width));
-    self.h_model.setExtent(toI32(vp_w));
+    // Scroll state: range = content size, extent = viewport size. Atomic
+    // update so a stale `value` (left over from when the content was larger,
+    // e.g. user scrolled down then deleted lines) is clamped down to the new
+    // valid range — otherwise `setRange` would leave `value` past the new max
+    // and `setExtent` would collapse the extent to compensate.
+    self.v_model.setRangeProperties(0, self.v_model.value, toI32(view_size.height), toI32(vp_h));
+    self.h_model.setRangeProperties(0, self.h_model.value, toI32(view_size.width), toI32(vp_w));
 
     // View at its measured size, offset by the (clamped) scroll value.
     const ox: f32 = @floatFromInt(self.h_model.value);

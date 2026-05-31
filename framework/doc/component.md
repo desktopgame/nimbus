@@ -17,7 +17,6 @@ pub const Component = struct {
         paint:        *const fn (*Component, *awt.Graphics) void,
         processEvent: *const fn (*Component, *awt.Event) void,
         destroy:      *const fn (*Component, std.mem.Allocator) void,
-        reshape:      ?*const fn (*Component, Size) void = null, // オプショナル。サイズ変化時に呼ばれる
     };
 
     vtable:     *const VTable,                  // ★ 書き換え可能 (個別差替 / 一斉差替)
@@ -29,6 +28,10 @@ pub const Component = struct {
     grow_y:     f32,                            // 垂直方向の余白分配重み (デフォルト 0)
     align_x:    Alignment,                      // 水平方向のアラインメント (デフォルト stretch)
     align_y:    Alignment,                      // 垂直方向のアラインメント (デフォルト stretch)
+    scrollable:  ?Scrollable,                   // ScrollPane 配下で挙動を変えるための opt-in ヒント
+    drag_source: ?dnd.DragSource,               // DnD のソース側 opt-in (`dnd.md`)
+    drop_target: ?dnd.DropTarget,               // DnD のターゲット側 opt-in (`dnd.md`)
+    size_query:  ?SizeQuery,                    // 幅依存の高さを返すための opt-in (後述「SizeQuery」)
     parent:     ?*Component,
     container:  ?*Container,                    // Container embed のみ self を指す
     focusable:  bool,                           // キーボードフォーカスを受け取れるか (デフォルト false)
@@ -39,6 +42,19 @@ pub const Component = struct {
     // ... メソッド
 };
 ```
+
+### SizeQuery
+幅で内容の高さが変わるウィジェット (折り返し `TextArea` 等) が、レイアウトに「この幅での最小高さ」を聞かれるための opt-in 能力構造体。`DragSource` / `DropTarget` と同じく `Component` のオプショナルフィールドとして持ち、`VTable` を増やさない。
+
+```zig
+pub const SizeQuery = struct {
+    minHeightForWidth: *const fn (self: *const Component, w: f32) f32,
+};
+```
+
+`*const Component` を受け取る純粋クエリ。同じ widget 状態と同じ `w` に対して同じ結果を返し、観測可能な状態 (`min_size` 等) を変更しない。内部 cache (折り返し結果の memoization 等) の更新は `@constCast` 経由で許される。
+
+`w` は親レイアウトが当該ウィジェットに与えようとしている外側の幅 (padding / border 込み)。`null` のとき呼び出し側は `min_size.height` をそのまま使う。
 
 `Event` の型定義は `awt/doc/event.md` を参照。
 `processEvent` は mutable `*Event` を受け取り、消費は `event.consume()` で表現する（戻り値ではなくフィールドで管理する）。

@@ -63,7 +63,8 @@ has_focus:      bool,
 /// selection just from the cursor passing over it.
 dragging:       bool,
 line_wrap:      bool,
-/// On-screen line model, rebuilt by `reflow`.
+/// On-screen line model, rebuilt by `reflowAt` (and so by `refreshMinSize`
+/// and `sizeQueryMinHeightForWidth`, both of which call into it).
 lines:          std.ArrayList(VisualLine),
 /// Reusable buffer for copying a (logical) byte range out of the gap buffer
 /// into contiguous memory for measuring / drawing.
@@ -80,7 +81,10 @@ pub const vtable = Component.VTable{
     .paint        = paint,
     .processEvent = processEvent,
     .destroy      = destroy,
-    .reshape      = reshape,
+};
+
+const size_query = Component.SizeQuery{
+    .minHeightForWidth = sizeQueryMinHeightForWidth,
 };
 
 pub fn create(
@@ -128,7 +132,7 @@ pub fn create(
         .preedit_target_end   = 0,
         .allocator      = allocator,
     };
-    ta.reflow();
+    ta.refreshMinSize();
     try TextArea.vtable.install(&ta.component);
     return ta;
 }
@@ -147,7 +151,7 @@ pub fn setText(self: *TextArea, new_text: []const u8) !void {
     _ = try self.insertStripCR(0, new_text);
     self.caret = self.text.len();
     self.mark = self.caret;
-    self.reflow();
+    self.refreshMinSize();
     self.component.markLayoutDirty();
     self.component.repaint();
 }
@@ -157,8 +161,10 @@ pub fn getLineWrap(self: TextArea) bool {
 }
 
 /// Toggle line wrapping. In wrap mode the view tracks its ScrollPane viewport
-/// width (`Component.scrollable`) and reflows; in no-wrap mode it takes the
-/// natural width of its longest line and scrolls horizontally.
+/// width (`Component.scrollable`) and exposes a height-for-width query
+/// (`Component.size_query`) so any laying-out parent can ask for the wrapped
+/// height; in no-wrap mode it takes the natural width of its longest line and
+/// scrolls horizontally.
 pub fn setLineWrap(self: *TextArea, wrap: bool) void {
     if (self.line_wrap == wrap) return;
     self.line_wrap = wrap;
@@ -166,7 +172,8 @@ pub fn setLineWrap(self: *TextArea, wrap: bool) void {
         .{ .tracks_viewport_width = true }
     else
         null;
-    self.reflow();
+    self.component.size_query = if (wrap) size_query else null;
+    self.refreshMinSize();
     self.component.markLayoutDirty();
     self.component.repaint();
 }
@@ -216,12 +223,15 @@ fn uninstall(self: *Component) void {
     }
 }
 
-fn reshape(self: *Component, new_size: Component.Size) void {
-    _ = new_size;
-    const ta: *TextArea = @fieldParentPtr("component", self);
-    // Only wrapping changes shape with width; no-wrap content size is width-
-    // independent. This is the height-for-width path ScrollPane drives.
-    if (ta.line_wrap) ta.reflow();
+/// SizeQuery hook: pure query for "minimum outer height at outer width `w`".
+/// Reuses the same wrap algorithm as `refreshMinSize`, but **does not** push
+/// the result back into `min_size`. Internal `lines` cache may be updated for
+/// the next paint at this width; that's the only allowed side effect.
+fn sizeQueryMinHeightForWidth(self: *const Component, w: f32) f32 {
+    const ta: *TextArea = @constCast(@fieldParentPtr("component", self));
+    const inner_w = @max(0, w - PADDING_X * 2);
+    const r = ta.reflowAt(inner_w);
+    return r.min_h;
 }
 
 fn blinkTick(user_data: *anyopaque) void {
@@ -257,14 +267,19 @@ fn wrapWidth(self: *TextArea) f32 {
     return self.font.face.glyphAdvance('M') * DEFAULT_COLUMNS;
 }
 
-/// Rebuild `lines` from the buffer and update `min_size` to the content size.
+/// Rebuild `lines` at the given inner (content) width and return the outer
+/// `min_w` / `min_h` this would imply. **Pure with respect to component
+/// state**: writes only `self.lines` (the cached wrap, used by the next paint
+/// at this width). Does NOT touch `component.min_size`/`max_size`; that's
+/// `refreshMinSize`'s job. Called from both `refreshMinSize` (for the publish
+/// path) and `sizeQueryMinHeightForWidth` (for the SizeQuery pure query).
 /// O(n) in the text length (full rescan); incremental relayout is a future
-/// optimization (see `doc/optimize.md` style notes / textarea.md).
-fn reflow(self: *TextArea) void {
+/// optimization (see `doc/optimize.md` / `textarea.md`).
+fn reflowAt(self: *TextArea, inner_w: f32) struct { min_w: f32, min_h: f32 } {
     self.font.face.setPixelSize(self.font.pixel_size);
     const line_h = self.font.face.metrics().line_height;
     const total = self.text.len();
-    const wrap_w = self.wrapWidth();
+    const wrap_w = if (self.line_wrap) inner_w else std.math.inf(f32);
 
     self.lines.clearRetainingCapacity();
     var content_w: f32 = 0;
@@ -298,7 +313,18 @@ fn reflow(self: *TextArea) void {
     else
         content_w + PADDING_X * 2 + CARET_WIDTH;
 
-    self.component.setMinSize(.{ .width = min_w, .height = min_h });
+    return .{ .min_w = min_w, .min_h = min_h };
+}
+
+/// Recompute min/max from the current text + wrap mode and push them to the
+/// component. Called on edits / setText / setLineWrap / initial create — i.e.
+/// from paths that intentionally change observable state and want the parent
+/// notified via `markLayoutDirty`. NOT called by `setBounds` (no implicit
+/// callback there anymore); a wrapping view's actual height-at-width is
+/// instead delivered through `SizeQuery.minHeightForWidth`.
+fn refreshMinSize(self: *TextArea) void {
+    const r = self.reflowAt(self.wrapWidth());
+    self.component.setMinSize(.{ .width = r.min_w, .height = r.min_h });
     self.component.setMaxSize(.{ .width = std.math.inf(f32), .height = std.math.inf(f32) });
 }
 
@@ -766,7 +792,7 @@ fn handleChar(ta: *TextArea, ev: *Component.Event, ch: awt.Event.CharEvent) void
 
 /// Edit that changed content → rebuild line model, then the common tail.
 fn afterReflow(ta: *TextArea, ev: *Component.Event) void {
-    ta.reflow();
+    ta.refreshMinSize();
     ta.component.markLayoutDirty();
     ta.afterEdit(ev);
 }

@@ -42,6 +42,27 @@ pub const Scrollable = struct {
     tracks_viewport_height: bool = false,
 };
 
+/// Opt-in capability for content-dependent sizing (height-for-width). A widget
+/// whose minimum height depends on a chosen width — typically a wrapping
+/// TextArea / Label — sets this so a layout can ask "what's the minimum height
+/// you need at width w?" without writing back to the widget's `min_size`.
+///
+/// Held as an optional field on `Component` (does not grow `VTable`), mirroring
+/// `DragSource` / `DropTarget`. Null = the widget has no width-dependent height;
+/// callers fall back to `min_size.height`.
+///
+/// **Contract: pure query.** Calling `minHeightForWidth(w)` must not change any
+/// observable widget state — no `setMinSize`, no `repaint`, no markLayoutDirty.
+/// Internal memoization (e.g. caching the reflowed line array keyed by `w`) is
+/// fine; reach for `@constCast` if you need to write a cache through the
+/// `*const Component` receiver. Same input → same output.
+pub const SizeQuery = struct {
+    /// Minimum outer height for the given outer width. The width is the full
+    /// box width the layout intends to assign (including padding/border) — the
+    /// widget subtracts its own insets before laying out content.
+    minHeightForWidth: *const fn (self: *const Component, w: f32) f32,
+};
+
 pub const VTable = struct {
     /// One-time setup after the component is placed in its container (or for
     /// the root, immediately after construction). May fail if it allocates
@@ -59,13 +80,6 @@ pub const VTable = struct {
     /// Called by Container.deinit after `uninstall` + property cleanup. The implementation
     /// is expected to `@fieldParentPtr` back to the outer type and call `allocator.destroy`.
     destroy:      *const fn (self: *Component, allocator: std.mem.Allocator) void,
-    /// Optional: called by `setBounds` when the component's *size* changes (not
-    /// on pure moves). Lets a view recompute size-dependent state — e.g. a
-    /// wrapping TextArea reflows to the new width and updates its
-    /// `min_size.height`. This is the height-for-width mechanism ScrollPane
-    /// relies on (`scrollpane.md`). `new_size` equals `self.size` at call time.
-    /// Default null = no reaction.
-    reshape:      ?*const fn (self: *Component, new_size: Size) void = null,
 };
 
 pub const Property = struct {
@@ -92,6 +106,10 @@ scrollable: ?Scrollable,
 /// externally; the `VTable` is not involved. See `framework/doc/dnd.md`.
 drag_source: ?dnd.DragSource,
 drop_target: ?dnd.DropTarget,
+/// Height-for-width query (opt-in). Set by widgets whose min height depends
+/// on the chosen width (wrapping TextArea, future wrapping Label, ...).
+/// Null = `min_size.height` is the only thing layouts need. See `SizeQuery`.
+size_query: ?SizeQuery,
 parent:     ?*Component,
 container:  ?*Container,
 /// True if this component can receive keyboard focus. Default false:
@@ -116,6 +134,7 @@ pub fn init(allocator: std.mem.Allocator, vtable: *const VTable) Component {
         .scrollable = null,
         .drag_source = null,
         .drop_target = null,
+        .size_query  = null,
         .parent     = null,
         .container  = null,
         .focusable  = false,
@@ -157,14 +176,11 @@ pub fn setBounds(self: *Component, r: Rect) void {
     const moved =
         self.position.x != r.x or self.position.y != r.y or
         self.size.width != r.width or self.size.height != r.height;
-    const resized = self.size.width != r.width or self.size.height != r.height;
     self.position = .{ .x = r.x, .y = r.y };
     self.size = .{ .width = r.width, .height = r.height };
-    // Notify size-dependent views (e.g. wrapping TextArea) before flagging
-    // dirty — the reshape impl may itself call setMinSize → markLayoutDirty.
-    if (resized) {
-        if (self.vtable.reshape) |reshape| reshape(self, self.size);
-    }
+    // No size-change callback: widgets whose content depends on the assigned
+    // width expose `SizeQuery.minHeightForWidth` instead, and the laying-out
+    // parent (e.g. ScrollPane) queries it before deciding bounds.
     if (moved) self.markLayoutDirty();
 }
 

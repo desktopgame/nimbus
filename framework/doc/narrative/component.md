@@ -22,14 +22,22 @@ VTable のカスタマイズポイントは以下の 5 つ。
 | `paint` | 描画ロジック |
 | `processEvent` | イベント処理ロジック |
 | `destroy` | メモリ解放（L&F カスタマイズではなく内部責務） |
-| `reshape` | オプショナル。サイズ依存の状態を作り直す hook |
 
 `destroy` だけは L&F の範疇ではなく、Zig の制約から必要な内部責務（後述「メモリ解放」を参照）。
 
-`reshape` は `?*const fn (*Component, Size) void` で、デフォルト `null`（多くのウィジェットは未設定）。
-`setBounds` でサイズが変わったとき（純粋な移動では呼ばれない）に `self.size` 確定後・dirty フラグ設定前に呼ばれる。
-幅に依存して内容サイズが変わるビュー、典型的には折り返しモードの `TextArea` が、新しい幅で内容を測り直して `min_size.height` を更新するのに使う（`ScrollPane` の height-for-width 機構。`scrollpane.md` 参照）。
-`null` のときは何もしない。
+VTable には「サイズ変化フック」のような枠は意図的に置かない。サイズ変化に反応する必要があるウィジェット (折り返し `TextArea` 等) は、`Component.size_query: ?SizeQuery` (opt-in 能力構造体) で**親レイアウトに pure query 経路を提供する**形を採る。`DragSource` / `DropTarget` と同じパターン (`dnd.md` 参照)。詳細は `component.md`「SizeQuery」と `scrollpane.md`「height-for-width」参照。
+
+### 却下案: VTable.reshape による push 型通知
+かつては `?*const fn (*Component, Size) void = null` を VTable に持ち、`setBounds` でサイズが変わると発火していた。`TextArea` がここで `reflow` を呼び `min_size` を更新し、ScrollPane が直後に読み戻すという 2 段モデル。
+
+問題は:
+
+1. **観測可能な state を query 中に書き換える**: `setBounds` の中で `min_size` を更新 → `markLayoutDirty` で親の `min_cache` を invalidate、という副作用が走る。レイアウト計算中にこれが起きると親の cache 整合性が崩れる
+2. **暗黙の契約**: 「reshape が呼ばれたら `min_size` を更新し、呼び出し側はその直後に `effectiveMinSize` を読め」という順序前提が型では表現できない
+3. **VTable に枠を 1 個生やすコスト**: 全 Component に乗るが事実上 1 ウィジェット (`TextArea` wrap mode) しか使わない
+4. **ScrollPane 内部に閉じない**: 同じ height-for-width が必要なケース (vertical BoxLayout 内の折り返し Label など) では、「親が view の reshape 結果を読み戻す合意」がそもそも無いため救えない
+
+`SizeQuery` 路線は (1) pure query で副作用なし、(2) 呼び出しと結果が 1 行に閉じる、(3) opt-in なので必要なウィジェットだけ持つ、(4) ScrollPane に限らずどんな親レイアウトからも `if (child.size_query) |sq| sq.minHeightForWidth(child, w)` で使える、で 4 点とも解消する。
 
 ## プロパティ
 VTable の差し替えだけでは「コンポーネントが追加の独自状態を持ち、イベントで変化する」ような拡張に対応できない。

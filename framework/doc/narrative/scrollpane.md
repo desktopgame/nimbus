@@ -33,17 +33,16 @@ ScrollPane の構成・サイズ決定とビューの契約・イベント処理
 * `scrollable.tracks_viewport_height = true` も同様 (縦方向)。
 
 ### height-for-width の扱い (TextArea 折り返しのための前提)
-折り返すビュー (将来の `TextArea` wrap モード等) では、 高さが幅に依存する。
-そこで ScrollPane は **「幅を確定してからビューの高さを読む」** 順序でレイアウトする:
+折り返すビュー (`TextArea` wrap モード等) では、 高さが幅に依存する。
+そこで ScrollPane は **「幅を決めてからビューの高さを聞く」** 順序でレイアウトする:
 
 1. ビューの幅を確定する (追従ならビューポート内幅、 でなければ `max(自然幅, ビューポート幅)`)。
-2. その幅でビューを `setBounds` → `doLayout` する。
-3. **ビューの高さを読み直す** (折り返した結果の高さ)。 これで垂直スクロール範囲を決める。
+2. ビューに `SizeQuery.minHeightForWidth(w)` を呼んで、 その幅での最小高さを取得する。
+3. 取得した高さで垂直スクロール範囲を決め、 ビューに `setBounds` で位置とサイズを与える。
 
-このときビュー側に課す契約は **「幅が変わったら (= `setBounds` で新しい幅を受けたら) 内容を測り直して自分の `min_size.height` を更新すること」**。
-nimbus に汎用の height-for-width クエリは無いので、 「ScrollPane が幅をセット → ビューが高さを再計算 → ScrollPane が読む」 の 2 段でそれを代用する。
-ビューがこの再計算をフックする口が `Component.VTable.reshape` (`component.md` 参照)。 `setBounds` でサイズが変わると `reshape` が呼ばれるので、 折り返しビューはそこで新しい幅に合わせて reflow し `min_size.height` を更新する。 `ScrollPane` は直後に `effectiveMinSize` を読む。
-通常の (折り返さない) ビューはサイズが幅に依存しないので、 `reshape` を実装する必要はなく、 この契約は自動的に満たされる。
+このときビュー側に課す契約は **「`size_query` が non-null なら、 `minHeightForWidth(w)` は与えられた幅 `w` でその瞬間に必要な最小高さを返す pure query であること」** (`component.md`「SizeQuery」参照)。
+ビュー自身の `min_size` を書き換えてはならず、 同じ `w` を渡せば常に同じ値を返す (内部 cache の更新は許される)。
+通常の (折り返さない) ビューはサイズが幅に依存しないので、 `size_query` は null のままでよい。 ScrollPane は `effectiveMinSize` をそのまま使う。
 
 これにより `TextArea` の 2 モードが**公開 API を変えずに**載る:
 

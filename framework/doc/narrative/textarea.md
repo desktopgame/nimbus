@@ -43,15 +43,21 @@ CLAUDE.md「文字コード」「書記素クラスタ」の方針に従う:
 
 `y` から画面行を、`x` から行内のコードポイント位置を引き当てる (グリフは半分の幅を境に切り替え)。
 
-## 行モデル (reflow)
-`lines` は画面行の配列で、編集・`setText`・`setLineWrap`・幅変更 (`reshape`) のたびに `reflow` が再構築する。
-論理行を `\n` で区切り、折り返しありのときは各論理行を `wrapWidth` 以内に greedy で分割する (最低 1 codepoint は載せて進行を保証)。
-`reflow` は現状テキスト長に対して O(n) で全走査する。インクリメンタルな部分再構築は将来課題。
+## 行モデル (reflowAt / refreshMinSize)
+`lines` は画面行の配列で、編集 / `setText` / `setLineWrap` / 親レイアウトからの `minHeightForWidth(w)` 問い合わせのたびに `reflowAt(inner_w)` が再構築する。
+論理行を `\n` で区切り、折り返しありのときは各論理行を `inner_w` 以内に greedy で分割する (最低 1 codepoint は載せて進行を保証)。
+`reflowAt` は現状テキスト長に対して O(n) で全走査する。インクリメンタルな部分再構築は将来課題。
 
-`reflow` は内容サイズを `min_size` に反映する:
+`reflowAt` は **`lines` の更新と min サイズの計算までを行い、戻り値で `min_w` / `min_h` を返す**。`min_size` の書き換えはしない (pure)。
+
+`min_size` への push は別関数 `refreshMinSize` が担う:
+* `setText` / `setLineWrap` / 初期化 / 編集 (`afterReflow`) — つまり利用者操作起源で内容が変わったときに呼ぶ
+* 内部で `reflowAt(現在の wrap 幅)` を呼んで結果を `component.setMinSize` する。これで `markLayoutDirty` 経由で親に通知される
+
+サイズ:
 * 高さ = 画面行数 × `line_height` + 上下パディング
 * 幅 (折り返しなし) = 最長行の自然幅 + 左右パディング
-* 幅 (折り返しあり) = 既定列数ぶんの幅 (実幅は `ScrollPane` が `tracks_viewport_width` で上書きする)
+* 幅 (折り返しあり) = 既定列数ぶんの幅 (実幅は親レイアウトが `minHeightForWidth(w)` 経由でビューポート幅を渡すので、 そのときに使われる)
 
 ## 折り返しと ScrollPane 連携
 `scrollpane.md`「サイズ決定とビューの契約」の height-for-width 機構に乗る。
@@ -61,9 +67,10 @@ CLAUDE.md「文字コード」「書記素クラスタ」の方針に従う:
 | 折り返しなし | `scrollable = null` | 最長行の自然幅 → 水平 + 垂直スクロール |
 | 折り返しあり | `scrollable.tracks_viewport_width = true` | 幅をビューポートに固定 → 折り返して高さが伸びる → 垂直のみスクロール |
 
-折り返しありのとき「幅を受け取ったら測り直して `min_size.height` を更新する」契約は、`Component.VTable.reshape` フック (`component.md` 参照) で実現する。
-`ScrollPane` がビューに `setBounds` で幅を与えると `reshape` が呼ばれ、`TextArea` がその幅で `reflow` して高さを更新する。
-`ScrollPane` は直後に `effectiveMinSize` を読み、折り返し後の高さで垂直スクロール範囲を決める。
+折り返しありのとき、`setLineWrap(true)` が `component.size_query` に `SizeQuery{ .minHeightForWidth = ... }` をセットする (`component.md`「SizeQuery」参照)。
+`ScrollPane` (や将来の vertical BoxLayout 配下の wrap Label など) は **ビューに `setBounds` を与える前に** `size_query.minHeightForWidth(view, w)` を呼んで、 その幅での最小高さを取得する。
+`TextArea` 側の hook (`sizeQueryMinHeightForWidth`) は `reflowAt(inner_w)` を呼んで `lines` を更新しつつ `min_h` を計算して返す。 ビューの観測可能 state (`min_size` 等) は**変えない** pure query。
+このため `ScrollPane` の round-trip (旧 `setBounds → reshape → effectiveMinSize` 読み戻し) は不要になり、 親は 1 度の query で高さを知れる。
 
 ## キャレット追従
 編集 / クリック / フォーカス獲得のたびに `ensureCaretVisible` が、囲っている `ScrollPane` に「キャレット矩形 (ビューローカル座標) を可視域に入れる」よう依頼する。
