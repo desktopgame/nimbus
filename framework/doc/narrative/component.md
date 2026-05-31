@@ -173,6 +173,8 @@ pub const FocusController = struct {
 
 利用者がこの型に触る必要はない (Window が install / 利用する内部仕掛け)。
 
+TODO: フォーカス周りは再設計の可能性高。
+
 ## スクロール連携 (ScrollController)
 `FocusController` / `DirtyNotify` と同じパターンで、スクロールされるビューが囲っている `ScrollPane` に「この矩形を可視域に入れて」と依頼するための仕掛け。
 framework→ScrollPane の直接依存を避けるためプロパティ経由にする。
@@ -191,6 +193,8 @@ pub fn enclosingScrollController(self: *Component) ?*ScrollController;
 ビュー (例: `TextArea`) は `enclosingScrollController` で親方向に最も近いものを探し、キャレット矩形を渡してスクロールを依頼する。
 `ScrollPane` の外で使われている場合は `null` が返り、追従は no-op になる。
 `enclosingScrollController` は自分自身は対象に含めず、親から上を探す。
+
+TODO: ScrollControllerは一度チェックの可能性高。
 
 ## install / uninstall
 `install` を呼んだら必ず対応する `uninstall` も呼び出さなければならない。
