@@ -82,6 +82,9 @@ enum nmAlignment = Component.Alignment { start center end stretch }
 # const void* (read via nmEventKind / nmEventSource).
 callback nmChangeListener = ChangeListenerList.Event
 
+# Run the event loop until all windows close. (nmAppCreate / nmAppDestroy are
+# hand-written in preamble.zig — they need an allocator / io.)
+fn nmAppRun        = Application.run    (&self) -> void !err
 fn nmAppButton     = Application.button (&self, text:str) -> *Button !null @owned
 fn nmButtonSetText = Button.setText     (&self, text:str) -> void    !err
 fn nmContainerAdd  = Container.add       (&self, child:*Component @transfer) -> void !err
@@ -101,7 +104,9 @@ fn nmComponentSetAlignX = Component.setAlignX (&self, a:nmAlignment) -> void
 fn nmComponentGetAlignX = Component.getAlignX (&self) -> nmAlignment
 
 # Event handler: the cb box is registered via the typed addChangeListener.
-fn nmComboBoxOnChange = ComboBox.addChangeListener (&self, cb:nmChangeListener) -> void !err
+# remove uses the same box pointer to match-and-unregister (off = remove).
+fn nmComboBoxOnChange  = ComboBox.addChangeListener    (&self, cb:nmChangeListener) -> void !err
+fn nmComboBoxOffChange = ComboBox.removeChangeListener (&self, cb:nmChangeListener) -> void
 
 # Upcast to the embedded Component (one-line `return &self.<field>`). Lets a
 # binding reach Container methods on any widget and feed nmComponentDestroy.

@@ -66,3 +66,21 @@ export fn nmEventKind(event: *const framework.ChangeListenerList.Event) c_int {
 export fn nmEventSource(event: *const framework.ChangeListenerList.Event) ?*anyopaque {
     return event.source; // the firing Model
 }
+
+// ── bootstrap ────────────────────────────────────────────────────────────
+// `Application.init` needs an allocator and an `Io`, neither of which can come
+// across the C ABI, so the entry point is hand-written here (not generated).
+// Defaults: libc allocator + std's process-wide single-threaded Io (nimbus is
+// single-UI-thread, so single-threaded Io fits). `nmAppRun` IS generated
+// (`Application.run` is a plain `!void` method). See doc/c_api_codegen.md.
+export fn nmAppCreate() ?*framework.Application {
+    const io = std.Io.Threaded.global_single_threaded.io();
+    return framework.Application.init(std.heap.c_allocator, io) catch |e| {
+        setLastError(e);
+        return null;
+    };
+}
+
+export fn nmAppDestroy(self: *framework.Application) void {
+    self.deinit(); // also frees the Application itself (allocator.destroy(self))
+}

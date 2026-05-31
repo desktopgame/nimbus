@@ -18,6 +18,17 @@
   ],
   "functions": [
     {
+      "c": "nmAppRun",
+      "owner": "Application",
+      "method": "run",
+      "names": { "py": "run", "js": "run" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [],
+      "ret": { "type": "void" },
+      "fail": "err"
+    },
+    {
       "c": "nmAppButton",
       "owner": "Application",
       "method": "button",
@@ -159,6 +170,17 @@
       "params": [{ "name": "cb", "type": "callback", "callback": "nmChangeListener", "role": "event_handler" }],
       "ret": { "type": "void" },
       "fail": "err"
+    },
+    {
+      "c": "nmComboBoxOffChange",
+      "owner": "ComboBox",
+      "method": "removeChangeListener",
+      "names": { "py": "remove_change_listener", "js": "removeChangeListener" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "cb", "type": "callback", "callback": "nmChangeListener", "role": "event_handler" }],
+      "ret": { "type": "void" },
+      "fail": null
     }
   ],
   "casts": [

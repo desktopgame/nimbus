@@ -67,6 +67,24 @@ export fn nmEventSource(event: *const framework.ChangeListenerList.Event) ?*anyo
     return event.source; // the firing Model
 }
 
+// ── bootstrap ────────────────────────────────────────────────────────────
+// `Application.init` needs an allocator and an `Io`, neither of which can come
+// across the C ABI, so the entry point is hand-written here (not generated).
+// Defaults: libc allocator + std's process-wide single-threaded Io (nimbus is
+// single-UI-thread, so single-threaded Io fits). `nmAppRun` IS generated
+// (`Application.run` is a plain `!void` method). See doc/c_api_codegen.md.
+export fn nmAppCreate() ?*framework.Application {
+    const io = std.Io.Threaded.global_single_threaded.io();
+    return framework.Application.init(std.heap.c_allocator, io) catch |e| {
+        setLastError(e);
+        return null;
+    };
+}
+
+export fn nmAppDestroy(self: *framework.Application) void {
+    self.deinit(); // also frees the Application itself (allocator.destroy(self))
+}
+
 // ── generated exports (do not edit; regenerate with `zig build apigen`) ──
 
 const nmColor = extern struct { r: f32, g: f32, b: f32, a: f32, };
@@ -84,6 +102,14 @@ const nmChangeListener = extern struct {
 };
 fn nm_trampoline_nmChangeListener(box: *nmChangeListener, e: *const framework.ChangeListenerList.Event) void {
     if (box.fn_ptr) |f| f(box.userdata, e);
+}
+
+export fn nmAppRun(self: *framework.Application) c_int {
+    self.run() catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
 }
 
 export fn nmAppButton(self: *framework.Application, text: [*:0]const u8) ?*framework.Button {
@@ -157,6 +183,10 @@ export fn nmComboBoxOnChange(self: *framework.ComboBox, cb: *nmChangeListener) c
         return errorToCode(e);
     };
     return 0;
+}
+
+export fn nmComboBoxOffChange(self: *framework.ComboBox, cb: *nmChangeListener) void {
+    self.removeChangeListener(nmChangeListener, nm_trampoline_nmChangeListener, cb);
 }
 
 export fn nmButtonAsComponent(self: *framework.Button) *framework.Component {

@@ -2,7 +2,8 @@
 /* GENERATED FILE — do not edit by hand.
  * Source spec:  tools/apigen/nimbus.api
  * Regenerate:   zig build apigen
- * Hand-written bootstrap declarations live in tools/apigen/preamble.h. */
+ * Header top matter is tools/apigen/preamble.h; hand-written prototypes (which
+ * may reference opaque types) are in tools/apigen/preamble_protos.h. */
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -16,18 +17,6 @@ typedef struct { const char* ptr; size_t len; } nmStr;
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-/* ── error reporting (see CLAUDE.md「エラーのC_ABIでの表現」) ── */
-int nmLastErrorCode(void);
-const char* nmLastErrorMessage(void);
-
-/* ── backend ── */
-const char* nmGetBackendVersion(void);
-
-/* ── event accessors (for the opaque `event` in listener callbacks) ── */
-/* kind: 0 = change, 1 = action */
-int nmEventKind(const void* event);
-void* nmEventSource(const void* event);
 
 /* ── opaque handles ── */
 typedef struct nmComponent nmComponent;
@@ -45,8 +34,28 @@ typedef enum { nmAlignment_start, nmAlignment_center, nmAlignment_end, nmAlignme
 
 /* ── event-handler callbacks ── */
 typedef struct { void (*fn)(void* userdata, const void* event); void* userdata; } nmChangeListener;
+/* Hand-written prototypes. Emitted by tools/apigen AFTER the generated opaque
+ * typedefs, so they may reference handle types (e.g. nmApplication). Their
+ * implementations live in tools/apigen/preamble.zig. Keep the two in sync. */
+
+/* ── error reporting (see CLAUDE.md「エラーのC_ABIでの表現」) ── */
+int nmLastErrorCode(void);
+const char* nmLastErrorMessage(void);
+
+/* ── backend ── */
+const char* nmGetBackendVersion(void);
+
+/* ── event accessors (for the opaque `event` in listener callbacks) ── */
+/* kind: 0 = change, 1 = action */
+int nmEventKind(const void* event);
+void* nmEventSource(const void* event);
+
+/* ── bootstrap (needs allocator / io; nmAppRun is generated) ── */
+nmApplication* nmAppCreate(void);
+void nmAppDestroy(nmApplication* self);
 
 /* ── functions ── */
+int nmAppRun(nmApplication* self);
 nmButton* nmAppButton(nmApplication* self, const char* text);
 int nmButtonSetText(nmButton* self, const char* text);
 int nmContainerAdd(nmContainer* self, nmComponent* child);
@@ -60,6 +69,7 @@ float nmComponentGetGrowX(nmComponent* self);
 void nmComponentSetAlignX(nmComponent* self, nmAlignment a);
 nmAlignment nmComponentGetAlignX(nmComponent* self);
 int nmComboBoxOnChange(nmComboBox* self, nmChangeListener* cb);
+void nmComboBoxOffChange(nmComboBox* self, nmChangeListener* cb);
 
 /* ── upcasts ── */
 nmComponent* nmButtonAsComponent(nmButton* self);

@@ -17,6 +17,10 @@ const std = @import("std");
 
 const SPEC_PATH = "tools/apigen/nimbus.api";
 const PREAMBLE_H = "tools/apigen/preamble.h";
+/// Hand-written C prototypes emitted AFTER the generated typedefs (so they may
+/// reference opaque types like nmApplication). Keeps hand-written / generated
+/// cleanly separated while producing a correctly-ordered merged header.
+const PREAMBLE_PROTOS_H = "tools/apigen/preamble_protos.h";
 const PREAMBLE_ZIG = "tools/apigen/preamble.zig";
 const OUT_H = "include/nimbus.h";
 const OUT_ZIG = "framework/src/c_api.zig";
@@ -206,6 +210,8 @@ pub fn main(init: std.process.Init) !void {
     defer gpa.free(spec);
     const pre_h = try cwd.readFileAlloc(io, PREAMBLE_H, gpa, .unlimited);
     defer gpa.free(pre_h);
+    const pre_protos = try cwd.readFileAlloc(io, PREAMBLE_PROTOS_H, gpa, .unlimited);
+    defer gpa.free(pre_protos);
     const pre_zig = try cwd.readFileAlloc(io, PREAMBLE_ZIG, gpa, .unlimited);
     defer gpa.free(pre_zig);
 
@@ -232,7 +238,7 @@ pub fn main(init: std.process.Init) !void {
     var j: std.ArrayList(u8) = .empty;
     defer j.deinit(gpa);
 
-    try emitHeader(gpa, &h, pre_h, &model);
+    try emitHeader(gpa, &h, pre_h, pre_protos, &model);
     try emitZig(gpa, &z, pre_zig, &model);
     try emitJson(gpa, &j, &model);
 
@@ -518,6 +524,7 @@ fn emitHeader(
     gpa: std.mem.Allocator,
     buf: *std.ArrayList(u8),
     preamble: []const u8,
+    proto_preamble: []const u8,
     model: *const Model,
 ) !void {
     try buf.appendSlice(gpa, preamble);
@@ -558,6 +565,10 @@ fn emitHeader(
             try print(gpa, buf, "typedef struct {{ void (*fn)(void* userdata, const void* event); void* userdata; }} {s};\n", .{c.cname});
         }
     }
+
+    // Hand-written prototypes, emitted here so they may reference the opaque
+    // typedefs above (e.g. nmAppCreate -> nmApplication*).
+    try buf.appendSlice(gpa, proto_preamble);
 
     try buf.appendSlice(gpa, "\n/* ── functions ── */\n");
     for (model.funcs.items) |*f| {

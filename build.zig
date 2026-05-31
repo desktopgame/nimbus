@@ -180,6 +180,7 @@ pub fn build(b: *std.Build) void {
     // Re-run whenever any input changes (spec or either preamble).
     apigen_run.addFileInput(b.path("tools/apigen/nimbus.api"));
     apigen_run.addFileInput(b.path("tools/apigen/preamble.h"));
+    apigen_run.addFileInput(b.path("tools/apigen/preamble_protos.h"));
     apigen_run.addFileInput(b.path("tools/apigen/preamble.zig"));
     const apigen_step = b.step("apigen", "Regenerate the C ABI (nimbus.h + c_api.zig) from tools/apigen/nimbus.api");
     apigen_step.dependOn(&apigen_run.step);

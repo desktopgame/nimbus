@@ -356,12 +356,17 @@ CLAUDE.md「エラーのC_ABIでの表現」に従う。
 
 ## 手書きプリアンブルの役割
 機械的に導けないものはプリアンブルに手書きで置き、生成器がその後ろに生成物を連結する。
+preamble は 3 ファイルに分かれる: `preamble.h`（C ヘッダ先頭＝include / `nmStr` / extern C 開き）、
+`preamble_protos.h`（手書き C プロトタイプ。**opaque typedef を参照できるよう生成器が型定義の後に差し込む**）、
+`preamble.zig`（Zig 実装）。
 
 * ランタイム支援（last-error 退避とアクセサ）。
 * awt 層への単純なパススルー（`nmGetBackendVersion`）。
-* 将来、allocator / io を必要とするブートストラップ的なコンストラクタ
-  （`nmAppCreate` 相当）もここに置く想定。これらは引数を C から渡せないため
-  機械生成の対象外で、内部でデフォルトの allocator / io を確定する手書きグルーになる。
+* イベントの不透明アクセサ（`nmEventKind` / `nmEventSource`）。
+* **ブートストラップ（実装済み）**: `nmAppCreate` / `nmAppDestroy`。`Application.init` は
+  allocator / io を要し C から渡せないため手書き。既定は libc allocator
+  （`std.heap.c_allocator`）+ std の単一スレッド Io（`std.Io.Threaded.global_single_threaded`、
+  nimbus は単一 UI スレッドなので適合）。`nmAppRun` は生成（`run()` は素の `!void` メソッド）。
 
 ## 実装済み / 未対応
 実装済み（生成器が出力する）:
@@ -376,6 +381,9 @@ CLAUDE.md「エラーのC_ABIでの表現」に従う。
 * `cast`（アップキャスト）と `destroy`（汎用デストラクタ）。
 * 所有権タグ `@owned` / `@borrowed` / `@transfer`（→ IR `ownership`）。
 * コールバック / イベントハンドラ（`callback` 宣言、案 C の box + トランポリン、event は不透明 + 手書きアクセサ）。
+  登録解除（`remove`）も同じコールバック引数（box ポインタで一致削除）で生成可。
+* ブートストラップ: `nmAppCreate` / `nmAppDestroy`（手書き）+ `nmAppRun`（生成）。C だけで
+  create → 操作 → run → destroy が到達可能。
 * バインディング IR（`bindings/nimbus_api.json`）: 型・継承・`structs`・`enums`・`callbacks`・
   関数のクラス対応づけ・ターゲット言語名・`casts`・`destructors`。
 
@@ -383,12 +391,14 @@ CLAUDE.md「エラーのC_ABIでの表現」に従う。
 
 * `@ctor` / `@dtor` で `nmCreateXxx` / `nmDestroyXxx` を型側 IR に紐づける案
   （現状はファクトリ + 汎用デストラクタで代替）。
-* コールバックの拡張: event に追加 typed 引数を持つ署名、登録の `remove`（解除）エクスポート。
+* コールバックの拡張: event に追加 typed 引数を持つ署名（`remove`/解除はコールバック引数の再利用で対応済み）。
 * 値構造体の拡張: ネスト構造体・配列・enum フィールド、値戻り＋エラーの組み合わせ。
 * enum の拡張: 明示値・非連続値・フラグ（ビット或）。
 * 値（スカラ/enum/struct/str）戻り＋エラーの組み合わせ（out 引数かセンチネルか要決定。現状は失敗なしのみ）。
 * 文字列**配列**の引数（`comboBox(items: []const []const u8)` 等）。`const char* const*` + count か add-item 経由。
-* allocator / io を要するブートストラップ系コンストラクタ（上記プリアンブル参照）。
+* optional（`?*T` の nullable ポインタ、`?Size` 等の値 optional）。
+* `awt.Image` の値返し（`icon()`）/ Timer（`setTimeout` の callback + `!TimerId`）。
+* List `CellFactory`（bespoke アダプタ。後回し）。
 
 ## シンボル名の規約: 公開 ABI 名と awt-c 内部名を分ける
 かつて awt-c（`glfw_shim.c`）の C 関数が公開 ABI と同じ `nmGetBackendVersion` を名乗っており、
