@@ -1,5 +1,5 @@
 ---
-unsafe: true
+unsafe: false
 ---
 
 # window
@@ -193,3 +193,4 @@ window.dispose();
 * 複数モニタ対応（モニタ選択、移動時の DPI 変化対応）
 * アニメーション駆動（`requestAnimationFrame` 相当の連続再描画）
 * `dirty_rect` を実描画に反映する部分再描画（現状は API のみ rect 単位で受け、実装は full redraw に倒す）
+* ウィンドウが閉じられていることをイベントリスナーで検知、確認ダイアログを出したりキャンセルしたりできるように
