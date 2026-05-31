@@ -20,12 +20,21 @@ const char* nmGetBackendVersion(void);
 
 /* ── opaque handles ── */
 typedef struct nmComponent nmComponent;
+typedef struct nmContainer nmContainer;
 typedef struct nmButton nmButton;
 typedef struct nmApplication nmApplication;
 
 /* ── functions ── */
 nmButton* nmAppButton(nmApplication* self, const char* text);
 int nmButtonSetText(nmButton* self, const char* text);
+int nmContainerAdd(nmContainer* self, nmComponent* child);
+
+/* ── upcasts ── */
+nmComponent* nmButtonAsComponent(nmButton* self);
+nmComponent* nmContainerAsComponent(nmContainer* self);
+
+/* ── destructors ── */
+void nmComponentDestroy(nmComponent* self);
 
 #ifdef __cplusplus
 }

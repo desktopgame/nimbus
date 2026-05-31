@@ -75,7 +75,7 @@ typedef struct nm<ZigType> nm<ZigType>;
 
 ### 関数宣言
 ```
-fn <CName> = <ZigType>.<method> ( [<recv> ,] <arg>* ) -> <ret> [!<fail>]
+fn <CName> = <ZigType>.<method> ( [<recv> ,] <arg>* ) -> <ret> [!<fail>] [<own>]
 ```
 * `<CName>`: 生成される C 関数名。
 * `<ZigType>.<method>`: 包む Zig メソッド（`framework.<ZigType>.<method>`）。
@@ -84,22 +84,47 @@ fn <CName> = <ZigType>.<method> ( [<recv> ,] <arg>* ) -> <ret> [!<fail>]
   * `=self` — Zig 側 `self: T`（値渡し）。C 側 `const nmT* self`
     （opaque は値で渡せないのでポインタのまま渡し、シムが間接参照する）。
   * 省略時はレシーバなし（静的関数として `framework.<ZigType>.<method>` を呼ぶ）。
-* `<arg>`: `<name>:<type>` 形式。現状 `<type>` は `str` のみ（PoC）。
-* `<ret>`: `void` または `*<ZigType>`（PoC）。
+* `<arg>`: `<name>:<type> [<own>]` 形式。`<type>` は `str` または `*<ZigType>`（ハンドル）。
+* `<ret>`: `void` または `*<ZigType>`。
 * `<fail>`: 失敗の通知方法。省略可。
   * `!null` — 失敗時 NULL を返し `last_error` を設定する（`*T` 戻り向け）。
   * `!err`  — 失敗時 0 以外の int コードを返す（`void` 戻り向け、0 = 成功）。
+* `<own>`: 所有権の注記（省略可）。戻りと各引数に付けられる。後述「所有権」参照。
+  * `@owned` — 戻りハンドルは呼び出し側が所有する（解放責任あり）。
+  * `@borrowed` — 戻りハンドルは借用（解放してはいけない）。
+  * `@transfer` — その引数の所有権が呼ばれた側へ移る（`Container.add` の子など）。
+
+### cast 宣言（アップキャスト）
+```
+cast <CName> = <ZigType>.<field> -> <Target>
+```
+`&self.<field>` を `*<Target>` ハンドルとして返す 1 行関数を生成する
+（例: `cast nmButtonAsComponent = Button.component -> Component`）。
+バインディングが任意の widget から Component のメソッドへ到達したり、後述の
+`nmComponentDestroy` に渡すための土台。IR の `casts` に出る。
+
+### destroy 宣言（汎用デストラクタ）
+```
+destroy <CName> = <ZigType>
+```
+`self.vtable.destroy(self, self.allocator)` を呼ぶ関数を生成する。
+vtable ディスパッチなので、Component を持つ任意の widget をこの 1 本で破棄できる
+（`destroy nmComponentDestroy = Component`）。IR の `destructors` に出る。
 
 ## 型マッピング
 現状サポートする写像（PoC 範囲）。
 
 | スペック表記 | C 型 | Zig シム引数/戻り | 備考 |
 |---|---|---|---|
-| `opaque T`（引数/レシーバ） | `nmT*` | `*framework.T` | ハンドルはポインタ |
+| `opaque T`（レシーバ） | `nmT*` | `*framework.T` | ハンドルはポインタ |
 | `str`（引数） | `const char*` | `[*:0]const u8` | シムが `std.mem.span` で `[]const u8` に変換 |
+| `*T`（引数） | `nmT*` | `*framework.T` | ハンドルをそのまま渡す |
 | `*T`（戻り、`!null`） | `nmT*` | `?*framework.T` | `catch` で `null` |
 | `void`（戻り、`!err`） | `int` | `c_int` | `catch` で `errorToCode`、成功時 `0` |
 | `void`（戻り、失敗なし） | `void` | `void` | そのまま呼ぶ |
+
+所有権タグ（`@owned` / `@borrowed` / `@transfer`）は C/Zig のコード生成には影響せず、
+IR にのみ出る（バインディングの解放判断に使う。「所有権」参照）。
 
 ## バインディング用メタデータ（IR）
 `bindings/nimbus_api.json` は、Python / JS などのバインディング生成器が読む一枚の IR。
@@ -117,12 +142,25 @@ fn <CName> = <ZigType>.<method> ( [<recv> ,] <arg>* ) -> <ret> [!<fail>]
   "callbacks": [],
   "functions": [
     {
-      "c": "nmButtonSetText", "owner": "Button", "method": "setText",
-      "names": { "py": "set_text", "js": "setText" },
+      "c": "nmAppButton", "owner": "Application", "method": "button",
+      "names": { "py": "button", "js": "button" },
       "kind": "method", "receiver": "ptr",
       "params": [{ "name": "text", "type": "str" }],
+      "ret": { "type": "handle", "handle": "Button", "ownership": "owned" }, "fail": "null"
+    },
+    {
+      "c": "nmContainerAdd", "owner": "Container", "method": "add",
+      "names": { "py": "add", "js": "add" },
+      "kind": "method", "receiver": "ptr",
+      "params": [{ "name": "child", "type": "handle", "handle": "Component", "ownership": "transfer" }],
       "ret": { "type": "void" }, "fail": "err"
     }
+  ],
+  "casts": [
+    { "c": "nmButtonAsComponent", "from": "Button", "to": "Component" }
+  ],
+  "destructors": [
+    { "c": "nmComponentDestroy", "type": "Component" }
   ]
 }
 ```
@@ -136,6 +174,10 @@ fn <CName> = <ZigType>.<method> ( [<recv> ,] <arg>* ) -> <ret> [!<fail>]
 * `functions[].ret.type == "handle"` — そのメソッドはハンドルを生む「ファクトリ」だと分かる
   （例: `Application.button -> Button`）。バインディングは `app.button(...)` でも
   `nimbus.Button(app, ...)` でも、この 1 関数に対応づけできる。
+* `ownership`（戻り・引数）— `@owned` / `@borrowed` / `@transfer`。バインディングの
+  解放判断（後述「所有権」）。未指定なら出ない（既定の慣習に従う）。
+* `casts` — アップキャスト一覧（`from` → `to`）。
+* `destructors` — 汎用デストラクタ一覧（`type` のハンドルを破棄する `c` 関数）。
 * `callbacks` — 後述。コールバック型の一覧。現状は空配列だが、契約として常に存在する。
 
 ## コールバック / イベントハンドラ（設計・コード生成は未実装）
@@ -163,17 +205,49 @@ IR ではこの引数を `{"type":"callback","callback":"ActionListener","role":
 > 表現）は未実装。Zig 側に `fn(*anyopaque)+*anyopaque` を直接取るメソッド（`setTimeout`
 > 等）と、リスナー登録経路の統一（typed-callbacks 計画）がそろってから着手する。
 
-## コンストラクタ / デストラクタ（設計・コード生成は未実装）
-バインディングの `__init__` / `__del__` に対応づけるための目印:
-```
-fn nmButtonCreate  = Button.create  (...) -> *Button !null   @ctor
-fn nmButtonDestroy = Button.destroy (&self) -> void          @dtor
-```
-IR では型側に `"ctor": "nmButtonCreate"` / `"dtor": "nmButtonDestroy"` として出す想定。
+## init / deinit（コンストラクタ・デストラクタ）の見せ方
+Zig には 2 つの生成の流儀がある。
 
-> 現状: nimbus の実コンストラクタは allocator / font / Color 等を取るため、現行の型
-> サポートでは機械生成できない（allocator を要するものはプリアンブル行き）。`nmCreateXxx`
-> / `nmDestroyXxx`（CLAUDE.md）が型サポート拡張後に出せるようになってから着手する。
+* `create` / `destroy` — ヒープに確保して `*T`（ハンドル）を返す。**これだけが C ABI を
+  ハンドルとして越える。**
+* `init` / `deinit` — 値型（`Button` を値で返す、各 model）。値返しはハンドルにできないので
+  当面は内部扱い（箱詰めが要る）。
+
+→ 規則: **ポインタを返すコンストラクタだけがハンドル ctor になる。**
+
+### 構築 = ファクトリ（型サポート不要）
+nimbus の実際の構築経路は `Application` のファクトリ（`app.button(text)`）で、ここが
+allocator とデフォルト（font/color）を供給する。つまり `Button.create(allocator, …)` を
+直接公開する必要はなく、**ファクトリがバインディングのコンストラクタになる**。
+`nimbus.Button(app, "x")` → `nmAppButton` に対応づけるだけ。IR では戻りが
+`ret.type == "handle"` であることでファクトリだと判別できる（型サポート拡張は不要）。
+
+### 破棄 = 単一の汎用デストラクタ + アップキャスト（実装済み）
+`Container.deinit` が子を `component.vtable.destroy(component, allocator)` で解放するとおり、
+**vtable 経由の破棄は全 widget 共通の入口**。よって破棄 API は 1 本に集約する。
+
+* `destroy nmComponentDestroy = Component` → 任意の widget を `nmComponent*` で破棄。
+* `cast nmXxxAsComponent = Xxx.component -> Component` → 各型から `nmComponent*` への upcast。
+
+バインディングは `__del__` でアップキャスト → `nmComponentDestroy` を呼ぶ。allocator は
+Component に保持されているので C から渡す必要はない。
+
+### 所有権（ライフタイム）
+nimbus のライフタイムは「木の所有」: `container.add(child)` で子の所有権はコンテナへ移り、
+コンテナ（最終的には Frame / Application）が解放する。add していない単独 widget だけ
+呼び出し側が解放する。一部の戻りは借用（`app.icon()` は「deinit するな」）。
+
+このため `__del__` が無条件に解放すると二重解放になる。そこで所有権の移動を
+**spec → IR に明示**し、バインディングが「所有フラグ」を自動管理できるようにする。
+
+* 戻り `@owned` / `@borrowed`、引数 `@transfer` を `.api` に付ける（IR の `ownership` に出る）。
+* 既定の慣習（未指定時）: ハンドル戻り = owned、ハンドル引数 = borrowed。`@transfer` で上書き。
+* 典型: `Application.button -> *Button @owned`、`Container.add(child:*Component @transfer)`、
+  借用を返す getter は `@borrowed`。
+
+> 未実装: `@ctor` / `@dtor` で `nmCreateXxx` / `nmDestroyXxx`（CLAUDE.md）を型側 IR に
+> 紐づける案。実 `create` が allocator / font / Color を取るため、これは型サポート拡張
+> （`struct` 値・allocator）が入ってから。現状は上記ファクトリ + 汎用デストラクタで足りる。
 
 ## 失敗規約
 CLAUDE.md「エラーのC_ABIでの表現」に従う。
@@ -201,18 +275,21 @@ CLAUDE.md「エラーのC_ABIでの表現」に従う。
 実装済み（生成器が出力する）:
 
 * opaque 宣言・継承（`: <Parent>` → IR `extends`）。
-* `&self` / `=self` / レシーバなしの関数、`str` 引数、`*T`（`!null`）/ `void`（`!err`）戻り。
+* `&self` / `=self` / レシーバなしの関数、`str` 引数、ハンドル引数 `*T`、
+  `*T`（`!null`）/ `void`（`!err`）戻り。
+* `cast`（アップキャスト）と `destroy`（汎用デストラクタ）。
+* 所有権タグ `@owned` / `@borrowed` / `@transfer`（→ IR `ownership`）。
 * バインディング IR（`bindings/nimbus_api.json`）: 型・継承・関数のクラス対応づけ・
-  ターゲット言語名・`callbacks`（空配列）。
+  ターゲット言語名・`casts`・`destructors`・`callbacks`（空配列）。
 
 未対応（文法・IR は本書で確定済みだがコード生成が未実装、もしくは文法ごと今後）:
 
 * コールバック / イベントハンドラ（上記専用セクション）。文法・IR 確定、コード生成未実装。
-* コンストラクタ / デストラクタ `@ctor` / `@dtor`（上記専用セクション）。
+* `@ctor` / `@dtor` で `nmCreateXxx` / `nmDestroyXxx` を型側 IR に紐づける案
+  （現状はファクトリ + 汎用デストラクタで代替。下記の型サポート拡張が前提）。
 * 値構造体の引数・戻り（`Color` 等）→ `struct` 宣言と値渡しの写像。
 * enum 引数（`Slider.Orientation` 等）。
 * int / float / bool などプリミティブ引数、値戻り＋エラー（out 引数かセンチネルか要決定）。
 * スライス（`[]const u8`）の**戻り**。`getText` 等。NUL 終端でないため
   `ptr + len` の 2 値か呼び出し側バッファ方式かを別途決める。
-* 派生型ごとの `asXxx`（`nmFrameAsWindow` 等、[binding](framework/doc/binding.md)）。
 * allocator / io を要するブートストラップ系コンストラクタ（上記プリアンブル参照）。

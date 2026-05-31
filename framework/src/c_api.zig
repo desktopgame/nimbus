@@ -60,3 +60,23 @@ export fn nmButtonSetText(self: *framework.Button, text: [*:0]const u8) c_int {
     };
     return 0;
 }
+
+export fn nmContainerAdd(self: *framework.Container, child: *framework.Component) c_int {
+    self.add(child) catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
+}
+
+export fn nmButtonAsComponent(self: *framework.Button) *framework.Component {
+    return &self.component;
+}
+
+export fn nmContainerAsComponent(self: *framework.Container) *framework.Component {
+    return &self.component;
+}
+
+export fn nmComponentDestroy(self: *framework.Component) void {
+    self.vtable.destroy(self, self.allocator);
+}

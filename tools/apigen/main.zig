@@ -29,7 +29,11 @@ const OUT_JSON = "bindings/nimbus_api.json";
 const Recv = enum { none, ptr, value };
 
 /// Argument wire type. PoC subset; extended per doc/c_api_codegen.md「未対応」.
-const ArgType = enum { str };
+const ArgType = union(enum) {
+    str,
+    /// `*T` handle argument; payload is the Zig type name (e.g. "Component").
+    handle: []const u8,
+};
 
 /// Function return shape.
 const Ret = union(enum) {
@@ -41,9 +45,14 @@ const Ret = union(enum) {
 /// Failure-signalling convention.
 const Fail = enum { none, null, err };
 
+/// Ownership annotation (`@owned` / `@borrowed` / `@transfer`). Drives the
+/// binding's free / no-free decision. `default` = unspecified.
+const Ownership = enum { default, owned, borrowed, transfer };
+
 const Arg = struct {
     name: []const u8,
     ty: ArgType,
+    ownership: Ownership = .default,
 };
 
 const Func = struct {
@@ -54,6 +63,21 @@ const Func = struct {
     args: std.ArrayList(Arg),
     ret: Ret,
     fail: Fail,
+    ret_ownership: Ownership = .default,
+};
+
+/// `cast <CName> = <ZigType>.<field> -> <Target>` — upcast helper.
+const Cast = struct {
+    cname: []const u8,
+    ztype: []const u8,
+    field: []const u8,
+    target: []const u8,
+};
+
+/// `destroy <CName> = <ZigType>` — generic vtable-dispatch destructor.
+const Destructor = struct {
+    cname: []const u8,
+    ztype: []const u8,
 };
 
 const Opaque = struct {
@@ -65,6 +89,8 @@ const Opaque = struct {
 const Model = struct {
     opaques: std.ArrayList(Opaque) = .empty,
     funcs: std.ArrayList(Func) = .empty,
+    casts: std.ArrayList(Cast) = .empty,
+    destructors: std.ArrayList(Destructor) = .empty,
 };
 
 // All string slices in the model point into the spec buffer, which is kept
@@ -87,6 +113,8 @@ pub fn main(init: std.process.Init) !void {
         for (model.funcs.items) |*f| f.args.deinit(gpa);
         model.funcs.deinit(gpa);
         model.opaques.deinit(gpa);
+        model.casts.deinit(gpa);
+        model.destructors.deinit(gpa);
     }
     try parse(gpa, spec, &model);
 
@@ -141,6 +169,25 @@ fn parse(gpa: std.mem.Allocator, spec: []const u8, model: *Model) !void {
             }
         } else if (std.mem.eql(u8, kw, "fn")) {
             try parseFn(gpa, line_no, tokens.items, model);
+        } else if (std.mem.eql(u8, kw, "cast")) {
+            // cast <CName> = <ZigType>.<field> -> <Target>
+            const items = tokens.items;
+            if (items.len != 6 or !std.mem.eql(u8, items[2], "=") or !std.mem.eql(u8, items[4], "->"))
+                return fail(line_no, "cast expects '<CName> = <ZigType>.<field> -> <Target>'");
+            const dot = std.mem.indexOfScalar(u8, items[3], '.') orelse
+                return fail(line_no, "cast expects '<ZigType>.<field>'");
+            try model.casts.append(gpa, .{
+                .cname = items[1],
+                .ztype = items[3][0..dot],
+                .field = items[3][dot + 1 ..],
+                .target = items[5],
+            });
+        } else if (std.mem.eql(u8, kw, "destroy")) {
+            // destroy <CName> = <ZigType>
+            const items = tokens.items;
+            if (items.len != 4 or !std.mem.eql(u8, items[2], "="))
+                return fail(line_no, "destroy expects '<CName> = <ZigType>'");
+            try model.destructors.append(gpa, .{ .cname = items[1], .ztype = items[3] });
         } else {
             return fail(line_no, "unknown statement keyword");
         }
@@ -182,11 +229,16 @@ fn parseFn(
             f.recv = .ptr;
         } else if (std.mem.eql(u8, tok, "=self")) {
             f.recv = .value;
+        } else if (tok[0] == '@') {
+            // Ownership tag applies to the most recently parsed argument.
+            if (f.args.items.len == 0) return fail(line_no, "ownership tag with no argument");
+            f.args.items[f.args.items.len - 1].ownership =
+                parseOwnership(tok) orelse return fail(line_no, "unknown ownership tag");
         } else {
             const colon = std.mem.indexOfScalar(u8, tok, ':') orelse
                 return fail(line_no, "expected <name>:<type> argument");
             const ty = parseArgType(tok[colon + 1 ..]) orelse
-                return fail(line_no, "unsupported argument type (PoC: only 'str')");
+                return fail(line_no, "unsupported argument type (supported: 'str', '*Type')");
             try f.args.append(gpa, .{ .name = tok[0..colon], .ty = ty });
         }
     }
@@ -206,14 +258,18 @@ fn parseFn(
     }
     i += 1;
 
-    if (i < t.len) {
-        const ft = t[i];
-        if (std.mem.eql(u8, ft, "!null")) {
+    // Trailing markers: `!null` / `!err` (failure) and/or `@owned` / `@borrowed`
+    // (return ownership), in any order.
+    while (i < t.len) : (i += 1) {
+        const tok = t[i];
+        if (std.mem.eql(u8, tok, "!null")) {
             f.fail = .null;
-        } else if (std.mem.eql(u8, ft, "!err")) {
+        } else if (std.mem.eql(u8, tok, "!err")) {
             f.fail = .err;
+        } else if (tok[0] == '@') {
+            f.ret_ownership = parseOwnership(tok) orelse return fail(line_no, "unknown ownership tag");
         } else {
-            return fail(line_no, "unknown failure marker (expected !null or !err)");
+            return fail(line_no, "unexpected trailing token after return type");
         }
     }
 
@@ -222,6 +278,14 @@ fn parseFn(
 
 fn parseArgType(s: []const u8) ?ArgType {
     if (std.mem.eql(u8, s, "str")) return .str;
+    if (s.len > 1 and s[0] == '*') return .{ .handle = s[1..] };
+    return null;
+}
+
+fn parseOwnership(tok: []const u8) ?Ownership {
+    if (std.mem.eql(u8, tok, "@owned")) return .owned;
+    if (std.mem.eql(u8, tok, "@borrowed")) return .borrowed;
+    if (std.mem.eql(u8, tok, "@transfer")) return .transfer;
     return null;
 }
 
@@ -282,6 +346,20 @@ fn emitHeader(
         try emitHeaderProto(gpa, buf, f);
     }
 
+    if (model.casts.items.len > 0) {
+        try buf.appendSlice(gpa, "\n/* ── upcasts ── */\n");
+        for (model.casts.items) |c| {
+            try print(gpa, buf, "nm{s}* {s}(nm{s}* self);\n", .{ c.target, c.cname, c.ztype });
+        }
+    }
+
+    if (model.destructors.items.len > 0) {
+        try buf.appendSlice(gpa, "\n/* ── destructors ── */\n");
+        for (model.destructors.items) |d| {
+            try print(gpa, buf, "void {s}(nm{s}* self);\n", .{ d.cname, d.ztype });
+        }
+    }
+
     try buf.appendSlice(gpa, "\n#ifdef __cplusplus\n}\n#endif\n");
 }
 
@@ -303,6 +381,7 @@ fn emitHeaderProto(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), f: *const Fu
         if (wrote) try buf.appendSlice(gpa, ", ");
         switch (a.ty) {
             .str => try print(gpa, buf, "const char* {s}", .{a.name}),
+            .handle => |zt| try print(gpa, buf, "nm{s}* {s}", .{ zt, a.name }),
         }
         wrote = true;
     }
@@ -327,6 +406,27 @@ fn emitZig(
     for (model.funcs.items) |*f| {
         try emitZigShim(gpa, buf, f);
     }
+
+    // Upcasts: one-line `return &self.<field>` as a *<Target> handle.
+    for (model.casts.items) |c| {
+        try print(
+            gpa,
+            buf,
+            "\nexport fn {s}(self: *framework.{s}) *framework.{s} {{\n    return &self.{s};\n}}\n",
+            .{ c.cname, c.ztype, c.target, c.field },
+        );
+    }
+
+    // Destructors: dispatch the widget's own vtable.destroy with the allocator
+    // stored on the Component.
+    for (model.destructors.items) |d| {
+        try print(
+            gpa,
+            buf,
+            "\nexport fn {s}(self: *framework.{s}) void {{\n    self.vtable.destroy(self, self.allocator);\n}}\n",
+            .{ d.cname, d.ztype },
+        );
+    }
 }
 
 fn emitZigShim(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), f: *const Func) !void {
@@ -341,6 +441,7 @@ fn emitZigShim(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), f: *const Func) 
         if (wrote) try buf.appendSlice(gpa, ", ");
         switch (a.ty) {
             .str => try print(gpa, buf, "{s}: [*:0]const u8", .{a.name}),
+            .handle => |zt| try print(gpa, buf, "{s}: *framework.{s}", .{ a.name, zt }),
         }
         wrote = true;
     }
@@ -371,6 +472,7 @@ fn emitZigShim(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), f: *const Func) 
         if (idx != 0) try call.appendSlice(gpa, ", ");
         switch (a.ty) {
             .str => try print(gpa, &call, "std.mem.span({s})", .{a.name}),
+            .handle => try call.appendSlice(gpa, a.name),
         }
     }
     try call.appendSlice(gpa, ")");
@@ -428,9 +530,34 @@ fn emitJson(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), model: *const Model
         try buf.appendSlice(gpa, if (idx == 0) "\n" else ",\n");
         try emitJsonFunc(gpa, buf, f);
     }
-    try buf.appendSlice(gpa, if (model.funcs.items.len == 0) "]\n" else "\n  ]\n");
+    try buf.appendSlice(gpa, if (model.funcs.items.len == 0) "],\n" else "\n  ],\n");
+
+    // casts (upcasts): from -> to
+    try buf.appendSlice(gpa, "  \"casts\": [");
+    for (model.casts.items, 0..) |c, idx| {
+        try buf.appendSlice(gpa, if (idx == 0) "\n" else ",\n");
+        try print(gpa, buf, "    {{ \"c\": \"{s}\", \"from\": \"{s}\", \"to\": \"{s}\" }}", .{ c.cname, c.ztype, c.target });
+    }
+    try buf.appendSlice(gpa, if (model.casts.items.len == 0) "],\n" else "\n  ],\n");
+
+    // destructors
+    try buf.appendSlice(gpa, "  \"destructors\": [");
+    for (model.destructors.items, 0..) |d, idx| {
+        try buf.appendSlice(gpa, if (idx == 0) "\n" else ",\n");
+        try print(gpa, buf, "    {{ \"c\": \"{s}\", \"type\": \"{s}\" }}", .{ d.cname, d.ztype });
+    }
+    try buf.appendSlice(gpa, if (model.destructors.items.len == 0) "]\n" else "\n  ]\n");
 
     try buf.appendSlice(gpa, "}\n");
+}
+
+fn ownStr(o: Ownership) ?[]const u8 {
+    return switch (o) {
+        .default => null,
+        .owned => "owned",
+        .borrowed => "borrowed",
+        .transfer => "transfer",
+    };
 }
 
 fn emitJsonFunc(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), f: *const Func) !void {
@@ -457,16 +584,24 @@ fn emitJsonFunc(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), f: *const Func)
     try buf.appendSlice(gpa, "      \"params\": [");
     for (f.args.items, 0..) |a, idx| {
         if (idx != 0) try buf.appendSlice(gpa, ", ");
+        try print(gpa, buf, "{{ \"name\": \"{s}\", ", .{a.name});
         switch (a.ty) {
-            .str => try print(gpa, buf, "{{ \"name\": \"{s}\", \"type\": \"str\" }}", .{a.name}),
+            .str => try buf.appendSlice(gpa, "\"type\": \"str\""),
+            .handle => |zt| try print(gpa, buf, "\"type\": \"handle\", \"handle\": \"{s}\"", .{zt}),
         }
+        if (ownStr(a.ownership)) |o| try print(gpa, buf, ", \"ownership\": \"{s}\"", .{o});
+        try buf.appendSlice(gpa, " }");
     }
     try buf.appendSlice(gpa, "],\n");
 
     // ret
     switch (f.ret) {
         .void => try buf.appendSlice(gpa, "      \"ret\": { \"type\": \"void\" },\n"),
-        .ptr => |zt| try print(gpa, buf, "      \"ret\": {{ \"type\": \"handle\", \"handle\": \"{s}\" }},\n", .{zt}),
+        .ptr => |zt| {
+            try print(gpa, buf, "      \"ret\": {{ \"type\": \"handle\", \"handle\": \"{s}\"", .{zt});
+            if (ownStr(f.ret_ownership)) |o| try print(gpa, buf, ", \"ownership\": \"{s}\"", .{o});
+            try buf.appendSlice(gpa, " },\n");
+        },
     }
 
     // fail

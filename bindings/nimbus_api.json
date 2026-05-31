@@ -1,6 +1,7 @@
 {
   "types": [
     { "name": "Component", "c": "nmComponent", "extends": null },
+    { "name": "Container", "c": "nmContainer", "extends": "Component" },
     { "name": "Button", "c": "nmButton", "extends": "Component" },
     { "name": "Application", "c": "nmApplication", "extends": null }
   ],
@@ -14,7 +15,7 @@
       "kind": "method",
       "receiver": "ptr",
       "params": [{ "name": "text", "type": "str" }],
-      "ret": { "type": "handle", "handle": "Button" },
+      "ret": { "type": "handle", "handle": "Button", "ownership": "owned" },
       "fail": "null"
     },
     {
@@ -27,6 +28,24 @@
       "params": [{ "name": "text", "type": "str" }],
       "ret": { "type": "void" },
       "fail": "err"
+    },
+    {
+      "c": "nmContainerAdd",
+      "owner": "Container",
+      "method": "add",
+      "names": { "py": "add", "js": "add" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "child", "type": "handle", "handle": "Component", "ownership": "transfer" }],
+      "ret": { "type": "void" },
+      "fail": "err"
     }
+  ],
+  "casts": [
+    { "c": "nmButtonAsComponent", "from": "Button", "to": "Component" },
+    { "c": "nmContainerAsComponent", "from": "Container", "to": "Component" }
+  ],
+  "destructors": [
+    { "c": "nmComponentDestroy", "type": "Component" }
   ]
 }

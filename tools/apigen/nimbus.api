@@ -11,13 +11,26 @@
 #       records single inheritance for the binding IR (so a target-language
 #       class can inherit the parent's methods / support asXxx casts).
 #
-#   fn <CName> = <ZigType>.<method> ( [<recv> ,] <arg>* ) -> <ret> [!<fail>]
+#   fn <CName> = <ZigType>.<method> ( [<recv> ,] <arg>* ) -> <ret> [!<fail>] [<own>]
 #       <recv> : &self   receiver is *T   (Zig: self: *T)
 #                =self   receiver is T     (by value; still a pointer in C)
-#       <arg>  : <name>:<type>      type in { str }            (PoC subset)
-#       <ret>  : void | *<ZigType>                             (PoC subset)
-#       <fail> : null   failure = NULL  + last_error           (for *T returns)
-#                err    failure = nonzero int (0 = ok)         (for void returns)
+#       <arg>  : <name>:<type> [<own>]    type in { str, *<ZigType> }
+#       <ret>  : void | *<ZigType>
+#       <fail> : !null   failure = NULL  + last_error          (for *T returns)
+#                !err    failure = nonzero int (0 = ok)         (for void returns)
+#       <own>  : @owned     caller owns the returned handle (must free it)
+#                @borrowed  returned handle is borrowed (must NOT free it)
+#                @transfer  this argument's ownership moves to the callee
+#                Drives the binding's free/no-free decision. Emitted into the IR.
+#                Unspecified: handle returns default to owned, handle args to
+#                borrowed (binding-side convention).
+#
+#   cast <CName> = <ZigType>.<field> -> <TargetType>
+#       Upcast helper: emits `return &self.<field>` as a *<TargetType> handle.
+#
+#   destroy <CName> = <ZigType>
+#       Generic destructor: emits `self.vtable.destroy(self, self.allocator)`.
+#       Meaningful on Component (the type that carries vtable + allocator).
 #
 # The generated shim calls the real Zig method, so any drift between this spec
 # and the actual signature is caught at compile time — never silently.
@@ -27,8 +40,19 @@
 # need an allocator / io (those are hand-written in tools/apigen/preamble.zig).
 
 opaque Component
-opaque Button : Component
+opaque Container : Component
+opaque Button    : Component
 opaque Application
 
-fn nmAppButton     = Application.button (&self, text:str) -> *Button !null
+fn nmAppButton     = Application.button (&self, text:str) -> *Button !null @owned
 fn nmButtonSetText = Button.setText     (&self, text:str) -> void    !err
+fn nmContainerAdd  = Container.add       (&self, child:*Component @transfer) -> void !err
+
+# Upcast to the embedded Component (one-line `return &self.<field>`). Lets a
+# binding reach Container methods on any widget and feed nmComponentDestroy.
+cast nmButtonAsComponent    = Button.component    -> Component
+cast nmContainerAsComponent = Container.component -> Component
+
+# Single generic destructor: dispatches the widget's own vtable.destroy using
+# the allocator stored on the Component. Free any widget via its nmComponent*.
+destroy nmComponentDestroy = Component
