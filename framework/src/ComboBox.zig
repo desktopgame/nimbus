@@ -17,6 +17,7 @@ const Component = @import("Component.zig");
 const Container = @import("Container.zig");
 const Window = @import("Window.zig");
 const ChangeListenerList = @import("ChangeListenerList.zig");
+const Event = ChangeListenerList.Event;
 const log = @import("log.zig");
 
 const ComboBox = @This();
@@ -120,7 +121,7 @@ pub fn setSelectedIndex(self: *ComboBox, idx: usize) void {
     if (idx >= self.items.items.len) return;
     if (self.selected_index == idx) return;
     self.selected_index = idx;
-    self.change_listeners.fire();
+    self.change_listeners.fire(&.{ .source = self, .kind = .change });
     self.component.repaint();
 }
 
@@ -152,18 +153,20 @@ pub fn setEnabled(self: *ComboBox, v: bool) void {
 
 pub fn addChangeListener(
     self: *ComboBox,
-    fn_ptr: ChangeListenerList.ListenerFn,
-    user_data: *anyopaque,
+    comptime T: type,
+    comptime f: fn (*T, *const Event) void,
+    user_data: *T,
 ) !void {
-    try self.change_listeners.add(fn_ptr, user_data);
+    try self.change_listeners.addTyped(T, f, user_data);
 }
 
 pub fn removeChangeListener(
     self: *ComboBox,
-    fn_ptr: ChangeListenerList.ListenerFn,
-    user_data: *anyopaque,
+    comptime T: type,
+    comptime f: fn (*T, *const Event) void,
+    user_data: *T,
 ) void {
-    self.change_listeners.remove(fn_ptr, user_data);
+    self.change_listeners.removeTyped(T, f, user_data);
 }
 
 // ── layout ───────────────────────────────────────────────────────────────

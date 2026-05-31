@@ -22,6 +22,7 @@
 
 const std = @import("std");
 const nimbus = @import("nimbus");
+const Event = nimbus.ChangeListenerList.Event;
 
 const ROW_COUNT = 40;
 
@@ -60,14 +61,12 @@ const TaskCell = struct {
     }
 
     /// Checkbox toggled: write the new value back to the row data (the truth).
-    fn onToggle(ud: *anyopaque) void {
-        const self: *TaskCell = @ptrCast(@alignCast(ud));
+    fn onToggle(self: *TaskCell, _: *const Event) void {
         if (self.cur_row) |row| row.done = self.check.isSelected();
     }
 
     /// Delete clicked: the cell knows its own row, so no reverse lookup.
-    fn onDelete(ud: *anyopaque) void {
-        const self: *TaskCell = @ptrCast(@alignCast(ud));
+    fn onDelete(self: *TaskCell, _: *const Event) void {
         self.list.model.remove(self.cur_index);
     }
 
@@ -105,8 +104,8 @@ fn createCell(ud: *anyopaque, allocator: std.mem.Allocator) anyerror!nimbus.List
     tc.* = .{ .panel = panel, .check = check, .label = label, .del = del, .list = ctx.list };
 
     // Listeners registered once, here, with the cell's own state as user_data.
-    try del.getModel().addActionListener(TaskCell.onDelete, tc);
-    try check.getModel().addActionListener(TaskCell.onToggle, tc);
+    try del.getModel().addActionListener(TaskCell, TaskCell.onDelete, tc);
+    try check.getModel().addActionListener(TaskCell, TaskCell.onToggle, tc);
 
     return .{
         .component = &panel.container.component,

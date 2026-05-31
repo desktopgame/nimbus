@@ -3,6 +3,7 @@
 const std = @import("std");
 const awt = @import("awt");
 const Component = @import("Component.zig");
+const Event = @import("ChangeListenerList.zig").Event;
 const ButtonModel = @import("ButtonModel.zig");
 
 const MenuItem = @This();
@@ -119,16 +120,15 @@ pub fn getModel(self: MenuItem) *ButtonModel {
 
 fn install(self: *Component) !void {
     const item: *MenuItem = @fieldParentPtr("component", self);
-    try item.model.addChangeListener(onModelChange, self);
+    try item.model.addChangeListener(Component, onModelChange, self);
 }
 
 fn uninstall(self: *Component) void {
     const item: *MenuItem = @fieldParentPtr("component", self);
-    item.model.removeChangeListener(onModelChange, self);
+    item.model.removeChangeListener(Component, onModelChange, self);
 }
 
-fn onModelChange(user_data: *anyopaque) void {
-    const comp: *Component = @ptrCast(@alignCast(user_data));
+fn onModelChange(comp: *Component, _: *const Event) void {
     comp.repaint();
 }
 

@@ -9,6 +9,7 @@
 const std = @import("std");
 const ButtonModel = @import("ButtonModel.zig");
 const ChangeListenerList = @import("ChangeListenerList.zig");
+const Event = ChangeListenerList.Event;
 
 const ToggleButtonModel = @This();
 
@@ -65,7 +66,8 @@ pub fn setSelected(self: *ToggleButtonModel, v: bool) void {
     // Reuse the button's change listeners — Swing also unifies selected
     // and pressed under one ChangeEvent, and it lets a widget register
     // once and react to both kinds of transitions in the same callback.
-    self.button.state_listeners.fire();
+    // Source stays the ButtonModel (consistent with press/armed events).
+    self.button.fireState();
 }
 
 // ── listener registration (delegation for ergonomics) ────────────────────
@@ -76,34 +78,38 @@ pub fn setSelected(self: *ToggleButtonModel, v: bool) void {
 
 pub fn addChangeListener(
     self: *ToggleButtonModel,
-    fn_ptr: ChangeListenerList.ListenerFn,
-    user_data: *anyopaque,
+    comptime T: type,
+    comptime f: fn (*T, *const Event) void,
+    user_data: *T,
 ) !void {
-    try self.button.addChangeListener(fn_ptr, user_data);
+    try self.button.addChangeListener(T, f, user_data);
 }
 
 pub fn removeChangeListener(
     self: *ToggleButtonModel,
-    fn_ptr: ChangeListenerList.ListenerFn,
-    user_data: *anyopaque,
+    comptime T: type,
+    comptime f: fn (*T, *const Event) void,
+    user_data: *T,
 ) void {
-    self.button.removeChangeListener(fn_ptr, user_data);
+    self.button.removeChangeListener(T, f, user_data);
 }
 
 pub fn addActionListener(
     self: *ToggleButtonModel,
-    fn_ptr: ChangeListenerList.ListenerFn,
-    user_data: *anyopaque,
+    comptime T: type,
+    comptime f: fn (*T, *const Event) void,
+    user_data: *T,
 ) !void {
-    try self.button.addActionListener(fn_ptr, user_data);
+    try self.button.addActionListener(T, f, user_data);
 }
 
 pub fn removeActionListener(
     self: *ToggleButtonModel,
-    fn_ptr: ChangeListenerList.ListenerFn,
-    user_data: *anyopaque,
+    comptime T: type,
+    comptime f: fn (*T, *const Event) void,
+    user_data: *T,
 ) void {
-    self.button.removeActionListener(fn_ptr, user_data);
+    self.button.removeActionListener(T, f, user_data);
 }
 
 pub fn fireAction(self: *ToggleButtonModel) void {
@@ -115,8 +121,8 @@ pub fn fireAction(self: *ToggleButtonModel) void {
 test "setSelected changes value and fires through button listeners" {
     var fired: u32 = 0;
     const Cb = struct {
-        fn run(ud: *anyopaque) void {
-            const counter: *u32 = @ptrCast(@alignCast(ud));
+        fn run(counter: *u32, e: *const Event) void {
+            _ = e;
             counter.* += 1;
         }
     };
@@ -124,7 +130,7 @@ test "setSelected changes value and fires through button listeners" {
     var m = ToggleButtonModel.init(std.testing.allocator);
     defer m.deinit();
 
-    try m.addChangeListener(Cb.run, @ptrCast(&fired));
+    try m.addChangeListener(u32, Cb.run, &fired);
     try std.testing.expect(!m.isSelected());
 
     m.setSelected(true);

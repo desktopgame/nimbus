@@ -6,6 +6,7 @@
 
 const std = @import("std");
 const nimbus = @import("nimbus");
+const Event = nimbus.ChangeListenerList.Event;
 
 const State = struct {
     cb_a:  *nimbus.CheckBox,
@@ -24,8 +25,7 @@ fn refresh(state: *State) void {
     state.label.setText(text) catch {};
 }
 
-fn onToggle(user_data: *anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(user_data));
+fn onToggle(state: *State, _: *const Event) void {
     refresh(state);
 }
 
@@ -55,9 +55,9 @@ pub fn main(init: std.process.Init) !void {
     var state = State{ .cb_a = cb_a, .cb_b = cb_b, .cb_c = cb_c, .label = label };
     refresh(&state);
 
-    try cb_a.getModel().addActionListener(onToggle, @ptrCast(&state));
-    try cb_b.getModel().addActionListener(onToggle, @ptrCast(&state));
-    try cb_c.getModel().addActionListener(onToggle, @ptrCast(&state));
+    try cb_a.getModel().addActionListener(State, onToggle, &state);
+    try cb_b.getModel().addActionListener(State, onToggle, &state);
+    try cb_c.getModel().addActionListener(State, onToggle, &state);
 
     std.debug.print("Toggle the checkboxes — label updates on each change.\n", .{});
     try app.run();

@@ -8,6 +8,7 @@
 const std = @import("std");
 const awt = @import("awt");
 const Component = @import("Component.zig");
+const Event = @import("ChangeListenerList.zig").Event;
 const BoundedRangeModel = @import("BoundedRangeModel.zig");
 const ChangeListenerList = @import("ChangeListenerList.zig");
 
@@ -135,18 +136,20 @@ pub fn setBlockIncrement(self: *ScrollBar, px: i32) void {
 
 pub fn addChangeListener(
     self: *ScrollBar,
-    fn_ptr: ChangeListenerList.ListenerFn,
-    user_data: *anyopaque,
+    comptime T: type,
+    comptime f: fn (*T, *const Event) void,
+    user_data: *T,
 ) !void {
-    try self.model.addChangeListener(fn_ptr, user_data);
+    try self.model.addChangeListener(T, f, user_data);
 }
 
 pub fn removeChangeListener(
     self: *ScrollBar,
-    fn_ptr: ChangeListenerList.ListenerFn,
-    user_data: *anyopaque,
+    comptime T: type,
+    comptime f: fn (*T, *const Event) void,
+    user_data: *T,
 ) void {
-    self.model.removeChangeListener(fn_ptr, user_data);
+    self.model.removeChangeListener(T, f, user_data);
 }
 
 // ── geometry ───────────────────────────────────────────────────────────────
@@ -200,16 +203,15 @@ fn offsetToValue(self: *const ScrollBar, offset: f32) i32 {
 
 fn install(self: *Component) !void {
     const sb: *ScrollBar = @fieldParentPtr("component", self);
-    try sb.model.addChangeListener(onModelChange, self);
+    try sb.model.addChangeListener(Component, onModelChange, self);
 }
 
 fn uninstall(self: *Component) void {
     const sb: *ScrollBar = @fieldParentPtr("component", self);
-    sb.model.removeChangeListener(onModelChange, self);
+    sb.model.removeChangeListener(Component, onModelChange, self);
 }
 
-fn onModelChange(user_data: *anyopaque) void {
-    const comp: *Component = @ptrCast(@alignCast(user_data));
+fn onModelChange(comp: *Component, _: *const Event) void {
     comp.repaint();
 }
 

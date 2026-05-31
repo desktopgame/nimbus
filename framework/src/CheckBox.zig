@@ -8,6 +8,7 @@
 const std = @import("std");
 const awt = @import("awt");
 const Component = @import("Component.zig");
+const Event = @import("ChangeListenerList.zig").Event;
 const ToggleButtonModel = @import("ToggleButtonModel.zig");
 
 const CheckBox = @This();
@@ -138,16 +139,15 @@ fn applyMetrics(self: *CheckBox) void {
 fn install(self: *Component) !void {
     self.setFocusable(true);
     const cb: *CheckBox = @fieldParentPtr("component", self);
-    try cb.model.addChangeListener(onModelChange, self);
+    try cb.model.addChangeListener(Component, onModelChange, self);
 }
 
 fn uninstall(self: *Component) void {
     const cb: *CheckBox = @fieldParentPtr("component", self);
-    cb.model.removeChangeListener(onModelChange, self);
+    cb.model.removeChangeListener(Component, onModelChange, self);
 }
 
-fn onModelChange(user_data: *anyopaque) void {
-    const comp: *Component = @ptrCast(@alignCast(user_data));
+fn onModelChange(comp: *Component, _: *const Event) void {
     comp.repaint();
 }
 

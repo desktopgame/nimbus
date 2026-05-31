@@ -2,8 +2,15 @@
 
 const std = @import("std");
 const ChangeListenerList = @import("ChangeListenerList.zig");
+const Event = ChangeListenerList.Event;
 
 const ButtonModel = @This();
+
+/// Fire the state-change listeners (also used by `ToggleButtonModel` for its
+/// `selected` transition, so the event source stays consistently the ButtonModel).
+pub fn fireState(self: *ButtonModel) void {
+    self.state_listeners.fire(&.{ .source = self, .kind = .change });
+}
 
 pressed:  bool = false,
 armed:    bool = false,
@@ -29,28 +36,28 @@ pub fn deinit(self: *ButtonModel) void {
 pub fn setPressed(self: *ButtonModel, v: bool) void {
     if (self.pressed == v) return;
     self.pressed = v;
-    self.state_listeners.fire();
+    self.fireState();
 }
 pub fn isPressed(self: *const ButtonModel) bool { return self.pressed; }
 
 pub fn setArmed(self: *ButtonModel, v: bool) void {
     if (self.armed == v) return;
     self.armed = v;
-    self.state_listeners.fire();
+    self.fireState();
 }
 pub fn isArmed(self: *const ButtonModel) bool { return self.armed; }
 
 pub fn setRollover(self: *ButtonModel, v: bool) void {
     if (self.rollover == v) return;
     self.rollover = v;
-    self.state_listeners.fire();
+    self.fireState();
 }
 pub fn isRollover(self: *const ButtonModel) bool { return self.rollover; }
 
 pub fn setEnabled(self: *ButtonModel, v: bool) void {
     if (self.enabled == v) return;
     self.enabled = v;
-    self.state_listeners.fire();
+    self.fireState();
 }
 pub fn isEnabled(self: *const ButtonModel) bool { return self.enabled; }
 
@@ -61,39 +68,43 @@ pub fn isEnabled(self: *const ButtonModel) bool { return self.enabled; }
 // ── action ───────────────────────────────────────────────────────────────
 
 pub fn fireAction(self: *ButtonModel) void {
-    self.action_listeners.fire();
+    self.action_listeners.fire(&.{ .source = self, .kind = .action });
 }
 
 // ── listener registration ────────────────────────────────────────────────
 
 pub fn addChangeListener(
     self: *ButtonModel,
-    fn_ptr: ChangeListenerList.ListenerFn,
-    user_data: *anyopaque,
+    comptime T: type,
+    comptime f: fn (*T, *const Event) void,
+    user_data: *T,
 ) !void {
-    try self.state_listeners.add(fn_ptr, user_data);
+    try self.state_listeners.addTyped(T, f, user_data);
 }
 
 pub fn removeChangeListener(
     self: *ButtonModel,
-    fn_ptr: ChangeListenerList.ListenerFn,
-    user_data: *anyopaque,
+    comptime T: type,
+    comptime f: fn (*T, *const Event) void,
+    user_data: *T,
 ) void {
-    self.state_listeners.remove(fn_ptr, user_data);
+    self.state_listeners.removeTyped(T, f, user_data);
 }
 
 pub fn addActionListener(
     self: *ButtonModel,
-    fn_ptr: ChangeListenerList.ListenerFn,
-    user_data: *anyopaque,
+    comptime T: type,
+    comptime f: fn (*T, *const Event) void,
+    user_data: *T,
 ) !void {
-    try self.action_listeners.add(fn_ptr, user_data);
+    try self.action_listeners.addTyped(T, f, user_data);
 }
 
 pub fn removeActionListener(
     self: *ButtonModel,
-    fn_ptr: ChangeListenerList.ListenerFn,
-    user_data: *anyopaque,
+    comptime T: type,
+    comptime f: fn (*T, *const Event) void,
+    user_data: *T,
 ) void {
-    self.action_listeners.remove(fn_ptr, user_data);
+    self.action_listeners.removeTyped(T, f, user_data);
 }

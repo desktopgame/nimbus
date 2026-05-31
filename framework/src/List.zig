@@ -11,6 +11,7 @@ const std = @import("std");
 const awt = @import("awt");
 const Component = @import("Component.zig");
 const ChangeListenerList = @import("ChangeListenerList.zig");
+const Event = ChangeListenerList.Event;
 
 const List = @This();
 
@@ -115,19 +116,19 @@ pub const ListModel = struct {
 
     pub fn add(self: *ListModel, item: *anyopaque) !void {
         try self.items.append(self.allocator, item);
-        self.change_listeners.fire();
+        self.change_listeners.fire(&.{ .source = self, .kind = .change });
     }
 
     pub fn remove(self: *ListModel, idx: usize) void {
         if (idx >= self.items.items.len) return;
         _ = self.items.orderedRemove(idx);
-        self.change_listeners.fire();
+        self.change_listeners.fire(&.{ .source = self, .kind = .change });
     }
 
     pub fn clear(self: *ListModel) void {
         if (self.items.items.len == 0) return;
         self.items.clearRetainingCapacity();
-        self.change_listeners.fire();
+        self.change_listeners.fire(&.{ .source = self, .kind = .change });
     }
 
     /// Move the item at `from` to insertion position `to` (0..=size, expressed
@@ -145,7 +146,7 @@ pub const ListModel = struct {
         if (dst > self.items.items.len) dst = self.items.items.len;
         // orderedRemove kept capacity, so inserting one element never allocates.
         self.items.insert(self.allocator, dst, item) catch unreachable;
-        self.change_listeners.fire();
+        self.change_listeners.fire(&.{ .source = self, .kind = .change });
     }
 
     pub fn getSize(self: ListModel) usize {
@@ -157,12 +158,12 @@ pub const ListModel = struct {
         return self.items.items[idx];
     }
 
-    pub fn addChangeListener(self: *ListModel, fn_ptr: ChangeListenerList.ListenerFn, user_data: *anyopaque) !void {
-        try self.change_listeners.add(fn_ptr, user_data);
+    pub fn addChangeListener(self: *ListModel, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) !void {
+        try self.change_listeners.addTyped(T, f, user_data);
     }
 
-    pub fn removeChangeListener(self: *ListModel, fn_ptr: ChangeListenerList.ListenerFn, user_data: *anyopaque) void {
-        self.change_listeners.remove(fn_ptr, user_data);
+    pub fn removeChangeListener(self: *ListModel, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) void {
+        self.change_listeners.removeTyped(T, f, user_data);
     }
 };
 
@@ -263,7 +264,7 @@ pub fn setSelected(self: *List, idx: ?usize) void {
     // Re-project selection onto the two affected visible cells.
     if (old) |r| if (self.findCellRowIndex(r)) |i| self.bindCell(i, r);
     if (clamped) |r| if (self.findCellRowIndex(r)) |i| self.bindCell(i, r);
-    self.change_listeners.fire();
+    self.change_listeners.fire(&.{ .source = self, .kind = .change });
     self.component.repaint();
 }
 
@@ -278,12 +279,12 @@ pub fn setRowHeight(self: *List, h: f32) void {
     self.component.repaint();
 }
 
-pub fn addChangeListener(self: *List, fn_ptr: ChangeListenerList.ListenerFn, user_data: *anyopaque) !void {
-    try self.change_listeners.add(fn_ptr, user_data);
+pub fn addChangeListener(self: *List, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) !void {
+    try self.change_listeners.addTyped(T, f, user_data);
 }
 
-pub fn removeChangeListener(self: *List, fn_ptr: ChangeListenerList.ListenerFn, user_data: *anyopaque) void {
-    self.change_listeners.remove(fn_ptr, user_data);
+pub fn removeChangeListener(self: *List, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) void {
+    self.change_listeners.removeTyped(T, f, user_data);
 }
 
 // ── editing ────────────────────────────────────────────────────────────────
@@ -511,18 +512,17 @@ fn scrollToRow(self: *List, row: usize) void {
 fn install(self: *Component) !void {
     self.setFocusable(true);
     const list: *List = @fieldParentPtr("component", self);
-    try list.model.addChangeListener(onModelChange, @ptrCast(list));
+    try list.model.addChangeListener(List, onModelChange, list);
 }
 
 fn uninstall(self: *Component) void {
     const list: *List = @fieldParentPtr("component", self);
-    list.model.removeChangeListener(onModelChange, @ptrCast(list));
+    list.model.removeChangeListener(List, onModelChange, list);
 }
 
 /// The structure (item count) changed: every row's content may have shifted,
 /// so drop all bindings and let the next reconcile rebind from scratch.
-fn onModelChange(user_data: *anyopaque) void {
-    const list: *List = @ptrCast(@alignCast(user_data));
+fn onModelChange(list: *List, _: *const Event) void {
     for (list.pool.items) |*pc| pc.row = null;
     const n = list.model.getSize();
     if (list.selected) |s| {

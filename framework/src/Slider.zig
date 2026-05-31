@@ -7,6 +7,7 @@
 const std = @import("std");
 const awt = @import("awt");
 const Component = @import("Component.zig");
+const Event = @import("ChangeListenerList.zig").Event;
 const BoundedRangeModel = @import("BoundedRangeModel.zig");
 
 const Slider = @This();
@@ -142,16 +143,15 @@ fn posToValue(self: *const Slider, local_x: f32, local_y: f32) i32 {
 
 fn install(self: *Component) !void {
     const slider: *Slider = @fieldParentPtr("component", self);
-    try slider.model.addChangeListener(onModelChange, self);
+    try slider.model.addChangeListener(Component, onModelChange, self);
 }
 
 fn uninstall(self: *Component) void {
     const slider: *Slider = @fieldParentPtr("component", self);
-    slider.model.removeChangeListener(onModelChange, self);
+    slider.model.removeChangeListener(Component, onModelChange, self);
 }
 
-fn onModelChange(user_data: *anyopaque) void {
-    const comp: *Component = @ptrCast(@alignCast(user_data));
+fn onModelChange(comp: *Component, _: *const Event) void {
     comp.repaint();
 }
 

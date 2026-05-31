@@ -17,6 +17,7 @@
 
 const std = @import("std");
 const nimbus = @import("nimbus");
+const Event = nimbus.ChangeListenerList.Event;
 
 const SAMPLE =
     \\The quick brown fox jumps over the lazy dog.
@@ -35,8 +36,7 @@ const State = struct {
     button: *nimbus.Button,
 };
 
-fn onToggleWrap(user_data: *anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(user_data));
+fn onToggleWrap(state: *State, _: *const Event) void {
     const now = !state.area.getLineWrap();
     state.area.setLineWrap(now);
     state.button.setText(if (now) "wrap: on" else "wrap: off") catch {};
@@ -62,7 +62,7 @@ pub fn main(init: std.process.Init) !void {
     try top.add(&button.component);
 
     var state = State{ .area = area, .button = button };
-    try button.getModel().addActionListener(onToggleWrap, @ptrCast(&state));
+    try button.getModel().addActionListener(State, onToggleWrap, &state);
 
     try nimbus.BorderLayout.add(&frame.window.container, .north, &top.component);
     try nimbus.BorderLayout.add(&frame.window.container, .center, sp.asComponent());

@@ -12,6 +12,7 @@ const awt = @import("awt");
 const Component = @import("Component.zig");
 const Application = @import("Application.zig");
 const ChangeListenerList = @import("ChangeListenerList.zig");
+const Event = ChangeListenerList.Event;
 
 const TextField = @This();
 
@@ -154,21 +155,21 @@ pub fn setBackground(self: *TextField, c: awt.Graphics.Color) void {
 
 /// Listener fired when Enter is pressed (the field "submits"). The key is
 /// consumed so it does not bubble. Multiple listeners allowed.
-pub fn addSubmitListener(self: *TextField, fn_ptr: ChangeListenerList.ListenerFn, user_data: *anyopaque) !void {
-    try self.submit_listeners.add(fn_ptr, user_data);
+pub fn addSubmitListener(self: *TextField, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) !void {
+    try self.submit_listeners.addTyped(T, f, user_data);
 }
 
-pub fn removeSubmitListener(self: *TextField, fn_ptr: ChangeListenerList.ListenerFn, user_data: *anyopaque) void {
-    self.submit_listeners.remove(fn_ptr, user_data);
+pub fn removeSubmitListener(self: *TextField, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) void {
+    self.submit_listeners.removeTyped(T, f, user_data);
 }
 
 /// Listener fired when Escape is pressed (the field "cancels").
-pub fn addCancelListener(self: *TextField, fn_ptr: ChangeListenerList.ListenerFn, user_data: *anyopaque) !void {
-    try self.cancel_listeners.add(fn_ptr, user_data);
+pub fn addCancelListener(self: *TextField, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) !void {
+    try self.cancel_listeners.addTyped(T, f, user_data);
 }
 
-pub fn removeCancelListener(self: *TextField, fn_ptr: ChangeListenerList.ListenerFn, user_data: *anyopaque) void {
-    self.cancel_listeners.remove(fn_ptr, user_data);
+pub fn removeCancelListener(self: *TextField, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) void {
+    self.cancel_listeners.removeTyped(T, f, user_data);
 }
 
 // ── layout ───────────────────────────────────────────────────────────────
@@ -499,11 +500,11 @@ fn handleKey(tf: *TextField, ev: *Component.Event, k: awt.Event.KeyEvent) void {
         .enter => {
             // Single-line: Enter submits. Fire listeners and consume so the
             // key does not bubble (a List cell editor commits here).
-            tf.submit_listeners.fire();
+            tf.submit_listeners.fire(&.{ .source = tf, .kind = .action });
             ev.consume();
         },
         .escape => {
-            tf.cancel_listeners.fire();
+            tf.cancel_listeners.fire(&.{ .source = tf, .kind = .action });
             ev.consume();
         },
         else => {},

@@ -10,6 +10,7 @@
 const std = @import("std");
 const ToggleButtonModel = @import("ToggleButtonModel.zig");
 const ChangeListenerList = @import("ChangeListenerList.zig");
+const Event = ChangeListenerList.Event;
 
 const ButtonGroup = @This();
 
@@ -61,7 +62,7 @@ pub fn add(self: *ButtonGroup, model: *ToggleButtonModel) !void {
     errdefer _ = self.members.pop();
     try self.prev_selected.append(self.allocator, model.isSelected());
     errdefer _ = self.prev_selected.pop();
-    try model.addChangeListener(onMemberChange, @ptrCast(self));
+    try model.addChangeListener(ButtonGroup, onMemberChange, self);
     // Install the back-channel so the model can detach itself if it is
     // destroyed before the group (see ToggleButtonModel.GroupHook).
     model.setGroupHook(.{ .ctx = @ptrCast(self), .on_deinit = onMemberDeinit });
@@ -85,7 +86,7 @@ fn detach(self: *ButtonGroup, model: *ToggleButtonModel) void {
     while (i < self.members.items.len) : (i += 1) {
         if (self.members.items[i] == model) {
             model.setGroupHook(null);
-            model.removeChangeListener(onMemberChange, @ptrCast(self));
+            model.removeChangeListener(ButtonGroup, onMemberChange, self);
             _ = self.members.orderedRemove(i);
             _ = self.prev_selected.orderedRemove(i);
             return;
@@ -125,8 +126,7 @@ fn clearOthers(self: *ButtonGroup, winner: *ToggleButtonModel) void {
     }
 }
 
-fn onMemberChange(user_data: *anyopaque) void {
-    const self: *ButtonGroup = @ptrCast(@alignCast(user_data));
+fn onMemberChange(self: *ButtonGroup, _: *const Event) void {
     if (self.muting) return;
 
     // Listeners fire for any state change (pressed/armed/rollover/selected).

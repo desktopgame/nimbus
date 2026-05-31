@@ -18,6 +18,7 @@
 
 const std = @import("std");
 const nimbus = @import("nimbus");
+const Event = nimbus.ChangeListenerList.Event;
 
 const ROW_COUNT = 40;
 
@@ -98,12 +99,10 @@ const EditCell = struct {
     }
 
     // Wired to the field's Enter / Escape via submit / cancel listeners.
-    fn onSubmit(ud: *anyopaque) void {
-        const self: *EditCell = @ptrCast(@alignCast(ud));
+    fn onSubmit(self: *EditCell, _: *const Event) void {
         self.list.commitEdit();
     }
-    fn onCancel(ud: *anyopaque) void {
-        const self: *EditCell = @ptrCast(@alignCast(ud));
+    fn onCancel(self: *EditCell, _: *const Event) void {
         self.list.cancelEdit();
     }
 
@@ -135,8 +134,8 @@ fn createCell(ud: *anyopaque, allocator: std.mem.Allocator) anyerror!nimbus.List
     try nimbus.BorderLayout.add(root, .center, &label.component); // start in display mode
 
     cell.* = .{ .root = root, .label = label, .field = field, .list = cx.list };
-    try field.addSubmitListener(EditCell.onSubmit, cell);
-    try field.addCancelListener(EditCell.onCancel, cell);
+    try field.addSubmitListener(EditCell, EditCell.onSubmit, cell);
+    try field.addCancelListener(EditCell, EditCell.onCancel, cell);
 
     return .{
         .component = &root.component,

@@ -4,6 +4,7 @@
 const std = @import("std");
 const awt = @import("awt");
 const Component = @import("Component.zig");
+const Event = @import("ChangeListenerList.zig").Event;
 const Container = @import("Container.zig");
 const ButtonModel = @import("ButtonModel.zig");
 const MenuItem = @import("MenuItem.zig");
@@ -143,7 +144,7 @@ pub fn add(self: *Menu, child: *Component) !void {
         if (self.window) |w| sub.setWindow(w);
     } else if (modelOf(child)) |m| {
         // Auto-dismiss after item action.
-        try m.addActionListener(onItemAction, @ptrCast(self));
+        try m.addActionListener(Menu, onItemAction, self);
     }
 }
 
@@ -245,8 +246,7 @@ fn onOverlayDismiss(user_data: *anyopaque) void {
     for (self.items.items) |item| item.parent = null;
 }
 
-fn onItemAction(user_data: *anyopaque) void {
-    const self: *Menu = @ptrCast(@alignCast(user_data));
+fn onItemAction(self: *Menu, _: *const Event) void {
     if (self.window) |w| w.overlays.dismissAll();
 }
 
@@ -267,16 +267,15 @@ fn modelOf(c: *Component) ?*ButtonModel {
 
 fn install(self: *Component) !void {
     const menu: *Menu = @fieldParentPtr("component", self);
-    try menu.model.addChangeListener(onModelChange, self);
+    try menu.model.addChangeListener(Component, onModelChange, self);
 }
 
 fn uninstall(self: *Component) void {
     const menu: *Menu = @fieldParentPtr("component", self);
-    menu.model.removeChangeListener(onModelChange, self);
+    menu.model.removeChangeListener(Component, onModelChange, self);
 }
 
-fn onModelChange(user_data: *anyopaque) void {
-    const comp: *Component = @ptrCast(@alignCast(user_data));
+fn onModelChange(comp: *Component, _: *const Event) void {
     comp.repaint();
 }
 

@@ -1,6 +1,10 @@
-# typed-callbacks（計画）
-nimbus のコールバック API を、C_ABI 互換を保ったまま Zig 層で型付きにする計画。
-**未着手。API 安定化フェーズの項目。** 破壊的変更可の前提で検討する。
+# typed-callbacks
+nimbus のコールバック API を、C_ABI 互換を保ったまま Zig 層で型付きにする仕組み。
+**実装済み (2026-05-31)。** `ChangeListenerList` に `addTyped`/`removeTyped`（comptime サンク）を追加し、
+全 Model（`addChangeListener`/`addActionListener` 等）・全 widget の内部コールバック・全 examples を
+型付き形へ移行した。同時にリスナー署名へ意味イベント（`*const Event`、`source = Model`）を追加した
+（`framework/doc/model.md`）。保存・dispatch する形は `fn(*anyopaque, *const Event)` のままなので
+C_ABI codegen はこれをそのまま使える。
 
 ## 動機
 examples のブラインドレビューで最頻出かつ最も危険と指摘された点。
@@ -31,24 +35,27 @@ Zig 層に薄い型付き玄関を 1 枚足す。**保存・dispatch する形�
 これにより C_ABI codegen は無変更で、ABI 整合も保たれる（PyO3 / napi と同じ「ネイティブは型付き、下層は `void*`」）。
 バインディング方針（C_ABI は契約だが生成物、Zig が真実 = `doc` のバインディング方針）とも整合する。
 
-comptime サンク案:
+実装された comptime サンク（`ChangeListenerList`）:
 
 ```zig
-pub fn addActionListener(
-    self: *ChangeListenerList,
-    comptime T: type,
-    comptime f: fn (*T) void,
-    ud: *T,
-) !void {
-    // The one place the cast is written — generated once by the framework.
-    const Thunk = struct {
-        fn call(p: *anyopaque) void {
-            f(@ptrCast(@alignCast(p)));
+fn thunk(comptime T: type, comptime f: fn (*T, *const Event) void) ListenerFn {
+    return struct {
+        fn call(p: *anyopaque, e: *const Event) void {
+            f(@ptrCast(@alignCast(p)), e);   // キャストはここ 1 か所だけ
         }
-    };
-    try self.add(Thunk.call, ud); // stored form stays fn(*anyopaque)+*anyopaque
+    }.call;
+}
+
+pub fn addTyped(self: *ChangeListenerList, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) !void {
+    try self.add(thunk(T, f), user_data); // 保存形は fn(*anyopaque, *const Event)+*anyopaque のまま
+}
+pub fn removeTyped(self: *ChangeListenerList, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) void {
+    self.remove(thunk(T, f), user_data);   // (T,f) ごとに同一の関数ポインタ → 一致削除できる
 }
 ```
+
+各 Model はこれに委譲する型付き玄関（`addChangeListener` 等）を持つ。利用者・widget は
+`fn (s: *State, e: *const Event) void` を書くだけでよく、`*anyopaque` のキャストは現れない。
 
 * キャストは**フレームワークが 1 回だけ**書く（サンク）。利用者のコールバックは `fn(s: *State) void` でキャスト無し・型安全。
 * 保存・dispatch 形は不変なので C_ABI シム / codegen はそのまま生の登録を使える。

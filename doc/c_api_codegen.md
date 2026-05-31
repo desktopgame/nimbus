@@ -254,30 +254,36 @@ IR には `enums`（`name` と `members`＝名前＋値）を出すので、Pyth
 * `destructors` — 汎用デストラクタ一覧（`type` のハンドルを破棄する `c` 関数）。
 * `callbacks` — 後述。コールバック型の一覧。現状は空配列だが、契約として常に存在する。
 
-## コールバック / イベントハンドラ（設計・コード生成は未実装）
-リスナー登録のような「関数ポインタを渡す」API を、1 つの宣言で 3 レイヤーに展開する。
+## コールバック / イベントハンドラ（apigen 側は未実装・方式は確定）
+リスナー登録のような「関数ポインタを渡す」API を、1 つの宣言で各レイヤーへ展開する。
 
-スペックでコールバック型を宣言し、引数で参照する:
-```
-callback ActionListener = fn ()      # userdata 以外に渡る引数（ActionListener は無し）
+ネイティブ前提は整った（2026-05-31）: Model のリスナーは `fn(user_data: *anyopaque, event: *const Event) void`
+に統一され、保存・dispatch 形が C_ABI 契約の形そのものになっている（`framework/doc/model.md` /
+`doc/typed_callbacks.md`）。`Event { source, kind }` は C 側では値構造体 `nmEvent` として出せる。
 
-fn nmButtonOnAction = Button.addActionListener (&self, cb:ActionListener) -> void !err
+**方式は案 C（バインディング所有のコールバックボックス + 固定トランポリン）に決定。**
+理由は呼び出し規約とライフタイムの整理（`callconv(.c)` を native に持ち込まない / shim でヒープ確保しない）。
+
+スペック（予定）:
 ```
-`cb:ActionListener` という **1 引数**が各レイヤーでこう展開される:
+callback ChangeListener = fn (nmEvent)     # userdata に加えて渡る引数（イベント）
+
+fn nmSliderOnChange = Slider.addChangeListener (&self, cb:ChangeListener) -> void !err
+```
+各レイヤーの形:
 
 | レイヤー | 形 |
 |---|---|
-| C ABI | **2 引数**に展開: `void (*cb)(void*), void* userdata` |
-| Zig シム | `self.addActionListener(cb, userdata)` にそのまま渡す |
-| Python / JS | **1 つの呼び出し可能オブジェクト**。クロージャを `userdata` に詰めて `(fnptr, userdata)` を組み立てる |
+| C ABI | `typedef struct { void (*fn)(void*, const nmEvent*); void* userdata; } nmChangeListener;` の**ポインタ**を渡す |
+| preamble | `(T, f)` 署名ごとに Zig 規約トランポリン 1 本。native の `*const Event` を `nmEvent` に変換して box の C 関数を呼ぶ。`callconv(.c)` はこの box の `fn` フィールド型 1 か所だけ |
+| Zig シム | `self.addChangeListener(T, トランポリン, box)` を呼ぶ（box が user_data） |
+| Python / JS | **1 つの呼び出し可能オブジェクト**。box をバインディングが所有し、クロージャを userdata に詰め、`remove` 時に解放 |
 
-IR ではこの引数を `{"type":"callback","callback":"ActionListener","role":"event_handler"}`
-と印す。これにより生成器は「ここはネイティブ関数を 1 個の callable として見せる」と判断できる。
-これが「イベントハンドラとして使われることを期待する関数ポインタ」の宣言にあたる。
+IR ではこの引数を `{"type":"callback","callback":"ChangeListener","role":"event_handler"}` と印し、
+`callbacks` 配列に署名（追加引数の型）を出す。署名ごとに C 関数ポインタ型 + box + トランポリンが 1 セット。
 
-> 現状: 文法と IR 表現は本書で確定。実コード生成（C シムでの 2 引数展開、値戻り＋エラーの
-> 表現）は未実装。Zig 側に `fn(*anyopaque)+*anyopaque` を直接取るメソッド（`setTimeout`
-> 等）と、リスナー登録経路の統一（typed-callbacks 計画）がそろってから着手する。
+> 現状: 方式・文法・IR 表現は確定。apigen のコード生成（box/トランポリン/2 引数展開）は未実装。
+> 値戻り＋エラーの組み合わせ（`setTimeout` の `!TimerId` 等）の表現は別途。
 
 ## init / deinit（コンストラクタ・デストラクタ）の見せ方
 Zig には 2 つの生成の流儀がある。

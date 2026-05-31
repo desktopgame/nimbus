@@ -17,6 +17,7 @@
 
 const std = @import("std");
 const nimbus = @import("nimbus");
+const Event = nimbus.ChangeListenerList.Event;
 
 const State = struct {
     app:      *nimbus.Application,
@@ -26,8 +27,7 @@ const State = struct {
     buf:      [128]u8 = undefined,
 };
 
-fn onOpenModal(user_data: *anyopaque) void {
-    const s: *State = @ptrCast(@alignCast(user_data));
+fn onOpenModal(s: *State, _: *const Event) void {
     const result = s.modal.showModal(); // blocks until the dialog closes
     const name = switch (result) {
         .ok     => "ok",
@@ -39,23 +39,19 @@ fn onOpenModal(user_data: *anyopaque) void {
     s.label.setText(text) catch {};
 }
 
-fn onModalOk(user_data: *anyopaque) void {
-    const d: *nimbus.Dialog = @ptrCast(@alignCast(user_data));
+fn onModalOk(d: *nimbus.Dialog, _: *const Event) void {
     d.close(.ok);
 }
 
-fn onModalCancel(user_data: *anyopaque) void {
-    const d: *nimbus.Dialog = @ptrCast(@alignCast(user_data));
+fn onModalCancel(d: *nimbus.Dialog, _: *const Event) void {
     d.close(.cancel);
 }
 
-fn onOpenModeless(user_data: *anyopaque) void {
-    const s: *State = @ptrCast(@alignCast(user_data));
+fn onOpenModeless(s: *State, _: *const Event) void {
     s.modeless.show() catch {};
 }
 
-fn onModelessClose(user_data: *anyopaque) void {
-    const d: *nimbus.Dialog = @ptrCast(@alignCast(user_data));
+fn onModelessClose(d: *nimbus.Dialog, _: *const Event) void {
     d.close(.none);
 }
 
@@ -69,8 +65,8 @@ fn buildModal(app: *nimbus.Application, dialog: *nimbus.Dialog) !void {
     row.setLayout(nimbus.BoxLayout.horizontal());
     const ok = try app.button("OK");
     const cancel = try app.button("Cancel");
-    try ok.getModel().addActionListener(onModalOk, @ptrCast(dialog));
-    try cancel.getModel().addActionListener(onModalCancel, @ptrCast(dialog));
+    try ok.getModel().addActionListener(nimbus.Dialog, onModalOk, dialog);
+    try cancel.getModel().addActionListener(nimbus.Dialog, onModalCancel, dialog);
     try row.add(&ok.component);
     try row.add(&cancel.component);
 
@@ -82,7 +78,7 @@ fn buildModeless(app: *nimbus.Application, dialog: *nimbus.Dialog) !void {
     dialog.window.container.setLayout(nimbus.BoxLayout.vertical());
     const msg = try app.label("モードレス: 親と並行して使える");
     const close = try app.button("閉じる");
-    try close.getModel().addActionListener(onModelessClose, @ptrCast(dialog));
+    try close.getModel().addActionListener(nimbus.Dialog, onModelessClose, dialog);
     try dialog.window.add(&msg.component);
     try dialog.window.add(&close.component);
 }
@@ -114,8 +110,8 @@ pub fn main(init: std.process.Init) !void {
 
     const open_modal = try app.button("確認ダイアログ (モーダル)");
     const open_modeless = try app.button("検索パネル (モードレス)");
-    try open_modal.getModel().addActionListener(onOpenModal, @ptrCast(&state));
-    try open_modeless.getModel().addActionListener(onOpenModeless, @ptrCast(&state));
+    try open_modal.getModel().addActionListener(State, onOpenModal, &state);
+    try open_modeless.getModel().addActionListener(State, onOpenModeless, &state);
 
     const col = try app.container();
     col.setLayout(nimbus.BoxLayout.vertical());

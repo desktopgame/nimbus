@@ -6,6 +6,7 @@
 const std = @import("std");
 const awt = @import("awt");
 const Component = @import("Component.zig");
+const Event = @import("ChangeListenerList.zig").Event;
 const ToggleButtonModel = @import("ToggleButtonModel.zig");
 
 const RadioButton = @This();
@@ -134,16 +135,15 @@ fn applyMetrics(self: *RadioButton) void {
 fn install(self: *Component) !void {
     self.setFocusable(true);
     const rb: *RadioButton = @fieldParentPtr("component", self);
-    try rb.model.addChangeListener(onModelChange, self);
+    try rb.model.addChangeListener(Component, onModelChange, self);
 }
 
 fn uninstall(self: *Component) void {
     const rb: *RadioButton = @fieldParentPtr("component", self);
-    rb.model.removeChangeListener(onModelChange, self);
+    rb.model.removeChangeListener(Component, onModelChange, self);
 }
 
-fn onModelChange(user_data: *anyopaque) void {
-    const comp: *Component = @ptrCast(@alignCast(user_data));
+fn onModelChange(comp: *Component, _: *const Event) void {
     comp.repaint();
 }
 

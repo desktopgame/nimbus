@@ -6,6 +6,7 @@
 
 const std = @import("std");
 const nimbus = @import("nimbus");
+const Event = nimbus.ChangeListenerList.Event;
 
 const State = struct {
     label:         *nimbus.Label,
@@ -23,14 +24,12 @@ fn refreshLabel(state: *State) void {
     state.label.setText(text) catch {};
 }
 
-fn onClick(user_data: *anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(user_data));
+fn onClick(state: *State, _: *const Event) void {
     state.button_clicks += 1;
     refreshLabel(state);
 }
 
-fn onSliderChange(user_data: *anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(user_data));
+fn onSliderChange(state: *State, _: *const Event) void {
     refreshLabel(state);
 }
 
@@ -65,8 +64,8 @@ pub fn main(init: std.process.Init) !void {
     try nimbus.BorderLayout.add(&frame.window.container, .center, &row.component);
 
     var state = State{ .label = label, .slider = slider };
-    try button.getModel().addActionListener(onClick, @ptrCast(&state));
-    try slider.getModel().addChangeListener(onSliderChange, @ptrCast(&state));
+    try button.getModel().addActionListener(State, onClick, &state);
+    try slider.getModel().addChangeListener(State, onSliderChange, &state);
 
     std.debug.print("Click the button or drag the slider. Close the window to exit.\n", .{});
     try app.run();

@@ -4,6 +4,7 @@
 const std = @import("std");
 const awt = @import("awt");
 const Component = @import("Component.zig");
+const Event = @import("ChangeListenerList.zig").Event;
 const ButtonModel = @import("ButtonModel.zig");
 const MenuItem = @import("MenuItem.zig");
 const Menu = @import("Menu.zig");
@@ -59,7 +60,7 @@ pub fn add(self: *PopupMenu, item: *Component) !void {
         const sub: *Menu = @fieldParentPtr("component", item);
         sub.setMode(.item);
     } else if (modelOf(item)) |m| {
-        try m.addActionListener(onItemAction, @ptrCast(self));
+        try m.addActionListener(PopupMenu, onItemAction, self);
     }
 }
 
@@ -139,8 +140,7 @@ fn onOverlayDismiss(user_data: *anyopaque) void {
     for (self.items.items) |item| item.parent = null;
 }
 
-fn onItemAction(user_data: *anyopaque) void {
-    const self: *PopupMenu = @ptrCast(@alignCast(user_data));
+fn onItemAction(self: *PopupMenu, _: *const Event) void {
     if (self.window) |w| w.overlays.dismissAll();
 }
 

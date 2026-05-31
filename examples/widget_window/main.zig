@@ -23,6 +23,7 @@
 
 const std = @import("std");
 const nimbus = @import("nimbus");
+const Event = nimbus.ChangeListenerList.Event;
 
 const State = struct {
     frame: *nimbus.Frame,
@@ -43,23 +44,20 @@ fn refreshLabel(s: *State) void {
     s.label.setText(text) catch {};
 }
 
-fn onShow(user_data: *anyopaque) void {
+fn onShow(s: *State, _: *const Event) void {
     // Refresh the label without touching geometry — handy for reading back the
     // window's pos/size after dragging it (the move/resize callbacks keep the
     // model in sync, so this reflects the live OS geometry).
-    const s: *State = @ptrCast(@alignCast(user_data));
     refreshLabel(s);
 }
 
-fn onMove(user_data: *anyopaque) void {
-    const s: *State = @ptrCast(@alignCast(user_data));
+fn onMove(s: *State, _: *const Event) void {
     s.moved = !s.moved;
     if (s.moved) s.frame.window.setPos(500, 350) else s.frame.window.setPos(150, 150);
     refreshLabel(s);
 }
 
-fn onResize(user_data: *anyopaque) void {
-    const s: *State = @ptrCast(@alignCast(user_data));
+fn onResize(s: *State, _: *const Event) void {
     s.grown = !s.grown;
     if (s.grown) s.frame.window.setSize(640, 480) else s.frame.window.setSize(400, 280);
     refreshLabel(s);
@@ -77,9 +75,9 @@ pub fn main(init: std.process.Init) !void {
     const move_btn = try app.button("位置を変更");
     const size_btn = try app.button("サイズを変更");
     const show_btn = try app.button("現在値を表示");
-    try move_btn.getModel().addActionListener(onMove, @ptrCast(&state));
-    try size_btn.getModel().addActionListener(onResize, @ptrCast(&state));
-    try show_btn.getModel().addActionListener(onShow, @ptrCast(&state));
+    try move_btn.getModel().addActionListener(State, onMove, &state);
+    try size_btn.getModel().addActionListener(State, onResize, &state);
+    try show_btn.getModel().addActionListener(State, onShow, &state);
 
     const col = try app.container();
     col.setLayout(nimbus.BoxLayout.vertical());

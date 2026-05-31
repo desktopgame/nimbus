@@ -15,6 +15,7 @@
 
 const std = @import("std");
 const nimbus = @import("nimbus");
+const Event = nimbus.ChangeListenerList.Event;
 
 const State = struct {
     combo: *nimbus.ComboBox,
@@ -28,8 +29,7 @@ fn refresh(state: *State) void {
     state.label.setText(text) catch {};
 }
 
-fn onChange(user_data: *anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(user_data));
+fn onChange(state: *State, _: *const Event) void {
     refresh(state);
 }
 
@@ -52,7 +52,7 @@ pub fn main(init: std.process.Init) !void {
 
     var state = State{ .combo = combo, .label = label };
     refresh(&state);
-    try combo.addChangeListener(onChange, @ptrCast(&state));
+    try combo.addChangeListener(State, onChange, &state);
 
     std.debug.print("Click the combobox or use ↑ / ↓ / Enter to pick an item.\n", .{});
     try app.run();

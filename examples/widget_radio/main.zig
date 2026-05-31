@@ -6,6 +6,7 @@
 
 const std = @import("std");
 const nimbus = @import("nimbus");
+const Event = nimbus.ChangeListenerList.Event;
 
 const State = struct {
     rb_small:  *nimbus.RadioButton,
@@ -25,8 +26,7 @@ fn refresh(state: *State) void {
     state.label.setText(text) catch {};
 }
 
-fn onChange(user_data: *anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(user_data));
+fn onChange(state: *State, _: *const Event) void {
     refresh(state);
 }
 
@@ -71,9 +71,9 @@ pub fn main(init: std.process.Init) !void {
         .label = label,
     };
     refresh(&state);
-    try rb_small.getModel().addActionListener(onChange, @ptrCast(&state));
-    try rb_medium.getModel().addActionListener(onChange, @ptrCast(&state));
-    try rb_large.getModel().addActionListener(onChange, @ptrCast(&state));
+    try rb_small.getModel().addActionListener(State, onChange, &state);
+    try rb_medium.getModel().addActionListener(State, onChange, &state);
+    try rb_large.getModel().addActionListener(State, onChange, &state);
 
     std.debug.print("Pick a size — selection is mutually exclusive.\n", .{});
     try app.run();

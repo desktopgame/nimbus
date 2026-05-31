@@ -16,6 +16,7 @@ const ScrollBar = @import("ScrollBar.zig");
 const BoundedRangeModel = @import("BoundedRangeModel.zig");
 const LayoutManager = @import("LayoutManager.zig");
 const ChangeListenerList = @import("ChangeListenerList.zig");
+const Event = ChangeListenerList.Event;
 
 const ScrollPane = @This();
 
@@ -125,8 +126,8 @@ pub fn create(allocator: std.mem.Allocator, view: *Component) !*ScrollPane {
     sp.container.add(&sp.viewport.component) catch unreachable;
     sp.container.add(&sp.hbar.component) catch unreachable;
     sp.container.add(&sp.vbar.component) catch unreachable;
-    sp.h_model.addChangeListener(onScrollChange, @ptrCast(sp)) catch unreachable;
-    sp.v_model.addChangeListener(onScrollChange, @ptrCast(sp)) catch unreachable;
+    sp.h_model.addChangeListener(ScrollPane, onScrollChange, sp) catch unreachable;
+    sp.v_model.addChangeListener(ScrollPane, onScrollChange, sp) catch unreachable;
 
     return sp;
 }
@@ -217,21 +218,23 @@ fn scrollRectToVisibleImpl(user_data: *anyopaque, rect: Component.Rect) void {
 /// Fires when either axis's scroll position changes.
 pub fn addChangeListener(
     self: *ScrollPane,
-    fn_ptr: ChangeListenerList.ListenerFn,
-    user_data: *anyopaque,
+    comptime T: type,
+    comptime f: fn (*T, *const Event) void,
+    user_data: *T,
 ) !void {
-    try self.h_model.addChangeListener(fn_ptr, user_data);
-    errdefer self.h_model.removeChangeListener(fn_ptr, user_data);
-    try self.v_model.addChangeListener(fn_ptr, user_data);
+    try self.h_model.addChangeListener(T, f, user_data);
+    errdefer self.h_model.removeChangeListener(T, f, user_data);
+    try self.v_model.addChangeListener(T, f, user_data);
 }
 
 pub fn removeChangeListener(
     self: *ScrollPane,
-    fn_ptr: ChangeListenerList.ListenerFn,
-    user_data: *anyopaque,
+    comptime T: type,
+    comptime f: fn (*T, *const Event) void,
+    user_data: *T,
 ) void {
-    self.h_model.removeChangeListener(fn_ptr, user_data);
-    self.v_model.removeChangeListener(fn_ptr, user_data);
+    self.h_model.removeChangeListener(T, f, user_data);
+    self.v_model.removeChangeListener(T, f, user_data);
 }
 
 // ── internal ─────────────────────────────────────────────────────────────
@@ -331,8 +334,7 @@ fn layoutComputeMaxSize(_: *LayoutManager, _: *const Container) Component.Size {
 
 // ── scroll wiring ──────────────────────────────────────────────────────────
 
-fn onScrollChange(user_data: *anyopaque) void {
-    const self: *ScrollPane = @ptrCast(@alignCast(user_data));
+fn onScrollChange(self: *ScrollPane, _: *const Event) void {
     // Cheap update: just move the view; no relayout needed.
     self.view.position = .{
         .x = -@as(f32, @floatFromInt(self.h_model.value)),
@@ -362,8 +364,8 @@ fn uninstall(self: *Component) void {
     const sp = fromComponent(self);
     // Remove our scroll listeners while the models are still alive (the bars
     // are torn down earlier by container.deinit; the models outlive them).
-    sp.h_model.removeChangeListener(onScrollChange, @ptrCast(sp));
-    sp.v_model.removeChangeListener(onScrollChange, @ptrCast(sp));
+    sp.h_model.removeChangeListener(ScrollPane, onScrollChange, sp);
+    sp.v_model.removeChangeListener(ScrollPane, onScrollChange, sp);
 }
 
 fn processEvent(self: *Component, ev: *Component.Event) void {

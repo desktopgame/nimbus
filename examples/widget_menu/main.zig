@@ -8,6 +8,7 @@
 
 const std = @import("std");
 const nimbus = @import("nimbus");
+const Event = nimbus.ChangeListenerList.Event;
 const awt = nimbus.awt;
 
 
@@ -22,58 +23,48 @@ fn setStatus(state: *State, comptime fmt: []const u8, args: anytype) void {
     state.label.setText(text) catch {};
 }
 
-fn onFileNew(user_data: *anyopaque) void {
-    const s: *State = @ptrCast(@alignCast(user_data));
+fn onFileNew(s: *State, _: *const Event) void {
     s.counter += 1;
     setStatus(s, "File > New ({d} click(s))", .{s.counter});
 }
 
-fn onFileOpen(user_data: *anyopaque) void {
-    const s: *State = @ptrCast(@alignCast(user_data));
+fn onFileOpen(s: *State, _: *const Event) void {
     setStatus(s, "File > Open clicked", .{});
 }
 
-fn onFileSave(user_data: *anyopaque) void {
-    const s: *State = @ptrCast(@alignCast(user_data));
+fn onFileSave(s: *State, _: *const Event) void {
     setStatus(s, "File > Save clicked", .{});
 }
 
-fn onFileQuit(_: *anyopaque) void {
+fn onFileQuit(_: *State, _: *const Event) void {
     std.debug.print("File > Quit — bye!\n", .{});
 }
 
-fn onEditCut(user_data: *anyopaque) void {
-    const s: *State = @ptrCast(@alignCast(user_data));
+fn onEditCut(s: *State, _: *const Event) void {
     setStatus(s, "Edit > Cut clicked", .{});
 }
 
-fn onEditCopy(user_data: *anyopaque) void {
-    const s: *State = @ptrCast(@alignCast(user_data));
+fn onEditCopy(s: *State, _: *const Event) void {
     setStatus(s, "Edit > Copy clicked", .{});
 }
 
-fn onEditPaste(user_data: *anyopaque) void {
-    const s: *State = @ptrCast(@alignCast(user_data));
+fn onEditPaste(s: *State, _: *const Event) void {
     setStatus(s, "Edit > Paste clicked", .{});
 }
 
-fn onFindOne(user_data: *anyopaque) void {
-    const s: *State = @ptrCast(@alignCast(user_data));
+fn onFindOne(s: *State, _: *const Event) void {
     setStatus(s, "Edit > Find > Find...", .{});
 }
 
-fn onFindNext(user_data: *anyopaque) void {
-    const s: *State = @ptrCast(@alignCast(user_data));
+fn onFindNext(s: *State, _: *const Event) void {
     setStatus(s, "Edit > Find > Next", .{});
 }
 
-fn onViewGrid(user_data: *anyopaque) void {
-    const s: *State = @ptrCast(@alignCast(user_data));
+fn onViewGrid(s: *State, _: *const Event) void {
     setStatus(s, "View > Show Grid toggled", .{});
 }
 
-fn onViewRuler(user_data: *anyopaque) void {
-    const s: *State = @ptrCast(@alignCast(user_data));
+fn onViewRuler(s: *State, _: *const Event) void {
     setStatus(s, "View > Show Ruler toggled", .{});
 }
 
@@ -109,28 +100,23 @@ const ctx_vt = blk: {
     break :blk vt;
 };
 
-fn onCtxPaste(user_data: *anyopaque) void {
-    const s: *State = @ptrCast(@alignCast(user_data));
+fn onCtxPaste(s: *State, _: *const Event) void {
     setStatus(s, "PopupMenu > Paste clicked", .{});
 }
 
-fn onCtxDelete(user_data: *anyopaque) void {
-    const s: *State = @ptrCast(@alignCast(user_data));
+fn onCtxDelete(s: *State, _: *const Event) void {
     setStatus(s, "PopupMenu > Delete clicked", .{});
 }
 
-fn onCtxInsertImage(user_data: *anyopaque) void {
-    const s: *State = @ptrCast(@alignCast(user_data));
+fn onCtxInsertImage(s: *State, _: *const Event) void {
     setStatus(s, "PopupMenu > Insert > Image", .{});
 }
 
-fn onCtxInsertTable(user_data: *anyopaque) void {
-    const s: *State = @ptrCast(@alignCast(user_data));
+fn onCtxInsertTable(s: *State, _: *const Event) void {
     setStatus(s, "PopupMenu > Insert > Table", .{});
 }
 
-fn onTbAction(user_data: *anyopaque) void {
-    const s: *State = @ptrCast(@alignCast(user_data));
+fn onTbAction(s: *State, _: *const Event) void {
     setStatus(s, "Toolbar button clicked", .{});
 }
 
@@ -171,22 +157,22 @@ pub fn main(init: std.process.Init) !void {
     const popup = try app.popupMenu();
     const paste = try app.menuItem("Paste");
     paste.setIcon(ic_paste);
-    try paste.getModel().addActionListener(onCtxPaste, @ptrCast(&state));
+    try paste.getModel().addActionListener(State, onCtxPaste, &state);
     try popup.add(&paste.component);
 
     const del = try app.menuItem("Delete");
     del.setIcon(ic_trash);
-    try del.getModel().addActionListener(onCtxDelete, @ptrCast(&state));
+    try del.getModel().addActionListener(State, onCtxDelete, &state);
     try popup.add(&del.component);
 
     try popup.addSeparator();
 
     const insert = try app.menu("Insert");
     const ins_image = try app.menuItem("Image");
-    try ins_image.getModel().addActionListener(onCtxInsertImage, @ptrCast(&state));
+    try ins_image.getModel().addActionListener(State, onCtxInsertImage, &state);
     try insert.add(&ins_image.component);
     const ins_table = try app.menuItem("Table");
-    try ins_table.getModel().addActionListener(onCtxInsertTable, @ptrCast(&state));
+    try ins_table.getModel().addActionListener(State, onCtxInsertTable, &state);
     try insert.add(&ins_table.component);
     try popup.add(&insert.component);
     defer popup.destroy();
@@ -203,7 +189,7 @@ pub fn main(init: std.process.Init) !void {
         const tb_btn = try app.button("");
         tb_btn.setIcon(icn);
         tb_btn.setIconSize(.{ .width = 20, .height = 20 });
-        try tb_btn.getModel().addActionListener(onTbAction, @ptrCast(&state));
+        try tb_btn.getModel().addActionListener(State, onTbAction, &state);
         try tb.container.add(&tb_btn.component);
     }
     try nimbus.BorderLayout.add(&frame.window.container, .north, &tb.container.component);
@@ -216,20 +202,20 @@ pub fn main(init: std.process.Init) !void {
         const file = try app.menu("File");
         const new_item = try app.menuItem("New");
         new_item.setIcon(ic_new);
-        try new_item.getModel().addActionListener(onFileNew, @ptrCast(&state));
+        try new_item.getModel().addActionListener(State, onFileNew, &state);
         try file.add(&new_item.component);
         const open = try app.menuItem("Open");
         open.setIcon(ic_open);
-        try open.getModel().addActionListener(onFileOpen, @ptrCast(&state));
+        try open.getModel().addActionListener(State, onFileOpen, &state);
         try file.add(&open.component);
         const save = try app.menuItem("Save");
         save.setIcon(ic_save);
-        try save.getModel().addActionListener(onFileSave, @ptrCast(&state));
+        try save.getModel().addActionListener(State, onFileSave, &state);
         try file.add(&save.component);
         try file.addSeparator();
         const quit = try app.menuItem("Quit");
         quit.setIcon(ic_quit);
-        try quit.getModel().addActionListener(onFileQuit, @ptrCast(&state));
+        try quit.getModel().addActionListener(State, onFileQuit, &state);
         try file.add(&quit.component);
         try bar.add(file);
     }
@@ -239,25 +225,25 @@ pub fn main(init: std.process.Init) !void {
         const edit = try app.menu("Edit");
         const cut = try app.menuItem("Cut");
         cut.setIcon(ic_cut);
-        try cut.getModel().addActionListener(onEditCut, @ptrCast(&state));
+        try cut.getModel().addActionListener(State, onEditCut, &state);
         try edit.add(&cut.component);
         const copy = try app.menuItem("Copy");
         copy.setIcon(ic_copy);
-        try copy.getModel().addActionListener(onEditCopy, @ptrCast(&state));
+        try copy.getModel().addActionListener(State, onEditCopy, &state);
         try edit.add(&copy.component);
         const paste2 = try app.menuItem("Paste");
         paste2.setIcon(ic_paste);
-        try paste2.getModel().addActionListener(onEditPaste, @ptrCast(&state));
+        try paste2.getModel().addActionListener(State, onEditPaste, &state);
         try edit.add(&paste2.component);
         try edit.addSeparator();
 
         const find = try app.menu("Find");
         find.setIcon(ic_search);
         const find_one = try app.menuItem("Find...");
-        try find_one.getModel().addActionListener(onFindOne, @ptrCast(&state));
+        try find_one.getModel().addActionListener(State, onFindOne, &state);
         try find.add(&find_one.component);
         const find_next = try app.menuItem("Find Next");
-        try find_next.getModel().addActionListener(onFindNext, @ptrCast(&state));
+        try find_next.getModel().addActionListener(State, onFindNext, &state);
         try find.add(&find_next.component);
         try edit.add(&find.component);
 
@@ -268,11 +254,11 @@ pub fn main(init: std.process.Init) !void {
     {
         const view = try app.menu("View");
         const grid = try app.checkBoxMenuItem("Show Grid");
-        try grid.getModel().addActionListener(onViewGrid, @ptrCast(&state));
+        try grid.getModel().addActionListener(State, onViewGrid, &state);
         try view.add(&grid.component);
         const ruler = try app.checkBoxMenuItem("Show Ruler");
         ruler.setChecked(true);  // initial state
-        try ruler.getModel().addActionListener(onViewRuler, @ptrCast(&state));
+        try ruler.getModel().addActionListener(State, onViewRuler, &state);
         try view.add(&ruler.component);
         try bar.add(view);
     }

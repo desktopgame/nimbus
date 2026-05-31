@@ -2,8 +2,13 @@
 
 const std = @import("std");
 const ChangeListenerList = @import("ChangeListenerList.zig");
+const Event = ChangeListenerList.Event;
 
 const BoundedRangeModel = @This();
+
+fn fireChange(self: *BoundedRangeModel) void {
+    self.change_listeners.fire(&.{ .source = self, .kind = .change });
+}
 
 min:    i32,
 value:  i32,
@@ -34,7 +39,7 @@ pub fn setValue(self: *BoundedRangeModel, v: i32) void {
     const clamped = if (v < self.min) self.min else if (v > upper) upper else v;
     if (clamped == self.value) return;
     self.value = clamped;
-    self.change_listeners.fire();
+    self.fireChange();
 }
 
 pub fn getMin(self: *const BoundedRangeModel) i32 { return self.min; }
@@ -49,14 +54,14 @@ pub fn setRange(self: *BoundedRangeModel, min: i32, max: i32) void {
     if (self.value + self.extent > max) {
         self.extent = @max(0, max - self.value);
     }
-    self.change_listeners.fire();
+    self.fireChange();
 }
 
 pub fn setExtent(self: *BoundedRangeModel, extent: i32) void {
     const e = if (extent < 0) 0 else if (self.value + extent > self.max) self.max - self.value else extent;
     if (e == self.extent) return;
     self.extent = e;
-    self.change_listeners.fire();
+    self.fireChange();
 }
 
 /// Atomically update all four properties (min / value / max / extent) with
@@ -78,23 +83,25 @@ pub fn setRangeProperties(self: *BoundedRangeModel, min: i32, value: i32, max: i
     self.max = new_max;
     self.value = new_value;
     self.extent = new_extent;
-    self.change_listeners.fire();
+    self.fireChange();
 }
 
 pub fn addChangeListener(
     self: *BoundedRangeModel,
-    fn_ptr: ChangeListenerList.ListenerFn,
-    user_data: *anyopaque,
+    comptime T: type,
+    comptime f: fn (*T, *const Event) void,
+    user_data: *T,
 ) !void {
-    try self.change_listeners.add(fn_ptr, user_data);
+    try self.change_listeners.addTyped(T, f, user_data);
 }
 
 pub fn removeChangeListener(
     self: *BoundedRangeModel,
-    fn_ptr: ChangeListenerList.ListenerFn,
-    user_data: *anyopaque,
+    comptime T: type,
+    comptime f: fn (*T, *const Event) void,
+    user_data: *T,
 ) void {
-    self.change_listeners.remove(fn_ptr, user_data);
+    self.change_listeners.removeTyped(T, f, user_data);
 }
 
 test "setValue clamps and fires" {
@@ -103,13 +110,13 @@ test "setValue clamps and fires" {
 
     const Ctx = struct {
         count: u32 = 0,
-        fn cb(p: *anyopaque) void {
-            const self: *@This() = @ptrCast(@alignCast(p));
+        fn cb(self: *@This(), e: *const Event) void {
+            _ = e;
             self.count += 1;
         }
     };
     var ctx = Ctx{};
-    try m.addChangeListener(Ctx.cb, &ctx);
+    try m.addChangeListener(Ctx, Ctx.cb, &ctx);
 
     m.setValue(75);
     try std.testing.expectEqual(@as(i32, 75), m.getValue());
