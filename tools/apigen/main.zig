@@ -65,6 +65,8 @@ const ArgType = union(enum) {
     struct_ref: []const u8,
     /// Primitive scalar argument (passed straight through).
     scalar: Scalar,
+    /// Enum argument; payload is the declared ABI enum name (e.g. "nmAlignment").
+    enum_ref: []const u8,
 };
 
 /// Function return shape.
@@ -76,6 +78,8 @@ const Ret = union(enum) {
     struct_ref: []const u8,
     /// Primitive scalar return (passed straight through).
     scalar: Scalar,
+    /// Enum return; payload is the declared ABI enum name.
+    enum_ref: []const u8,
 };
 
 const Field = struct {
@@ -88,6 +92,16 @@ const Field = struct {
 const Struct = struct {
     cname: []const u8,
     fields: std.ArrayList(Field),
+};
+
+/// `enum <CName> = <NativeZigPath> { <member> ... }` — an enum exposed across the
+/// ABI as an integer. `native` (e.g. "Component.Alignment", framework-relative)
+/// is used to emit a comptime check that the C values match the Zig enum, so a
+/// reorder/rename in the native enum is caught at compile time (not silently).
+const EnumDecl = struct {
+    cname: []const u8,
+    native: []const u8,
+    members: std.ArrayList([]const u8),
 };
 
 /// Failure-signalling convention.
@@ -137,6 +151,7 @@ const Opaque = struct {
 const Model = struct {
     opaques: std.ArrayList(Opaque) = .empty,
     structs: std.ArrayList(Struct) = .empty,
+    enums: std.ArrayList(EnumDecl) = .empty,
     funcs: std.ArrayList(Func) = .empty,
     casts: std.ArrayList(Cast) = .empty,
     destructors: std.ArrayList(Destructor) = .empty,
@@ -146,6 +161,12 @@ const Model = struct {
             if (std.mem.eql(u8, s.cname, name)) return s;
         }
         return null;
+    }
+    fn findEnum(self: *const Model, name: []const u8) bool {
+        for (self.enums.items) |e| {
+            if (std.mem.eql(u8, e.cname, name)) return true;
+        }
+        return false;
     }
 };
 
@@ -170,6 +191,8 @@ pub fn main(init: std.process.Init) !void {
         model.funcs.deinit(gpa);
         for (model.structs.items) |*s| s.fields.deinit(gpa);
         model.structs.deinit(gpa);
+        for (model.enums.items) |*e| e.members.deinit(gpa);
+        model.enums.deinit(gpa);
         model.opaques.deinit(gpa);
         model.casts.deinit(gpa);
         model.destructors.deinit(gpa);
@@ -227,6 +250,8 @@ fn parse(gpa: std.mem.Allocator, spec: []const u8, model: *Model) !void {
             }
         } else if (std.mem.eql(u8, kw, "struct")) {
             try parseStruct(gpa, line_no, tokens.items, model);
+        } else if (std.mem.eql(u8, kw, "enum")) {
+            try parseEnum(gpa, line_no, tokens.items, model);
         } else if (std.mem.eql(u8, kw, "fn")) {
             try parseFn(gpa, line_no, tokens.items, model);
         } else if (std.mem.eql(u8, kw, "cast")) {
@@ -317,8 +342,10 @@ fn parseFn(
         f.ret = .{ .scalar = sc };
     } else if (model.findStruct(rt) != null) {
         f.ret = .{ .struct_ref = rt };
+    } else if (model.findEnum(rt)) {
+        f.ret = .{ .enum_ref = rt };
     } else {
-        return fail(line_no, "unsupported return type ('void', '*Type', scalar, or declared struct)");
+        return fail(line_no, "unsupported return type ('void', '*Type', scalar, declared struct, or declared enum)");
     }
     i += 1;
 
@@ -338,11 +365,11 @@ fn parseFn(
     }
 
     const ret_is_value = switch (f.ret) {
-        .struct_ref, .scalar => true,
+        .struct_ref, .scalar, .enum_ref => true,
         else => false,
     };
     if (ret_is_value and f.fail != .none)
-        return fail(line_no, "value (struct/scalar) return combined with !fail is not supported yet");
+        return fail(line_no, "value (struct/scalar/enum) return combined with !fail is not supported yet");
 
     try model.funcs.append(gpa, f);
 }
@@ -352,7 +379,31 @@ fn parseArgType(model: *const Model, s: []const u8) ?ArgType {
     if (s.len > 1 and s[0] == '*') return .{ .handle = s[1..] };
     if (Scalar.parse(s)) |sc| return .{ .scalar = sc };
     if (model.findStruct(s) != null) return .{ .struct_ref = s };
+    if (model.findEnum(s)) return .{ .enum_ref = s };
     return null;
+}
+
+fn parseEnum(
+    gpa: std.mem.Allocator,
+    line_no: usize,
+    t: []const []const u8,
+    model: *Model,
+) !void {
+    // enum <CName> = <NativeZigPath> { <member> ... }
+    if (t.len < 6) return fail(line_no, "enum declaration too short");
+    if (!std.mem.eql(u8, t[2], "=")) return fail(line_no, "expected '=' after enum name");
+    if (!std.mem.eql(u8, t[4], "{")) return fail(line_no, "expected '{' after native type");
+    if (!std.mem.eql(u8, t[t.len - 1], "}")) return fail(line_no, "expected '}' to close enum");
+
+    var e: EnumDecl = .{ .cname = t[1], .native = t[3], .members = .empty };
+    errdefer e.members.deinit(gpa);
+
+    for (t[5 .. t.len - 1]) |tok| {
+        try e.members.append(gpa, tok);
+    }
+    if (e.members.items.len == 0) return fail(line_no, "enum needs at least one member");
+
+    try model.enums.append(gpa, e);
 }
 
 fn parseStruct(
@@ -451,6 +502,18 @@ fn emitHeader(
         }
     }
 
+    if (model.enums.items.len > 0) {
+        try buf.appendSlice(gpa, "\n/* ── enums ── */\n");
+        for (model.enums.items) |e| {
+            try buf.appendSlice(gpa, "typedef enum {");
+            for (e.members.items, 0..) |m, idx| {
+                if (idx != 0) try buf.appendSlice(gpa, ",");
+                try print(gpa, buf, " {s}_{s}", .{ e.cname, m });
+            }
+            try print(gpa, buf, " }} {s};\n", .{e.cname});
+        }
+    }
+
     try buf.appendSlice(gpa, "\n/* ── functions ── */\n");
     for (model.funcs.items) |*f| {
         try emitHeaderProto(gpa, buf, f);
@@ -480,6 +543,7 @@ fn emitHeaderProto(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), f: *const Fu
         .ptr => |zt| try print(gpa, buf, "nm{s}*", .{zt}),
         .struct_ref => |sn| try buf.appendSlice(gpa, sn),
         .scalar => |sc| try buf.appendSlice(gpa, sc.cName()),
+        .enum_ref => |en| try buf.appendSlice(gpa, en),
     }
     try print(gpa, buf, " {s}(", .{f.cname});
 
@@ -496,6 +560,7 @@ fn emitHeaderProto(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), f: *const Fu
             .handle => |zt| try print(gpa, buf, "nm{s}* {s}", .{ zt, a.name }),
             .struct_ref => |sn| try print(gpa, buf, "{s} {s}", .{ sn, a.name }),
             .scalar => |sc| try print(gpa, buf, "{s} {s}", .{ sc.cName(), a.name }),
+            .enum_ref => |en| try print(gpa, buf, "{s} {s}", .{ en, a.name }),
         }
         wrote = true;
     }
@@ -526,6 +591,18 @@ fn emitZig(
             try print(gpa, buf, " {s}: {s},", .{ fld.name, fld.scalar.zigName() });
         }
         try buf.appendSlice(gpa, " };\n");
+    }
+
+    // Enums cross the ABI as integers (C enum / `c_int`). This comptime block
+    // verifies each declared member's value matches the native Zig enum, so a
+    // reorder / rename in the native enum is a compile error, not a silent ABI
+    // break (a renamed member fails to resolve; a reorder fails the assert).
+    for (model.enums.items) |e| {
+        try buf.appendSlice(gpa, "\ncomptime {\n");
+        for (e.members.items, 0..) |m, idx| {
+            try print(gpa, buf, "    std.debug.assert(@intFromEnum(framework.{s}.{s}) == {d});\n", .{ e.native, m, idx });
+        }
+        try buf.appendSlice(gpa, "}\n");
     }
 
     for (model.funcs.items) |*f| {
@@ -569,6 +646,8 @@ fn emitZigShim(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), model: *const Mo
             .handle => |zt| try print(gpa, buf, "{s}: *framework.{s}", .{ a.name, zt }),
             .struct_ref => |sn| try print(gpa, buf, "{s}: {s}", .{ a.name, sn }),
             .scalar => |sc| try print(gpa, buf, "{s}: {s}", .{ a.name, sc.zigName() }),
+            // Enums cross as int; convert at the call site.
+            .enum_ref => try print(gpa, buf, "{s}: c_int", .{a.name}),
         }
         wrote = true;
     }
@@ -586,6 +665,7 @@ fn emitZigShim(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), model: *const Mo
         },
         .struct_ref => |sn| try buf.appendSlice(gpa, sn),
         .scalar => |sc| try buf.appendSlice(gpa, sc.zigName()),
+        .enum_ref => try buf.appendSlice(gpa, "c_int"),
     }
     try buf.appendSlice(gpa, " {\n");
 
@@ -606,6 +686,7 @@ fn emitZigShim(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), model: *const Mo
             .handle => try call.appendSlice(gpa, a.name),
             .struct_ref => |sn| try appendStructLiteral(gpa, &call, a.name, model.findStruct(sn).?),
             .scalar => try call.appendSlice(gpa, a.name),
+            .enum_ref => try print(gpa, &call, "@enumFromInt({s})", .{a.name}),
         }
     }
     try call.appendSlice(gpa, ")");
@@ -622,6 +703,7 @@ fn emitZigShim(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), model: *const Mo
             switch (f.ret) {
                 .void => try print(gpa, buf, "    {s};\n", .{call.items}),
                 .ptr, .scalar => try print(gpa, buf, "    return {s};\n", .{call.items}),
+                .enum_ref => try print(gpa, buf, "    return @intFromEnum({s});\n", .{call.items}),
                 .struct_ref => |sn| {
                     // native struct -> ABI extern struct, field by field.
                     try print(gpa, buf, "    const _ret = {s};\n    return ", .{call.items});
@@ -681,6 +763,19 @@ fn emitJson(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), model: *const Model
         try buf.appendSlice(gpa, "] }");
     }
     try buf.appendSlice(gpa, if (model.structs.items.len == 0) "],\n" else "\n  ],\n");
+
+    // enums (exposed as integers; members carry their value)
+    try buf.appendSlice(gpa, "  \"enums\": [");
+    for (model.enums.items, 0..) |e, idx| {
+        try buf.appendSlice(gpa, if (idx == 0) "\n" else ",\n");
+        try print(gpa, buf, "    {{ \"name\": \"{s}\", \"members\": [", .{e.cname});
+        for (e.members.items, 0..) |m, midx| {
+            if (midx != 0) try buf.appendSlice(gpa, ", ");
+            try print(gpa, buf, "{{ \"name\": \"{s}\", \"value\": {d} }}", .{ m, midx });
+        }
+        try buf.appendSlice(gpa, "] }");
+    }
+    try buf.appendSlice(gpa, if (model.enums.items.len == 0) "],\n" else "\n  ],\n");
 
     // callbacks (none codegen'd yet; the array is part of the contract so
     // consumers can rely on its presence). See doc/c_api_codegen.md.
@@ -752,6 +847,7 @@ fn emitJsonFunc(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), f: *const Func)
             .handle => |zt| try print(gpa, buf, "\"type\": \"handle\", \"handle\": \"{s}\"", .{zt}),
             .struct_ref => |sn| try print(gpa, buf, "\"type\": \"struct\", \"struct\": \"{s}\"", .{sn}),
             .scalar => |sc| try print(gpa, buf, "\"type\": \"{s}\"", .{sc.zigName()}),
+            .enum_ref => |en| try print(gpa, buf, "\"type\": \"enum\", \"enum\": \"{s}\"", .{en}),
         }
         if (ownStr(a.ownership)) |o| try print(gpa, buf, ", \"ownership\": \"{s}\"", .{o});
         try buf.appendSlice(gpa, " }");
@@ -768,6 +864,7 @@ fn emitJsonFunc(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), f: *const Func)
         },
         .struct_ref => |sn| try print(gpa, buf, "      \"ret\": {{ \"type\": \"struct\", \"struct\": \"{s}\" }},\n", .{sn}),
         .scalar => |sc| try print(gpa, buf, "      \"ret\": {{ \"type\": \"{s}\" }},\n", .{sc.zigName()}),
+        .enum_ref => |en| try print(gpa, buf, "      \"ret\": {{ \"type\": \"enum\", \"enum\": \"{s}\" }},\n", .{en}),
     }
 
     // fail

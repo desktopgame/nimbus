@@ -81,6 +81,15 @@ struct <CName> { <field>:<scalar> ... }
 `u32` / `bool`。引数（`<name>:<CName>`）や戻り（`-> <CName>`）に使える。
 例: `struct nmColor { r:f32 g:f32 b:f32 a:f32 }`。詳細は後述「値構造体」。
 
+### enum 宣言
+```
+enum <CName> = <NativeZigPath> { <member> ... }
+```
+ABI を int として越える enum を宣言する。メンバはネイティブの宣言順（値 0,1,2,…）。
+`<NativeZigPath>`（framework 相対、例 `Component.Alignment`）に対する comptime チェックを
+生成するので、ネイティブ enum の並び替え・改名はビルドエラーになる。詳細は後述「列挙型」。
+例: `enum nmAlignment = Component.Alignment { start center end stretch }`。
+
 ### 関数宣言
 ```
 fn <CName> = <ZigType>.<method> ( [<recv> ,] <arg>* ) -> <ret> [!<fail>] [<own>]
@@ -93,8 +102,8 @@ fn <CName> = <ZigType>.<method> ( [<recv> ,] <arg>* ) -> <ret> [!<fail>] [<own>]
     （opaque は値で渡せないのでポインタのまま渡し、シムが間接参照する）。
   * 省略時はレシーバなし（静的関数として `framework.<ZigType>.<method>` を呼ぶ）。
 * `<arg>`: `<name>:<type> [<own>]` 形式。`<type>` は `str` / `*<ZigType>`（ハンドル）/
-  スカラ（`f32`/`f64`/`i32`/`u32`/`bool`）/ 宣言済み値構造体。
-* `<ret>`: `void` / `*<ZigType>` / スカラ / 宣言済み値構造体。
+  スカラ（`f32`/`f64`/`i32`/`u32`/`bool`）/ 宣言済み値構造体 / 宣言済み enum。
+* `<ret>`: `void` / `*<ZigType>` / スカラ / 宣言済み値構造体 / 宣言済み enum。
 * `<fail>`: 失敗の通知方法。省略可。
   * `!null` — 失敗時 NULL を返し `last_error` を設定する（`*T` 戻り向け）。
   * `!err`  — 失敗時 0 以外の int コードを返す（`void` 戻り向け、0 = 成功）。
@@ -130,6 +139,7 @@ vtable ディスパッチなので、Component を持つ任意の widget をこ�
 | `*T`（引数） | `nmT*` | `*framework.T` | ハンドルをそのまま渡す |
 | `*T`（戻り、`!null`） | `nmT*` | `?*framework.T` | `catch` で `null` |
 | スカラ（引数・戻り） | `int32_t`/`float`/… | `i32`/`f32`/… | そのまま素通し（変換なし） |
+| enum（引数・戻り） | `<CName>`（C enum） | `c_int` | `@enumFromInt` / `@intFromEnum` で変換 |
 | 値構造体（引数） | `<CName>` | `<CName>`（extern） | シムがフィールドごとに native へ詰め替え |
 | 値構造体（戻り） | `<CName>` | `<CName>`（extern） | native からフィールドごとに詰め替え |
 | `void`（戻り、`!err`） | `int` | `c_int` | `catch` で `errorToCode`、成功時 `0` |
@@ -160,6 +170,31 @@ native 設計に染み出すため。値型は小さく、詰め替えのコピ�
 > 制約: 現状フィールドはスカラ（`f32`/`f64`/`i32`/`u32`/`bool`）のみ。ネストした構造体・
 > 配列・enum フィールドは未対応。値構造体の戻りと `!fail` の組み合わせも未対応（getter は
 > 失敗しない前提）。
+
+## 列挙型（enum）
+enum は **ABI を int として越える**。C 側は型付きの `enum` を生成し、Zig シムは `c_int` で
+受けて `@enumFromInt` / `@intFromEnum` で native enum と変換する。
+
+* C: `typedef enum { nmAlignment_start, nmAlignment_center, … } nmAlignment;`
+* Zig 引数: `a: c_int` → `self.setAlignX(@enumFromInt(a))`（呼び出し先の型に coerce）。
+* Zig 戻り: `return @intFromEnum(self.getAlignX());`。
+
+**ドリフト検知**: enum は値が位置依存なので、ネイティブ側を並び替えると ABI の値が**黙って**ずれる。
+これを防ぐため、`<NativeZigPath>` に対する comptime チェックを生成する。
+```zig
+comptime {
+    std.debug.assert(@intFromEnum(framework.Component.Alignment.start) == 0);
+    std.debug.assert(@intFromEnum(framework.Component.Alignment.center) == 1);
+    // …
+}
+```
+メンバを改名すると native のフィールドが解決できずコンパイルエラー、並び替えると assert が
+落ちる。つまり値構造体と同じく、ズレはビルドで必ず顕在化する。
+
+IR には `enums`（`name` と `members`＝名前＋値）を出すので、Python/JS は `Alignment.start`
+のような列挙として生成できる。
+
+> 制約: スカラのバッキング型は int（C enum）固定。明示値・非連続値・フラグ（ビット或）は未対応。
 
 ## バインディング用メタデータ（IR）
 `bindings/nimbus_api.json` は、Python / JS などのバインディング生成器が読む一枚の IR。
@@ -213,6 +248,8 @@ native 設計に染み出すため。値型は小さく、詰め替えのコピ�
   解放判断（後述「所有権」）。未指定なら出ない（既定の慣習に従う）。
 * `structs` — 値構造体の一覧（`name` とフィールド）。引数・戻りは `"type":"struct"`,
   `"struct":"<name>"` で参照する。バインディングは中身の見えるレコードとして生成できる。
+* `enums` — enum の一覧（`name` と `members`＝名前＋値）。引数・戻りは `"type":"enum"`,
+  `"enum":"<name>"` で参照する。
 * `casts` — アップキャスト一覧（`from` → `to`）。
 * `destructors` — 汎用デストラクタ一覧（`type` のハンドルを破棄する `c` 関数）。
 * `callbacks` — 後述。コールバック型の一覧。現状は空配列だが、契約として常に存在する。
@@ -315,6 +352,7 @@ CLAUDE.md「エラーのC_ABIでの表現」に従う。
 * `&self` / `=self` / レシーバなしの関数、`str` 引数、ハンドル引数 `*T`、
   `*T`（`!null`）/ `void`（`!err`）戻り。
 * スカラ（`f32`/`f64`/`i32`/`u32`/`bool`）の引数・戻り（素通し）。
+* enum（`enum` 宣言、int ABI + comptime ドリフト検知、引数・戻り）。
 * 値構造体（`struct` 宣言、`extern` 生成 + フィールド詰め替え、引数・戻り）。
 * `cast`（アップキャスト）と `destroy`（汎用デストラクタ）。
 * 所有権タグ `@owned` / `@borrowed` / `@transfer`（→ IR `ownership`）。
@@ -327,8 +365,8 @@ CLAUDE.md「エラーのC_ABIでの表現」に従う。
 * `@ctor` / `@dtor` で `nmCreateXxx` / `nmDestroyXxx` を型側 IR に紐づける案
   （現状はファクトリ + 汎用デストラクタで代替）。
 * 値構造体の拡張: ネスト構造体・配列・enum フィールド、値戻り＋エラーの組み合わせ。
-* enum 引数（`Slider.Orientation` 等）。
-* スカラの値戻り＋エラーの組み合わせ（out 引数かセンチネルか要決定。現状はスカラ戻り＝失敗なしのみ）。
+* enum の拡張: 明示値・非連続値・フラグ（ビット或）。
+* 値（スカラ/enum/struct）戻り＋エラーの組み合わせ（out 引数かセンチネルか要決定。現状は失敗なしのみ）。
 * スライス（`[]const u8`）の**戻り**。`getText` 等。NUL 終端でないため
   `ptr + len` の 2 値か呼び出し側バッファ方式かを別途決める。
 * allocator / io を要するブートストラップ系コンストラクタ（上記プリアンブル参照）。

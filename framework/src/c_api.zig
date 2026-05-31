@@ -48,6 +48,13 @@ export fn nmGetBackendVersion() [*:0]const u8 {
 
 const nmColor = extern struct { r: f32, g: f32, b: f32, a: f32, };
 
+comptime {
+    std.debug.assert(@intFromEnum(framework.Component.Alignment.start) == 0);
+    std.debug.assert(@intFromEnum(framework.Component.Alignment.center) == 1);
+    std.debug.assert(@intFromEnum(framework.Component.Alignment.end) == 2);
+    std.debug.assert(@intFromEnum(framework.Component.Alignment.stretch) == 3);
+}
+
 export fn nmAppButton(self: *framework.Application, text: [*:0]const u8) ?*framework.Button {
     return self.button(std.mem.span(text)) catch |e| {
         setLastError(e);
@@ -93,6 +100,14 @@ export fn nmComponentSetGrowX(self: *framework.Component, v: f32) void {
 
 export fn nmComponentGetGrowX(self: *framework.Component) f32 {
     return self.getGrowX();
+}
+
+export fn nmComponentSetAlignX(self: *framework.Component, a: c_int) void {
+    self.setAlignX(@enumFromInt(a));
+}
+
+export fn nmComponentGetAlignX(self: *framework.Component) c_int {
+    return @intFromEnum(self.getAlignX());
 }
 
 export fn nmButtonAsComponent(self: *framework.Button) *framework.Component {

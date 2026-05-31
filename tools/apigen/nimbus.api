@@ -10,6 +10,12 @@
 #       Used as an arg (<name>:<CName>) or return (-> <CName>); shims convert
 #       field-by-field to/from the native (plain) Zig struct of the same shape.
 #
+#   enum <CName> = <NativeZigPath> { <member> ... }
+#       An enum exposed across the ABI as an int (C enum). Members in native
+#       declaration order (values 0,1,2,...). A comptime check against the
+#       native enum (e.g. Component.Alignment) makes a reorder/rename a build
+#       error. Used as an arg (<name>:<CName>) or return (-> <CName>).
+#
 #   opaque <ZigType> [: <Parent>]
 #       Declares an opaque handle. Emitted as
 #           typedef struct nm<ZigType> nm<ZigType>;
@@ -56,6 +62,10 @@ opaque Application
 # Field names must match the native awt.Graphics.Color (else a compile error).
 struct nmColor { r:f32 g:f32 b:f32 a:f32 }
 
+# Enum: crosses the ABI as an int. Member order must match the native enum;
+# a comptime check (against Component.Alignment) makes a mismatch a build error.
+enum nmAlignment = Component.Alignment { start center end stretch }
+
 fn nmAppButton     = Application.button (&self, text:str) -> *Button !null @owned
 fn nmButtonSetText = Button.setText     (&self, text:str) -> void    !err
 fn nmContainerAdd  = Container.add       (&self, child:*Component @transfer) -> void !err
@@ -67,6 +77,8 @@ fn nmButtonGetColor = Button.getColor    (=self) -> nmColor
 fn nmAppFrame          = Application.frame   (&self, title:str, w:u32, h:u32) -> *Frame !null @borrowed
 fn nmComponentSetGrowX = Component.setGrowX  (&self, v:f32) -> void
 fn nmComponentGetGrowX = Component.getGrowX  (&self) -> f32
+fn nmComponentSetAlignX = Component.setAlignX (&self, a:nmAlignment) -> void
+fn nmComponentGetAlignX = Component.getAlignX (&self) -> nmAlignment
 
 # Upcast to the embedded Component (one-line `return &self.<field>`). Lets a
 # binding reach Container methods on any widget and feed nmComponentDestroy.

@@ -28,6 +28,9 @@ typedef struct nmApplication nmApplication;
 /* ── value structs ── */
 typedef struct { float r; float g; float b; float a; } nmColor;
 
+/* ── enums ── */
+typedef enum { nmAlignment_start, nmAlignment_center, nmAlignment_end, nmAlignment_stretch } nmAlignment;
+
 /* ── functions ── */
 nmButton* nmAppButton(nmApplication* self, const char* text);
 int nmButtonSetText(nmButton* self, const char* text);
@@ -37,6 +40,8 @@ nmColor nmButtonGetColor(const nmButton* self);
 nmFrame* nmAppFrame(nmApplication* self, const char* title, uint32_t w, uint32_t h);
 void nmComponentSetGrowX(nmComponent* self, float v);
 float nmComponentGetGrowX(nmComponent* self);
+void nmComponentSetAlignX(nmComponent* self, nmAlignment a);
+nmAlignment nmComponentGetAlignX(nmComponent* self);
 
 /* ── upcasts ── */
 nmComponent* nmButtonAsComponent(nmButton* self);

@@ -9,6 +9,9 @@
   "structs": [
     { "name": "nmColor", "fields": [{ "name": "r", "type": "f32" }, { "name": "g", "type": "f32" }, { "name": "b", "type": "f32" }, { "name": "a", "type": "f32" }] }
   ],
+  "enums": [
+    { "name": "nmAlignment", "members": [{ "name": "start", "value": 0 }, { "name": "center", "value": 1 }, { "name": "end", "value": 2 }, { "name": "stretch", "value": 3 }] }
+  ],
   "callbacks": [],
   "functions": [
     {
@@ -97,6 +100,28 @@
       "receiver": "ptr",
       "params": [],
       "ret": { "type": "f32" },
+      "fail": null
+    },
+    {
+      "c": "nmComponentSetAlignX",
+      "owner": "Component",
+      "method": "setAlignX",
+      "names": { "py": "set_align_x", "js": "setAlignX" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "a", "type": "enum", "enum": "nmAlignment" }],
+      "ret": { "type": "void" },
+      "fail": null
+    },
+    {
+      "c": "nmComponentGetAlignX",
+      "owner": "Component",
+      "method": "getAlignX",
+      "names": { "py": "get_align_x", "js": "getAlignX" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [],
+      "ret": { "type": "enum", "enum": "nmAlignment" },
       "fail": null
     }
   ],
