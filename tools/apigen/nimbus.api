@@ -1,0 +1,34 @@
+# nimbus C ABI binding spec — input to tools/apigen.
+# Regenerate the output (include/nimbus.h + framework/src/c_api.zig) with:
+#     zig build apigen
+#
+# Grammar (one statement per line; '#' .. end-of-line is a comment):
+#
+#   opaque <ZigType> [: <Parent>]
+#       Declares an opaque handle. Emitted as
+#           typedef struct nm<ZigType> nm<ZigType>;
+#       and always crosses the ABI by pointer. The optional ": <Parent>"
+#       records single inheritance for the binding IR (so a target-language
+#       class can inherit the parent's methods / support asXxx casts).
+#
+#   fn <CName> = <ZigType>.<method> ( [<recv> ,] <arg>* ) -> <ret> [!<fail>]
+#       <recv> : &self   receiver is *T   (Zig: self: *T)
+#                =self   receiver is T     (by value; still a pointer in C)
+#       <arg>  : <name>:<type>      type in { str }            (PoC subset)
+#       <ret>  : void | *<ZigType>                             (PoC subset)
+#       <fail> : null   failure = NULL  + last_error           (for *T returns)
+#                err    failure = nonzero int (0 = ok)         (for void returns)
+#
+# The generated shim calls the real Zig method, so any drift between this spec
+# and the actual signature is caught at compile time — never silently.
+#
+# Not yet supported (see doc/c_api_codegen.md「未対応」): struct / enum / int
+# args, slice ([]const u8) returns, callbacks, and bootstrap constructors that
+# need an allocator / io (those are hand-written in tools/apigen/preamble.zig).
+
+opaque Component
+opaque Button : Component
+opaque Application
+
+fn nmAppButton     = Application.button (&self, text:str) -> *Button !null
+fn nmButtonSetText = Button.setText     (&self, text:str) -> void    !err

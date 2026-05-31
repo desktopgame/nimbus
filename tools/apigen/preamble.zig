@@ -43,20 +43,3 @@ export fn nmLastErrorMessage() [*:0]const u8 {
 export fn nmGetBackendVersion() [*:0]const u8 {
     return @ptrCast(awt.c.nmGetBackendVersion());
 }
-
-// ── generated exports (do not edit; regenerate with `zig build apigen`) ──
-
-export fn nmAppButton(self: *framework.Application, text: [*:0]const u8) ?*framework.Button {
-    return self.button(std.mem.span(text)) catch |e| {
-        setLastError(e);
-        return null;
-    };
-}
-
-export fn nmButtonSetText(self: *framework.Button, text: [*:0]const u8) c_int {
-    self.setText(std.mem.span(text)) catch |e| {
-        setLastError(e);
-        return errorToCode(e);
-    };
-    return 0;
-}

@@ -17,16 +17,3 @@ const char* nmLastErrorMessage(void);
 
 /* ── backend ── */
 const char* nmGetBackendVersion(void);
-
-/* ── opaque handles ── */
-typedef struct nmComponent nmComponent;
-typedef struct nmButton nmButton;
-typedef struct nmApplication nmApplication;
-
-/* ── functions ── */
-nmButton* nmAppButton(nmApplication* self, const char* text);
-int nmButtonSetText(nmButton* self, const char* text);
-
-#ifdef __cplusplus
-}
-#endif

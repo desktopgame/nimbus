@@ -1,0 +1,32 @@
+{
+  "types": [
+    { "name": "Component", "c": "nmComponent", "extends": null },
+    { "name": "Button", "c": "nmButton", "extends": "Component" },
+    { "name": "Application", "c": "nmApplication", "extends": null }
+  ],
+  "callbacks": [],
+  "functions": [
+    {
+      "c": "nmAppButton",
+      "owner": "Application",
+      "method": "button",
+      "names": { "py": "button", "js": "button" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "text", "type": "str" }],
+      "ret": { "type": "handle", "handle": "Button" },
+      "fail": "null"
+    },
+    {
+      "c": "nmButtonSetText",
+      "owner": "Button",
+      "method": "setText",
+      "names": { "py": "set_text", "js": "setText" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "text", "type": "str" }],
+      "ret": { "type": "void" },
+      "fail": "err"
+    }
+  ]
+}

@@ -163,6 +163,27 @@ pub fn build(b: *std.Build) void {
         .install_subdir = "",
     });
 
+    // ── C ABI codegen: apigen ────────────────────────────────────
+    // Regenerates include/nimbus.h + framework/src/c_api.zig from the binding
+    // spec tools/apigen/nimbus.api. Host tool; not part of the default build.
+    // Run explicitly: `zig build apigen`, then commit the generated files.
+    const apigen_exe = b.addExecutable(.{
+        .name = "apigen",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/apigen/main.zig"),
+            .target = b.graph.host,
+            .optimize = .Debug,
+        }),
+    });
+    const apigen_run = b.addRunArtifact(apigen_exe);
+    apigen_run.setCwd(b.path("."));
+    // Re-run whenever any input changes (spec or either preamble).
+    apigen_run.addFileInput(b.path("tools/apigen/nimbus.api"));
+    apigen_run.addFileInput(b.path("tools/apigen/preamble.h"));
+    apigen_run.addFileInput(b.path("tools/apigen/preamble.zig"));
+    const apigen_step = b.step("apigen", "Regenerate the C ABI (nimbus.h + c_api.zig) from tools/apigen/nimbus.api");
+    apigen_step.dependOn(&apigen_run.step);
+
     // ── shared snapshot scenes (used by tests AND examples/snapshot) ──
     const scenes_mod = b.createModule(.{
         .root_source_file = b.path("awt/tests/scenes.zig"),
