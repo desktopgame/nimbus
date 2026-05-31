@@ -3,7 +3,11 @@
     { "name": "Component", "c": "nmComponent", "extends": null },
     { "name": "Container", "c": "nmContainer", "extends": "Component" },
     { "name": "Button", "c": "nmButton", "extends": "Component" },
+    { "name": "Frame", "c": "nmFrame", "extends": null },
     { "name": "Application", "c": "nmApplication", "extends": null }
+  ],
+  "structs": [
+    { "name": "nmColor", "fields": [{ "name": "r", "type": "f32" }, { "name": "g", "type": "f32" }, { "name": "b", "type": "f32" }, { "name": "a", "type": "f32" }] }
   ],
   "callbacks": [],
   "functions": [
@@ -39,6 +43,61 @@
       "params": [{ "name": "child", "type": "handle", "handle": "Component", "ownership": "transfer" }],
       "ret": { "type": "void" },
       "fail": "err"
+    },
+    {
+      "c": "nmButtonSetColor",
+      "owner": "Button",
+      "method": "setColor",
+      "names": { "py": "set_color", "js": "setColor" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "c", "type": "struct", "struct": "nmColor" }],
+      "ret": { "type": "void" },
+      "fail": null
+    },
+    {
+      "c": "nmButtonGetColor",
+      "owner": "Button",
+      "method": "getColor",
+      "names": { "py": "get_color", "js": "getColor" },
+      "kind": "method",
+      "receiver": "value",
+      "params": [],
+      "ret": { "type": "struct", "struct": "nmColor" },
+      "fail": null
+    },
+    {
+      "c": "nmAppFrame",
+      "owner": "Application",
+      "method": "frame",
+      "names": { "py": "frame", "js": "frame" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "title", "type": "str" }, { "name": "w", "type": "u32" }, { "name": "h", "type": "u32" }],
+      "ret": { "type": "handle", "handle": "Frame", "ownership": "borrowed" },
+      "fail": "null"
+    },
+    {
+      "c": "nmComponentSetGrowX",
+      "owner": "Component",
+      "method": "setGrowX",
+      "names": { "py": "set_grow_x", "js": "setGrowX" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "v", "type": "f32" }],
+      "ret": { "type": "void" },
+      "fail": null
+    },
+    {
+      "c": "nmComponentGetGrowX",
+      "owner": "Component",
+      "method": "getGrowX",
+      "names": { "py": "get_grow_x", "js": "getGrowX" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [],
+      "ret": { "type": "f32" },
+      "fail": null
     }
   ],
   "casts": [

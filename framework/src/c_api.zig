@@ -41,10 +41,12 @@ export fn nmLastErrorMessage() [*:0]const u8 {
 // Backend identification string. A passthrough into the awt layer rather than
 // a framework method, so it is written by hand rather than generated.
 export fn nmGetBackendVersion() [*:0]const u8 {
-    return @ptrCast(awt.c.nmGetBackendVersion());
+    return @ptrCast(awt.c.nmAwtBackendVersion());
 }
 
 // ── generated exports (do not edit; regenerate with `zig build apigen`) ──
+
+const nmColor = extern struct { r: f32, g: f32, b: f32, a: f32, };
 
 export fn nmAppButton(self: *framework.Application, text: [*:0]const u8) ?*framework.Button {
     return self.button(std.mem.span(text)) catch |e| {
@@ -67,6 +69,30 @@ export fn nmContainerAdd(self: *framework.Container, child: *framework.Component
         return errorToCode(e);
     };
     return 0;
+}
+
+export fn nmButtonSetColor(self: *framework.Button, c: nmColor) void {
+    self.setColor(.{ .r = c.r, .g = c.g, .b = c.b, .a = c.a });
+}
+
+export fn nmButtonGetColor(self: *framework.Button) nmColor {
+    const _ret = self.getColor();
+    return .{ .r = _ret.r, .g = _ret.g, .b = _ret.b, .a = _ret.a };
+}
+
+export fn nmAppFrame(self: *framework.Application, title: [*:0]const u8, w: u32, h: u32) ?*framework.Frame {
+    return self.frame(std.mem.span(title), w, h) catch |e| {
+        setLastError(e);
+        return null;
+    };
+}
+
+export fn nmComponentSetGrowX(self: *framework.Component, v: f32) void {
+    self.setGrowX(v);
+}
+
+export fn nmComponentGetGrowX(self: *framework.Component) f32 {
+    return self.getGrowX();
 }
 
 export fn nmButtonAsComponent(self: *framework.Button) *framework.Component {

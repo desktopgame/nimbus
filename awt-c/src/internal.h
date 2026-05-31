@@ -14,7 +14,7 @@ int nmInitAwt(void);
 void nmTerminateAwt(void);
 
 /* Backend identification string (for diagnostics / version display). */
-const char* nmGetBackendVersion(void);
+const char* nmAwtBackendVersion(void);
 
 /* ─── Log ─────────────────────────────────────────────────────────────── */
 

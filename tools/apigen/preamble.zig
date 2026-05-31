@@ -41,5 +41,5 @@ export fn nmLastErrorMessage() [*:0]const u8 {
 // Backend identification string. A passthrough into the awt layer rather than
 // a framework method, so it is written by hand rather than generated.
 export fn nmGetBackendVersion() [*:0]const u8 {
-    return @ptrCast(awt.c.nmGetBackendVersion());
+    return @ptrCast(awt.c.nmAwtBackendVersion());
 }

@@ -28,11 +28,43 @@ const OUT_JSON = "bindings/nimbus_api.json";
 /// How the receiver (first parameter) is passed.
 const Recv = enum { none, ptr, value };
 
-/// Argument wire type. PoC subset; extended per doc/c_api_codegen.md「未対応」.
+/// Scalar field / value type. C and Zig spellings; IR uses the Zig spelling.
+const Scalar = enum {
+    f32,
+    f64,
+    i32,
+    u32,
+    bool,
+
+    fn parse(s: []const u8) ?Scalar {
+        inline for (@typeInfo(Scalar).@"enum".fields) |f| {
+            if (std.mem.eql(u8, s, f.name)) return @enumFromInt(f.value);
+        }
+        return null;
+    }
+    fn cName(self: Scalar) []const u8 {
+        return switch (self) {
+            .f32 => "float",
+            .f64 => "double",
+            .i32 => "int32_t",
+            .u32 => "uint32_t",
+            .bool => "bool",
+        };
+    }
+    fn zigName(self: Scalar) []const u8 {
+        return @tagName(self);
+    }
+};
+
+/// Argument wire type. Extended per doc/c_api_codegen.md「未対応」.
 const ArgType = union(enum) {
     str,
     /// `*T` handle argument; payload is the Zig type name (e.g. "Component").
     handle: []const u8,
+    /// By-value struct argument; payload is the declared ABI struct name (e.g. "nmColor").
+    struct_ref: []const u8,
+    /// Primitive scalar argument (passed straight through).
+    scalar: Scalar,
 };
 
 /// Function return shape.
@@ -40,6 +72,22 @@ const Ret = union(enum) {
     void,
     /// Owned/borrowed handle pointer; payload is the Zig type name (e.g. "Button").
     ptr: []const u8,
+    /// By-value struct return; payload is the declared ABI struct name.
+    struct_ref: []const u8,
+    /// Primitive scalar return (passed straight through).
+    scalar: Scalar,
+};
+
+const Field = struct {
+    name: []const u8,
+    scalar: Scalar,
+};
+
+/// `struct <CName> { <field>:<scalar> ... }` — a by-value record whose layout
+/// is exposed across the ABI (generated as an `extern struct`).
+const Struct = struct {
+    cname: []const u8,
+    fields: std.ArrayList(Field),
 };
 
 /// Failure-signalling convention.
@@ -88,9 +136,17 @@ const Opaque = struct {
 
 const Model = struct {
     opaques: std.ArrayList(Opaque) = .empty,
+    structs: std.ArrayList(Struct) = .empty,
     funcs: std.ArrayList(Func) = .empty,
     casts: std.ArrayList(Cast) = .empty,
     destructors: std.ArrayList(Destructor) = .empty,
+
+    fn findStruct(self: *const Model, name: []const u8) ?*const Struct {
+        for (self.structs.items) |*s| {
+            if (std.mem.eql(u8, s.cname, name)) return s;
+        }
+        return null;
+    }
 };
 
 // All string slices in the model point into the spec buffer, which is kept
@@ -112,6 +168,8 @@ pub fn main(init: std.process.Init) !void {
     defer {
         for (model.funcs.items) |*f| f.args.deinit(gpa);
         model.funcs.deinit(gpa);
+        for (model.structs.items) |*s| s.fields.deinit(gpa);
+        model.structs.deinit(gpa);
         model.opaques.deinit(gpa);
         model.casts.deinit(gpa);
         model.destructors.deinit(gpa);
@@ -167,6 +225,8 @@ fn parse(gpa: std.mem.Allocator, spec: []const u8, model: *Model) !void {
             } else {
                 return fail(line_no, "opaque expects '<Name>' or '<Name> : <Parent>'");
             }
+        } else if (std.mem.eql(u8, kw, "struct")) {
+            try parseStruct(gpa, line_no, tokens.items, model);
         } else if (std.mem.eql(u8, kw, "fn")) {
             try parseFn(gpa, line_no, tokens.items, model);
         } else if (std.mem.eql(u8, kw, "cast")) {
@@ -237,8 +297,8 @@ fn parseFn(
         } else {
             const colon = std.mem.indexOfScalar(u8, tok, ':') orelse
                 return fail(line_no, "expected <name>:<type> argument");
-            const ty = parseArgType(tok[colon + 1 ..]) orelse
-                return fail(line_no, "unsupported argument type (supported: 'str', '*Type')");
+            const ty = parseArgType(model, tok[colon + 1 ..]) orelse
+                return fail(line_no, "unsupported argument type (supported: 'str', '*Type', declared struct)");
             try f.args.append(gpa, .{ .name = tok[0..colon], .ty = ty });
         }
     }
@@ -253,8 +313,12 @@ fn parseFn(
         f.ret = .void;
     } else if (rt.len > 1 and rt[0] == '*') {
         f.ret = .{ .ptr = rt[1..] };
+    } else if (Scalar.parse(rt)) |sc| {
+        f.ret = .{ .scalar = sc };
+    } else if (model.findStruct(rt) != null) {
+        f.ret = .{ .struct_ref = rt };
     } else {
-        return fail(line_no, "unsupported return type (PoC: 'void' or '*Type')");
+        return fail(line_no, "unsupported return type ('void', '*Type', scalar, or declared struct)");
     }
     i += 1;
 
@@ -273,13 +337,48 @@ fn parseFn(
         }
     }
 
+    const ret_is_value = switch (f.ret) {
+        .struct_ref, .scalar => true,
+        else => false,
+    };
+    if (ret_is_value and f.fail != .none)
+        return fail(line_no, "value (struct/scalar) return combined with !fail is not supported yet");
+
     try model.funcs.append(gpa, f);
 }
 
-fn parseArgType(s: []const u8) ?ArgType {
+fn parseArgType(model: *const Model, s: []const u8) ?ArgType {
     if (std.mem.eql(u8, s, "str")) return .str;
     if (s.len > 1 and s[0] == '*') return .{ .handle = s[1..] };
+    if (Scalar.parse(s)) |sc| return .{ .scalar = sc };
+    if (model.findStruct(s) != null) return .{ .struct_ref = s };
     return null;
+}
+
+fn parseStruct(
+    gpa: std.mem.Allocator,
+    line_no: usize,
+    t: []const []const u8,
+    model: *Model,
+) !void {
+    // struct <CName> { <name>:<scalar> ... }
+    if (t.len < 5) return fail(line_no, "struct declaration too short");
+    if (!std.mem.eql(u8, t[2], "{")) return fail(line_no, "expected '{' after struct name");
+    if (!std.mem.eql(u8, t[t.len - 1], "}")) return fail(line_no, "expected '}' to close struct");
+
+    var s: Struct = .{ .cname = t[1], .fields = .empty };
+    errdefer s.fields.deinit(gpa);
+
+    for (t[3 .. t.len - 1]) |tok| {
+        const colon = std.mem.indexOfScalar(u8, tok, ':') orelse
+            return fail(line_no, "expected <name>:<scalar> field");
+        const scalar = Scalar.parse(tok[colon + 1 ..]) orelse
+            return fail(line_no, "unsupported scalar (f32/f64/i32/u32/bool)");
+        try s.fields.append(gpa, .{ .name = tok[0..colon], .scalar = scalar });
+    }
+    if (s.fields.items.len == 0) return fail(line_no, "struct needs at least one field");
+
+    try model.structs.append(gpa, s);
 }
 
 fn parseOwnership(tok: []const u8) ?Ownership {
@@ -307,7 +406,7 @@ fn tokenize(gpa: std.mem.Allocator, line: []const u8, out: *std.ArrayList([]cons
             i += 1;
             continue;
         }
-        if (c == '(' or c == ')' or c == ',') {
+        if (c == '(' or c == ')' or c == ',' or c == '{' or c == '}') {
             try out.append(gpa, line[i .. i + 1]);
             i += 1;
             continue;
@@ -315,7 +414,7 @@ fn tokenize(gpa: std.mem.Allocator, line: []const u8, out: *std.ArrayList([]cons
         const start = i;
         while (i < line.len) : (i += 1) {
             const d = line[i];
-            if (d == ' ' or d == '\t' or d == '\r' or d == '(' or d == ')' or d == ',') break;
+            if (d == ' ' or d == '\t' or d == '\r' or d == '(' or d == ')' or d == ',' or d == '{' or d == '}') break;
         }
         try out.append(gpa, line[start..i]);
     }
@@ -339,6 +438,17 @@ fn emitHeader(
     try buf.appendSlice(gpa, "\n/* ── opaque handles ── */\n");
     for (model.opaques.items) |t| {
         try print(gpa, buf, "typedef struct nm{s} nm{s};\n", .{ t.name, t.name });
+    }
+
+    if (model.structs.items.len > 0) {
+        try buf.appendSlice(gpa, "\n/* ── value structs ── */\n");
+        for (model.structs.items) |s| {
+            try buf.appendSlice(gpa, "typedef struct {");
+            for (s.fields.items) |fld| {
+                try print(gpa, buf, " {s} {s};", .{ fld.scalar.cName(), fld.name });
+            }
+            try print(gpa, buf, " }} {s};\n", .{s.cname});
+        }
     }
 
     try buf.appendSlice(gpa, "\n/* ── functions ── */\n");
@@ -368,6 +478,8 @@ fn emitHeaderProto(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), f: *const Fu
     switch (f.ret) {
         .void => try buf.appendSlice(gpa, if (f.fail == .err) "int" else "void"),
         .ptr => |zt| try print(gpa, buf, "nm{s}*", .{zt}),
+        .struct_ref => |sn| try buf.appendSlice(gpa, sn),
+        .scalar => |sc| try buf.appendSlice(gpa, sc.cName()),
     }
     try print(gpa, buf, " {s}(", .{f.cname});
 
@@ -382,6 +494,8 @@ fn emitHeaderProto(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), f: *const Fu
         switch (a.ty) {
             .str => try print(gpa, buf, "const char* {s}", .{a.name}),
             .handle => |zt| try print(gpa, buf, "nm{s}* {s}", .{ zt, a.name }),
+            .struct_ref => |sn| try print(gpa, buf, "{s} {s}", .{ sn, a.name }),
+            .scalar => |sc| try print(gpa, buf, "{s} {s}", .{ sc.cName(), a.name }),
         }
         wrote = true;
     }
@@ -403,8 +517,19 @@ fn emitZig(
         \\// ── generated exports (do not edit; regenerate with `zig build apigen`) ──
         \\
     );
+
+    // ABI-layout value structs. `extern struct` guarantees C-compatible layout;
+    // shims convert field-by-field to/from the native (plain) Zig struct.
+    for (model.structs.items) |s| {
+        try print(gpa, buf, "\nconst {s} = extern struct {{", .{s.cname});
+        for (s.fields.items) |fld| {
+            try print(gpa, buf, " {s}: {s},", .{ fld.name, fld.scalar.zigName() });
+        }
+        try buf.appendSlice(gpa, " };\n");
+    }
+
     for (model.funcs.items) |*f| {
-        try emitZigShim(gpa, buf, f);
+        try emitZigShim(gpa, buf, model, f);
     }
 
     // Upcasts: one-line `return &self.<field>` as a *<Target> handle.
@@ -429,7 +554,7 @@ fn emitZig(
     }
 }
 
-fn emitZigShim(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), f: *const Func) !void {
+fn emitZigShim(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), model: *const Model, f: *const Func) !void {
     try print(gpa, buf, "\nexport fn {s}(", .{f.cname});
 
     var wrote = false;
@@ -442,6 +567,8 @@ fn emitZigShim(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), f: *const Func) 
         switch (a.ty) {
             .str => try print(gpa, buf, "{s}: [*:0]const u8", .{a.name}),
             .handle => |zt| try print(gpa, buf, "{s}: *framework.{s}", .{ a.name, zt }),
+            .struct_ref => |sn| try print(gpa, buf, "{s}: {s}", .{ a.name, sn }),
+            .scalar => |sc| try print(gpa, buf, "{s}: {s}", .{ a.name, sc.zigName() }),
         }
         wrote = true;
     }
@@ -457,10 +584,14 @@ fn emitZigShim(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), f: *const Func) 
                 try print(gpa, buf, "*framework.{s}", .{zt});
             }
         },
+        .struct_ref => |sn| try buf.appendSlice(gpa, sn),
+        .scalar => |sc| try buf.appendSlice(gpa, sc.zigName()),
     }
     try buf.appendSlice(gpa, " {\n");
 
-    // call expression
+    // call expression. A struct arg is converted from the ABI extern struct to
+    // the native struct via an anonymous literal (Zig coerces it to the method's
+    // parameter type; a field-name mismatch is then a compile error).
     var call: std.ArrayList(u8) = .empty;
     defer call.deinit(gpa);
     if (f.recv != .none) {
@@ -473,6 +604,8 @@ fn emitZigShim(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), f: *const Func) 
         switch (a.ty) {
             .str => try print(gpa, &call, "std.mem.span({s})", .{a.name}),
             .handle => try call.appendSlice(gpa, a.name),
+            .struct_ref => |sn| try appendStructLiteral(gpa, &call, a.name, model.findStruct(sn).?),
+            .scalar => try call.appendSlice(gpa, a.name),
         }
     }
     try call.appendSlice(gpa, ")");
@@ -488,12 +621,28 @@ fn emitZigShim(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), f: *const Func) 
         .none => {
             switch (f.ret) {
                 .void => try print(gpa, buf, "    {s};\n", .{call.items}),
-                .ptr => try print(gpa, buf, "    return {s};\n", .{call.items}),
+                .ptr, .scalar => try print(gpa, buf, "    return {s};\n", .{call.items}),
+                .struct_ref => |sn| {
+                    // native struct -> ABI extern struct, field by field.
+                    try print(gpa, buf, "    const _ret = {s};\n    return ", .{call.items});
+                    try appendStructLiteral(gpa, buf, "_ret", model.findStruct(sn).?);
+                    try buf.appendSlice(gpa, ";\n");
+                },
             }
         },
     }
 
     try buf.appendSlice(gpa, "}\n");
+}
+
+/// Append `.{ .a = src.a, .b = src.b, ... }` for the given struct's fields.
+fn appendStructLiteral(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), src: []const u8, st: *const Struct) !void {
+    try buf.appendSlice(gpa, ".{ ");
+    for (st.fields.items, 0..) |fld, idx| {
+        if (idx != 0) try buf.appendSlice(gpa, ", ");
+        try print(gpa, buf, ".{s} = {s}.{s}", .{ fld.name, src, fld.name });
+    }
+    try buf.appendSlice(gpa, " }");
 }
 
 // ── emission: binding IR (JSON) ───────────────────────────────────────────────
@@ -519,6 +668,19 @@ fn emitJson(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), model: *const Model
         try buf.appendSlice(gpa, " }");
     }
     try buf.appendSlice(gpa, if (model.opaques.items.len == 0) "],\n" else "\n  ],\n");
+
+    // value structs (layout exposed)
+    try buf.appendSlice(gpa, "  \"structs\": [");
+    for (model.structs.items, 0..) |s, idx| {
+        try buf.appendSlice(gpa, if (idx == 0) "\n" else ",\n");
+        try print(gpa, buf, "    {{ \"name\": \"{s}\", \"fields\": [", .{s.cname});
+        for (s.fields.items, 0..) |fld, fidx| {
+            if (fidx != 0) try buf.appendSlice(gpa, ", ");
+            try print(gpa, buf, "{{ \"name\": \"{s}\", \"type\": \"{s}\" }}", .{ fld.name, fld.scalar.zigName() });
+        }
+        try buf.appendSlice(gpa, "] }");
+    }
+    try buf.appendSlice(gpa, if (model.structs.items.len == 0) "],\n" else "\n  ],\n");
 
     // callbacks (none codegen'd yet; the array is part of the contract so
     // consumers can rely on its presence). See doc/c_api_codegen.md.
@@ -588,6 +750,8 @@ fn emitJsonFunc(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), f: *const Func)
         switch (a.ty) {
             .str => try buf.appendSlice(gpa, "\"type\": \"str\""),
             .handle => |zt| try print(gpa, buf, "\"type\": \"handle\", \"handle\": \"{s}\"", .{zt}),
+            .struct_ref => |sn| try print(gpa, buf, "\"type\": \"struct\", \"struct\": \"{s}\"", .{sn}),
+            .scalar => |sc| try print(gpa, buf, "\"type\": \"{s}\"", .{sc.zigName()}),
         }
         if (ownStr(a.ownership)) |o| try print(gpa, buf, ", \"ownership\": \"{s}\"", .{o});
         try buf.appendSlice(gpa, " }");
@@ -602,6 +766,8 @@ fn emitJsonFunc(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), f: *const Func)
             if (ownStr(f.ret_ownership)) |o| try print(gpa, buf, ", \"ownership\": \"{s}\"", .{o});
             try buf.appendSlice(gpa, " },\n");
         },
+        .struct_ref => |sn| try print(gpa, buf, "      \"ret\": {{ \"type\": \"struct\", \"struct\": \"{s}\" }},\n", .{sn}),
+        .scalar => |sc| try print(gpa, buf, "      \"ret\": {{ \"type\": \"{s}\" }},\n", .{sc.zigName()}),
     }
 
     // fail

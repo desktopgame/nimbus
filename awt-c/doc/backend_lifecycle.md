@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # backend_lifecycle
@@ -28,7 +28,7 @@ GLFW / freetype を使用する知識は外部に漏らさない。
 リエントラントであることは保証しない。
 
 ## awtのバージョン
-const char* nmGetBackendVersion(void);
+const char* nmAwtBackendVersion(void);
 
 バージョン文字列を返す。
 デバッグ用なので、ユーザーフレンドリーである必要はない。

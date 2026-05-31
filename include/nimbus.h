@@ -22,12 +22,21 @@ const char* nmGetBackendVersion(void);
 typedef struct nmComponent nmComponent;
 typedef struct nmContainer nmContainer;
 typedef struct nmButton nmButton;
+typedef struct nmFrame nmFrame;
 typedef struct nmApplication nmApplication;
+
+/* ── value structs ── */
+typedef struct { float r; float g; float b; float a; } nmColor;
 
 /* ── functions ── */
 nmButton* nmAppButton(nmApplication* self, const char* text);
 int nmButtonSetText(nmButton* self, const char* text);
 int nmContainerAdd(nmContainer* self, nmComponent* child);
+void nmButtonSetColor(nmButton* self, nmColor c);
+nmColor nmButtonGetColor(const nmButton* self);
+nmFrame* nmAppFrame(nmApplication* self, const char* title, uint32_t w, uint32_t h);
+void nmComponentSetGrowX(nmComponent* self, float v);
+float nmComponentGetGrowX(nmComponent* self);
 
 /* ── upcasts ── */
 nmComponent* nmButtonAsComponent(nmButton* self);

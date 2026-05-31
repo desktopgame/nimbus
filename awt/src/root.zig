@@ -68,7 +68,7 @@ pub fn time() f64 {
 /// Backend identification string (e.g. "3.4.0 Win32 WGL ...").
 /// Safe to call before `init`.
 pub fn backendVersion() [:0]const u8 {
-    const ptr: [*:0]const u8 = @ptrCast(c.nmGetBackendVersion());
+    const ptr: [*:0]const u8 = @ptrCast(c.nmAwtBackendVersion());
     return std.mem.span(ptr);
 }
 

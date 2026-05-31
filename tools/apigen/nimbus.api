@@ -4,6 +4,12 @@
 #
 # Grammar (one statement per line; '#' .. end-of-line is a comment):
 #
+#   struct <CName> { <field>:<scalar> ... }
+#       A by-value record whose layout is exposed across the ABI (generated as a
+#       C struct + an `extern struct`). <scalar> in { f32, f64, i32, u32, bool }.
+#       Used as an arg (<name>:<CName>) or return (-> <CName>); shims convert
+#       field-by-field to/from the native (plain) Zig struct of the same shape.
+#
 #   opaque <ZigType> [: <Parent>]
 #       Declares an opaque handle. Emitted as
 #           typedef struct nm<ZigType> nm<ZigType>;
@@ -42,11 +48,25 @@
 opaque Component
 opaque Container : Component
 opaque Button    : Component
+opaque Frame
 opaque Application
+
+# Value struct: its layout is exposed across the ABI (generated as an
+# `extern struct`; shims convert field-by-field to/from the native Color).
+# Field names must match the native awt.Graphics.Color (else a compile error).
+struct nmColor { r:f32 g:f32 b:f32 a:f32 }
 
 fn nmAppButton     = Application.button (&self, text:str) -> *Button !null @owned
 fn nmButtonSetText = Button.setText     (&self, text:str) -> void    !err
 fn nmContainerAdd  = Container.add       (&self, child:*Component @transfer) -> void !err
+fn nmButtonSetColor = Button.setColor    (&self, c:nmColor) -> void
+fn nmButtonGetColor = Button.getColor    (=self) -> nmColor
+
+# Primitive (scalar) args / return: passed straight through, no conversion.
+# The Frame is owned by Application (freed on close / app deinit), so @borrowed.
+fn nmAppFrame          = Application.frame   (&self, title:str, w:u32, h:u32) -> *Frame !null @borrowed
+fn nmComponentSetGrowX = Component.setGrowX  (&self, v:f32) -> void
+fn nmComponentGetGrowX = Component.getGrowX  (&self) -> f32
 
 # Upcast to the embedded Component (one-line `return &self.<field>`). Lets a
 # binding reach Container methods on any widget and feed nmComponentDestroy.

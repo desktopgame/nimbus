@@ -73,6 +73,14 @@ typedef struct nm<ZigType> nm<ZigType>;
 `extends` に出る。これによりバインディング側でクラス継承（親のメソッドを継承、
 `asXxx` キャスト）を組み立てられる。例: `opaque Frame : Window`。
 
+### struct 宣言（値構造体・中身を公開する型）
+```
+struct <CName> { <field>:<scalar> ... }
+```
+レイアウトを ABI に公開する値型を宣言する。`<scalar>` は `f32` / `f64` / `i32` /
+`u32` / `bool`。引数（`<name>:<CName>`）や戻り（`-> <CName>`）に使える。
+例: `struct nmColor { r:f32 g:f32 b:f32 a:f32 }`。詳細は後述「値構造体」。
+
 ### 関数宣言
 ```
 fn <CName> = <ZigType>.<method> ( [<recv> ,] <arg>* ) -> <ret> [!<fail>] [<own>]
@@ -84,8 +92,9 @@ fn <CName> = <ZigType>.<method> ( [<recv> ,] <arg>* ) -> <ret> [!<fail>] [<own>]
   * `=self` — Zig 側 `self: T`（値渡し）。C 側 `const nmT* self`
     （opaque は値で渡せないのでポインタのまま渡し、シムが間接参照する）。
   * 省略時はレシーバなし（静的関数として `framework.<ZigType>.<method>` を呼ぶ）。
-* `<arg>`: `<name>:<type> [<own>]` 形式。`<type>` は `str` または `*<ZigType>`（ハンドル）。
-* `<ret>`: `void` または `*<ZigType>`。
+* `<arg>`: `<name>:<type> [<own>]` 形式。`<type>` は `str` / `*<ZigType>`（ハンドル）/
+  スカラ（`f32`/`f64`/`i32`/`u32`/`bool`）/ 宣言済み値構造体。
+* `<ret>`: `void` / `*<ZigType>` / スカラ / 宣言済み値構造体。
 * `<fail>`: 失敗の通知方法。省略可。
   * `!null` — 失敗時 NULL を返し `last_error` を設定する（`*T` 戻り向け）。
   * `!err`  — 失敗時 0 以外の int コードを返す（`void` 戻り向け、0 = 成功）。
@@ -120,11 +129,37 @@ vtable ディスパッチなので、Component を持つ任意の widget をこ�
 | `str`（引数） | `const char*` | `[*:0]const u8` | シムが `std.mem.span` で `[]const u8` に変換 |
 | `*T`（引数） | `nmT*` | `*framework.T` | ハンドルをそのまま渡す |
 | `*T`（戻り、`!null`） | `nmT*` | `?*framework.T` | `catch` で `null` |
+| スカラ（引数・戻り） | `int32_t`/`float`/… | `i32`/`f32`/… | そのまま素通し（変換なし） |
+| 値構造体（引数） | `<CName>` | `<CName>`（extern） | シムがフィールドごとに native へ詰め替え |
+| 値構造体（戻り） | `<CName>` | `<CName>`（extern） | native からフィールドごとに詰め替え |
 | `void`（戻り、`!err`） | `int` | `c_int` | `catch` で `errorToCode`、成功時 `0` |
 | `void`（戻り、失敗なし） | `void` | `void` | そのまま呼ぶ |
 
 所有権タグ（`@owned` / `@borrowed` / `@transfer`）は C/Zig のコード生成には影響せず、
 IR にのみ出る（バインディングの解放判断に使う。「所有権」参照）。
+
+## 値構造体（レイアウトを公開する型）
+`Color` のように**中身（フィールド）をポインタ越しでなく値で公開する**型の扱い。
+
+通常の Zig `struct` は C ABI 互換のレイアウトが保証されない（`extern struct` のみ保証）。
+`awt.Graphics.Color` は普通の struct なので、そのままでは値渡しできない。これを
+**native 型に手を入れずに**公開するため、次のようにする。
+
+* `struct nmColor { … }` から **ABI 専用の `extern struct nmColor` を生成**（レイアウト保証）。
+* シムが境界でフィールドごとに native と詰め替える。
+  * 引数: `nmColor` → `self.setColor(.{ .r = c.r, .g = c.g, … })`（匿名リテラルが native 型に coerce）。
+  * 戻り: `const _ret = self.getColor(); return .{ .r = _ret.r, … };`（native → `nmColor`）。
+* フィールド名は native と一致させる。ズレると**コンパイルエラー**（ドリフト検知）。
+* IR には `structs`（`name` とフィールド）を出すので、Python/JS は `Color(1,0,0,1)` のような
+  **中身の見える普通のレコード**として生成できる。
+
+native 型自体を `extern struct` 化する案（変換ゼロ）は不採用。awt の既存型に手を入れる必要があり、
+`extern` の制約（デフォルト値・タグ無し enum フィールド等）と「公開する型は extern」という縛りが
+native 設計に染み出すため。値型は小さく、詰め替えのコピーコストは実質無視できる。
+
+> 制約: 現状フィールドはスカラ（`f32`/`f64`/`i32`/`u32`/`bool`）のみ。ネストした構造体・
+> 配列・enum フィールドは未対応。値構造体の戻りと `!fail` の組み合わせも未対応（getter は
+> 失敗しない前提）。
 
 ## バインディング用メタデータ（IR）
 `bindings/nimbus_api.json` は、Python / JS などのバインディング生成器が読む一枚の IR。
@@ -176,6 +211,8 @@ IR にのみ出る（バインディングの解放判断に使う。「所有�
   `nimbus.Button(app, ...)` でも、この 1 関数に対応づけできる。
 * `ownership`（戻り・引数）— `@owned` / `@borrowed` / `@transfer`。バインディングの
   解放判断（後述「所有権」）。未指定なら出ない（既定の慣習に従う）。
+* `structs` — 値構造体の一覧（`name` とフィールド）。引数・戻りは `"type":"struct"`,
+  `"struct":"<name>"` で参照する。バインディングは中身の見えるレコードとして生成できる。
 * `casts` — アップキャスト一覧（`from` → `to`）。
 * `destructors` — 汎用デストラクタ一覧（`type` のハンドルを破棄する `c` 関数）。
 * `callbacks` — 後述。コールバック型の一覧。現状は空配列だが、契約として常に存在する。
@@ -277,19 +314,33 @@ CLAUDE.md「エラーのC_ABIでの表現」に従う。
 * opaque 宣言・継承（`: <Parent>` → IR `extends`）。
 * `&self` / `=self` / レシーバなしの関数、`str` 引数、ハンドル引数 `*T`、
   `*T`（`!null`）/ `void`（`!err`）戻り。
+* スカラ（`f32`/`f64`/`i32`/`u32`/`bool`）の引数・戻り（素通し）。
+* 値構造体（`struct` 宣言、`extern` 生成 + フィールド詰め替え、引数・戻り）。
 * `cast`（アップキャスト）と `destroy`（汎用デストラクタ）。
 * 所有権タグ `@owned` / `@borrowed` / `@transfer`（→ IR `ownership`）。
-* バインディング IR（`bindings/nimbus_api.json`）: 型・継承・関数のクラス対応づけ・
-  ターゲット言語名・`casts`・`destructors`・`callbacks`（空配列）。
+* バインディング IR（`bindings/nimbus_api.json`）: 型・継承・`structs`・関数のクラス
+  対応づけ・ターゲット言語名・`casts`・`destructors`・`callbacks`（空配列）。
 
 未対応（文法・IR は本書で確定済みだがコード生成が未実装、もしくは文法ごと今後）:
 
 * コールバック / イベントハンドラ（上記専用セクション）。文法・IR 確定、コード生成未実装。
 * `@ctor` / `@dtor` で `nmCreateXxx` / `nmDestroyXxx` を型側 IR に紐づける案
-  （現状はファクトリ + 汎用デストラクタで代替。下記の型サポート拡張が前提）。
-* 値構造体の引数・戻り（`Color` 等）→ `struct` 宣言と値渡しの写像。
+  （現状はファクトリ + 汎用デストラクタで代替）。
+* 値構造体の拡張: ネスト構造体・配列・enum フィールド、値戻り＋エラーの組み合わせ。
 * enum 引数（`Slider.Orientation` 等）。
-* int / float / bool などプリミティブ引数、値戻り＋エラー（out 引数かセンチネルか要決定）。
+* スカラの値戻り＋エラーの組み合わせ（out 引数かセンチネルか要決定。現状はスカラ戻り＝失敗なしのみ）。
 * スライス（`[]const u8`）の**戻り**。`getText` 等。NUL 終端でないため
   `ptr + len` の 2 値か呼び出し側バッファ方式かを別途決める。
 * allocator / io を要するブートストラップ系コンストラクタ（上記プリアンブル参照）。
+
+## シンボル名の規約: 公開 ABI 名と awt-c 内部名を分ける
+かつて awt-c（`glfw_shim.c`）の C 関数が公開 ABI と同じ `nmGetBackendVersion` を名乗っており、
+preamble の `export fn nmGetBackendVersion` と衝突して、glfw スタックを引き込む export
+（`Application.frame` 等）を公開すると lld が duplicate symbol で落ちた。
+
+解決済み（2026-05-31）: awt-c の C 関数を内部名 `nmAwtBackendVersion` にリネームし、公開名
+`nmGetBackendVersion` は preamble の Zig export だけが持つ形にした（`glfw_shim.c` / `internal.h` /
+awt `root.zig` の呼び出しを更新）。これにより `Application.frame` 等の Window 系ファクトリも公開できる。
+
+規約: **awt-c の内部 C 関数は公開 ABI 名（`nm` + 機能名）と衝突させない**。awt-c 内部は
+`nmAwt...` 等の接頭辞で分け、公開名は preamble の Zig export が単独で持つ。

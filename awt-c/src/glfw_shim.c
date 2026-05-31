@@ -147,7 +147,7 @@ void nmTerminateAwt(void) {
     glfwTerminate();
 }
 
-const char* nmGetBackendVersion(void) {
+const char* nmAwtBackendVersion(void) {
     return glfwGetVersionString();
 }
 
