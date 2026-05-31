@@ -29,7 +29,7 @@ pub const Policy = enum {
 
 ### ビューのスクロール挙動宣言 (`Component.scrollable`)
 ビューが「ビューポートのサイズに追従する」ことを宣言するためのオプショナルなヒント。
-`DirtyNotify` / `FocusController` と同じく `Component` に定義し、 **`Component` の optional フィールドとして持つ** (property バッグや @typeName キーは使わない — これはビュー固有の静的属性なので、 付け外しの動的さが要らず、 素の変数が素直):
+`Component` の optional フィールドとして持つ (property バッグや @typeName キーは使わない — これはビュー固有の静的属性なので、 付け外しの動的さが要らず、 素の変数が素直):
 
 ```zig
 // Component.zig
@@ -41,8 +41,15 @@ pub const Scrollable = struct {
 scrollable: ?Scrollable = null,   // Component のフィールド。既定 null
 ```
 
-ビューウィジェット (将来の `TextArea` 等) が自分で `self.component.scrollable = .{ .tracks_viewport_width = true }` のように代入する。
+ビューウィジェット (`TextArea` 等) が自分で `self.component.scrollable = .{ .tracks_viewport_width = true }` のように代入する。
 `ScrollPane` はサイズ決定時に `view.scrollable` を読み、 `null` なら「両軸とも自然サイズ」として扱う (後述「サイズ決定とビューの契約」)。
+
+### ビューの height-for-width クエリ (`Component.size_query`)
+追従軸での「この幅での最小高さ」を問い合わせるための、 これも `Component` の optional フィールド (`component.md`「SizeQuery」参照)。
+折り返しビュー (wrap mode の `TextArea` 等) が `scrollable.tracks_viewport_width = true` と一緒に `size_query = .{ .minHeightForWidth = ... }` をセットする。
+
+`ScrollPane` は追従軸が tracked の場合、 `view.size_query` が non-null なら `minHeightForWidth(view, w)` を呼んで自由軸 (高さ) を決める。 `size_query` が null なら `view.effectiveMinSize()` の値を使う。
+これは pure query なので副作用がない (= ビュー自身の `min_size` を書き換えない)。 詳細な契約は後述「サイズ決定とビューの契約」。
 
 `viewport` は内部実装の詳細で、 普通の `Container` をそのまま使う。
 `Container` は子に配る前に `containsWindowPoint` で門番し (`container.md`)、 描画は `paintAt` が bounds でクリップする。

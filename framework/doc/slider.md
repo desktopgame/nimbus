@@ -93,6 +93,25 @@ pub fn setExtent(self: *BoundedRangeModel, extent: i32) void;
 `extent >= 0` かつ `value + extent <= max` の制約に合わせて更新する。
 変化があれば `change_listeners.fire()` する。
 
+## min / value / max / extent の一括設定
+```zig
+pub fn setRangeProperties(
+    self: *BoundedRangeModel,
+    min: i32,
+    value: i32,
+    max: i32,
+    extent: i32,
+) void;
+```
+
+4 つのプロパティを同時に更新し、最後にまとめてクランプを 1 回だけ適用する。
+適用順は `extent` を `[0, max - min]` に、続いて `value` を `[min, max - extent]` にクランプ。
+何か変化があれば `change_listeners.fire()` する。
+
+`setRange` + `setExtent` を順に呼ぶと、 中間状態で「`value > max` だが `setRange` がそれをクランプしないため、 続く `setExtent` で extent が縮められる」という縮退が起きうる (例: ScrollPane で大きく成長したコンテンツが縮んで `value` が古いまま残るケース)。
+複数プロパティを同時に変えるときはこちらを使う。
+Swing の `DefaultBoundedRangeModel.setRangeProperties` 相当。
+
 ## リスナーの登録 / 削除
 ```zig
 pub fn addChangeListener(

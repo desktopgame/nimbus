@@ -94,8 +94,11 @@ pub fn setLineWrap(self: *TextArea, wrap: bool) void;
 ```
 
 `true` で折り返しあり、`false` で折り返しなし (デフォルト)。
-`setLineWrap(true)` のとき `component.scrollable = .{ .tracks_viewport_width = true }` を立て、`ScrollPane` がビュー幅をビューポート幅に固定するようにする。
-`false` のときは `scrollable = null` に戻し、最長行の自然幅を報告して水平スクロールに任せる。
+`setLineWrap(true)` のとき:
+* `component.scrollable = .{ .tracks_viewport_width = true }` を立て、`ScrollPane` がビュー幅をビューポート幅に固定するようにする
+* `component.size_query` に height-for-width 関数 (`minHeightForWidth`) を入れ、 親レイアウトがその幅での最小高さを pure query で取得できるようにする (`component.md`「SizeQuery」参照)
+
+`false` のときはどちらも `null` に戻し、最長行の自然幅を報告して水平スクロールに任せる。
 詳細は後述「折り返しと ScrollPane 連携」。
 
 ## キャレット色 / 背景色の取得・設定

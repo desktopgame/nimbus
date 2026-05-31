@@ -37,6 +37,8 @@ doLayout: *const fn (*LayoutManager, *Container) void;
 `container` の現在のサイズと各子の MinimumSize / MaximumSize / GrowX / GrowY および hint を読み、各子の bounds を計算して `child.setBounds(...)` を呼び出す。
 直接の子のみを対象とする。孫以下への再帰呼び出しは Container 側の責務であり、LayoutManager は関知しない。
 
+幅で高さが変わる子 (折り返し `TextArea`、 将来の折り返し `Label` 等) を正しく扱うには、 子の `component.size_query` (オプショナル) を見て `minHeightForWidth(child, chosen_width)` を呼んで高さを得る。 `size_query` が null の子に対しては従来通り `getMinSize().height` を使えばよい (`component.md`「SizeQuery」参照)。 現状の組み込み `BoxLayout` / `BorderLayout` は size_query を参照していない (= 折り返し系の子は ScrollPane 経由でしか height-for-width が機能しない) が、 これは将来の拡張余地。
+
 ### 事前条件
 * `container` の bounds が有効な値で確定していること（ルートのみは Window の resize イベントが、ネストされたものは親コンテナーの doLayout が事前にこれを保証する）
 
