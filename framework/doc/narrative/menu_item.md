@@ -1,5 +1,5 @@
 ---
-unsafe: true
+unsafe: false
 ---
 
 # menu_item
@@ -26,6 +26,8 @@ MenuItem の状態（enabled / armed / rollover）とクリック完了 semantic
 
 slot 幅は親 Menu / PopupMenu が `computeMinSize` で全項目をスキャンして決める。
 個別の MenuItem は単独描画では「ぴったり最小」で見えても、Menu の中に入ると左寄りに揃って描画される。
+
+TODO: KeyStrokeなど実装時に更新の可能性あり
 
 ## クリック挙動
 `Button.processEvent` と同じ：press → armed のまま release → `model.fireAction()`。
