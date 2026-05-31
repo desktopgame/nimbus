@@ -1,5 +1,5 @@
 ---
-unsafe: true
+unsafe: false
 ---
 
 # scrollpane
@@ -70,6 +70,8 @@ ScrollPane の構成・サイズ決定とビューの契約・イベント処理
 `viewport` はビューの親なので、 ビューが `enclosingScrollController` で親方向にたどると最初にこれが見つかる。
 コールバックは `scrollRectToVisible` へ委譲する。
 これにより `TextArea` のようなビューが、 `ScrollPane` への直接依存なしにキャレット追従を実現できる。
+
+TODO: ScrollControllerは一度チェックの可能性高。
 
 ## 寿命
 `ScrollPane` は `view` / `hbar` / `vbar` / 内部 `viewport` をすべて所有し、 `destroy` で再帰的に解放する。
