@@ -73,6 +73,28 @@
       "fail": null
     },
     {
+      "c": "nmButtonGetText",
+      "owner": "Button",
+      "method": "getText",
+      "names": { "py": "get_text", "js": "getText" },
+      "kind": "method",
+      "receiver": "value",
+      "params": [],
+      "ret": { "type": "str", "ownership": "borrowed" },
+      "fail": null
+    },
+    {
+      "c": "nmComboBoxGetSelected",
+      "owner": "ComboBox",
+      "method": "getSelectedItem",
+      "names": { "py": "get_selected_item", "js": "getSelectedItem" },
+      "kind": "method",
+      "receiver": "value",
+      "params": [],
+      "ret": { "type": "str", "optional": true, "ownership": "borrowed" },
+      "fail": null
+    },
+    {
       "c": "nmAppFrame",
       "owner": "Application",
       "method": "frame",

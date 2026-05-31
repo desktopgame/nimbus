@@ -103,7 +103,8 @@ fn <CName> = <ZigType>.<method> ( [<recv> ,] <arg>* ) -> <ret> [!<fail>] [<own>]
   * 省略時はレシーバなし（静的関数として `framework.<ZigType>.<method>` を呼ぶ）。
 * `<arg>`: `<name>:<type> [<own>]` 形式。`<type>` は `str` / `*<ZigType>`（ハンドル）/
   スカラ（`f32`/`f64`/`i32`/`u32`/`bool`）/ 宣言済み値構造体 / 宣言済み enum。
-* `<ret>`: `void` / `*<ZigType>` / スカラ / 宣言済み値構造体 / 宣言済み enum。
+* `<ret>`: `void` / `*<ZigType>` / スカラ / 宣言済み値構造体 / 宣言済み enum /
+  `str`（借用 `[]const u8` → `nmStr`）/ `?str`（`?[]const u8` → `nmStr`、none は ptr=null）。
 * `<fail>`: 失敗の通知方法。省略可。
   * `!null` — 失敗時 NULL を返し `last_error` を設定する（`*T` 戻り向け）。
   * `!err`  — 失敗時 0 以外の int コードを返す（`void` 戻り向け、0 = 成功）。
@@ -142,6 +143,7 @@ vtable ディスパッチなので、Component を持つ任意の widget をこ�
 | enum（引数・戻り） | `<CName>`（C enum） | `c_int` | `@enumFromInt` / `@intFromEnum` で変換 |
 | 値構造体（引数） | `<CName>` | `<CName>`（extern） | シムがフィールドごとに native へ詰め替え |
 | 値構造体（戻り） | `<CName>` | `<CName>`（extern） | native からフィールドごとに詰め替え |
+| `str` / `?str`（戻り） | `nmStr {ptr,len}` | `nmStr`（extern） | 借用スライスを ptr+len で返す（コピーなし）。`?str` の none は ptr=null |
 | `void`（戻り、`!err`） | `int` | `c_int` | `catch` で `errorToCode`、成功時 `0` |
 | `void`（戻り、失敗なし） | `void` | `void` | そのまま呼ぶ |
 
@@ -195,6 +197,16 @@ IR には `enums`（`name` と `members`＝名前＋値）を出すので、Pyth
 のような列挙として生成できる。
 
 > 制約: スカラのバッキング型は int（C enum）固定。明示値・非連続値・フラグ（ビット或）は未対応。
+
+## 文字列の戻り（借用 nmStr）
+`getText` のようなスライス戻り（`[]const u8`）は **`nmStr { const char* ptr; size_t len; }`
+を値で返す**。UTF-8、NUL 終端なし、**借用**（source の widget が所有。次の `setText` 等で
+無効化されうるので呼び出し側は即コピーする）。`?str`（`?[]const u8`）は none を `ptr == null`
+で表す。シムはスライスの `ptr`/`len` を詰めるだけ（コピーも確保もしない）。
+
+これは wxPython / PyGObject 等と同じ「**境界で即コピーし、ターゲット言語が所有する文字列に移す**」
+方式。借用で足りるのは変換の一瞬だけ有効ならよいため。IR の戻りには `"ownership": "borrowed"`
+（と `?str` は `"optional": true`）が出るので、バインディングは「コピーして free しない」で一様に扱える。
 
 ## バインディング用メタデータ（IR）
 `bindings/nimbus_api.json` は、Python / JS などのバインディング生成器が読む一枚の IR。
@@ -360,6 +372,7 @@ CLAUDE.md「エラーのC_ABIでの表現」に従う。
 * スカラ（`f32`/`f64`/`i32`/`u32`/`bool`）の引数・戻り（素通し）。
 * enum（`enum` 宣言、int ABI + comptime ドリフト検知、引数・戻り）。
 * 値構造体（`struct` 宣言、`extern` 生成 + フィールド詰め替え、引数・戻り）。
+* 文字列の**戻り** `str` / `?str`（借用 `nmStr {ptr,len}`、上記「文字列の戻り」）。
 * `cast`（アップキャスト）と `destroy`（汎用デストラクタ）。
 * 所有権タグ `@owned` / `@borrowed` / `@transfer`（→ IR `ownership`）。
 * コールバック / イベントハンドラ（`callback` 宣言、案 C の box + トランポリン、event は不透明 + 手書きアクセサ）。
@@ -373,9 +386,8 @@ CLAUDE.md「エラーのC_ABIでの表現」に従う。
 * コールバックの拡張: event に追加 typed 引数を持つ署名、登録の `remove`（解除）エクスポート。
 * 値構造体の拡張: ネスト構造体・配列・enum フィールド、値戻り＋エラーの組み合わせ。
 * enum の拡張: 明示値・非連続値・フラグ（ビット或）。
-* 値（スカラ/enum/struct）戻り＋エラーの組み合わせ（out 引数かセンチネルか要決定。現状は失敗なしのみ）。
-* スライス（`[]const u8`）の**戻り**。`getText` 等。NUL 終端でないため
-  `ptr + len` の 2 値か呼び出し側バッファ方式かを別途決める。
+* 値（スカラ/enum/struct/str）戻り＋エラーの組み合わせ（out 引数かセンチネルか要決定。現状は失敗なしのみ）。
+* 文字列**配列**の引数（`comboBox(items: []const []const u8)` 等）。`const char* const*` + count か add-item 経由。
 * allocator / io を要するブートストラップ系コンストラクタ（上記プリアンブル参照）。
 
 ## シンボル名の規約: 公開 ABI 名と awt-c 内部名を分ける

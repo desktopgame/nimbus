@@ -6,6 +6,12 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
+
+/* Borrowed UTF-8 string slice (NOT NUL-terminated). Valid only until the
+ * source widget mutates (e.g. setText) or is destroyed — copy it immediately.
+ * `ptr` is null when the value is absent (optional getters). */
+typedef struct { const char* ptr; size_t len; } nmStr;
 
 #ifdef __cplusplus
 extern "C" {
@@ -46,6 +52,8 @@ int nmButtonSetText(nmButton* self, const char* text);
 int nmContainerAdd(nmContainer* self, nmComponent* child);
 void nmButtonSetColor(nmButton* self, nmColor c);
 nmColor nmButtonGetColor(const nmButton* self);
+nmStr nmButtonGetText(const nmButton* self);
+nmStr nmComboBoxGetSelected(const nmComboBox* self);
 nmFrame* nmAppFrame(nmApplication* self, const char* title, uint32_t w, uint32_t h);
 void nmComponentSetGrowX(nmComponent* self, float v);
 float nmComponentGetGrowX(nmComponent* self);

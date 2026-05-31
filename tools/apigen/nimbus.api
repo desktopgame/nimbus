@@ -35,7 +35,9 @@
 #       <recv> : &self   receiver is *T   (Zig: self: *T)
 #                =self   receiver is T     (by value; still a pointer in C)
 #       <arg>  : <name>:<type> [<own>]    type in { str, *<ZigType> }
-#       <ret>  : void | *<ZigType>
+#       <ret>  : void | *<ZigType> | <scalar> | <struct> | <enum>
+#                | str    borrowed []const u8 -> nmStr {ptr,len} (UTF-8, not NUL-term)
+#                | ?str   optional ?[]const u8 -> nmStr (ptr = null when none)
 #       <fail> : !null   failure = NULL  + last_error          (for *T returns)
 #                !err    failure = nonzero int (0 = ok)         (for void returns)
 #       <own>  : @owned     caller owns the returned handle (must free it)
@@ -85,6 +87,10 @@ fn nmButtonSetText = Button.setText     (&self, text:str) -> void    !err
 fn nmContainerAdd  = Container.add       (&self, child:*Component @transfer) -> void !err
 fn nmButtonSetColor = Button.setColor    (&self, c:nmColor) -> void
 fn nmButtonGetColor = Button.getColor    (=self) -> nmColor
+
+# Borrowed string return (nmStr = ptr + len, UTF-8, not NUL-terminated).
+fn nmButtonGetText       = Button.getText          (=self) -> str
+fn nmComboBoxGetSelected = ComboBox.getSelectedItem (=self) -> ?str
 
 # Primitive (scalar) args / return: passed straight through, no conversion.
 # The Frame is owned by Application (freed on close / app deinit), so @borrowed.

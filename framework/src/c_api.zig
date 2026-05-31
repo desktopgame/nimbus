@@ -7,6 +7,15 @@ const std = @import("std");
 const framework = @import("nimbus");
 const awt = framework.awt;
 
+/// Borrowed UTF-8 string slice returned across the ABI (ptr + len; NOT
+/// NUL-terminated). Mirrors C `nmStr`. Borrowed: valid until the source widget
+/// mutates / is destroyed — callers copy immediately. `ptr` is null for an
+/// absent optional value.
+const nmStr = extern struct {
+    ptr: ?[*]const u8,
+    len: usize,
+};
+
 // Thread-local last-error storage. A failing export stores the error here and
 // signals failure to C via NULL / a non-zero int (see CLAUDE.md
 // 「エラーのC_ABIでの表現」). Callers read it back with the two accessors below.
@@ -107,6 +116,16 @@ export fn nmButtonSetColor(self: *framework.Button, c: nmColor) void {
 export fn nmButtonGetColor(self: *framework.Button) nmColor {
     const _ret = self.getColor();
     return .{ .r = _ret.r, .g = _ret.g, .b = _ret.b, .a = _ret.a };
+}
+
+export fn nmButtonGetText(self: *framework.Button) nmStr {
+    const _s = self.getText();
+    return .{ .ptr = _s.ptr, .len = _s.len };
+}
+
+export fn nmComboBoxGetSelected(self: *framework.ComboBox) nmStr {
+    const _s = self.getSelectedItem();
+    return if (_s) |v| .{ .ptr = v.ptr, .len = v.len } else .{ .ptr = null, .len = 0 };
 }
 
 export fn nmAppFrame(self: *framework.Application, title: [*:0]const u8, w: u32, h: u32) ?*framework.Frame {

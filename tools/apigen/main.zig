@@ -82,6 +82,10 @@ const Ret = union(enum) {
     scalar: Scalar,
     /// Enum return; payload is the declared ABI enum name.
     enum_ref: []const u8,
+    /// Borrowed UTF-8 slice return (`[]const u8`) -> `nmStr` (ptr + len).
+    str,
+    /// Optional borrowed slice (`?[]const u8`) -> `nmStr` (ptr = null when none).
+    str_opt,
 };
 
 const Field = struct {
@@ -363,6 +367,10 @@ fn parseFn(
     const rt = t[i];
     if (std.mem.eql(u8, rt, "void")) {
         f.ret = .void;
+    } else if (std.mem.eql(u8, rt, "str")) {
+        f.ret = .str;
+    } else if (std.mem.eql(u8, rt, "?str")) {
+        f.ret = .str_opt;
     } else if (rt.len > 1 and rt[0] == '*') {
         f.ret = .{ .ptr = rt[1..] };
     } else if (Scalar.parse(rt)) |sc| {
@@ -392,11 +400,11 @@ fn parseFn(
     }
 
     const ret_is_value = switch (f.ret) {
-        .struct_ref, .scalar, .enum_ref => true,
+        .struct_ref, .scalar, .enum_ref, .str, .str_opt => true,
         else => false,
     };
     if (ret_is_value and f.fail != .none)
-        return fail(line_no, "value (struct/scalar/enum) return combined with !fail is not supported yet");
+        return fail(line_no, "value (struct/scalar/enum/str) return combined with !fail is not supported yet");
 
     try model.funcs.append(gpa, f);
 }
@@ -581,6 +589,7 @@ fn emitHeaderProto(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), f: *const Fu
         .struct_ref => |sn| try buf.appendSlice(gpa, sn),
         .scalar => |sc| try buf.appendSlice(gpa, sc.cName()),
         .enum_ref => |en| try buf.appendSlice(gpa, en),
+        .str, .str_opt => try buf.appendSlice(gpa, "nmStr"),
     }
     try print(gpa, buf, " {s}(", .{f.cname});
 
@@ -726,6 +735,7 @@ fn emitZigShim(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), model: *const Mo
         .struct_ref => |sn| try buf.appendSlice(gpa, sn),
         .scalar => |sc| try buf.appendSlice(gpa, sc.zigName()),
         .enum_ref => try buf.appendSlice(gpa, "c_int"),
+        .str, .str_opt => try buf.appendSlice(gpa, "nmStr"),
     }
     try buf.appendSlice(gpa, " {\n");
 
@@ -773,6 +783,10 @@ fn emitZigShim(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), model: *const Mo
                     try appendStructLiteral(gpa, buf, "_ret", model.findStruct(sn).?);
                     try buf.appendSlice(gpa, ";\n");
                 },
+                // Borrowed slice -> nmStr (ptr + len). No copy; valid until the
+                // source mutates (binding copies immediately).
+                .str => try print(gpa, buf, "    const _s = {s};\n    return .{{ .ptr = _s.ptr, .len = _s.len }};\n", .{call.items}),
+                .str_opt => try print(gpa, buf, "    const _s = {s};\n    return if (_s) |v| .{{ .ptr = v.ptr, .len = v.len }} else .{{ .ptr = null, .len = 0 }};\n", .{call.items}),
             }
         },
     }
@@ -934,6 +948,8 @@ fn emitJsonFunc(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), f: *const Func)
         .struct_ref => |sn| try print(gpa, buf, "      \"ret\": {{ \"type\": \"struct\", \"struct\": \"{s}\" }},\n", .{sn}),
         .scalar => |sc| try print(gpa, buf, "      \"ret\": {{ \"type\": \"{s}\" }},\n", .{sc.zigName()}),
         .enum_ref => |en| try print(gpa, buf, "      \"ret\": {{ \"type\": \"enum\", \"enum\": \"{s}\" }},\n", .{en}),
+        .str => try buf.appendSlice(gpa, "      \"ret\": { \"type\": \"str\", \"ownership\": \"borrowed\" },\n"),
+        .str_opt => try buf.appendSlice(gpa, "      \"ret\": { \"type\": \"str\", \"optional\": true, \"ownership\": \"borrowed\" },\n"),
     }
 
     // fail

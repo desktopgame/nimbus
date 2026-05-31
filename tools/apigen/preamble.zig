@@ -7,6 +7,15 @@ const std = @import("std");
 const framework = @import("nimbus");
 const awt = framework.awt;
 
+/// Borrowed UTF-8 string slice returned across the ABI (ptr + len; NOT
+/// NUL-terminated). Mirrors C `nmStr`. Borrowed: valid until the source widget
+/// mutates / is destroyed — callers copy immediately. `ptr` is null for an
+/// absent optional value.
+const nmStr = extern struct {
+    ptr: ?[*]const u8,
+    len: usize,
+};
+
 // Thread-local last-error storage. A failing export stores the error here and
 // signals failure to C via NULL / a non-zero int (see CLAUDE.md
 // 「エラーのC_ABIでの表現」). Callers read it back with the two accessors below.
