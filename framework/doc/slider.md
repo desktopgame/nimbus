@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # slider
@@ -116,14 +116,16 @@ Swing の `DefaultBoundedRangeModel.setRangeProperties` 相当。
 ```zig
 pub fn addChangeListener(
     self: *BoundedRangeModel,
-    fn_ptr: *const fn (*anyopaque) void,
-    user_data: *anyopaque,
+    comptime T: type,
+    comptime f: fn (*T, *const Event) void,
+    user_data: *T,
 ) !void;
 
 pub fn removeChangeListener(
     self: *BoundedRangeModel,
-    fn_ptr: *const fn (*anyopaque) void,
-    user_data: *anyopaque,
+    comptime T: type,
+    comptime f: fn (*T, *const Event) void,
+    user_data: *T,
 ) void;
 ```
 
@@ -212,13 +214,12 @@ try frame.window.add(&slider.component);
 値変化を監視する例。
 
 ```zig
-fn onValueChanged(user_data: *anyopaque) void {
-    const ctx: *AppContext = @ptrCast(@alignCast(user_data));
+fn onValueChanged(ctx: *AppContext, _: *const Event) void {
     const v = ctx.slider.getModel().getValue();
     std.debug.print("slider value = {d}\n", .{v});
 }
 
-try slider.getModel().addChangeListener(onValueChanged, &app_ctx);
+try slider.getModel().addChangeListener(AppContext, onValueChanged, &app_ctx);
 ```
 
 共有 Model で 2 つの Slider を同期させる例。

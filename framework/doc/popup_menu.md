@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # popup_menu
@@ -130,9 +130,8 @@ try dropdown.add(&(try MenuItem.create(allocator, "Option A", font, black)).comp
 try dropdown.add(&(try MenuItem.create(allocator, "Option B", font, black)).component);
 
 const btn = try app.button("Choose ▾");
-try btn.getModel().addActionListener(struct {
-    fn show(user_data: *anyopaque) void {
-        const ctx: *Ctx = @ptrCast(@alignCast(user_data));
+try btn.getModel().addActionListener(Ctx, struct {
+    fn show(ctx: *Ctx, _: *const Event) void {
         const origin = ctx.btn.component.absoluteOriginInWindow();
         dropdown.show(ctx.win, origin.x, origin.y + ctx.btn.component.size.height) catch {};
     }

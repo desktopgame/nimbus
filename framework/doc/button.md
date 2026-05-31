@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # button
@@ -101,14 +101,16 @@ pub fn fireAction(self: *ButtonModel) void;
 ```zig
 pub fn addChangeListener(
     self: *ButtonModel,
-    fn_ptr: *const fn (*anyopaque) void,
-    user_data: *anyopaque,
+    comptime T: type,
+    comptime f: fn (*T, *const Event) void,
+    user_data: *T,
 ) !void;
 
 pub fn removeChangeListener(
     self: *ButtonModel,
-    fn_ptr: *const fn (*anyopaque) void,
-    user_data: *anyopaque,
+    comptime T: type,
+    comptime f: fn (*T, *const Event) void,
+    user_data: *T,
 ) void;
 ```
 
@@ -119,14 +121,16 @@ pub fn removeChangeListener(
 ```zig
 pub fn addActionListener(
     self: *ButtonModel,
-    fn_ptr: *const fn (*anyopaque) void,
-    user_data: *anyopaque,
+    comptime T: type,
+    comptime f: fn (*T, *const Event) void,
+    user_data: *T,
 ) !void;
 
 pub fn removeActionListener(
     self: *ButtonModel,
-    fn_ptr: *const fn (*anyopaque) void,
-    user_data: *anyopaque,
+    comptime T: type,
+    comptime f: fn (*T, *const Event) void,
+    user_data: *T,
 ) void;
 ```
 
@@ -245,13 +249,12 @@ button.component.setBounds(.{ .x = 20, .y = 20, .width = 100, .height = 32 });
 try frame.window.add(&button.component);
 
 // クリックハンドラを登録
-fn onOkClicked(user_data: *anyopaque) void {
-    const ctx: *AppContext = @ptrCast(@alignCast(user_data));
+fn onOkClicked(ctx: *AppContext, _: *const Event) void {
     ctx.dialog_result = .ok;
     ctx.loop.exit(0);
 }
 
-try button.getModel().addActionListener(onOkClicked, &app_ctx);
+try button.getModel().addActionListener(AppContext, onOkClicked, &app_ctx);
 ```
 
 disabled の制御。
@@ -281,12 +284,11 @@ const menu_save    = try Button.createWithModel(allocator, model, "Save", font, 
 状態変化を観察したいケース（rollover 中だけ別のフィードバックを出すなど）。
 
 ```zig
-fn onButtonStateChanged(user_data: *anyopaque) void {
-    const btn: *Button = @ptrCast(@alignCast(user_data));
+fn onButtonStateChanged(btn: *Button, _: *const Event) void {
     if (btn.getModel().isRollover()) showTooltip();
 }
 
-try button.getModel().addChangeListener(onButtonStateChanged, button);
+try button.getModel().addChangeListener(Button, onButtonStateChanged, button);
 ```
 
 toolbar に並べる icon-only ボタン（flat モード）。
@@ -297,7 +299,7 @@ const icon = try awt.Image.fromMemory(allocator, app.device, png_bytes);
 const btn = try app.button("");        // text 空 → アイコン専用 = flat
 btn.setIcon(icon);
 btn.setIconSize(.{ .width = 20, .height = 20 });  // toolbar 用に縮小
-try btn.getModel().addActionListener(onSave, &state);
+try btn.getModel().addActionListener(State, onSave, &state);
 
 try toolbar.container.add(&btn.component);
 ```

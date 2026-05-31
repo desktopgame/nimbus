@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # checkbox_menu_item
@@ -110,7 +110,7 @@ const font  = awt.Graphics.TextFont{ .face = app.default_font, .pixel_size = 14 
 const black = awt.Graphics.Color.rgb(0.1, 0.1, 0.1);
 
 const show_grid = try CheckBoxMenuItem.create(allocator, "Show Grid", font, black);
-try show_grid.getModel().addActionListener(onToggleGrid, &editor_ctx);
+try show_grid.getModel().addActionListener(EditorCtx, onToggleGrid, &editor_ctx);
 try view_menu.add(&show_grid.component);
 
 // プログラム側から初期状態を反映

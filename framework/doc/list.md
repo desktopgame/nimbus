@@ -158,8 +158,8 @@ pub fn setRowHeight(self: *List, h: f32) void;
 
 ## 選択変更リスナー
 ```zig
-pub fn addChangeListener   (self: *List, fn_ptr: ChangeListenerList.ListenerFn, user_data: *anyopaque) !void;
-pub fn removeChangeListener(self: *List, fn_ptr: ChangeListenerList.ListenerFn, user_data: *anyopaque) void;
+pub fn addChangeListener   (self: *List, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) !void;
+pub fn removeChangeListener(self: *List, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) void;
 ```
 
 `selected` が変化した瞬間に発火する。
@@ -231,8 +231,7 @@ const TaskCell = struct {
     }
 
     // セル内ボタンの action。 自分のセル状態から行が分かる (逆引き不要)
-    fn onDelete(ud: *anyopaque) void {
-        const self: *TaskCell = @ptrCast(@alignCast(ud));
+    fn onDelete(self: *TaskCell, _: *const Event) void {
         self.list.model.remove(self.current_row);   // model が変われば List が追従
     }
 
@@ -250,7 +249,7 @@ fn createTaskCell(ud: *anyopaque, allocator: std.mem.Allocator) anyerror!Cell {
     const cell = try allocator.create(TaskCell);
     cell.* = .{ .root = ..., .label = ..., .delete_btn = ..., .list = cx.list };
     // action listener はセル生成時に一度だけ登録 (user_data = このセル状態)
-    try cell.delete_btn.getModel().addActionListener(TaskCell.onDelete, cell);
+    try cell.delete_btn.getModel().addActionListener(TaskCell, TaskCell.onDelete, cell);
     return .{
         .component = &cell.root.container.component,
         .update    = TaskCell.update,

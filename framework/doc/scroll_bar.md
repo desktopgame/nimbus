@@ -92,8 +92,8 @@ pub fn setBlockIncrement(self: *ScrollBar, px: i32) void;
 
 ## ChangeListener
 ```zig
-pub fn addChangeListener   (self: *ScrollBar, fn_ptr: ChangeListenerList.ListenerFn, user_data: *anyopaque) !void;
-pub fn removeChangeListener(self: *ScrollBar, fn_ptr: ChangeListenerList.ListenerFn, user_data: *anyopaque) void;
+pub fn addChangeListener   (self: *ScrollBar, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) !void;
+pub fn removeChangeListener(self: *ScrollBar, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) void;
 ```
 
 `model` の `ChangeListener` への委譲。

@@ -46,7 +46,7 @@ List は「全行ぶんのセル」を持たない。 **可視範囲を覆うの
 Swing でセル内ボタンの行を `getEditingRow()` で逆引きする必要があったのは、 判子に実体と行 identity が無かったから。
 
 この設計ではセルが実体で、 factory が **セルごとに専用の状態構造体 (`user_data`) を new する**。
-セル内ボタンの action listener は、 そのセルの状態構造体を `user_data` にして **生成時に一度だけ** 登録する (`getModel().addActionListener(fn, &cell_state)`、 `button.md`)。
+セル内ボタンの action listener は、 そのセルの状態構造体を `user_data` にして **生成時に一度だけ** 登録する (`getModel().addActionListener(CellState, fn, &cell_state)`、 型付き登録は `model.md`)。
 `update` のたびにセルは自分の状態構造体へ現在の行 (`ctx.index`) を書き込む。
 
 セルは recycle されるまで同じ行に固定され、 イベントもその間に来るので、 action ハンドラが自分のセル状態から現在行を読めば常に正しい行が取れる。

@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # application
@@ -256,7 +256,7 @@ pub fn menuSeparator    (self: *Application) !*MenuSeparator;
 const bar = try app.menuBar();
 const file = try app.menu("File");
 const open = try app.menuItem("Open");
-try open.getModel().addActionListener(onOpen, &ctx);
+try open.getModel().addActionListener(Ctx, onOpen, &ctx);
 try file.add(&open.component);
 try file.addSeparator();
 try file.add(&(try app.menuItem("Quit")).component);

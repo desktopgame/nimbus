@@ -129,8 +129,8 @@ pub fn scrollRectToVisible(self: *ScrollPane, rect: Component.Rect) void;
 
 ## ChangeListener
 ```zig
-pub fn addChangeListener   (self: *ScrollPane, fn_ptr: ChangeListenerList.ListenerFn, user_data: *anyopaque) !void;
-pub fn removeChangeListener(self: *ScrollPane, fn_ptr: ChangeListenerList.ListenerFn, user_data: *anyopaque) void;
+pub fn addChangeListener   (self: *ScrollPane, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) !void;
+pub fn removeChangeListener(self: *ScrollPane, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) void;
 ```
 
 スクロール位置が変わると発火する (どちらの軸でも)。

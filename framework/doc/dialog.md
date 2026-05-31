@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # dialog
@@ -149,8 +149,8 @@ try dialog.window.add(&msg.component);
 const ok = try app.button("OK");
 const cancel = try app.button("Cancel");
 // ボタンの ActionListener から dialog.close(...) を呼ぶ
-try ok.getModel().addActionListener(onOk, @ptrCast(dialog));
-try cancel.getModel().addActionListener(onCancel, @ptrCast(dialog));
+try ok.getModel().addActionListener(nimbus.Dialog, onOk, dialog);
+try cancel.getModel().addActionListener(nimbus.Dialog, onCancel, dialog);
 try dialog.window.add(&ok.component);
 try dialog.window.add(&cancel.component);
 
@@ -163,12 +163,10 @@ switch (result) {
 ```
 
 ```zig
-fn onOk(user_data: *anyopaque) void {
-    const d: *nimbus.Dialog = @ptrCast(@alignCast(user_data));
+fn onOk(d: *nimbus.Dialog, _: *const Event) void {
     d.close(.ok);
 }
-fn onCancel(user_data: *anyopaque) void {
-    const d: *nimbus.Dialog = @ptrCast(@alignCast(user_data));
+fn onCancel(d: *nimbus.Dialog, _: *const Event) void {
     d.close(.cancel);
 }
 ```

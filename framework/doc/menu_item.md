@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # menu_item
@@ -109,7 +109,7 @@ const black = awt.Graphics.Color.rgb(0.1, 0.1, 0.1);
 
 const open = try MenuItem.create(allocator, "Open", font, black);
 open.setIcon(open_icon);
-try open.getModel().addActionListener(onOpen, &app_ctx);
+try open.getModel().addActionListener(AppContext, onOpen, &app_ctx);
 try file_menu.add(&open.component);
 ```
 
