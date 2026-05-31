@@ -44,6 +44,7 @@ test "horizontal: 3 fixed-size children pack from the left" {
     try root.add(&l3.container.component);
 
     root.setBounds(.{ .x = 0, .y = 0, .width = 400, .height = 100 });
+    root.doLayout();
 
     // Each child takes its min/max width on the main axis. Cross axis
     // collapses to max=h (stretch clamped). Pack-left → x cumulates.
@@ -71,6 +72,7 @@ test "horizontal: single grow child eats leftover space" {
     try root.add(&right.container.component);
 
     root.setBounds(.{ .x = 0, .y = 0, .width = 300, .height = 50 });
+    root.doLayout();
 
     // sum_min = 40 + 20 + 40 = 100, excess = 200 → all goes to `mid`.
     try expectBounds(&left.container.component,   0, 0,  40, 30);
@@ -96,6 +98,7 @@ test "horizontal: grow split by weight" {
     try root.add(&c2.container.component);
 
     root.setBounds(.{ .x = 0, .y = 0, .width = 400, .height = 50 });
+    root.doLayout();
 
     // sum_min = 0, distributable = 400. Split 1:3 → 100 / 300.
     try expectBounds(&c1.container.component,   0, 0, 100, 20);
@@ -115,6 +118,7 @@ test "horizontal: max_size caps grown width" {
     try root.add(&capped.container.component);
 
     root.setBounds(.{ .x = 0, .y = 0, .width = 500, .height = 40 });
+    root.doLayout();
 
     try expectBounds(&capped.container.component, 0, 0, 80, 25);
 }
@@ -133,6 +137,7 @@ test "vertical: 3 fixed-size children pack from the top" {
     try root.add(&l3.container.component);
 
     root.setBounds(.{ .x = 0, .y = 0, .width = 200, .height = 300 });
+    root.doLayout();
 
     try expectBounds(&l1.container.component, 0,  0, 100, 20);
     try expectBounds(&l2.container.component, 0, 20,  80, 30);
@@ -166,6 +171,7 @@ test "vertical: cross-axis alignment (start / center / end / stretch)" {
     }
 
     root.setBounds(.{ .x = 0, .y = 0, .width = 200, .height = 100 });
+    root.doLayout();
 
     // start:   x=0,   width=40
     // center:  x=80,  width=40
@@ -195,6 +201,7 @@ test "nested: vertical box with a horizontal row reports correct min size" {
     try root.add(&row.component);
 
     root.setBounds(.{ .x = 0, .y = 0, .width = 200, .height = 100 });
+    root.doLayout();
 
     // Inner row should be sized as 80 (sum of child widths) × 25 (max
     // child height). Cross axis stretches up to row.effectiveMaxSize().width

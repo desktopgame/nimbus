@@ -2,27 +2,39 @@
 レイアウトエンジンの性能に関する観察と将来プラン。
 2026-05-24 の棚卸しで挙がった項目をまとめる。
 
-現状の方針は「正しさ優先・キャッシュなし」であり、UI ツリーが浅い間は問題にならない。
+現状の方針は「正しさ優先・最低限のキャッシュ」(`Container.min_cache` / `max_cache` のみ。 部分再レイアウトはまだ) で、UI ツリーが浅い間は問題にならない。
 このドキュメントは、ツリーが深くなった／大きくなったときに効いてくる箇所を先に可視化し、
 実装に着手するときの設計のたたき台を残すことが目的。
 
 ---
 
-## 済: 子コンテナーの二重レイアウト (2026-05-24 修正済み)
-記録として残す。再発防止のための規約でもある。
+## 済: 子コンテナーの二重レイアウト (2026-05-24 修正、 2026-05-31 構造的に解消)
 
-### 症状
+### 症状 (履歴)
 `Container.doLayout` は末尾で全子コンテナーへ再帰する (`framework/src/Container.zig`)。
-一方で `BoxLayout` / `BorderLayout` が子コンテナーに対して `Container.setBounds` を呼ぶと、
-`Container.setBounds` は内部で `doLayout` を即時に走らせる。
-結果として子コンテナーが「setBounds 経由」と「親の末尾再帰」で 2 回レイアウトされ、
+かつての `Container.setBounds` は内部で `doLayout` を即時に走らせていたため、
+`BoxLayout` / `BorderLayout` が子コンテナーに対して `Container.setBounds` を呼ぶと、
+子コンテナーが「setBounds 経由」と「親の末尾再帰」で 2 回レイアウトされ、
 ネストの深さ k に対して 2^k 回のレイアウトに膨らんでいた。
 
-### 規約 (再発防止)
-`LayoutManager` の実装は、子にバウンズを与えるとき**必ず `Component.setBounds` を使う**。
-`Container.setBounds` は使わない。
-サブツリーへの再帰は `Container.doLayout` が一手に担う、というのが唯一の所有者。
+### 初期対応 (2026-05-24)
+`LayoutManager` の実装規約として「**子にバウンズを与えるとき必ず `Component.setBounds` を使う**、
+`Container.setBounds` は使わない」を導入。 サブツリーへの再帰は `Container.doLayout` が一手に担う、
+というのが唯一の所有者、という運用に落とした。
+
+### 構造的解消 (2026-05-31)
+`Container.setBounds` から `doLayout` の呼び出しを取り除いた。 これにより:
+
+* `Container.setBounds` と `Component.setBounds` は意味的に等価 (どちらを呼んでも footgun にならない)
+* `LayoutManager` 実装の「どちらの `setBounds` を使うか」という規約は **不要** になった
+* `doLayout` 起動の唯一の起点は `Window.redraw` が明示的に呼ぶ `root.container.doLayout()` のみ
+* 副次効果として、 `Window` に `in_redraw` フラグを足し、 doLayout cascade 中の `setBounds` 経由
+  `markLayoutDirty` が無駄な `awt.postEmptyEvent` を呼ばないようにした (= 1 フレーム内の
+  wake-up call が大量に発火しないようになった)
+
 `ScrollPane` はこの規約に最初から従っていた (`framework/src/ScrollPane.zig` の viewport 配置コメント参照)。
+現在はその縛りがそもそも無いので、 `ScrollPane` のコメントも自由化できる (が、 明示的に
+`Component.setBounds` を使っているだけで害はないのでそのまま)。
 
 ---
 

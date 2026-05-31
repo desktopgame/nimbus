@@ -83,7 +83,10 @@ pub const LayoutManager = struct {
 コンテナー自身が別のコンテナーにネストされている場合、親側のレイアウトはこのコンテナーの min/max を知る必要がある。
 そのためのクエリ。
 純粋な計算関数として扱うため `*const Container` で受ける。
-内部キャッシュを持ちたい場合は別途 dirty 管理を入れる。
+
+戻り値は Container 側で memoize される (`Container.min_cache` / `max_cache`)。
+無効化は `markLayoutDirty` が経路上の Container すべてに対して自動的に行うため、 LayoutManager 実装者は pure に書けば透過にキャッシュが効く (詳細は `framework/doc/layout.md`「キャッシュ」)。
+LayoutManager 自身が独自キャッシュを持つ必要は通常ないが、 持つ場合は `markLayoutDirty` の通知が LayoutManager まで届かない点に注意 (自前で dirty 管理を入れる)。
 
 無限の最大サイズは `std.math.inf(f32)` をそのまま入れる。
 `f32` で座標を管理する方針と整合する。
@@ -112,16 +115,25 @@ pub fn getMinSize(self: *const Container) Size {
 }
 ```
 
-### setBounds は自動で doLayout を呼ぶ
-コンテナーは自身の bounds が変更された時点で再レイアウトする。
-Swing の手動 `validate` のような呼び出しは不要。
+### setBounds と doLayout は分離する
+`Container.setBounds` は座標を書くだけで `doLayout` は呼ばない (= `Component.setBounds` と等価)。
+かつては `setBounds` が `doLayout` も走らせていたが、 `LayoutManager` が子に bounds を与える経路で 2^k の二重 layout を起こす footgun だったため取り除いた。
 
 ```zig
 pub fn setBounds(self: *Container, bounds: Rect) void {
     self.component.setBounds(bounds);
-    self.doLayout();
+    // doLayout は呼ばない (footgun 回避)
 }
 ```
+
+`doLayout` を実際に走らせる正規ルートは `Window.redraw` が 1 ヶ所で行う:
+
+```zig
+self.container.component.setBounds(...);
+self.container.doLayout();
+```
+
+利用者は `Window.redraw` のことを意識しない。 setter (`setText` 等) が `markLayoutDirty` を立てる → 次フレームの redraw が自動で doLayout する、 という Invalidation ベースのモデル (後述「レイアウトと描画の更新タイミング」)。 Swing の手動 `validate` のような呼び出しは不要。
 
 ### 再帰はコンテナーが行う
 レイアウトマネージャは直接の子のみを扱い、その子が更にコンテナーであった場合の再帰は呼び出し側のコンテナーが担当する。

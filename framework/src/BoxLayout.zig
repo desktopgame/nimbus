@@ -132,11 +132,9 @@ fn doLayout(self: *LayoutManager, container: *Container) void {
             .vertical   => .{ .x = cross_pos, .y = pos, .width = cross, .height = main },
         };
 
-        // Always use Component.setBounds (not Container.setBounds): the latter
-        // eagerly re-runs the child's own layout, which would then be repeated
-        // by Container.doLayout's trailing recursion — laying each nested
-        // container out twice (2^depth across the tree). Container.doLayout
-        // owns the single recursion. See `framework/doc/optimize.md`.
+        // Container.doLayout owns the single recursion into children. We just
+        // set bounds here; either setBounds variant is equivalent now (both
+        // just write the rect). See `framework/doc/optimize.md`.
         child.setBounds(bounds);
         pos += main;
     }

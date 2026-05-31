@@ -59,6 +59,13 @@ cursor_x:     f32,
 cursor_y:     f32,
 paint_dirty:  bool,
 layout_dirty: bool,
+/// True only while `redraw` is executing. Used by the dirty notify callbacks
+/// to suppress `awt.postEmptyEvent()` when `markLayoutDirty` / `repaint` is
+/// triggered from inside the layout cascade itself (e.g. `setBounds` called
+/// during `doLayout`): we're already in the middle of a frame, so waking the
+/// event loop is wasted work. Real external triggers (timers, input handlers,
+/// background callbacks) run with `in_redraw == false` and still wake.
+in_redraw:    bool,
 /// Mouse-capture target. While non-null, `.move` and `.release` events
 /// bypass hit-testing and go straight to this component. Set when a
 /// widget calls `ev.requestCapture(&self.component)` from a `.press`
@@ -144,6 +151,7 @@ pub fn init(
         .cursor_y      = 0,
         .paint_dirty   = true,
         .layout_dirty  = true,
+        .in_redraw     = false,
         .mouse_capture    = null,
         .focus_owner      = null,
         .input_blocked    = false,
@@ -262,6 +270,13 @@ pub fn dispose(self: *Window) void {
 
 /// Render one frame and clear paint_dirty. Called by Application.run().
 pub fn redraw(self: *Window) void {
+    // While `in_redraw` is true, child `markLayoutDirty` / `repaint` skip the
+    // wake-up call: we're already in the middle of a frame, so queued empty
+    // events would just no-op. Real external triggers (timers, input handlers)
+    // run with this false and still wake.
+    self.in_redraw = true;
+    defer self.in_redraw = false;
+
     if (self.layout_dirty) {
         const win_size = self.awt_window.size();
         const win_w: f32 = @floatFromInt(win_size.width);
@@ -271,11 +286,15 @@ pub fn redraw(self: *Window) void {
         if (self.menu_bar) |bar| {
             bar.setBounds(.{ .x = 0, .y = 0, .width = win_w, .height = bar_h });
         }
-        self.container.setBounds(.{
+        // `Container.setBounds` no longer auto-runs `doLayout` (was a footgun
+        // for `LayoutManager` authors — see `Container.setBounds` comment).
+        // Drive the layout cascade explicitly here, the one legitimate place.
+        self.container.component.setBounds(.{
             .x = 0, .y = bar_h,
             .width = win_w,
             .height = @max(0, win_h - bar_h),
         });
+        self.container.doLayout();
         self.layout_dirty = false;
     }
 
@@ -369,14 +388,17 @@ pub fn requestFocusFor(self: *Window, c: ?*Component) void {
 fn notifyPaint(user_data: *anyopaque) void {
     const win: *Window = @ptrCast(@alignCast(user_data));
     win.paint_dirty = true;
-    awt.postEmptyEvent();
+    // Skip the wake-up if we're already inside `redraw` — the cascade is what
+    // triggered this and the loop will just no-op those queued events.
+    if (!win.in_redraw) awt.postEmptyEvent();
 }
 
 fn notifyLayout(user_data: *anyopaque) void {
     const win: *Window = @ptrCast(@alignCast(user_data));
     win.layout_dirty = true;
     win.paint_dirty = true;
-    awt.postEmptyEvent();
+    // See notifyPaint above: redraw-internal triggers don't need a wake-up.
+    if (!win.in_redraw) awt.postEmptyEvent();
 }
 
 // ── vtable impl ──────────────────────────────────────────────────────────

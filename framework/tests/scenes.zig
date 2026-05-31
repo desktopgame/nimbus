@@ -86,6 +86,7 @@ const Setup = struct {
             .width = @floatFromInt(self.ctx.width),
             .height = @floatFromInt(self.ctx.height),
         });
+        self.container.doLayout();
         for (self.container.children.items) |elem| {
             elem.component.paintAt(self.ctx.g);
         }

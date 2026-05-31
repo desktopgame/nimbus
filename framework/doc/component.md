@@ -1,5 +1,5 @@
 ---
-unsafe: true
+unsafe: false
 ---
 
 # component
@@ -161,9 +161,9 @@ plain な Component に対しては `min_size` / `max_size` の値をそのま�
 これにより、空 Panel やネストした Container を BoxLayout の子に置いたとき、内側の子から自動的にサイズが伝播する。
 利用者が `setMinSize` / `setMaxSize` で明示的に値をセットしていれば、Container の場合「min は明示値と計算値の大きい方」「max は明示値と計算値の小さい方」が採用される (両方の制約を同時に満たす)。
 
-計算量は subtree のサイズに比例 (キャッシュなし)。
-深い木 / 多数の widget の場合は呼び出しコストに注意。
-将来的にはレイアウトキャッシュ機能を追加予定 (機能要望)。
+計算量は実質 `O(N)` (N = subtree のノード数)。
+Container 側で `min_cache` / `max_cache` に memoize されており、 同じ layout サイクル内で複数回呼ばれてもキャッシュヒットで即座に返る (詳細は `container.md`、 `layout.md`「キャッシュ」参照)。
+キャッシュは `markLayoutDirty` が経路上の Container に対して `invalidateSizeCache` を呼ぶことで自動的に落ちる。 LayoutManager / 利用者から見るとキャッシュは透過。
 
 利用者が直接呼ぶ機会はほぼなく、layout 実装者向けのフック。
 
@@ -324,4 +324,3 @@ try label.component.setVTable(&my_vt);
 ## 機能要望
 * `PropertyChangeListener` 相当 — setter からの変更通知。Swing PCE と同等
 * Component 単位の `dirty` フラグ — 現状は Frame 単位で持つ（`{REPO_ROOT}/doc/layout-design.md` 参照）
-* `effectiveMinSize` / `effectiveMaxSize` のキャッシュ — 深い木では毎回 subtree 走査になる

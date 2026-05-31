@@ -82,10 +82,10 @@ fn collect(container: *const Container) Slots {
 }
 
 fn setChildBounds(child: *Component, bounds: Component.Rect) void {
-    // Always Component.setBounds, never Container.setBounds: the latter would
-    // eagerly re-layout the child, which Container.doLayout's trailing
-    // recursion then repeats (2^depth re-layouts). Container.doLayout owns the
-    // single recursion. See `framework/doc/optimize.md`.
+    // Container.doLayout owns the single recursion into children. We just set
+    // bounds here; either `Component.setBounds` or `Container.setBounds` is
+    // safe now (they are equivalent — both just write the rect). See
+    // `framework/doc/optimize.md`.
     child.setBounds(bounds);
 }
 

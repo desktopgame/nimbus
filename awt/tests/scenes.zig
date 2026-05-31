@@ -73,11 +73,12 @@ const FrameworkSetup = struct {
 
     fn paint(self: *FrameworkSetup) void {
         // Apply root bounds (window-like) and run layout, then paint via vtable.
-        self.container.setBounds(.{
+        self.container.component.setBounds(.{
             .x = 0, .y = 0,
             .width = @floatFromInt(self.ctx.width),
             .height = @floatFromInt(self.ctx.height),
         });
+        self.container.doLayout();
         // Paint children directly (skip the container's own paint translate).
         for (self.container.children.items) |elem| {
             elem.component.paintAt(self.ctx.g);

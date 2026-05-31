@@ -163,7 +163,14 @@ pub fn getMaxSize(self: *const Container) Component.Size {
 
 pub fn setBounds(self: *Container, bounds: Component.Rect) void {
     self.component.setBounds(bounds);
-    self.doLayout();
+    // doLayout is NOT called here. Triggering layout from inside `setBounds`
+    // creates a footgun: when a `LayoutManager` writes children's bounds via
+    // `Container.setBounds`, each call recurses into the child's own doLayout,
+    // and combined with the outer cascade you get 2^k layouts at depth k.
+    // Instead, `Window.redraw` calls `container.doLayout()` explicitly after
+    // setting the root's bounds, and `Container.doLayout` recurses into child
+    // containers. `Component.setBounds` is fine to use from a LayoutManager
+    // (and so is `Container.setBounds` now, since it's equivalent).
 }
 
 /// Run the layout manager on direct children, then recurse into any child

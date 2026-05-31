@@ -34,6 +34,7 @@ test "center only fills the entire container" {
     try BorderLayout.add(root, .center, &center.container.component);
 
     root.setBounds(.{ .x = 0, .y = 0, .width = 400, .height = 200 });
+    root.doLayout();
 
     // With no edge regions, the center takes the full container.
     try expectBounds(&center.container.component, 0, 0, 400, 200);
@@ -54,6 +55,7 @@ test "north + south + center: edges keep min size, center fills the rest" {
     try BorderLayout.add(root, .center, &center.container.component);
 
     root.setBounds(.{ .x = 0, .y = 0, .width = 300, .height = 200 });
+    root.doLayout();
 
     // north: full width, height = north.min.height = 24
     // south: full width, height = south.min.height = 32, y = H - sh
@@ -82,6 +84,7 @@ test "all 5 regions partition correctly" {
     try BorderLayout.add(root, .center, &center.container.component);
 
     root.setBounds(.{ .x = 0, .y = 0, .width = 400, .height = 300 });
+    root.doLayout();
 
     // nh=20, sh=30, ww=40, ew=60
     // mid_h = 300 - 20 - 30 = 250
@@ -116,6 +119,7 @@ test "edges with nested Container report size via effectiveMinSize" {
     try BorderLayout.add(root, .center, &center.container.component);
 
     root.setBounds(.{ .x = 0, .y = 0, .width = 300, .height = 100 });
+    root.doLayout();
 
     // north_row.effectiveMinSize.height = max(24, 24) = 24, so the north
     // strip should be 24 tall — *not* 0 (which is what `north.min_size.height`
