@@ -34,6 +34,8 @@ Button には 2 種類の通知系統がある。これは Swing の `JButton` �
 
 実装上は両方とも `ChangeListenerList` を内部で使うが、API として別エントリーポイント（`addChangeListener` vs `addActionListener`）を提供して区別する。
 
+TODO: なぜ、ActionEvent型やActionListener型が存在しない？
+
 ## armed と pressed の違い
 | | 意味 |
 |---|---|
