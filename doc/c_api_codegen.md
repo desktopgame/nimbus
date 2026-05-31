@@ -101,10 +101,11 @@ fn <CName> = <ZigType>.<method> ( [<recv> ,] <arg>* ) -> <ret> [!<fail>] [<own>]
   * `=self` — Zig 側 `self: T`（値渡し）。C 側 `const nmT* self`
     （opaque は値で渡せないのでポインタのまま渡し、シムが間接参照する）。
   * 省略時はレシーバなし（静的関数として `framework.<ZigType>.<method>` を呼ぶ）。
-* `<arg>`: `<name>:<type> [<own>]` 形式。`<type>` は `str` / `*<ZigType>`（ハンドル）/
-  スカラ（`f32`/`f64`/`i32`/`u32`/`bool`）/ 宣言済み値構造体 / 宣言済み enum。
-* `<ret>`: `void` / `*<ZigType>` / スカラ / 宣言済み値構造体 / 宣言済み enum /
-  `str`（借用 `[]const u8` → `nmStr`）/ `?str`（`?[]const u8` → `nmStr`、none は ptr=null）。
+* `<arg>`: `<name>:<type> [<own>]` 形式。`<type>` は `str` / `strs`（文字列配列）/
+  `*<ZigType>`（ハンドル）/ スカラ（`f32`/`f64`/`i32`/`u32`/`bool`）/ 宣言済み値構造体 /
+  `?<値構造体>`（optional、nullable const ポインタ）/ 宣言済み enum。
+* `<ret>`: `void` / `*<ZigType>` / スカラ / 宣言済み値構造体 / `?<値構造体>`（out 引数 + bool）/
+  宣言済み enum / `str`（借用 `[]const u8` → `nmStr`）/ `?str`（`?[]const u8` → `nmStr`、none は ptr=null）。
 * `<fail>`: 失敗の通知方法。省略可。
   * `!null` — 失敗時 NULL を返し `last_error` を設定する（`*T` 戻り向け）。
   * `!err`  — 失敗時 0 以外の int コードを返す（`void` 戻り向け、0 = 成功）。
@@ -144,6 +145,9 @@ vtable ディスパッチなので、Component を持つ任意の widget をこ�
 | 値構造体（引数） | `<CName>` | `<CName>`（extern） | シムがフィールドごとに native へ詰め替え |
 | 値構造体（戻り） | `<CName>` | `<CName>`（extern） | native からフィールドごとに詰め替え |
 | `str` / `?str`（戻り） | `nmStr {ptr,len}` | `nmStr`（extern） | 借用スライスを ptr+len で返す（コピーなし）。`?str` の none は ptr=null |
+| `strs`（引数） | `const char* const*` + `size_t _len` | `[*]const [*:0]const u8` + `usize` | シムが一時 `[][]const u8` を確保→呼出→解放（callee がコピー） |
+| `?<struct>`（引数） | `const <CName>*`（nullable） | `?*const <CName>` | null=none。present 時フィールド詰め替え |
+| `?<struct>`（戻り） | `bool fn(…, <CName>* out)` | out 引数 + `bool` | present で true + `out` 書込、none で false |
 | `void`（戻り、`!err`） | `int` | `c_int` | `catch` で `errorToCode`、成功時 `0` |
 | `void`（戻り、失敗なし） | `void` | `void` | そのまま呼ぶ |
 
@@ -378,6 +382,8 @@ preamble は 3 ファイルに分かれる: `preamble.h`（C ヘッダ先頭＝i
 * enum（`enum` 宣言、int ABI + comptime ドリフト検知、引数・戻り）。
 * 値構造体（`struct` 宣言、`extern` 生成 + フィールド詰め替え、引数・戻り）。
 * 文字列の**戻り** `str` / `?str`（借用 `nmStr {ptr,len}`、上記「文字列の戻り」）。
+* 文字列**配列**引数 `strs`（`const char* const*` + count、一時スライス変換）。
+* optional 値構造体 `?<struct>`（引数=nullable const ポインタ、戻り=out 引数 + bool）。
 * `cast`（アップキャスト）と `destroy`（汎用デストラクタ）。
 * 所有権タグ `@owned` / `@borrowed` / `@transfer`（→ IR `ownership`）。
 * コールバック / イベントハンドラ（`callback` 宣言、案 C の box + トランポリン、event は不透明 + 手書きアクセサ）。
@@ -395,10 +401,10 @@ preamble は 3 ファイルに分かれる: `preamble.h`（C ヘッダ先頭＝i
 * 値構造体の拡張: ネスト構造体・配列・enum フィールド、値戻り＋エラーの組み合わせ。
 * enum の拡張: 明示値・非連続値・フラグ（ビット或）。
 * 値（スカラ/enum/struct/str）戻り＋エラーの組み合わせ（out 引数かセンチネルか要決定。現状は失敗なしのみ）。
-* 文字列**配列**の引数（`comboBox(items: []const []const u8)` 等）。`const char* const*` + count か add-item 経由。
-* optional（`?*T` の nullable ポインタ、`?Size` 等の値 optional）。
-* `awt.Image` の値返し（`icon()`）/ Timer（`setTimeout` の callback + `!TimerId`）。
-* List `CellFactory`（bespoke アダプタ。後回し）。
+* optional ハンドル（`?*T`）— nullable ポインタで容易だが現状 live な利用メソッドが無く未生成。
+* `awt.Image` の値返し（`icon()` / `setIcon`）— GPU Texture を包む値型で、C から Image を得る手段
+  （巨大な lucide enum / device・allocator 要）も getIcon の値返し（alloc+none/error 曖昧）も bespoke。棚上げ。
+* Timer（`setTimeout` の callback + `!TimerId`）/ List `CellFactory` — bespoke。棚上げ。
 
 ## シンボル名の規約: 公開 ABI 名と awt-c 内部名を分ける
 かつて awt-c（`glfw_shim.c`）の C 関数が公開 ABI と同じ `nmGetBackendVersion` を名乗っており、

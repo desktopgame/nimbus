@@ -72,6 +72,7 @@ opaque Application
 # `extern struct`; shims convert field-by-field to/from the native Color).
 # Field names must match the native awt.Graphics.Color (else a compile error).
 struct nmColor { r:f32 g:f32 b:f32 a:f32 }
+struct nmSize  { width:f32 height:f32 }
 
 # Enum: crosses the ABI as an int. Member order must match the native enum;
 # a comptime check (against Component.Alignment) makes a mismatch a build error.
@@ -95,6 +96,10 @@ fn nmButtonGetColor = Button.getColor    (=self) -> nmColor
 fn nmButtonGetText       = Button.getText          (=self) -> str
 fn nmComboBoxGetSelected = ComboBox.getSelectedItem (=self) -> ?str
 
+# Optional value struct (?Size). Arg = nullable const ptr; return = out-param + bool.
+fn nmButtonSetIconSize = Button.setIconSize (&self, sz:?nmSize) -> void
+fn nmButtonGetIconSize = Button.getIconSize (=self) -> ?nmSize
+
 # Primitive (scalar) args / return: passed straight through, no conversion.
 # The Frame is owned by Application (freed on close / app deinit), so @borrowed.
 fn nmAppFrame          = Application.frame   (&self, title:str, w:u32, h:u32) -> *Frame !null @borrowed
@@ -102,6 +107,9 @@ fn nmComponentSetGrowX = Component.setGrowX  (&self, v:f32) -> void
 fn nmComponentGetGrowX = Component.getGrowX  (&self) -> f32
 fn nmComponentSetAlignX = Component.setAlignX (&self, a:nmAlignment) -> void
 fn nmComponentGetAlignX = Component.getAlignX (&self) -> nmAlignment
+
+# Factory taking a string array (strs -> const char* const* + count).
+fn nmAppComboBox       = Application.comboBox (&self, items:strs) -> *ComboBox !null @owned
 
 # Event handler: the cb box is registered via the typed addChangeListener.
 # remove uses the same box pointer to match-and-unregister (off = remove).

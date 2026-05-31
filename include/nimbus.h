@@ -28,6 +28,7 @@ typedef struct nmApplication nmApplication;
 
 /* ── value structs ── */
 typedef struct { float r; float g; float b; float a; } nmColor;
+typedef struct { float width; float height; } nmSize;
 
 /* ── enums ── */
 typedef enum { nmAlignment_start, nmAlignment_center, nmAlignment_end, nmAlignment_stretch } nmAlignment;
@@ -63,11 +64,14 @@ void nmButtonSetColor(nmButton* self, nmColor c);
 nmColor nmButtonGetColor(const nmButton* self);
 nmStr nmButtonGetText(const nmButton* self);
 nmStr nmComboBoxGetSelected(const nmComboBox* self);
+void nmButtonSetIconSize(nmButton* self, const nmSize* sz);
+bool nmButtonGetIconSize(const nmButton* self, nmSize* out);
 nmFrame* nmAppFrame(nmApplication* self, const char* title, uint32_t w, uint32_t h);
 void nmComponentSetGrowX(nmComponent* self, float v);
 float nmComponentGetGrowX(nmComponent* self);
 void nmComponentSetAlignX(nmComponent* self, nmAlignment a);
 nmAlignment nmComponentGetAlignX(nmComponent* self);
+nmComboBox* nmAppComboBox(nmApplication* self, const char* const* items, size_t items_len);
 int nmComboBoxOnChange(nmComboBox* self, nmChangeListener* cb);
 void nmComboBoxOffChange(nmComboBox* self, nmChangeListener* cb);
 

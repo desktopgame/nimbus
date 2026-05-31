@@ -8,7 +8,8 @@
     { "name": "Application", "c": "nmApplication", "extends": null }
   ],
   "structs": [
-    { "name": "nmColor", "fields": [{ "name": "r", "type": "f32" }, { "name": "g", "type": "f32" }, { "name": "b", "type": "f32" }, { "name": "a", "type": "f32" }] }
+    { "name": "nmColor", "fields": [{ "name": "r", "type": "f32" }, { "name": "g", "type": "f32" }, { "name": "b", "type": "f32" }, { "name": "a", "type": "f32" }] },
+    { "name": "nmSize", "fields": [{ "name": "width", "type": "f32" }, { "name": "height", "type": "f32" }] }
   ],
   "enums": [
     { "name": "nmAlignment", "members": [{ "name": "start", "value": 0 }, { "name": "center", "value": 1 }, { "name": "end", "value": 2 }, { "name": "stretch", "value": 3 }] }
@@ -106,6 +107,28 @@
       "fail": null
     },
     {
+      "c": "nmButtonSetIconSize",
+      "owner": "Button",
+      "method": "setIconSize",
+      "names": { "py": "set_icon_size", "js": "setIconSize" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "sz", "type": "struct", "struct": "nmSize", "optional": true }],
+      "ret": { "type": "void" },
+      "fail": null
+    },
+    {
+      "c": "nmButtonGetIconSize",
+      "owner": "Button",
+      "method": "getIconSize",
+      "names": { "py": "get_icon_size", "js": "getIconSize" },
+      "kind": "method",
+      "receiver": "value",
+      "params": [],
+      "ret": { "type": "struct", "struct": "nmSize", "optional": true, "out_param": true },
+      "fail": null
+    },
+    {
       "c": "nmAppFrame",
       "owner": "Application",
       "method": "frame",
@@ -159,6 +182,17 @@
       "params": [],
       "ret": { "type": "enum", "enum": "nmAlignment" },
       "fail": null
+    },
+    {
+      "c": "nmAppComboBox",
+      "owner": "Application",
+      "method": "comboBox",
+      "names": { "py": "combo_box", "js": "comboBox" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "items", "type": "str_array" }],
+      "ret": { "type": "handle", "handle": "ComboBox", "ownership": "owned" },
+      "fail": "null"
     },
     {
       "c": "nmComboBoxOnChange",

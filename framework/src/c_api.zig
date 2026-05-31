@@ -89,6 +89,8 @@ export fn nmAppDestroy(self: *framework.Application) void {
 
 const nmColor = extern struct { r: f32, g: f32, b: f32, a: f32, };
 
+const nmSize = extern struct { width: f32, height: f32, };
+
 comptime {
     std.debug.assert(@intFromEnum(framework.Component.Alignment.start) == 0);
     std.debug.assert(@intFromEnum(framework.Component.Alignment.center) == 1);
@@ -154,6 +156,19 @@ export fn nmComboBoxGetSelected(self: *framework.ComboBox) nmStr {
     return if (_s) |v| .{ .ptr = v.ptr, .len = v.len } else .{ .ptr = null, .len = 0 };
 }
 
+export fn nmButtonSetIconSize(self: *framework.Button, sz: ?*const nmSize) void {
+    self.setIconSize(if (sz) |_p| .{ .width = _p.width, .height = _p.height } else null);
+}
+
+export fn nmButtonGetIconSize(self: *framework.Button, out: *nmSize) bool {
+    const _v = self.getIconSize();
+    if (_v) |s| {
+        out.* = .{ .width = s.width, .height = s.height };
+        return true;
+    }
+    return false;
+}
+
 export fn nmAppFrame(self: *framework.Application, title: [*:0]const u8, w: u32, h: u32) ?*framework.Frame {
     return self.frame(std.mem.span(title), w, h) catch |e| {
         setLastError(e);
@@ -175,6 +190,16 @@ export fn nmComponentSetAlignX(self: *framework.Component, a: c_int) void {
 
 export fn nmComponentGetAlignX(self: *framework.Component) c_int {
     return @intFromEnum(self.getAlignX());
+}
+
+export fn nmAppComboBox(self: *framework.Application, items: [*]const [*:0]const u8, items_len: usize) ?*framework.ComboBox {
+    const _items = std.heap.c_allocator.alloc([]const u8, items_len) catch |e| { setLastError(e); return null; };
+    defer std.heap.c_allocator.free(_items);
+    for (_items, 0..) |*_it, _i| _it.* = std.mem.span(items[_i]);
+    return self.comboBox(_items) catch |e| {
+        setLastError(e);
+        return null;
+    };
 }
 
 export fn nmComboBoxOnChange(self: *framework.ComboBox, cb: *nmChangeListener) c_int {

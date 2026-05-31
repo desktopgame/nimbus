@@ -73,6 +73,11 @@ const ArgType = union(enum) {
     enum_ref: []const u8,
     /// Event-handler callback; payload is the declared ABI callback name (e.g. "nmChangeListener").
     callback: []const u8,
+    /// `strs` — array of UTF-8 strings (`[]const []const u8`). Expands to a C
+    /// `const char* const*` + `size_t` count; the shim builds a temp slice.
+    str_array,
+    /// `?<struct>` — optional value struct argument (nullable `const <CName>*`).
+    struct_opt: []const u8,
 };
 
 /// Function return shape.
@@ -90,6 +95,9 @@ const Ret = union(enum) {
     str,
     /// Optional borrowed slice (`?[]const u8`) -> `nmStr` (ptr = null when none).
     str_opt,
+    /// Optional value-struct return (`?<Struct>`). Emitted as `bool fn(..., <CName>* out)`:
+    /// returns true + writes `out` when present, false when none. Payload = struct name.
+    struct_opt: []const u8,
 };
 
 const Field = struct {
@@ -377,6 +385,8 @@ fn parseFn(
         f.ret = .str;
     } else if (std.mem.eql(u8, rt, "?str")) {
         f.ret = .str_opt;
+    } else if (rt.len > 1 and rt[0] == '?' and model.findStruct(rt[1..]) != null) {
+        f.ret = .{ .struct_opt = rt[1..] };
     } else if (rt.len > 1 and rt[0] == '*') {
         f.ret = .{ .ptr = rt[1..] };
     } else if (Scalar.parse(rt)) |sc| {
@@ -406,17 +416,26 @@ fn parseFn(
     }
 
     const ret_is_value = switch (f.ret) {
-        .struct_ref, .scalar, .enum_ref, .str, .str_opt => true,
+        .struct_ref, .scalar, .enum_ref, .str, .str_opt, .struct_opt => true,
         else => false,
     };
     if (ret_is_value and f.fail != .none)
         return fail(line_no, "value (struct/scalar/enum/str) return combined with !fail is not supported yet");
+
+    // `strs` allocates a temp slice in the shim, so the function must have a
+    // failure channel to report OOM.
+    for (f.args.items) |a| {
+        if (a.ty == .str_array and f.fail == .none)
+            return fail(line_no, "string-array (strs) arg requires !null or !err");
+    }
 
     try model.funcs.append(gpa, f);
 }
 
 fn parseArgType(model: *const Model, s: []const u8) ?ArgType {
     if (std.mem.eql(u8, s, "str")) return .str;
+    if (std.mem.eql(u8, s, "strs")) return .str_array;
+    if (s.len > 1 and s[0] == '?' and model.findStruct(s[1..]) != null) return .{ .struct_opt = s[1..] };
     if (s.len > 1 and s[0] == '*') return .{ .handle = s[1..] };
     if (Scalar.parse(s)) |sc| return .{ .scalar = sc };
     if (model.findCallback(s)) return .{ .callback = s };
@@ -593,7 +612,7 @@ fn emitHeader(
 }
 
 fn emitHeaderProto(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), f: *const Func) !void {
-    // return type
+    // return type (optional value struct -> bool + out-param, see below)
     switch (f.ret) {
         .void => try buf.appendSlice(gpa, if (f.fail == .err) "int" else "void"),
         .ptr => |zt| try print(gpa, buf, "nm{s}*", .{zt}),
@@ -601,6 +620,7 @@ fn emitHeaderProto(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), f: *const Fu
         .scalar => |sc| try buf.appendSlice(gpa, sc.cName()),
         .enum_ref => |en| try buf.appendSlice(gpa, en),
         .str, .str_opt => try buf.appendSlice(gpa, "nmStr"),
+        .struct_opt => try buf.appendSlice(gpa, "bool"),
     }
     try print(gpa, buf, " {s}(", .{f.cname});
 
@@ -619,7 +639,15 @@ fn emitHeaderProto(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), f: *const Fu
             .scalar => |sc| try print(gpa, buf, "{s} {s}", .{ sc.cName(), a.name }),
             .enum_ref => |en| try print(gpa, buf, "{s} {s}", .{ en, a.name }),
             .callback => |cn| try print(gpa, buf, "{s}* {s}", .{ cn, a.name }),
+            .struct_opt => |sn| try print(gpa, buf, "const {s}* {s}", .{ sn, a.name }),
+            .str_array => try print(gpa, buf, "const char* const* {s}, size_t {s}_len", .{ a.name, a.name }),
         }
+        wrote = true;
+    }
+    // Optional value-struct return: trailing out-param, function returns bool.
+    if (f.ret == .struct_opt) {
+        if (wrote) try buf.appendSlice(gpa, ", ");
+        try print(gpa, buf, "{s}* out", .{f.ret.struct_opt});
         wrote = true;
     }
     if (!wrote) try buf.appendSlice(gpa, "void");
@@ -728,7 +756,15 @@ fn emitZigShim(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), model: *const Mo
             // Enums cross as int; convert at the call site.
             .enum_ref => try print(gpa, buf, "{s}: c_int", .{a.name}),
             .callback => |cn| try print(gpa, buf, "{s}: *{s}", .{ a.name, cn }),
+            .struct_opt => |sn| try print(gpa, buf, "{s}: ?*const {s}", .{ a.name, sn }),
+            .str_array => try print(gpa, buf, "{s}: [*]const [*:0]const u8, {s}_len: usize", .{ a.name, a.name }),
         }
+        wrote = true;
+    }
+    // Optional value-struct return: trailing out-param, function returns bool.
+    if (f.ret == .struct_opt) {
+        if (wrote) try buf.appendSlice(gpa, ", ");
+        try print(gpa, buf, "out: *{s}", .{f.ret.struct_opt});
         wrote = true;
     }
     try buf.appendSlice(gpa, ") ");
@@ -747,8 +783,20 @@ fn emitZigShim(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), model: *const Mo
         .scalar => |sc| try buf.appendSlice(gpa, sc.zigName()),
         .enum_ref => try buf.appendSlice(gpa, "c_int"),
         .str, .str_opt => try buf.appendSlice(gpa, "nmStr"),
+        .struct_opt => try buf.appendSlice(gpa, "bool"),
     }
     try buf.appendSlice(gpa, " {\n");
+
+    // Failure return expression for prelude allocations (str_array).
+    const fail_expr: []const u8 = switch (f.fail) {
+        .null => "null",
+        .err => "errorToCode(e)",
+        .none => "", // not reached: str_array requires a fail mode
+    };
+
+    // Prelude: per-arg setup emitted before the call (str_array temp slice).
+    var prelude: std.ArrayList(u8) = .empty;
+    defer prelude.deinit(gpa);
 
     // call expression. A struct arg is converted from the ABI extern struct to
     // the native struct via an anonymous literal (Zig coerces it to the method's
@@ -771,9 +819,24 @@ fn emitZigShim(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), model: *const Mo
             // 1 callback arg expands to (comptime T=box, comptime f=trampoline, ud=box)
             // fed to the typed addXxxListener.
             .callback => |cn| try print(gpa, &call, "{s}, nm_trampoline_{s}, {s}", .{ cn, cn, a.name }),
+            .struct_opt => |sn| {
+                // ?*const nmX -> ?NativeStruct (field-by-field when present).
+                try print(gpa, &call, "if ({s}) |_p| ", .{a.name});
+                try appendStructLiteral(gpa, &call, "_p", model.findStruct(sn).?);
+                try call.appendSlice(gpa, " else null");
+            },
+            .str_array => {
+                // Build a temp []const []const u8; freed after the call (callee copies).
+                try print(gpa, &prelude,
+                    "    const _{s} = std.heap.c_allocator.alloc([]const u8, {s}_len) catch |e| {{ setLastError(e); return {s}; }};\n    defer std.heap.c_allocator.free(_{s});\n    for (_{s}, 0..) |*_it, _i| _it.* = std.mem.span({s}[_i]);\n",
+                    .{ a.name, a.name, fail_expr, a.name, a.name, a.name });
+                try print(gpa, &call, "_{s}", .{a.name});
+            },
         }
     }
     try call.appendSlice(gpa, ")");
+
+    try buf.appendSlice(gpa, prelude.items);
 
     // body
     switch (f.fail) {
@@ -798,6 +861,12 @@ fn emitZigShim(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), model: *const Mo
                 // source mutates (binding copies immediately).
                 .str => try print(gpa, buf, "    const _s = {s};\n    return .{{ .ptr = _s.ptr, .len = _s.len }};\n", .{call.items}),
                 .str_opt => try print(gpa, buf, "    const _s = {s};\n    return if (_s) |v| .{{ .ptr = v.ptr, .len = v.len }} else .{{ .ptr = null, .len = 0 }};\n", .{call.items}),
+                // Optional value struct -> out-param + bool (true when present).
+                .struct_opt => |sn| {
+                    try print(gpa, buf, "    const _v = {s};\n    if (_v) |s| {{\n        out.* = ", .{call.items});
+                    try appendStructLiteral(gpa, buf, "s", model.findStruct(sn).?);
+                    try buf.appendSlice(gpa, ";\n        return true;\n    }\n    return false;\n");
+                },
             }
         },
     }
@@ -942,6 +1011,8 @@ fn emitJsonFunc(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), f: *const Func)
             .scalar => |sc| try print(gpa, buf, "\"type\": \"{s}\"", .{sc.zigName()}),
             .enum_ref => |en| try print(gpa, buf, "\"type\": \"enum\", \"enum\": \"{s}\"", .{en}),
             .callback => |cn| try print(gpa, buf, "\"type\": \"callback\", \"callback\": \"{s}\", \"role\": \"event_handler\"", .{cn}),
+            .struct_opt => |sn| try print(gpa, buf, "\"type\": \"struct\", \"struct\": \"{s}\", \"optional\": true", .{sn}),
+            .str_array => try buf.appendSlice(gpa, "\"type\": \"str_array\""),
         }
         if (ownStr(a.ownership)) |o| try print(gpa, buf, ", \"ownership\": \"{s}\"", .{o});
         try buf.appendSlice(gpa, " }");
@@ -961,6 +1032,8 @@ fn emitJsonFunc(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), f: *const Func)
         .enum_ref => |en| try print(gpa, buf, "      \"ret\": {{ \"type\": \"enum\", \"enum\": \"{s}\" }},\n", .{en}),
         .str => try buf.appendSlice(gpa, "      \"ret\": { \"type\": \"str\", \"ownership\": \"borrowed\" },\n"),
         .str_opt => try buf.appendSlice(gpa, "      \"ret\": { \"type\": \"str\", \"optional\": true, \"ownership\": \"borrowed\" },\n"),
+        // optional value struct: C is `bool fn(..., <CName>* out)` (out-param).
+        .struct_opt => |sn| try print(gpa, buf, "      \"ret\": {{ \"type\": \"struct\", \"struct\": \"{s}\", \"optional\": true, \"out_param\": true }},\n", .{sn}),
     }
 
     // fail
