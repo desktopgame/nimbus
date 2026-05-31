@@ -20,6 +20,16 @@
 ボックスなどにサイズ分配されるとき、どれだけ余白を食うか。
 余白を食った結果 `MaximumSize` を超えることはない。
 
+### SizeQuery（オプショナル）
+「ある幅を与えられたときの最小高さ」を答えるための関数を持つ optional 構造体。
+折り返しテキスト（`TextArea` wrap モード、将来の wrap `Label` 等）のように **高さが幅の関数になる** widget だけがセットする。
+親レイアウトは widget の `size_query` が non-null なら `minHeightForWidth(component, w)` を呼んで「その幅での最小高さ」を pure query で取得できる。`size_query` が null なら従来通り `MinimumSize.height` だけを見ればよい。
+
+呼び出し規約として **pure query**：同じ widget 状態と同じ `w` に対して同じ値を返し、widget の観測可能な状態（`MinimumSize` 等）を書き換えない。内部キャッシュの更新は許される。
+
+幅依存高さの古典問題（Swing の HTML JLabel が抱える 2 パスレイアウト問題、Qt の `heightForWidth` が解いている問題、GTK の `for_size` 引数が解いている問題）を、 親レイアウトが必要に応じて opt-in で問い合わせる形で解消する。
+詳細は `framework/doc/component.md`「SizeQuery」、 利用例は `framework/doc/scrollpane.md`「ビューの height-for-width クエリ」を参照。
+
 ## レイアウトヒント
 コンテナーは子コンポーネントの一覧ではなく、レイアウトヒントの一覧を保持する。
 以下は実装イメージ。（疑似言語）
@@ -133,6 +143,10 @@ pub fn doLayout(self: *Container) void {
 3. 余白を `GrowX` / `GrowY` の重みに従って一括で配分する
 4. 配分の結果が MaximumSize を超える子はそこでクランプする
 5. クランプの結果生じた余りは隙間として残す（再分配しない）
+
+幅依存高さの子（`SizeQuery` を持つ widget）を縦に並べたい場合、 ステップ 1 の「子の min を集める」段階で `child.size_query.minHeightForWidth(child, allocated_width)` を聞いて高さを取得する形に拡張できる。
+ただし `allocated_width` は分配の結果決まるので、 横方向と縦方向の確定順序を整理する必要がある。
+組み込みの `BoxLayout` / `BorderLayout` は v1 ではこの拡張を入れておらず（= 折り返し子は `ScrollPane` 経由でしか height-for-width が機能しない）、 将来必要になった時点で追加する余地として残してある。
 
 「クランプ後の再分配」は CSS flexbox 風に実装することもできるが、初版では採用しない。
 理由は実装の単純さと挙動の予測しやすさ。
