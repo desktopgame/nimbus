@@ -38,56 +38,69 @@ typedef struct { void* userdata; nmCell (*create)(void* userdata); } nmCellFacto
 ---
 
 ## #6a awt.Image（値返し / setIcon）
+所有モデルは確定。残る未決は lucide 引数の出し方 1 点のみ（→「決めること」）。
+
 ### 何
 `awt.Image = { texture: Texture, width: i32, height: i32 }`（GPU テクスチャを包む値型、awt/src/Image.zig）。
 関連 API: `Button.getIcon() ?Image` / `setIcon(?Image)`、`Image.fromMemory(allocator, device, bytes) !Image`、
 `Image.deinit()`（texture を解放）、`Application.icon(id: lucide.Icon) !Image`（lucide/icons.zig）。
 
-### 現状の所有モデル（重要・ここを誤解しやすい）
-**Image の texture を所有しているのは `Image.fromMemory(...)` を呼んだコードだけ**。`deinit()` を一度呼ぶ
-責任もそこにある。widget は借用しているだけで所有しない:
-- `Button.icon` は `?awt.Image` を**値で保持**するだけ（Button.zig:28）。
-- `setIcon(img)` は `self.icon = img;` で**構造体を値コピー**（= texture handle の借用コピー）。
-- `getIcon()` は `return self.icon;` で**借用コピーを値返し**。
-- **`Button.destroy` は icon を一切 deinit しない**（Button.zig:291–300 は text / model / button 本体のみ解放）。
+### 所有モデル（確定）
+Image の入口は 3 つ、所有は **owned 一系統（loader 産のみ）/ あとは全部借用** にきれいに割れる。
 
-したがってライフタイム危険は「**所有者(fromMemory 呼び出し元)が先に free → 借用している widget が
-use-after-free**」の向き。widget が死んで texture が消えるのではない。所有者は常に一点（loader 産の
-Image 1 個）で、それを destroy するまで texture が生きる、という単純な構造。
+| 入口 | texture の所有者 | 解放するのは | C ハンドル | nmImageDestroy |
+|---|---|---|---|---|
+| `Image.fromMemory` (loader) | 呼び出し元 owned | 呼び出し元が一度 | heap box（1 alloc） | **する** |
+| `Application.icon(id)` | App の `icon_cache` | App.deinit のみ | 借用 = cache スロットへの参照 | しない |
+| `Button.getIcon()` | 元の owner（loader or App icon） | その owner | 借用 = `&button.icon.?` | しない |
+
+確認根拠:
+- `Button.icon: ?awt.Image` は値保持だけ（Button.zig:28）。`setIcon` は `self.icon = img;` の値コピー、
+  `getIcon` は `return self.icon;` の値コピー。**`Button.destroy` は icon を deinit しない**（Button.zig:291–300）。
+- `Application.icon` はコメントに `The returned Image is borrowed; do not call deinit on it.`（Application.zig:642）。
+  `icon_cache: [lucide.Icon.count]?awt.Image` を遅延デコードしてキャッシュし借用を返す。解放は App.deinit のみ。
+  App はルートで最後まで生きるので**この借用は実質ダングリングしない**＝最も安全な借用クラス。
+
+ライフタイム危険は「**owner が先に free → 借用している widget / getIcon 戻りが use-after-free**」の向き
+（widget が死んで texture が消えるのではない）。owner は常に一点なので構造は単純。
 
 ### なぜ bespoke
 - 値型だが内部に GPU `Texture`（バックエンドハンドル）を持つ。nmColor のような純データ値構造体には
   できない（texture は C にとって意味のある値ではなく、コピーは外部所有の GPU 実体を指す借用になる）。
-  opaque ハンドル化するには**箱詰め（heap alloc）**が要る。
 - **C から Image を得る手段が無い**：`icon(id)` の引数 `lucide.Icon` は数百メンバの巨大 enum（公開非現実的）、
   `fromMemory` は device/allocator が要る。→ setIcon に渡す Image を C 側で用意できない＝**生成口を手書き必須**。
-- `getIcon() ?Image` は値返しなので、借用を返すだけでも **alloc-on-return**（箱を確保 → 失敗時に none と
-  error が曖昧）。または借用を `&self.icon` で直接返せば alloc 不要だが、ライフタイムが widget に従属する。
 
-### 候補アプローチ
-- (A) **opaque ハンドル + 箱詰め**。所有は一系統（loader 産＝owned のみ）に寄せるのが素直:
-  - **C 用の生成口を手書き**：`nmImage* nmImageLoadPng(const char* path)` など（owned → `nmImageDestroy` で
-    `Image.deinit`）。device/allocator は内部の Application から取る。
-  - `setIcon(?Image)`：C は `nmImage*`、シムは deref して**値コピーを Button に渡す**（所有は移さない＝今の Zig と同じ借用）。
-  - `getIcon() ?Image`：同じ texture の借用を返す。box を alloc して返す（失敗は null + last_error）か、
-    `&self.icon` 相当で alloc-free にするか（→「決めること」）。
-  - `nmImageDestroy` は **loader 産の owned Image にのみ呼ぶ**。setIcon/getIcon の借用には呼ばない。
-- (B) 値構造体で texture を opaque フィールド露出 → 内部漏れ・脆く、不採用寄り。
+### アプローチ（確定）：opaque ハンドル + 借用は alloc-free
+所有を loader 産 owned 一系統に寄せ、借用は箱を作らずフィールド参照で返す。
+
+- **生成口は手書き**：`nmImage* nmImageLoadPng(const char* path)` 等（owned → `nmImageDestroy` で `Image.deinit`）。
+  device/allocator は内部の Application から取る。**loader だけが alloc（heap box）を払う。**
+- `setIcon(?Image)`：C は `nmImage*`、シムは deref して**値コピーを Button に渡す**（所有は移さない＝今の Zig と同じ借用）。
+- `getIcon() ?Image`：**(b) alloc-free に確定**。`&button.icon.?` 相当でフィールドのアドレスを返す（box を作らない）。
+  寿命は widget 従属。none は null。
+- `Application.icon(id)`：**借用に確定**。`&self.icon_cache[idx].?`（cache は App 上の固定長配列でアドレス安定）を返す。
+  初回デコードで `!Image` なので失敗 = NULL + last_error。`nmImageDestroy` は呼ばない。
+- `nmImageDestroy` は **loader 産の owned ハンドルにのみ呼ぶ**。借用 2 つ（getIcon / Application.icon）は
+  裸のフィールド参照で box を持たず、destroy しない。
+
+不採用: 値構造体で texture を opaque フィールド露出（内部漏れ・脆い）。
 
 ### バインディング側の keep-alive（free/no-free とは別軸）
-所有が loader 産一点なので、binding は「**widget が借用先の Image を生かし続ける**」方向に pin する:
+binding は「**widget が借用先 Image を生かし続ける**」方向に pin する:
 ```python
-btn.set_icon(img)   # 生成器が裏で btn._icon_ref = img を仕込む
-                    # img が GC されても Button が参照を持つので texture が残る
+img = nm.Image.load_png("a.png")  # owned
+btn.set_icon(img)                 # 生成器が btn._icon_ref = img を仕込む
+del img                           # 変数が消えても Button が参照保持 → texture 生存
 ```
-getIcon が返す借用ラッパーも同じ owner(img) へ keep-alive。`ownership` タグ（owned/borrowed）が
-double-free を防ぎ、この keep-alive が use-after-free を防ぐ。2 軸の役割が違う点に注意。
+副作用として **`btn.get_icon()` は新規ラッパーを作らず、キャッシュ済みの同じ Python オブジェクト
+(`btn._icon_ref`) を返せる** → alloc-on-return も寿命問題も消える（icon が binding 経由で set された場合）。
+`Application.icon` の借用は App を pin すればよいが、App はルートで全てより長生きするので keep-alive は実質コスト 0。
 
-### 決めること
-- C から Image を作る入口（ファイルパス loader / バイト列 loader、device は内部の Application から取る？）。
-- `getIcon` の借用戻りを **box-alloc で返すか alloc-free（フィールド参照）で返すか**（後者は widget 従属の寿命）。
-- binding の keep-alive 規約（setIcon 時に widget → Image を pin、getIcon 戻りも owner へ pin）をどう IR/生成器に持たせるか。
-- lucide ビルトインアイコンの公開方法（巨大 enum を出さず、文字列キーか id 整数の薄い API にする等）。
+`ownership` タグ（owned/borrowed）が double-free を防ぎ、この keep-alive が use-after-free を防ぐ。2 軸の役割が違う。
+
+### 決めること（残り 1 点）
+- **lucide ビルトインアイコン引数の出し方**。`lucide.Icon` は数百メンバの巨大 enum で、そのまま C/Python に
+  出すのは非現実的。候補: 文字列キー / 整数 id の薄い API / よく使う一部だけ curate。ここだけ未決。
 
 ---
 
