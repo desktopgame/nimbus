@@ -163,18 +163,6 @@
       "fail": null
     },
     {
-      "c": "nmListEdit",
-      "impl": "manual",
-      "owner": "List",
-      "method": "edit",
-      "names": { "py": "edit", "js": "edit" },
-      "kind": "method",
-      "receiver": "ptr",
-      "params": [{ "name": "idx", "type": "usize" }],
-      "ret": { "type": "void" },
-      "fail": null
-    },
-    {
       "c": "nmListModelAdd",
       "impl": "manual",
       "owner": "ListModel",

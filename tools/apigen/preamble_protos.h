@@ -102,8 +102,7 @@ nmListModel* nmListGetModel(nmList* self);
 /* Selection: -1 = none. setSelected with idx < 0 clears. */
 int64_t nmListGetSelected(nmList* self);
 void nmListSetSelected(nmList* self, int64_t idx);
-/* Begin editing a row (no-op if the cell is read-only / out of range). */
-void nmListEdit(nmList* self, size_t idx);
+/* nmListEdit (begin editing a row) is generated — see nimbus.api. */
 
 /* ListModel: items are borrowed void* (you own the backing memory; it must
  * outlive the List). add returns nonzero on failure (0 = ok). */

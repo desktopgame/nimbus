@@ -82,7 +82,7 @@ typedef struct nm<ZigType> nm<ZigType>;
 struct <CName> { <field>:<scalar> ... }
 ```
 レイアウトを ABI に公開する値型を宣言する。`<scalar>` は `f32` / `f64` / `i32` /
-`u32` / `bool`。引数（`<name>:<CName>`）や戻り（`-> <CName>`）に使える。
+`u32` / `usize` / `bool`。引数（`<name>:<CName>`）や戻り（`-> <CName>`）に使える。
 例: `struct nmColor { r:f32 g:f32 b:f32 a:f32 }`。詳細は後述「値構造体」。
 
 ### enum 宣言
@@ -106,7 +106,7 @@ fn <CName> = <ZigType>.<method> ( [<recv> ,] <arg>* ) -> <ret> [!<fail>] [<own>]
     （opaque は値で渡せないのでポインタのまま渡し、シムが間接参照する）。
   * 省略時はレシーバなし（静的関数として `framework.<ZigType>.<method>` を呼ぶ）。
 * `<arg>`: `<name>:<type> [<own>]` 形式。`<type>` は `str` / `strs`（文字列配列）/
-  `*<ZigType>`（ハンドル）/ スカラ（`f32`/`f64`/`i32`/`u32`/`bool`）/ 宣言済み値構造体 /
+  `*<ZigType>`（ハンドル）/ スカラ（`f32`/`f64`/`i32`/`u32`/`usize`/`bool`）/ 宣言済み値構造体 /
   `?<値構造体>`（optional、nullable const ポインタ）/ 宣言済み enum。
 * `<ret>`: `void` / `*<ZigType>` / スカラ / 宣言済み値構造体 / `?<値構造体>`（out 引数 + bool）/
   宣言済み enum / `str`（借用 `[]const u8` → `nmStr`）/ `?str`（`?[]const u8` → `nmStr`、none は ptr=null）。
@@ -144,7 +144,7 @@ vtable ディスパッチなので、Component を持つ任意の widget をこ�
 | `str`（引数） | `const char*` | `[*:0]const u8` | シムが `std.mem.span` で `[]const u8` に変換 |
 | `*T`（引数） | `nmT*` | `*framework.T` | ハンドルをそのまま渡す |
 | `*T`（戻り、`!null`） | `nmT*` | `?*framework.T` | `catch` で `null` |
-| スカラ（引数・戻り） | `int32_t`/`float`/… | `i32`/`f32`/… | そのまま素通し（変換なし） |
+| スカラ（引数・戻り） | `int32_t`/`float`/`size_t`/… | `i32`/`f32`/`usize`/… | そのまま素通し（変換なし）。`usize`=`size_t` |
 | enum（引数・戻り） | `<CName>`（C enum） | `c_int` | `@enumFromInt` / `@intFromEnum` で変換 |
 | 値構造体（引数） | `<CName>` | `<CName>`（extern） | シムがフィールドごとに native へ詰め替え |
 | 値構造体（戻り） | `<CName>` | `<CName>`（extern） | native からフィールドごとに詰め替え |
@@ -177,7 +177,7 @@ native 型自体を `extern struct` 化する案（変換ゼロ）は不採用�
 `extern` の制約（デフォルト値・タグ無し enum フィールド等）と「公開する型は extern」という縛りが
 native 設計に染み出すため。値型は小さく、詰め替えのコピーコストは実質無視できる。
 
-> 制約: 現状フィールドはスカラ（`f32`/`f64`/`i32`/`u32`/`bool`）のみ。ネストした構造体・
+> 制約: 現状フィールドはスカラ（`f32`/`f64`/`i32`/`u32`/`usize`/`bool`）のみ。ネストした構造体・
 > 配列・enum フィールドは未対応。値構造体の戻りと `!fail` の組み合わせも未対応（getter は
 > 失敗しない前提）。
 
@@ -528,7 +528,8 @@ preamble は 4 ファイルに分かれる: `preamble.h`（C ヘッダ先頭＝i
 * opaque 宣言・継承（`: <Parent>` → IR `extends`）。
 * `&self` / `=self` / レシーバなしの関数、`str` 引数、ハンドル引数 `*T`、
   `*T`（`!null`）/ `void`（`!err`）戻り。
-* スカラ（`f32`/`f64`/`i32`/`u32`/`bool`）の引数・戻り（素通し）。
+* スカラ（`f32`/`f64`/`i32`/`u32`/`usize`/`bool`）の引数・戻り（素通し）。`usize` は C `size_t`
+  （index / count / size 系。`ComboBox` の index API や `List.edit` で使用）。
 * enum（`enum` 宣言、int ABI + comptime ドリフト検知、引数・戻り）。
 * 値構造体（`struct` 宣言、`extern` 生成 + フィールド詰め替え、引数・戻り）。
 * 文字列の**戻り** `str` / `?str`（借用 `nmStr {ptr,len}`、上記「文字列の戻り」）。

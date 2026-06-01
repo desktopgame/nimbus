@@ -177,8 +177,11 @@ nmImage* nmAppIconNamed(nmApplication* self, const char* name); // それ以外�
 - コールバックの event に追加 typed 引数を持つ署名（今の nimbus のリスナーは event 1 個のみ）。
 
 方針（2026-06-02 確認）: これらは **live な利用者が無い** ので先回り実装しない（投機的・検証不能）。
-各項目は「それを使う公開済みメソッドが出た時点」で concrete に実装する（point-of-need）。例外は
-**usize スカラ**（下の調査参照）— 実需が多数あるので、最初の index 系メソッド公開時に足す価値が明確。
+各項目は「それを使う公開済みメソッドが出た時点」で concrete に実装する（point-of-need）。
+
+**usize スカラは実装済み（2026-06-02）**: `Scalar` に `usize`（→ C `size_t`）追加。実需があったので
+例外的に先行実装し、実利用者で検証 — `List.edit` を手書き `nmListEdit` から**生成に移行**、`ComboBox` の
+index API（`getSelectedIndex`/`setSelectedIndex`/`getItemCount` = `size_t`、`getItem(size_t)->?str`）を公開。
 
 ---
 
@@ -188,8 +191,8 @@ nmImage* nmAppIconNamed(nmApplication* self, const char* name); // それ以外�
 A = 今すぐ生成可、B = 小拡張で生成可、C = bespoke 手書き。
 
 ### 概数
-- **A（追記ゼロで生成可）≈ 65〜70%**
-- **B（小拡張で生成可）≈ 15%**
+- **A（追記ゼロで生成可）≈ 70〜75%**（usize 実装後。index/count/size 系が A に昇格）
+- **B（小拡張で生成可）≈ 10%**
 - **C（手書き必須）≈ 15〜20%**
 
 > 補正: 初回調査はリスナー登録（`addXxxListener`/`removeXxxListener`）と `?Size`/`?str` 戻りを手書き側に
@@ -208,12 +211,12 @@ A = 今すぐ生成可、B = 小拡張で生成可、C = bespoke 手書き。
 ### B（小拡張で生成可）— ROI 順
 | 拡張 | 影響 | 備考 |
 |---|---|---|
-| **usize / size_t スカラ追加** | 最多（getItemCount / getSize / count / index 引数） | **実需多数 → 投機でない。最優先候補** |
-| optional スカラ `?usize` / `?f64` | 数件（`List.getEditing` / `earliestDueIn`） | |
-| 値 + エラー戻り `!T`（T が値） | 数件 | #6b TimerId と共通機構 |
-| Panel `Border` 等の value struct | 数件 | フィールドが f32+Color なら平坦化で A |
+| ~~usize / size_t スカラ追加~~ | ~~最多~~ | **✅ 実装済み（2026-06-02）。`Scalar` に usize 追加・`ComboBox` index API + `List.edit` で実証** |
+| optional スカラ `?usize` / `?f64` | 数件（`List.getEditing` / `earliestDueIn`） | 残 |
+| 値 + エラー戻り `!T`（T が値） | 数件 | #6b TimerId と共通機構。残 |
+| Panel `Border` 等の value struct | 数件 | フィールドが f32+Color なら平坦化で A。残 |
 
-usize を足すと **~80%+ が A** になる見込み。
+usize 実装により index/count/size 系が A に昇格済み（残る B は optional スカラ・値+エラー等）。
 
 ### C（手書き必須）— 性質が判明済み・パターン確立済み
 - bespoke プロトコル（関数ポインタ構造体）: List `CellFactory`/`Cell`（実装済み）、DnD transfer、overlay/popup 配置
@@ -224,4 +227,4 @@ usize を足すと **~80%+ が A** になる見込み。
 ### 次の一手の候補
 1. **純 A のウィジェット一括公開**（Label/CheckBox/RadioButton/Slider/Panel/TextField/Window/Menu 系/各 Model/
    残り Application ファクトリ）を nimbus.api に追記 — 手書きゼロで実用カバレッジが一気に上がる。
-2. **usize スカラ追加** — index 系を公開する最初のタイミングで（実需あり）。
+2. ~~usize スカラ追加~~ — ✅ 実装済み（2026-06-02）。

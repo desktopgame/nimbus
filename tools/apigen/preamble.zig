@@ -296,9 +296,7 @@ export fn nmListSetSelected(self: *framework.List, idx: i64) void {
     self.setSelected(if (idx < 0) null else @intCast(idx));
 }
 
-export fn nmListEdit(self: *framework.List, idx: usize) void {
-    self.edit(idx);
-}
+// nmListEdit is generated (List.edit takes a plain usize — see nimbus.api).
 
 export fn nmListModelAdd(self: *framework.List.ListModel, item: *anyopaque) c_int {
     self.add(item) catch |e| {

@@ -6,7 +6,8 @@
 #
 #   struct <CName> { <field>:<scalar> ... }
 #       A by-value record whose layout is exposed across the ABI (generated as a
-#       C struct + an `extern struct`). <scalar> in { f32, f64, i32, u32, bool }.
+#       C struct + an `extern struct`). <scalar> in { f32, f64, i32, u32, usize, bool }
+#       (usize -> C size_t).
 #       Used as an arg (<name>:<CName>) or return (-> <CName>); shims convert
 #       field-by-field to/from the native (plain) Zig struct of the same shape.
 #
@@ -128,10 +129,17 @@ fn nmAppComboBox       = Application.comboBox (&self, items:strs) -> *ComboBox !
 fn nmComboBoxOnChange  = ComboBox.addChangeListener    (&self, cb:nmChangeListener) -> void !err
 fn nmComboBoxOffChange = ComboBox.removeChangeListener (&self, cb:nmChangeListener) -> void
 
+# ComboBox index API (the first usize consumer: size_t args / returns).
+fn nmComboBoxGetSelectedIndex = ComboBox.getSelectedIndex (=self) -> usize
+fn nmComboBoxSetSelectedIndex = ComboBox.setSelectedIndex (&self, idx:usize) -> void
+fn nmComboBoxItemCount        = ComboBox.getItemCount      (=self) -> usize
+fn nmComboBoxGetItem          = ComboBox.getItem           (=self, idx:usize) -> ?str
+
 # List: the parts that fit the generator (scalar row height, change listener).
 # The factory / model / selection / edit API is hand-written (preamble.zig).
 fn nmListGetRowHeight = List.getRowHeight (=self) -> f32
 fn nmListSetRowHeight = List.setRowHeight (&self, h:f32) -> void
+fn nmListEdit         = List.edit         (&self, idx:usize) -> void
 fn nmListOnChange     = List.addChangeListener    (&self, cb:nmChangeListener) -> void !err
 fn nmListOffChange    = List.removeChangeListener (&self, cb:nmChangeListener) -> void
 

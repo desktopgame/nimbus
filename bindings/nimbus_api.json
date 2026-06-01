@@ -220,6 +220,50 @@
       "fail": null
     },
     {
+      "c": "nmComboBoxGetSelectedIndex",
+      "owner": "ComboBox",
+      "method": "getSelectedIndex",
+      "names": { "py": "get_selected_index", "js": "getSelectedIndex" },
+      "kind": "method",
+      "receiver": "value",
+      "params": [],
+      "ret": { "type": "usize" },
+      "fail": null
+    },
+    {
+      "c": "nmComboBoxSetSelectedIndex",
+      "owner": "ComboBox",
+      "method": "setSelectedIndex",
+      "names": { "py": "set_selected_index", "js": "setSelectedIndex" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "idx", "type": "usize" }],
+      "ret": { "type": "void" },
+      "fail": null
+    },
+    {
+      "c": "nmComboBoxItemCount",
+      "owner": "ComboBox",
+      "method": "getItemCount",
+      "names": { "py": "get_item_count", "js": "getItemCount" },
+      "kind": "method",
+      "receiver": "value",
+      "params": [],
+      "ret": { "type": "usize" },
+      "fail": null
+    },
+    {
+      "c": "nmComboBoxGetItem",
+      "owner": "ComboBox",
+      "method": "getItem",
+      "names": { "py": "get_item", "js": "getItem" },
+      "kind": "method",
+      "receiver": "value",
+      "params": [{ "name": "idx", "type": "usize" }],
+      "ret": { "type": "str", "optional": true, "ownership": "borrowed" },
+      "fail": null
+    },
+    {
       "c": "nmListGetRowHeight",
       "owner": "List",
       "method": "getRowHeight",
@@ -238,6 +282,17 @@
       "kind": "method",
       "receiver": "ptr",
       "params": [{ "name": "h", "type": "f32" }],
+      "ret": { "type": "void" },
+      "fail": null
+    },
+    {
+      "c": "nmListEdit",
+      "owner": "List",
+      "method": "edit",
+      "names": { "py": "edit", "js": "edit" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "idx", "type": "usize" }],
       "ret": { "type": "void" },
       "fail": null
     },
@@ -404,18 +459,6 @@
       "kind": "method",
       "receiver": "ptr",
       "params": [{ "name": "idx", "type": "i64", "none_sentinel": -1 }],
-      "ret": { "type": "void" },
-      "fail": null
-    },
-    {
-      "c": "nmListEdit",
-      "impl": "manual",
-      "owner": "List",
-      "method": "edit",
-      "names": { "py": "edit", "js": "edit" },
-      "kind": "method",
-      "receiver": "ptr",
-      "params": [{ "name": "idx", "type": "usize" }],
       "ret": { "type": "void" },
       "fail": null
     },

@@ -296,9 +296,7 @@ export fn nmListSetSelected(self: *framework.List, idx: i64) void {
     self.setSelected(if (idx < 0) null else @intCast(idx));
 }
 
-export fn nmListEdit(self: *framework.List, idx: usize) void {
-    self.edit(idx);
-}
+// nmListEdit is generated (List.edit takes a plain usize — see nimbus.api).
 
 export fn nmListModelAdd(self: *framework.List.ListModel, item: *anyopaque) c_int {
     self.add(item) catch |e| {
@@ -457,12 +455,33 @@ export fn nmComboBoxOffChange(self: *framework.ComboBox, cb: *nmChangeListener) 
     self.removeChangeListener(nmChangeListener, nm_trampoline_nmChangeListener, cb);
 }
 
+export fn nmComboBoxGetSelectedIndex(self: *framework.ComboBox) usize {
+    return self.getSelectedIndex();
+}
+
+export fn nmComboBoxSetSelectedIndex(self: *framework.ComboBox, idx: usize) void {
+    self.setSelectedIndex(idx);
+}
+
+export fn nmComboBoxItemCount(self: *framework.ComboBox) usize {
+    return self.getItemCount();
+}
+
+export fn nmComboBoxGetItem(self: *framework.ComboBox, idx: usize) nmStr {
+    const _s = self.getItem(idx);
+    return if (_s) |v| .{ .ptr = v.ptr, .len = v.len } else .{ .ptr = null, .len = 0 };
+}
+
 export fn nmListGetRowHeight(self: *framework.List) f32 {
     return self.getRowHeight();
 }
 
 export fn nmListSetRowHeight(self: *framework.List, h: f32) void {
     self.setRowHeight(h);
+}
+
+export fn nmListEdit(self: *framework.List, idx: usize) void {
+    self.edit(idx);
 }
 
 export fn nmListOnChange(self: *framework.List, cb: *nmChangeListener) c_int {

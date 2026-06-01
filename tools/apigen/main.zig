@@ -44,6 +44,7 @@ const Scalar = enum {
     f64,
     i32,
     u32,
+    usize,
     bool,
 
     fn parse(s: []const u8) ?Scalar {
@@ -58,6 +59,7 @@ const Scalar = enum {
             .f64 => "double",
             .i32 => "int32_t",
             .u32 => "uint32_t",
+            .usize => "size_t",
             .bool => "bool",
         };
     }
