@@ -206,6 +206,128 @@ export fn nmButtonSetIcon(self: *framework.Button, icon: ?*awt.Image) void {
     self.setIcon(if (icon) |p| p.* else null);
 }
 
+// ── List cell protocol (bespoke; see doc/c_api_codegen.md「List / CellFactory」) ──
+// "An interface that returns an interface": the C nmCellFactory.create returns
+// an nmCell of C function pointers. These adapt that to the native
+// List.CellFactory / List.Cell (Zig fnptrs). The C factory pointer is borrowed
+// (the caller keeps nmCellFactory alive); each produced cell's C fnptrs +
+// user_data are boxed (heap nmCell) so the native single `*anyopaque` self can
+// reach them, and the box is freed in the cell's destroy trampoline.
+
+const nmCellContext = extern struct {
+    list: ?*framework.List,
+    value: ?*anyopaque,
+    index: usize,
+    selected: bool,
+    focused: bool,
+};
+
+const nmCell = extern struct {
+    component: ?*anyopaque, // nmComponent* (*Component); null = create failed
+    update: ?*const fn (?*anyopaque, *const nmCellContext) callconv(.c) void,
+    destroy: ?*const fn (?*anyopaque) callconv(.c) void,
+    user_data: ?*anyopaque,
+};
+
+const nmCellFactory = extern struct {
+    create: ?*const fn (?*anyopaque) callconv(.c) nmCell,
+    factory_ud: ?*anyopaque,
+};
+
+// native CellFactory.create: invokes the C factory, then boxes the returned
+// nmCell so the native Cell trampolines can reach its C fnptrs via `self`.
+fn nm_list_factory_create(self: *anyopaque, allocator: std.mem.Allocator) anyerror!framework.List.Cell {
+    const cf: *const nmCellFactory = @ptrCast(@alignCast(self));
+    const create_fn = cf.create orelse return error.CellCreateFailed;
+    const c_cell = create_fn(cf.factory_ud);
+    const comp = c_cell.component orelse return error.CellCreateFailed;
+    const box = try allocator.create(nmCell);
+    box.* = c_cell;
+    return .{
+        .component = @ptrCast(@alignCast(comp)),
+        .update = nm_list_cell_update,
+        .destroy = nm_list_cell_destroy,
+        .user_data = box,
+    };
+}
+
+// native Cell.update: translate the native context to the C struct and forward.
+fn nm_list_cell_update(self: *anyopaque, ctx: framework.List.CellContext) void {
+    const box: *nmCell = @ptrCast(@alignCast(self));
+    const c_ctx = nmCellContext{
+        .list = ctx.list,
+        .value = ctx.value,
+        .index = ctx.index,
+        .selected = ctx.selected,
+        .focused = ctx.focused,
+    };
+    if (box.update) |u| u(box.user_data, &c_ctx);
+}
+
+// native Cell.destroy: let C tear down its subtree + state, then free the box.
+fn nm_list_cell_destroy(self: *anyopaque, allocator: std.mem.Allocator) void {
+    const box: *nmCell = @ptrCast(@alignCast(self));
+    if (box.destroy) |d| d(box.user_data);
+    allocator.destroy(box);
+}
+
+/// Create a List driven by the given C cell factory. The factory pointer is
+/// borrowed (stored in the native CellFactory.user_data) — keep it alive for
+/// the List's lifetime.
+export fn nmAppList(app: *framework.Application, factory: *const nmCellFactory) ?*framework.List {
+    return app.list(.{
+        .create = nm_list_factory_create,
+        .user_data = @ptrCast(@constCast(factory)),
+    }) catch |e| {
+        setLastError(e);
+        return null;
+    };
+}
+
+export fn nmListGetModel(self: *framework.List) *framework.List.ListModel {
+    return self.model;
+}
+
+export fn nmListGetSelected(self: *framework.List) i64 {
+    return if (self.getSelected()) |s| @intCast(s) else -1;
+}
+
+export fn nmListSetSelected(self: *framework.List, idx: i64) void {
+    self.setSelected(if (idx < 0) null else @intCast(idx));
+}
+
+export fn nmListEdit(self: *framework.List, idx: usize) void {
+    self.edit(idx);
+}
+
+export fn nmListModelAdd(self: *framework.List.ListModel, item: *anyopaque) c_int {
+    self.add(item) catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
+}
+
+export fn nmListModelRemove(self: *framework.List.ListModel, idx: usize) void {
+    self.remove(idx);
+}
+
+export fn nmListModelClear(self: *framework.List.ListModel) void {
+    self.clear();
+}
+
+export fn nmListModelMove(self: *framework.List.ListModel, from: usize, to: usize) void {
+    self.move(from, to);
+}
+
+export fn nmListModelGetSize(self: *framework.List.ListModel) usize {
+    return self.getSize();
+}
+
+export fn nmListModelGetElementAt(self: *framework.List.ListModel, idx: usize) ?*anyopaque {
+    return self.getElementAt(idx);
+}
+
 // ── generated exports (do not edit; regenerate with `zig build apigen`) ──
 
 const nmColor = extern struct { r: f32, g: f32, b: f32, a: f32, };
@@ -335,11 +457,35 @@ export fn nmComboBoxOffChange(self: *framework.ComboBox, cb: *nmChangeListener) 
     self.removeChangeListener(nmChangeListener, nm_trampoline_nmChangeListener, cb);
 }
 
+export fn nmListGetRowHeight(self: *framework.List) f32 {
+    return self.getRowHeight();
+}
+
+export fn nmListSetRowHeight(self: *framework.List, h: f32) void {
+    self.setRowHeight(h);
+}
+
+export fn nmListOnChange(self: *framework.List, cb: *nmChangeListener) c_int {
+    self.addChangeListener(nmChangeListener, nm_trampoline_nmChangeListener, cb) catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
+}
+
+export fn nmListOffChange(self: *framework.List, cb: *nmChangeListener) void {
+    self.removeChangeListener(nmChangeListener, nm_trampoline_nmChangeListener, cb);
+}
+
 export fn nmButtonAsComponent(self: *framework.Button) *framework.Component {
     return &self.component;
 }
 
 export fn nmContainerAsComponent(self: *framework.Container) *framework.Component {
+    return &self.component;
+}
+
+export fn nmListAsComponent(self: *framework.List) *framework.Component {
     return &self.component;
 }
 

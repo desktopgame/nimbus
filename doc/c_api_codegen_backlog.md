@@ -9,6 +9,12 @@ apigen（[c_api_codegen.md](c_api_codegen.md)）で**後回しにした項目**�
 ---
 
 ## #4 List の CellFactory
+**実装済み（2026-06-01）。正式な記述は [c_api_codegen.md](c_api_codegen.md)「List / CellFactory」へ移動した。**
+factory→cell の 2 段アダプタ（C 関数ポインタ → native fnptr）、cell プロトコル構造体、ListModel /
+選択 / index 群を preamble 手書き、typedef・rowHeight・change-listener・upcast は生成、という形で確定。
+セル編集（`Cell.edit`）と `ScrollPane` ラップは未公開（制約として doc に記載）。以下は検討経緯の記録
+（この backlog 削除時に一緒に捨てて良い）。
+
 ### 何
 `Application.list(factory: List.CellFactory) !*List`。`CellFactory` は関数ポインタの構造体
 （`create: fn(*anyopaque, allocator) !Cell` など）で、生成物 `Cell` 自体も

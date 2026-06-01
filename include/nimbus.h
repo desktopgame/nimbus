@@ -26,6 +26,8 @@ typedef struct nmComboBox nmComboBox;
 typedef struct nmFrame nmFrame;
 typedef struct nmApplication nmApplication;
 typedef struct nmImage nmImage;
+typedef struct nmList nmList;
+typedef struct nmListModel nmListModel;
 
 /* ── value structs ── */
 typedef struct { float r; float g; float b; float a; } nmColor;
@@ -98,6 +100,60 @@ nmImage* nmAppIconNamed(nmApplication* self, const char* name);
 nmImage* nmButtonGetIcon(nmButton* self);
 void nmButtonSetIcon(nmButton* self, nmImage* icon);
 
+/* ── List cell protocol (bespoke; see doc/c_api_codegen.md「List / CellFactory」) ──
+ * A List materializes real cell subtrees only for the visible range and
+ * recycles them on scroll (JavaFX VirtualFlow). You supply a factory that
+ * builds one cell; the List calls `update` to (re)bind a cell to a row and
+ * `destroy` to tear it down. Indices are rows in the ListModel; `value` is the
+ * void* item you added (cast it back to your row struct). */
+
+/* Per-bind context handed to nmCell.update. `value` is the ListModel item. */
+typedef struct {
+    nmList* list;
+    void*   value;     /* the item you passed to nmListModelAdd */
+    size_t  index;     /* its row */
+    bool    selected;
+    bool    focused;
+} nmCellContext;
+
+/* One cell instance you build in the factory. `component` is the subtree root
+ * (e.g. from nmAppPanel). `update` rebinds it to a row (recycle). `destroy`
+ * must tear down `component` (nmComponentDestroy) AND free `user_data`. Return
+ * a cell with component == NULL to signal a creation failure. */
+typedef struct {
+    void* component;   /* nmComponent* — cell subtree root; NULL = create failed */
+    void (*update)(void* cell_ud, const nmCellContext* ctx);
+    void (*destroy)(void* cell_ud);
+    void* user_data;   /* your cell state (you own it; freed in destroy) */
+} nmCell;
+
+/* The factory. `create` builds a fresh cell on demand. You own the factory and
+ * must keep it alive for the List's lifetime (the List borrows it). */
+typedef struct {
+    nmCell (*create)(void* factory_ud);
+    void* factory_ud;
+} nmCellFactory;
+
+/* Create a List with the given cell factory (owns an internal ListModel).
+ * Owned like any widget: add via nmContainerAdd or free via its component. */
+nmList* nmAppList(nmApplication* app, const nmCellFactory* factory);
+/* The List's ListModel (borrowed; freed with the List). */
+nmListModel* nmListGetModel(nmList* self);
+/* Selection: -1 = none. setSelected with idx < 0 clears. */
+int64_t nmListGetSelected(nmList* self);
+void nmListSetSelected(nmList* self, int64_t idx);
+/* Begin editing a row (no-op if the cell is read-only / out of range). */
+void nmListEdit(nmList* self, size_t idx);
+
+/* ListModel: items are borrowed void* (you own the backing memory; it must
+ * outlive the List). add returns nonzero on failure (0 = ok). */
+int nmListModelAdd(nmListModel* self, void* item);
+void nmListModelRemove(nmListModel* self, size_t idx);
+void nmListModelClear(nmListModel* self);
+void nmListModelMove(nmListModel* self, size_t from, size_t to);
+size_t nmListModelGetSize(nmListModel* self);
+void* nmListModelGetElementAt(nmListModel* self, size_t idx);
+
 /* ── functions ── */
 int nmAppRun(nmApplication* self);
 nmButton* nmAppButton(nmApplication* self, const char* text);
@@ -117,10 +173,15 @@ nmAlignment nmComponentGetAlignX(nmComponent* self);
 nmComboBox* nmAppComboBox(nmApplication* self, const char* const* items, size_t items_len);
 int nmComboBoxOnChange(nmComboBox* self, nmChangeListener* cb);
 void nmComboBoxOffChange(nmComboBox* self, nmChangeListener* cb);
+float nmListGetRowHeight(const nmList* self);
+void nmListSetRowHeight(nmList* self, float h);
+int nmListOnChange(nmList* self, nmChangeListener* cb);
+void nmListOffChange(nmList* self, nmChangeListener* cb);
 
 /* ── upcasts ── */
 nmComponent* nmButtonAsComponent(nmButton* self);
 nmComponent* nmContainerAsComponent(nmContainer* self);
+nmComponent* nmListAsComponent(nmList* self);
 
 /* ── destructors ── */
 void nmComponentDestroy(nmComponent* self);

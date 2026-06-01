@@ -1,0 +1,248 @@
+# Hand-written IR entries, merged into bindings/nimbus_api.json by tools/apigen.
+# This is the JSON output's third preamble leg (mirrors preamble_protos.h and
+# preamble.zig for the .h / .zig outputs): the hand-written preamble functions
+# never reach the parsed model, so their IR metadata is authored here.
+#
+# Format: a line starting with `@` opens a section (`@functions`, `@types`,
+# `@structs`, `@enums`, `@callbacks`, `@casts`, `@destructors`); the following
+# lines are that section's raw JSON array elements (verbatim, comma-separated,
+# indented to match the generated entries) and are spliced in after them. Lines
+# above the first `@` are this comment and ignored.
+#
+# Keep in sync with the hand-written exports in preamble.zig / preamble_protos.h.
+# `"impl": "manual"` marks an entry as hand-written (no generated shim). Types
+# beyond the generated vocabulary appear here as descriptive strings the binding
+# generator special-cases: `bytes` (ptr+len byte buffer), `opaque_ptr` (void*
+# userdata / item), `cell_factory` (the nmCellFactory struct), `i64`/`usize`
+# (integers outside the generated scalar set), `enum`+`nmIcon` (the curated
+# hand-written icon enum). See doc/c_api_codegen.md「Image / icon」「List / CellFactory」.
+
+@functions
+    {
+      "c": "nmAppLoadImage",
+      "impl": "manual",
+      "owner": "Application",
+      "method": "loadImage",
+      "names": { "py": "load_image", "js": "loadImage" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "bytes", "type": "bytes" }],
+      "ret": { "type": "handle", "handle": "Image", "ownership": "owned" },
+      "fail": "null"
+    },
+    {
+      "c": "nmImageDestroy",
+      "impl": "manual",
+      "owner": "Image",
+      "method": "destroy",
+      "names": { "py": "destroy", "js": "destroy" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [],
+      "ret": { "type": "void" },
+      "fail": null
+    },
+    {
+      "c": "nmImageWidth",
+      "impl": "manual",
+      "owner": "Image",
+      "method": "width",
+      "names": { "py": "width", "js": "width" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [],
+      "ret": { "type": "i32" },
+      "fail": null
+    },
+    {
+      "c": "nmImageHeight",
+      "impl": "manual",
+      "owner": "Image",
+      "method": "height",
+      "names": { "py": "height", "js": "height" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [],
+      "ret": { "type": "i32" },
+      "fail": null
+    },
+    {
+      "c": "nmAppIcon",
+      "impl": "manual",
+      "owner": "Application",
+      "method": "icon",
+      "names": { "py": "icon", "js": "icon" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "id", "type": "enum", "enum": "nmIcon" }],
+      "ret": { "type": "handle", "handle": "Image", "ownership": "borrowed" },
+      "fail": "null"
+    },
+    {
+      "c": "nmAppIconNamed",
+      "impl": "manual",
+      "owner": "Application",
+      "method": "iconNamed",
+      "names": { "py": "icon_named", "js": "iconNamed" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "name", "type": "str" }],
+      "ret": { "type": "handle", "handle": "Image", "ownership": "borrowed" },
+      "fail": "null"
+    },
+    {
+      "c": "nmButtonGetIcon",
+      "impl": "manual",
+      "owner": "Button",
+      "method": "getIcon",
+      "names": { "py": "get_icon", "js": "getIcon" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [],
+      "ret": { "type": "handle", "handle": "Image", "ownership": "borrowed", "optional": true },
+      "fail": null
+    },
+    {
+      "c": "nmButtonSetIcon",
+      "impl": "manual",
+      "owner": "Button",
+      "method": "setIcon",
+      "names": { "py": "set_icon", "js": "setIcon" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "icon", "type": "handle", "handle": "Image", "optional": true }],
+      "ret": { "type": "void" },
+      "fail": null
+    },
+    {
+      "c": "nmAppList",
+      "impl": "manual",
+      "owner": "Application",
+      "method": "list",
+      "names": { "py": "list", "js": "list" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "factory", "type": "cell_factory" }],
+      "ret": { "type": "handle", "handle": "List", "ownership": "owned" },
+      "fail": "null"
+    },
+    {
+      "c": "nmListGetModel",
+      "impl": "manual",
+      "owner": "List",
+      "method": "getModel",
+      "names": { "py": "get_model", "js": "getModel" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [],
+      "ret": { "type": "handle", "handle": "ListModel", "ownership": "borrowed" },
+      "fail": null
+    },
+    {
+      "c": "nmListGetSelected",
+      "impl": "manual",
+      "owner": "List",
+      "method": "getSelected",
+      "names": { "py": "get_selected", "js": "getSelected" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [],
+      "ret": { "type": "i64", "none_sentinel": -1 },
+      "fail": null
+    },
+    {
+      "c": "nmListSetSelected",
+      "impl": "manual",
+      "owner": "List",
+      "method": "setSelected",
+      "names": { "py": "set_selected", "js": "setSelected" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "idx", "type": "i64", "none_sentinel": -1 }],
+      "ret": { "type": "void" },
+      "fail": null
+    },
+    {
+      "c": "nmListEdit",
+      "impl": "manual",
+      "owner": "List",
+      "method": "edit",
+      "names": { "py": "edit", "js": "edit" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "idx", "type": "usize" }],
+      "ret": { "type": "void" },
+      "fail": null
+    },
+    {
+      "c": "nmListModelAdd",
+      "impl": "manual",
+      "owner": "ListModel",
+      "method": "add",
+      "names": { "py": "add", "js": "add" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "item", "type": "opaque_ptr" }],
+      "ret": { "type": "void" },
+      "fail": "err"
+    },
+    {
+      "c": "nmListModelRemove",
+      "impl": "manual",
+      "owner": "ListModel",
+      "method": "remove",
+      "names": { "py": "remove", "js": "remove" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "idx", "type": "usize" }],
+      "ret": { "type": "void" },
+      "fail": null
+    },
+    {
+      "c": "nmListModelClear",
+      "impl": "manual",
+      "owner": "ListModel",
+      "method": "clear",
+      "names": { "py": "clear", "js": "clear" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [],
+      "ret": { "type": "void" },
+      "fail": null
+    },
+    {
+      "c": "nmListModelMove",
+      "impl": "manual",
+      "owner": "ListModel",
+      "method": "move",
+      "names": { "py": "move", "js": "move" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "from", "type": "usize" }, { "name": "to", "type": "usize" }],
+      "ret": { "type": "void" },
+      "fail": null
+    },
+    {
+      "c": "nmListModelGetSize",
+      "impl": "manual",
+      "owner": "ListModel",
+      "method": "getSize",
+      "names": { "py": "get_size", "js": "getSize" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [],
+      "ret": { "type": "usize" },
+      "fail": null
+    },
+    {
+      "c": "nmListModelGetElementAt",
+      "impl": "manual",
+      "owner": "ListModel",
+      "method": "getElementAt",
+      "names": { "py": "get_element_at", "js": "getElementAt" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "idx", "type": "usize" }],
+      "ret": { "type": "opaque_ptr", "optional": true },
+      "fail": null
+    }

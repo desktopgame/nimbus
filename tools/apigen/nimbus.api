@@ -72,6 +72,13 @@ opaque Application
 # and hand-written in preamble.zig (see doc/c_api_codegen.md「Image / icon」);
 # only the handle typedef + IR type entry are generated from this line.
 opaque Image
+# List (vertical single-selection, JavaFX VirtualFlow cells) + its ListModel.
+# The cell factory / model / index API is bespoke (void* items, usize indices,
+# an interface-returning-interface factory) and hand-written in preamble.zig
+# (see doc/c_api_codegen.md「List / CellFactory」). Only the handle typedefs,
+# the rowHeight / change-listener methods, and the Component upcast are generated.
+opaque List : Component
+opaque ListModel
 
 # Value struct: its layout is exposed across the ABI (generated as an
 # `extern struct`; shims convert field-by-field to/from the native Color).
@@ -121,10 +128,18 @@ fn nmAppComboBox       = Application.comboBox (&self, items:strs) -> *ComboBox !
 fn nmComboBoxOnChange  = ComboBox.addChangeListener    (&self, cb:nmChangeListener) -> void !err
 fn nmComboBoxOffChange = ComboBox.removeChangeListener (&self, cb:nmChangeListener) -> void
 
+# List: the parts that fit the generator (scalar row height, change listener).
+# The factory / model / selection / edit API is hand-written (preamble.zig).
+fn nmListGetRowHeight = List.getRowHeight (=self) -> f32
+fn nmListSetRowHeight = List.setRowHeight (&self, h:f32) -> void
+fn nmListOnChange     = List.addChangeListener    (&self, cb:nmChangeListener) -> void !err
+fn nmListOffChange    = List.removeChangeListener (&self, cb:nmChangeListener) -> void
+
 # Upcast to the embedded Component (one-line `return &self.<field>`). Lets a
 # binding reach Container methods on any widget and feed nmComponentDestroy.
 cast nmButtonAsComponent    = Button.component    -> Component
 cast nmContainerAsComponent = Container.component -> Component
+cast nmListAsComponent      = List.component      -> Component
 
 # Single generic destructor: dispatches the widget's own vtable.destroy using
 # the allocator stored on the Component. Free any widget via its nmComponent*.

@@ -34,16 +34,20 @@ Zig も C ヘッダも解析せずに済む。
 
 ## パイプライン
 ```
-tools/apigen/nimbus.api      （入力スペック / ABI 表面の真実）
-tools/apigen/preamble.h      （手書き: C ヘッダ前置き）
-tools/apigen/preamble.zig    （手書き: Zig ランタイム支援前置き）
+tools/apigen/nimbus.api          （入力スペック / ABI 表面の真実）
+tools/apigen/preamble.h          （手書き: C ヘッダ前置き）
+tools/apigen/preamble_protos.h   （手書き: C プロト。typedef の後に差し込み）
+tools/apigen/preamble.zig        （手書き: Zig ランタイム支援前置き）
+tools/apigen/preamble_ir.txt     （手書き: IR エントリ。生成 IR にマージ）
         │
         ▼  zig build apigen   （tools/apigen/main.zig を host で実行）
         │
-        ├─► include/nimbus.h          = preamble.h  + 生成 typedef/プロトタイプ + 末尾
+        ├─► include/nimbus.h          = preamble.h + 生成 typedef + preamble_protos.h + 生成プロト + 末尾
         ├─► framework/src/c_api.zig   = preamble.zig + 生成 export fn シム
-        └─► bindings/nimbus_api.json  = バインディング用 IR（メタデータ一枚）
+        └─► bindings/nimbus_api.json  = 生成 IR に preamble_ir.txt の手書きエントリをマージ
 ```
+手書きと生成は **3 出力すべてでマージ**される（.h は preamble.h/preamble_protos.h、.zig は preamble.zig、
+.json は preamble_ir.txt）。手書きコードを足したら preamble_ir.txt にも IR を足す、で対称が保たれる。
 生成物 2 ファイルはリポジトリにコミットする。
 ABI の変更が PR の差分に現れ、契約の破壊的変更をレビューで検知できるようにするため。
 
@@ -270,6 +274,26 @@ IR には `enums`（`name` と `members`＝名前＋値）を出すので、Pyth
 * `destructors` — 汎用デストラクタ一覧（`type` のハンドルを破棄する `c` 関数）。
 * `callbacks` — 後述。コールバック型の一覧。現状は空配列だが、契約として常に存在する。
 
+### 手書き関数の IR（preamble_ir.txt のマージ）
+preamble に手書きした関数（Image / icon・List / CellFactory 等）は spec を通らないので、
+そのままでは IR に出ない。これを埋めるため `tools/apigen/preamble_ir.txt` に**手書きの IR エントリ**を
+置き、生成器が各配列（`functions` など）の生成分の**後ろにマージ**する（.h / .zig の preamble と同じ
+発想の、JSON 版の前置き）。
+
+* 形式: `@<section>` 行（`@functions` / `@types` / …）に続けて、その配列の生 JSON 要素を**そのまま**書く
+  （生成分と同じ字下げ・カンマ区切り）。`@` より前の行はコメントとして無視。
+* 手書きエントリには `"impl": "manual"` を付ける（生成分には付かない＝由来が一目で分かる）。
+* 生成器が表現できない型は**説明的な型文字列**で書き、バインディング生成器が特別扱いする:
+  `bytes`（ptr+len バイト列）・`opaque_ptr`（`void*` userdata / item）・`cell_factory`（nmCellFactory 構造体）・
+  `i64` / `usize`（生成スカラ集合外の整数）・`enum`+`nmIcon`（手書き curated enum）。
+* **同期責任**: 手書きコード（preamble.zig / preamble_protos.h）と preamble_ir.txt は人手で一致させる
+  （`.h` プロトと `.zig` 実装を一致させるのと同じ手作業）。生成器は IR の妥当性チェックまではしないので、
+  追加後は `bindings/nimbus_api.json` を JSON パーサで検証する運用とする。
+
+> 限界: マージは「既存の配列へ要素を足す」だけ。生成器が型として知らない構造体（`nmCell` 等の関数ポインタ
+> 構造体）の**完全な形**は IR には出さず、関数引数を `cell_factory` 等の文字列で指し、構造体の具体形は本書
+> （「List / CellFactory」）に委ねる。真に bespoke な型は結局どの言語バインディングでも手当てが要るため。
+
 ## コールバック / イベントハンドラ（実装済み・案 C）
 リスナー登録のような「関数ポインタを渡す」API を、1 つの宣言で各レイヤーへ展開する。
 ネイティブ前提は整っている: Model のリスナーは `fn(user_data: *anyopaque, event: *const Event) void`
@@ -349,13 +373,71 @@ use-after-free」。バインディングは「widget → Image を pin」する
 assert と同じ役割を手書き switch が担う）。バインディングは型で振り分けてメソッド 1 個に統合できる
 （`app.icon(Icon.SAVE)` / `app.icon("circle_plus")`）。
 
-> IR について: `opaque Image` により `nmImage`（型）は IR の `types` に出るが、**`nmIcon` と Image
-> メソッド群（load/destroy/width/height/getIcon/setIcon/icon/iconNamed）は手書きのため IR に出ない**。
-> バインディング生成器がこれらを必要とするなら、(a) 名前マップ型 curated enum を生成器に足す（switch +
-> `@field` で名前ベースのドリフト検知）か、(b) preamble を読む。投機的に生成器を拡張せず、必要時に判断する。
+> IR について: `opaque Image` により `nmImage`（型）は生成で IR に出る。Image メソッド群
+> （load/destroy/width/height/getIcon/setIcon/icon/iconNamed）は手書きだが、**`preamble_ir.txt` に手書き
+> IR エントリを置いて IR にマージ**している（`"impl":"manual"`、上記「バインディング用メタデータ」）。
+> `nmIcon` 自体（enum 定義）は IR には出さず、引数で `"type":"enum","enum":"nmIcon"` と参照するに留める
+> （curated enum を生成に乗せる「名前マップ型 enum」機能は、消費者が手書きだけのうちは未実装）。
 
-> 名前マップ型 curated enum（`enum <CName> = <Native> map { <c名> = <native名> ... }`）を apigen に
-> 追加すれば `nmIcon` を生成に乗せ IR にも出せる。現状は消費者が手書き preamble だけなので未実装。
+## List / CellFactory（実装済み・手書き bespoke）
+`List`（JavaFX VirtualFlow 方式: 可視範囲のセルだけ実体化し、スクロールで recycle）と
+その `ListModel` の C ABI。**ハンドル typedef・rowHeight・change-listener・Component upcast は生成**
+（spec の `opaque List : Component` / `opaque ListModel` / `fn nmListGet・SetRowHeight` /
+`fn nmListOnChange・OffChange` / `cast nmListAsComponent`）だが、**factory / cell / model / 選択 API は
+preamble に手書き**する。
+
+### なぜ生成せず手書きか
+* **「インターフェースを返すインターフェース」**: `CellFactory.create` が `Cell`（さらに関数ポインタ
+  `update`/`destroy` + 状態を持つ）を返す。`callback` 機構（box + トランポリン 1 段）では表せない。
+* インデックスが軒並み **`usize`**（apigen のスカラ集合 f32/f64/i32/u32/bool に無い）。
+* `ListModel` の item は **`*anyopaque`**（C の `void*`。利用者の行データ）で、apigen のハンドル引数
+  （`*framework.T`）にも値構造体にも当てはまらない。
+* 選択は `?usize`（optional スカラ）で未対応形。
+
+### C 側の cell プロトコル
+利用者が factory を渡し、List が「セルを 1 個作る／行に bind する／壊す」を駆動する。
+
+```c
+typedef struct { nmList* list; void* value; size_t index; bool selected; bool focused; } nmCellContext;
+typedef struct {
+    void* component;                                  /* セル subtree 根。NULL = 生成失敗 */
+    void (*update)(void* cell_ud, const nmCellContext* ctx);
+    void (*destroy)(void* cell_ud);
+    void* user_data;                                  /* セル状態。利用者所有・destroy で解放 */
+} nmCell;
+typedef struct { nmCell (*create)(void* factory_ud); void* factory_ud; } nmCellFactory;
+```
+* `value` は `nmListModelAdd` に渡した `void*`（利用者の行構造体へキャストし直す）。
+* `update` は recycle のたびに呼ばれる（JavaFX `updateItem`）。`destroy` は `component` の解体
+  （`nmComponentDestroy`）と `user_data` の解放の両方を行う。
+* `create` は失敗時 `component == NULL` の `nmCell` を返す（native 側は `error` 化し、その行は
+  そのフレーム materialize しない＝graceful）。
+
+### アダプタ（手書き Zig）
+C の関数ポインタ群を native の `List.CellFactory` / `List.Cell`（Zig fnptr）へ橋渡しする。
+
+* 1 段目: native `CellFactory.create` を `nm_list_factory_create` に。native の `user_data` には
+  **C の `nmCellFactory*` をそのまま入れる**（factory は借用＝利用者が List 寿命まで保持。box 不要）。
+* 2 段目: C の `create` が返す `nmCell` を **heap に box**（native `Cell.user_data` は単一ポインタなので、
+  C の `update`/`destroy`/`user_data` を箱に詰める）。`nm_list_cell_update` が native `CellContext` を
+  C 構造体へ詰め替えて C へ、`nm_list_cell_destroy` が C の destroy を呼んでから箱を解放。
+* このアダプタは戻り値・引数が native の `List.Cell` / `CellContext` に**型チェックされる**ので、
+  cell プロトコルとのズレ（フィールド名・署名）は**コンパイルエラー**になる（ドリフト検知）。
+
+### 関数（手書き）
+`nmAppList(app, factory) → nmList*`（内部 ListModel を所有）、`nmListGetModel`、
+`nmListGetSelected`（-1 = 無選択）/ `nmListSetSelected`（<0 でクリア）、`nmListEdit`、
+`nmListModelAdd`（`void*` item、失敗で非 0）/ `Remove` / `Clear` / `Move` / `GetSize` /
+`GetElementAt`（範囲外で NULL）。破棄は `nmListAsComponent` → `nmComponentDestroy`
+（List が pool の全セル destroy・所有 model 解放まで行う）。
+
+手書き関数（`nmAppList` / `nmListGetModel` / `nmListModel*` / 選択 / edit）は **`preamble_ir.txt` に手書き
+IR エントリを置いて IR にマージ**している（`"impl":"manual"`）。factory 引数は IR 上 `"type":"cell_factory"`
+と印すに留め、`nmCell` 等の関数ポインタ構造体の具体形は本節に委ねる（真に bespoke なため）。
+
+> 制約: セル編集（`Cell.edit` = テキスト編集の durational セッション）は C ABI 未公開（v1 のセルは
+> 読み取り専用 / atomic write-back のみ）。スクロールには `ScrollPane` のラップが要るが、未公開
+> （ScrollPane の Component upcast は `&self.container.component` の 2 段で単一 `cast` に乗らない。別途）。
 
 ## init / deinit（コンストラクタ・デストラクタ）の見せ方
 Zig には 2 つの生成の流儀がある。
@@ -416,9 +498,11 @@ CLAUDE.md「エラーのC_ABIでの表現」に従う。
 
 ## 手書きプリアンブルの役割
 機械的に導けないものはプリアンブルに手書きで置き、生成器がその後ろに生成物を連結する。
-preamble は 3 ファイルに分かれる: `preamble.h`（C ヘッダ先頭＝include / `nmStr` / extern C 開き）、
+preamble は 4 ファイルに分かれる: `preamble.h`（C ヘッダ先頭＝include / `nmStr` / extern C 開き）、
 `preamble_protos.h`（手書き C プロトタイプ。**opaque typedef を参照できるよう生成器が型定義の後に差し込む**）、
-`preamble.zig`（Zig 実装）。
+`preamble.zig`（Zig 実装）、`preamble_ir.txt`（手書き IR エントリ。生成 IR の各配列にマージ。上記
+「手書き関数の IR」）。手書きコードを足したら preamble_ir.txt にも IR を足すことで、.h / .zig / .json の
+**3 出力すべてで手書き + 生成がマージ**される。
 
 * ランタイム支援（last-error 退避とアクセサ）。
 * awt 層への単純なパススルー（`nmGetBackendVersion`）。
@@ -432,6 +516,11 @@ preamble は 3 ファイルに分かれる: `preamble.h`（C ヘッダ先頭＝i
   curated `nmIcon` enum と `nmIconToLucide` 写像。フィールドアドレス返し・optional deref・値返しの
   box 化・キャッシュ参照返しで生成に乗らないため手書き（上記「Image / icon」）。`nmImage` typedef
   だけは `opaque Image` で生成。
+* **List / CellFactory（実装済み・bespoke）**: cell プロトコル構造体（`nmCell` / `nmCellContext` /
+  `nmCellFactory`）と C↔native アダプタ（`nm_list_factory_create` / `nm_list_cell_update` /
+  `nm_list_cell_destroy`）、`nmAppList` / `nmListGetModel` / `nmListGet・SetSelected` / `nmListEdit` /
+  `nmListModel*`。インターフェースを返すインターフェース・`usize` index・`void*` item で生成に乗らない
+  （上記「List / CellFactory」）。typedef・rowHeight・change-listener・upcast は生成。
 
 ## 実装済み / 未対応
 実装済み（生成器が出力する）:
@@ -454,8 +543,13 @@ preamble は 3 ファイルに分かれる: `preamble.h`（C ヘッダ先頭＝i
 * Image / icon（手書き bespoke。`nmImage` typedef のみ生成）: 画像ロード・破棄・寸法、
   Button の icon 取得/設定、ビルトイン icon（curated `nmIcon` + 文字列フォールバック）。
   上記「Image / icon」。
+* List / CellFactory（手書き bespoke。typedef・rowHeight・change-listener・upcast は生成）:
+  cell プロトコル（factory→cell の 2 段アダプタ）・ListModel・選択。上記「List / CellFactory」。
 * バインディング IR（`bindings/nimbus_api.json`）: 型・継承・`structs`・`enums`・`callbacks`・
   関数のクラス対応づけ・ターゲット言語名・`casts`・`destructors`。
+* 手書き関数の IR マージ（`preamble_ir.txt` の `@section` エントリを生成 IR の各配列に連結。
+  `"impl":"manual"` 印・説明的型文字列。上記「手書き関数の IR」）。これで .h / .zig / .json の
+  3 出力すべてで手書き + 生成がマージされる。
 
 未対応（文法・IR は本書で確定済みだがコード生成が未実装、もしくは文法ごと今後）:
 
@@ -467,7 +561,8 @@ preamble は 3 ファイルに分かれる: `preamble.h`（C ヘッダ先頭＝i
 * 値（スカラ/enum/struct/str）戻り＋エラーの組み合わせ（out 引数かセンチネルか要決定。現状は失敗なしのみ）。
 * optional ハンドル（`?*T`）— nullable ポインタで容易だが現状 live な利用メソッドが無く未生成。
 * 名前マップ型 curated enum（`nmIcon` を生成に乗せ IR にも出す）— 現状は手書き preamble。上記「Image / icon」。
-* Timer（`setTimeout` の callback + `!TimerId`）/ List `CellFactory` — bespoke。棚上げ（`doc/c_api_codegen_backlog.md`）。
+* List のセル編集（`Cell.edit`）・`ScrollPane` ラップ — 上記「List / CellFactory」制約。
+* Timer（`setTimeout` の event 無し callback + `!TimerId` 値戻り）— bespoke。棚上げ（`doc/c_api_codegen_backlog.md` #6b）。
 
 ## シンボル名の規約: 公開 ABI 名と awt-c 内部名を分ける
 かつて awt-c（`glfw_shim.c`）の C 関数が公開 ABI と同じ `nmGetBackendVersion` を名乗っており、

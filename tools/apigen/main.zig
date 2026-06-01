@@ -22,6 +22,12 @@ const PREAMBLE_H = "tools/apigen/preamble.h";
 /// cleanly separated while producing a correctly-ordered merged header.
 const PREAMBLE_PROTOS_H = "tools/apigen/preamble_protos.h";
 const PREAMBLE_ZIG = "tools/apigen/preamble.zig";
+/// Hand-written IR entries (for the hand-written preamble functions, which never
+/// reach the parsed model). A small sectioned text format: `@<section>` headers
+/// (functions / types / structs / …) followed by raw JSON array elements, merged
+/// into the matching array of the generated IR. The .json output's third leg of
+/// the preamble (mirrors preamble_protos.h / preamble.zig for .h / .zig).
+const PREAMBLE_IR = "tools/apigen/preamble_ir.txt";
 const OUT_H = "include/nimbus.h";
 const OUT_ZIG = "framework/src/c_api.zig";
 const OUT_JSON_DIR = "bindings";
@@ -222,6 +228,8 @@ pub fn main(init: std.process.Init) !void {
     defer gpa.free(pre_protos);
     const pre_zig = try cwd.readFileAlloc(io, PREAMBLE_ZIG, gpa, .unlimited);
     defer gpa.free(pre_zig);
+    const pre_ir = try cwd.readFileAlloc(io, PREAMBLE_IR, gpa, .unlimited);
+    defer gpa.free(pre_ir);
 
     var model: Model = .{};
     defer {
@@ -238,6 +246,14 @@ pub fn main(init: std.process.Init) !void {
     }
     try parse(gpa, spec, &model);
 
+    // Hand-written IR fragments (sectioned text → merged into the JSON arrays).
+    var frag: std.ArrayList(IrSection) = .empty;
+    defer frag.deinit(gpa);
+    parseFragment(pre_ir, &frag, gpa) catch |e| {
+        std.debug.print("apigen: failed to parse {s}\n", .{PREAMBLE_IR});
+        return e;
+    };
+
     var h: std.ArrayList(u8) = .empty;
     defer h.deinit(gpa);
     var z: std.ArrayList(u8) = .empty;
@@ -248,7 +264,7 @@ pub fn main(init: std.process.Init) !void {
 
     try emitHeader(gpa, &h, pre_h, pre_protos, &model);
     try emitZig(gpa, &z, pre_zig, &model);
-    try emitJson(gpa, &j, &model);
+    try emitJson(gpa, &j, &model, frag.items);
 
     try cwd.writeFile(io, .{ .sub_path = OUT_H, .data = h.items });
     try cwd.writeFile(io, .{ .sub_path = OUT_ZIG, .data = z.items });
@@ -535,6 +551,74 @@ fn tokenize(gpa: std.mem.Allocator, line: []const u8, out: *std.ArrayList([]cons
 fn fail(line_no: usize, msg: []const u8) error{SpecParse} {
     std.debug.print("apigen: parse error at line {d}: {s}\n", .{ line_no, msg });
     return error.SpecParse;
+}
+
+// ── hand-written IR fragment (preamble_ir.txt) ───────────────────────────────
+//
+// A small sectioned text format. A line beginning with `@` opens a section
+// (`@functions`, `@types`, …); the lines until the next `@` (or EOF) are that
+// section's raw JSON array elements, kept verbatim (comma-separated, indented to
+// match the generated entries). They are spliced into the matching array of the
+// generated IR. Lines before the first `@` are a header comment and ignored.
+// Text slices point into the fragment buffer (alive for the whole run).
+
+const IrSection = struct {
+    name: []const u8,
+    /// Raw element text (verbatim, CR/LF-trimmed at both ends; internal
+    /// indentation / commas preserved). Empty sections are skipped.
+    text: []const u8,
+};
+
+fn parseFragment(src: []const u8, out: *std.ArrayList(IrSection), gpa: std.mem.Allocator) !void {
+    var cur_name: ?[]const u8 = null;
+    var body_start: usize = 0;
+    var line_start: usize = 0;
+    while (line_start <= src.len) {
+        const nl = std.mem.indexOfScalarPos(u8, src, line_start, '\n') orelse src.len;
+        const line = src[line_start..nl];
+        if (line.len > 0 and line[0] == '@') {
+            if (cur_name) |nm|
+                try out.append(gpa, .{ .name = nm, .text = std.mem.trim(u8, src[body_start..line_start], "\r\n") });
+            cur_name = std.mem.trim(u8, line[1..], " \t\r");
+            body_start = @min(nl + 1, src.len);
+        }
+        if (nl == src.len) break;
+        line_start = nl + 1;
+    }
+    if (cur_name) |nm|
+        try out.append(gpa, .{ .name = nm, .text = std.mem.trim(u8, src[body_start..], "\r\n") });
+}
+
+fn fragText(frag: []const IrSection, name: []const u8) ?[]const u8 {
+    for (frag) |s| {
+        if (std.mem.eql(u8, s.name, name)) return if (s.text.len == 0) null else s.text;
+    }
+    return null;
+}
+
+/// Emit the separator before a JSON array element: newline for the first entry,
+/// `,\n` thereafter. Flips `first` to false.
+fn jsonSep(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), first: *bool) !void {
+    try buf.appendSlice(gpa, if (first.*) "\n" else ",\n");
+    first.* = false;
+}
+
+/// Append the hand-written fragment block for `name` (if any) after the
+/// generated entries of a section.
+fn appendFrag(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), frag: []const IrSection, name: []const u8, first: *bool) !void {
+    const block = fragText(frag, name) orelse return;
+    try jsonSep(gpa, buf, first);
+    try buf.appendSlice(gpa, block);
+}
+
+/// Close a JSON array. `first` = no entries emitted; `last` = final section
+/// (no trailing comma). Matches the hand-formatted layout of the rest of the IR.
+fn jsonClose(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), first: bool, last: bool) !void {
+    if (first) {
+        try buf.appendSlice(gpa, if (last) "]\n" else "],\n");
+    } else {
+        try buf.appendSlice(gpa, if (last) "\n  ]\n" else "\n  ],\n");
+    }
 }
 
 // ── emission: C header ────────────────────────────────────────────────────────
@@ -891,81 +975,113 @@ fn appendStructLiteral(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), src: []c
 // strings are identifiers (ASCII alnum / '_'), so no escaping is required.
 // Deterministic: entries are emitted in spec order.
 
-fn emitJson(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), model: *const Model) !void {
+fn emitJson(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), model: *const Model, frag: []const IrSection) !void {
     try buf.appendSlice(gpa, "{\n");
+
+    // Each section: generated entries first, then any hand-written fragment
+    // entries (appendFrag), then the close. `last = true` only on the final
+    // section (no trailing comma).
 
     // types
     try buf.appendSlice(gpa, "  \"types\": [");
-    for (model.opaques.items, 0..) |t, idx| {
-        try buf.appendSlice(gpa, if (idx == 0) "\n" else ",\n");
-        try print(gpa, buf, "    {{ \"name\": \"{s}\", \"c\": \"nm{s}\", \"extends\": ", .{ t.name, t.name });
-        if (t.parent) |p| {
-            try print(gpa, buf, "\"{s}\"", .{p});
-        } else {
-            try buf.appendSlice(gpa, "null");
+    {
+        var first = true;
+        for (model.opaques.items) |t| {
+            try jsonSep(gpa, buf, &first);
+            try print(gpa, buf, "    {{ \"name\": \"{s}\", \"c\": \"nm{s}\", \"extends\": ", .{ t.name, t.name });
+            if (t.parent) |p| {
+                try print(gpa, buf, "\"{s}\"", .{p});
+            } else {
+                try buf.appendSlice(gpa, "null");
+            }
+            try buf.appendSlice(gpa, " }");
         }
-        try buf.appendSlice(gpa, " }");
+        try appendFrag(gpa, buf, frag, "types", &first);
+        try jsonClose(gpa, buf, first, false);
     }
-    try buf.appendSlice(gpa, if (model.opaques.items.len == 0) "],\n" else "\n  ],\n");
 
     // value structs (layout exposed)
     try buf.appendSlice(gpa, "  \"structs\": [");
-    for (model.structs.items, 0..) |s, idx| {
-        try buf.appendSlice(gpa, if (idx == 0) "\n" else ",\n");
-        try print(gpa, buf, "    {{ \"name\": \"{s}\", \"fields\": [", .{s.cname});
-        for (s.fields.items, 0..) |fld, fidx| {
-            if (fidx != 0) try buf.appendSlice(gpa, ", ");
-            try print(gpa, buf, "{{ \"name\": \"{s}\", \"type\": \"{s}\" }}", .{ fld.name, fld.scalar.zigName() });
+    {
+        var first = true;
+        for (model.structs.items) |s| {
+            try jsonSep(gpa, buf, &first);
+            try print(gpa, buf, "    {{ \"name\": \"{s}\", \"fields\": [", .{s.cname});
+            for (s.fields.items, 0..) |fld, fidx| {
+                if (fidx != 0) try buf.appendSlice(gpa, ", ");
+                try print(gpa, buf, "{{ \"name\": \"{s}\", \"type\": \"{s}\" }}", .{ fld.name, fld.scalar.zigName() });
+            }
+            try buf.appendSlice(gpa, "] }");
         }
-        try buf.appendSlice(gpa, "] }");
+        try appendFrag(gpa, buf, frag, "structs", &first);
+        try jsonClose(gpa, buf, first, false);
     }
-    try buf.appendSlice(gpa, if (model.structs.items.len == 0) "],\n" else "\n  ],\n");
 
     // enums (exposed as integers; members carry their value)
     try buf.appendSlice(gpa, "  \"enums\": [");
-    for (model.enums.items, 0..) |e, idx| {
-        try buf.appendSlice(gpa, if (idx == 0) "\n" else ",\n");
-        try print(gpa, buf, "    {{ \"name\": \"{s}\", \"members\": [", .{e.cname});
-        for (e.members.items, 0..) |m, midx| {
-            if (midx != 0) try buf.appendSlice(gpa, ", ");
-            try print(gpa, buf, "{{ \"name\": \"{s}\", \"value\": {d} }}", .{ m, midx });
+    {
+        var first = true;
+        for (model.enums.items) |e| {
+            try jsonSep(gpa, buf, &first);
+            try print(gpa, buf, "    {{ \"name\": \"{s}\", \"members\": [", .{e.cname});
+            for (e.members.items, 0..) |m, midx| {
+                if (midx != 0) try buf.appendSlice(gpa, ", ");
+                try print(gpa, buf, "{{ \"name\": \"{s}\", \"value\": {d} }}", .{ m, midx });
+            }
+            try buf.appendSlice(gpa, "] }");
         }
-        try buf.appendSlice(gpa, "] }");
+        try appendFrag(gpa, buf, frag, "enums", &first);
+        try jsonClose(gpa, buf, first, false);
     }
-    try buf.appendSlice(gpa, if (model.enums.items.len == 0) "],\n" else "\n  ],\n");
 
     // callbacks (event-handler boxes). C fn = void(*)(void* userdata, const void* event);
     // the event is opaque, read via nmEvent* accessors (see preamble).
     try buf.appendSlice(gpa, "  \"callbacks\": [");
-    for (model.callbacks.items, 0..) |c, idx| {
-        try buf.appendSlice(gpa, if (idx == 0) "\n" else ",\n");
-        try print(gpa, buf, "    {{ \"name\": \"{s}\", \"event\": \"opaque\" }}", .{c.cname});
+    {
+        var first = true;
+        for (model.callbacks.items) |c| {
+            try jsonSep(gpa, buf, &first);
+            try print(gpa, buf, "    {{ \"name\": \"{s}\", \"event\": \"opaque\" }}", .{c.cname});
+        }
+        try appendFrag(gpa, buf, frag, "callbacks", &first);
+        try jsonClose(gpa, buf, first, false);
     }
-    try buf.appendSlice(gpa, if (model.callbacks.items.len == 0) "],\n" else "\n  ],\n");
 
     // functions
     try buf.appendSlice(gpa, "  \"functions\": [");
-    for (model.funcs.items, 0..) |*f, idx| {
-        try buf.appendSlice(gpa, if (idx == 0) "\n" else ",\n");
-        try emitJsonFunc(gpa, buf, f);
+    {
+        var first = true;
+        for (model.funcs.items) |*f| {
+            try jsonSep(gpa, buf, &first);
+            try emitJsonFunc(gpa, buf, f);
+        }
+        try appendFrag(gpa, buf, frag, "functions", &first);
+        try jsonClose(gpa, buf, first, false);
     }
-    try buf.appendSlice(gpa, if (model.funcs.items.len == 0) "],\n" else "\n  ],\n");
 
     // casts (upcasts): from -> to
     try buf.appendSlice(gpa, "  \"casts\": [");
-    for (model.casts.items, 0..) |c, idx| {
-        try buf.appendSlice(gpa, if (idx == 0) "\n" else ",\n");
-        try print(gpa, buf, "    {{ \"c\": \"{s}\", \"from\": \"{s}\", \"to\": \"{s}\" }}", .{ c.cname, c.ztype, c.target });
+    {
+        var first = true;
+        for (model.casts.items) |c| {
+            try jsonSep(gpa, buf, &first);
+            try print(gpa, buf, "    {{ \"c\": \"{s}\", \"from\": \"{s}\", \"to\": \"{s}\" }}", .{ c.cname, c.ztype, c.target });
+        }
+        try appendFrag(gpa, buf, frag, "casts", &first);
+        try jsonClose(gpa, buf, first, false);
     }
-    try buf.appendSlice(gpa, if (model.casts.items.len == 0) "],\n" else "\n  ],\n");
 
-    // destructors
+    // destructors (final section — no trailing comma)
     try buf.appendSlice(gpa, "  \"destructors\": [");
-    for (model.destructors.items, 0..) |d, idx| {
-        try buf.appendSlice(gpa, if (idx == 0) "\n" else ",\n");
-        try print(gpa, buf, "    {{ \"c\": \"{s}\", \"type\": \"{s}\" }}", .{ d.cname, d.ztype });
+    {
+        var first = true;
+        for (model.destructors.items) |d| {
+            try jsonSep(gpa, buf, &first);
+            try print(gpa, buf, "    {{ \"c\": \"{s}\", \"type\": \"{s}\" }}", .{ d.cname, d.ztype });
+        }
+        try appendFrag(gpa, buf, frag, "destructors", &first);
+        try jsonClose(gpa, buf, first, true);
     }
-    try buf.appendSlice(gpa, if (model.destructors.items.len == 0) "]\n" else "\n  ]\n");
 
     try buf.appendSlice(gpa, "}\n");
 }

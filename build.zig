@@ -177,11 +177,12 @@ pub fn build(b: *std.Build) void {
     });
     const apigen_run = b.addRunArtifact(apigen_exe);
     apigen_run.setCwd(b.path("."));
-    // Re-run whenever any input changes (spec or either preamble).
+    // Re-run whenever any input changes (spec or any preamble / IR fragment).
     apigen_run.addFileInput(b.path("tools/apigen/nimbus.api"));
     apigen_run.addFileInput(b.path("tools/apigen/preamble.h"));
     apigen_run.addFileInput(b.path("tools/apigen/preamble_protos.h"));
     apigen_run.addFileInput(b.path("tools/apigen/preamble.zig"));
+    apigen_run.addFileInput(b.path("tools/apigen/preamble_ir.txt"));
     const apigen_step = b.step("apigen", "Regenerate the C ABI (nimbus.h + c_api.zig) from tools/apigen/nimbus.api");
     apigen_step.dependOn(&apigen_run.step);
 
