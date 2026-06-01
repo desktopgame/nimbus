@@ -38,7 +38,7 @@ typedef struct { void* userdata; nmCell (*create)(void* userdata); } nmCellFacto
 ---
 
 ## #6a awt.Image（値返し / setIcon）
-所有モデルは確定。残る未決は lucide 引数の出し方 1 点のみ（→「決めること」）。
+**設計確定**（実装は未着手）。所有モデル・C ハンドル方針・lucide 引数の出し方すべて決定済み。
 
 ### 何
 `awt.Image = { texture: Texture, width: i32, height: i32 }`（GPU テクスチャを包む値型、awt/src/Image.zig）。
@@ -98,9 +98,30 @@ del img                           # 変数が消えても Button が参照保持
 
 `ownership` タグ（owned/borrowed）が double-free を防ぎ、この keep-alive が use-after-free を防ぐ。2 軸の役割が違う。
 
-### 決めること（残り 1 点）
-- **lucide ビルトインアイコン引数の出し方**。`lucide.Icon` は数百メンバの巨大 enum で、そのまま C/Python に
-  出すのは非現実的。候補: 文字列キー / 整数 id の薄い API / よく使う一部だけ curate。ここだけ未決。
+### lucide 引数の出し方（確定）：curated enum + 文字列フォールバック
+`lucide.Icon` は ~1700 メンバの巨大 enum（icons.zig 自動生成、各 variant が 64×64 PNG）。全 enum 露出は
+不採用 — メンバ順を**上流が所有**するため、lucide 更新で値がズレ、shared-lib + バインディングで「黙って違う
+アイコンが出る」ABI 破壊になる（nmAlignment は nimbus 所有 4 個なので安全、という違い）。代わりに 2 入口:
+
+```c
+nmImage* nmAppIcon     (nmApplication* self, nmIcon id);        // curated, 補完が効く
+nmImage* nmAppIconNamed(nmApplication* self, const char* name); // それ以外も文字列で（未知 = NULL + last_error）
+```
+- **curated `nmIcon`** は nimbus 所有の小さな安定 enum（種は CLAUDE.md ビルトインアセット: open/save/save_as/
+  undo/redo/cut/copy/paste …）。順序を nimbus が所有するので値が安定（追加は末尾 append）。
+- **文字列パス**は int の ABI 値を持たず、契約は文字列名。lucide が改名/削除しても**黙って誤アイコンではなく
+  明示エラー**（`stringToEnum` → null → NULL + last_error）。全 enum 露出の弱点をエラーに変換でき、むしろ堅い。
+- 名前は lucide メンバ名で揃える（`nmIcon.save` ⇔ `"save"`）。binding は型で振り分けてメソッド 1 個に統合可
+  （`app.icon(nm.Icon.SAVE)` / `app.icon("circle_plus")`）。
+- **コスト**: curated リストを nimbus が手で保つ（＝どのアイコンを補完対象にするかの設計判断。小さく負担軽）。
+
+### apigen への影響（実装時にやること）
+- **名前マップ型 curated enum** 構文を追加。既存の「ネイティブ enum を同順ミラー + index assert」は使えない
+  （curated は部分集合で index が native と不一致）。代わりに `nmIcon → lucide.Icon` の switch を生成し、各腕を
+  `@field(lucide.Icon, "save")` で引く＝**drift 検査が名前ベース**（上流の改名/削除がコンパイルエラーになる）。
+- `nmAppIconNamed` は `stringToEnum` 一発なので apigen 汎用化せず **preamble.zig に手書きシム**で足す。
+- 借用 2 つ（getIcon / Application.icon）は **(b) alloc-free のフィールド参照**で出す（box を作らない）。
+  loader (`nmImageLoadPng` 等) だけが owned＝heap box を払い、`nmImageDestroy` の対象もそれだけ。
 
 ---
 
