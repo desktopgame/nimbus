@@ -1,10 +1,14 @@
 # c_api-codegen バックログ（棚上げ案件）
 apigen（[c_api_codegen.md](c_api_codegen.md)）で**後回しにした項目**のメモ。
-2026-05-31 時点で `#1` ブートストラップ / `#2` 文字列戻り / `#3` 文字列配列引数 / `#5` optional 値構造体 /
-`#6c` リスナー remove は実装済み。ここに残すのは「bespoke（機械生成に乗りにくく、手書きアダプタや
-設計判断が要る）」3 件と、軽微な未対応の一覧。明日以降の検討用。
 
-各項目は「何 / なぜ bespoke / 候補アプローチ / 決めること」で書く。
+2026-06-02 時点の状況:
+- 実装済み: `#1` ブートストラップ / `#2` 文字列戻り / `#3` 文字列配列引数 / `#5` optional 値構造体 /
+  `#6c` リスナー remove、そして **`#4` List CellFactory / `#6a` Image**（正式記述は c_api_codegen.md に移動）。
+- 棚上げ中（bespoke）: **`#6b` Timer のみ**。
+- その他: 「軽微な未対応」一覧と、末尾の「公開 API の C ABI 生成カバレッジ調査」。
+
+`#4` / `#6a` の項は実装後も検討経緯の記録として残してある（この backlog を削除する時に一緒に捨てて良い）。
+各 bespoke 項目は「何 / なぜ bespoke / 候補アプローチ / 決めること」で書く。
 
 ---
 
@@ -171,3 +175,53 @@ nmImage* nmAppIconNamed(nmApplication* self, const char* name); // それ以外�
 - enum の明示値・非連続値・フラグ（ビット或）。
 - 値構造体のネスト / 配列 / enum フィールド。
 - コールバックの event に追加 typed 引数を持つ署名（今の nimbus のリスナーは event 1 個のみ）。
+
+方針（2026-06-02 確認）: これらは **live な利用者が無い** ので先回り実装しない（投機的・検証不能）。
+各項目は「それを使う公開済みメソッドが出た時点」で concrete に実装する（point-of-need）。例外は
+**usize スカラ**（下の調査参照）— 実需が多数あるので、最初の index 系メソッド公開時に足す価値が明確。
+
+---
+
+## 公開 API の C ABI 生成カバレッジ調査（2026-06-02）
+「現状の apigen で nimbus.api を書くだけでどれだけ露出できるか」を `framework/src` の公開 `pub fn` で
+分類した結果（内部 = vtable 実装 / GapBuffer / log / 各 create・init・deinit は除外）。
+A = 今すぐ生成可、B = 小拡張で生成可、C = bespoke 手書き。
+
+### 概数
+- **A（追記ゼロで生成可）≈ 65〜70%**
+- **B（小拡張で生成可）≈ 15%**
+- **C（手書き必須）≈ 15〜20%**
+
+> 補正: 初回調査はリスナー登録（`addXxxListener`/`removeXxxListener`）と `?Size`/`?str` 戻りを手書き側に
+> 数えていたが、これらは**既に生成対応済み**（callback 機構・optional 値構造体・?str）。よって実際の A は
+> 調査の素の値（~55%）より高い ~65〜70%。
+
+### A（今すぐ生成可）— ウィジェット API の主流
+プロパティ get/set・ファクトリ・リスナー登録のスタイルは丸ごと生成可:
+- Label / Button / CheckBox / RadioButton / Slider / ScrollBar（text・color・bool・enum・f32 系）
+- TextField / TextArea（text・各色）、Menu / MenuItem / CheckBoxMenuItem / Panel / Frame
+- Component の bounds / grow / align / focus / name 系 ~25 メソッド
+- Application のファクトリ ~28 個（label/panel/button/.../textArea — 全部「widget 確保 → `*T` 返し」）
+- 各 Model の bool/i32 state（ButtonModel / ToggleButtonModel / BoundedRangeModel / ScrollBar）
+- リスナー（既存 callback 機構）、`?Size`/`?str` 戻り（実装済み）、value struct（Color/Size/Border 等）
+
+### B（小拡張で生成可）— ROI 順
+| 拡張 | 影響 | 備考 |
+|---|---|---|
+| **usize / size_t スカラ追加** | 最多（getItemCount / getSize / count / index 引数） | **実需多数 → 投機でない。最優先候補** |
+| optional スカラ `?usize` / `?f64` | 数件（`List.getEditing` / `earliestDueIn`） | |
+| 値 + エラー戻り `!T`（T が値） | 数件 | #6b TimerId と共通機構 |
+| Panel `Border` 等の value struct | 数件 | フィールドが f32+Color なら平坦化で A |
+
+usize を足すと **~80%+ が A** になる見込み。
+
+### C（手書き必須）— 性質が判明済み・パターン確立済み
+- bespoke プロトコル（関数ポインタ構造体）: List `CellFactory`/`Cell`（実装済み）、DnD transfer、overlay/popup 配置
+- `void*` / `*anyopaque` userdata: `Component.putProperty`/`getProperty`、`OverlayManager.remove(owner)`
+- event 以外の追加引数を持つコールバック: DnD `onDragStart`/`onOver` 等
+- allocator / io ブートストラップ: `Application.init`（→ `nmAppCreate` 実装済み）、`Window.init`
+
+### 次の一手の候補
+1. **純 A のウィジェット一括公開**（Label/CheckBox/RadioButton/Slider/Panel/TextField/Window/Menu 系/各 Model/
+   残り Application ファクトリ）を nimbus.api に追記 — 手書きゼロで実用カバレッジが一気に上がる。
+2. **usize スカラ追加** — index 系を公開する最初のタイミングで（実需あり）。
