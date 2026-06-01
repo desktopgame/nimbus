@@ -5,7 +5,8 @@
     { "name": "Button", "c": "nmButton", "extends": "Component" },
     { "name": "ComboBox", "c": "nmComboBox", "extends": "Component" },
     { "name": "Frame", "c": "nmFrame", "extends": null },
-    { "name": "Application", "c": "nmApplication", "extends": null }
+    { "name": "Application", "c": "nmApplication", "extends": null },
+    { "name": "Image", "c": "nmImage", "extends": null }
   ],
   "structs": [
     { "name": "nmColor", "fields": [{ "name": "r", "type": "f32" }, { "name": "g", "type": "f32" }, { "name": "b", "type": "f32" }, { "name": "a", "type": "f32" }] },

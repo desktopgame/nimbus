@@ -67,6 +67,11 @@ opaque Button    : Component
 opaque ComboBox  : Component
 opaque Frame
 opaque Application
+# awt.Image (a GPU-texture-backed value type) boxed as a handle. Its methods
+# (load / destroy / width / height / getIcon / setIcon / app icon) are bespoke
+# and hand-written in preamble.zig (see doc/c_api_codegen.md「Image / icon」);
+# only the handle typedef + IR type entry are generated from this line.
+opaque Image
 
 # Value struct: its layout is exposed across the ABI (generated as an
 # `extern struct`; shims convert field-by-field to/from the native Color).

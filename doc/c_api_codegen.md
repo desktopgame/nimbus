@@ -301,6 +301,62 @@ IR ではこの引数を `{"type":"callback","callback":"nmChangeListener","role
 > 未対応: event に追加の typed 引数を持つコールバック（現状 nimbus のリスナーは event 1 個のみ）。
 > 値戻り＋エラーを伴う登録（`setTimeout` の `!TimerId` 等）。リスナーの `remove`（解除）エクスポート。
 
+## Image / icon（実装済み・手書き bespoke）
+`awt.Image`（GPU テクスチャを包む値型 `{ texture, width, height }`）と、それを使う
+`Button.getIcon`/`setIcon`・`Application.icon` の C ABI。**ハンドル typedef `nmImage` は生成**
+（spec に `opaque Image` の 1 行）だが、**関数群はすべて preamble に手書き**する。
+
+### なぜ生成せず手書きか
+どれも apigen の語彙（「ネイティブメソッドを呼ぶシム」）に乗らないため。
+
+* `getIcon` は **optional フィールドのアドレスを返す**（メソッド呼び出しではない。`&self.icon.?`）。
+* `setIcon(?Image)` は **optional ハンドルを deref** して `?awt.Image` 値に詰め替える。
+* loader は値返し（`Image.fromMemory` は `!Image`）を **heap に box** して所有ハンドルにする。
+* `Application.icon` は**メソッドを呼んだ後にキャッシュスロットのアドレスを返す**借用。
+
+### 所有モデル（owned 一系統 + 借用）
+Image の入口は 3 つ、所有は **owned（loader 産のみ）/ 残りは全部借用** にきれいに割れる。
+
+| 入口 | texture の所有者 | C ハンドル | `nmImageDestroy` |
+|---|---|---|---|
+| `nmAppLoadImage(app, bytes, len)` | 呼び出し側 owned | heap box（確保あり） | **する** |
+| `nmAppIcon(app, id)` / `nmAppIconNamed(app, name)` | App の `icon_cache` | 借用 = キャッシュ参照 | しない |
+| `nmButtonGetIcon(btn)` | 元の owner | 借用 = `&button.icon` | しない |
+
+借用 2 つは安定アドレスへの裸ポインタで、**box を確保しない**（alloc は loader 産だけが払う）。
+`Button.getIcon`/`setIcon` は値コピー（借用）で、`Button` は texture を所有も解放もしない
+（`Button.destroy` は icon を deinit しない）。`Application.icon` は cache 所有・App.deinit で解放
+（コメントにも `do not call deinit` と明記）。危険の向きは「owner が先に free → 借用が
+use-after-free」。バインディングは「widget → Image を pin」する keep-alive でこれを防ぐ。
+所有権タグ（`@owned`/`@borrowed`）が double-free を、keep-alive が use-after-free を防ぐ別軸。
+
+### lucide アイコン引数: curated enum + 文字列フォールバック
+`lucide.Icon` は ~1700 メンバの巨大 enum（自動生成、各 variant が PNG）。**全 enum 露出は不採用** —
+メンバ順を**上流が所有**するため、lucide 更新で int 値がズレ、shared-lib + バインディングで「黙って
+違うアイコンが出る」ABI 破壊になる（`nmAlignment` は nimbus 所有 4 個なので安全、という違い）。
+代わりに 2 入口:
+
+* **curated `nmIcon`**（nimbus 所有・補完が効く小さな安定 enum、種は CLAUDE.md ビルトインアセット
+  open/save/save_as/undo/redo/cut/copy/paste）。順序を nimbus が所有するので値が安定（追加は末尾）。
+  メンバは lucide 実名へ写像する（`cut → scissors`, `paste → clipboard_paste`,
+  `open → folder_open`, `save_as → save_all`）。
+* **`nmAppIconNamed(name)`**（文字列フォールバック）。int の ABI 値を持たず、契約は文字列名。
+  lucide が改名/削除しても黙って誤アイコンではなく**明示エラー**（`stringToEnum` → null →
+  NULL + last_error）になり、むしろ堅い。
+
+`nmIcon → lucide.Icon` の写像は preamble 手書きの `switch`。各腕が `lucide.Icon.scissors` 等を
+**直接参照する**ので、上流の改名/削除は**コンパイルエラー**＝ドリフト検知（生成 enum の comptime
+assert と同じ役割を手書き switch が担う）。バインディングは型で振り分けてメソッド 1 個に統合できる
+（`app.icon(Icon.SAVE)` / `app.icon("circle_plus")`）。
+
+> IR について: `opaque Image` により `nmImage`（型）は IR の `types` に出るが、**`nmIcon` と Image
+> メソッド群（load/destroy/width/height/getIcon/setIcon/icon/iconNamed）は手書きのため IR に出ない**。
+> バインディング生成器がこれらを必要とするなら、(a) 名前マップ型 curated enum を生成器に足す（switch +
+> `@field` で名前ベースのドリフト検知）か、(b) preamble を読む。投機的に生成器を拡張せず、必要時に判断する。
+
+> 名前マップ型 curated enum（`enum <CName> = <Native> map { <c名> = <native名> ... }`）を apigen に
+> 追加すれば `nmIcon` を生成に乗せ IR にも出せる。現状は消費者が手書き preamble だけなので未実装。
+
 ## init / deinit（コンストラクタ・デストラクタ）の見せ方
 Zig には 2 つの生成の流儀がある。
 
@@ -371,6 +427,11 @@ preamble は 3 ファイルに分かれる: `preamble.h`（C ヘッダ先頭＝i
   allocator / io を要し C から渡せないため手書き。既定は libc allocator
   （`std.heap.c_allocator`）+ std の単一スレッド Io（`std.Io.Threaded.global_single_threaded`、
   nimbus は単一 UI スレッドなので適合）。`nmAppRun` は生成（`run()` は素の `!void` メソッド）。
+* **Image / icon（実装済み・bespoke）**: `nmAppLoadImage` / `nmImageDestroy` / `nmImageWidth` /
+  `nmImageHeight` / `nmAppIcon` / `nmAppIconNamed` / `nmButtonGetIcon` / `nmButtonSetIcon`、および
+  curated `nmIcon` enum と `nmIconToLucide` 写像。フィールドアドレス返し・optional deref・値返しの
+  box 化・キャッシュ参照返しで生成に乗らないため手書き（上記「Image / icon」）。`nmImage` typedef
+  だけは `opaque Image` で生成。
 
 ## 実装済み / 未対応
 実装済み（生成器が出力する）:
@@ -390,6 +451,9 @@ preamble は 3 ファイルに分かれる: `preamble.h`（C ヘッダ先頭＝i
   登録解除（`remove`）も同じコールバック引数（box ポインタで一致削除）で生成可。
 * ブートストラップ: `nmAppCreate` / `nmAppDestroy`（手書き）+ `nmAppRun`（生成）。C だけで
   create → 操作 → run → destroy が到達可能。
+* Image / icon（手書き bespoke。`nmImage` typedef のみ生成）: 画像ロード・破棄・寸法、
+  Button の icon 取得/設定、ビルトイン icon（curated `nmIcon` + 文字列フォールバック）。
+  上記「Image / icon」。
 * バインディング IR（`bindings/nimbus_api.json`）: 型・継承・`structs`・`enums`・`callbacks`・
   関数のクラス対応づけ・ターゲット言語名・`casts`・`destructors`。
 
@@ -402,9 +466,8 @@ preamble は 3 ファイルに分かれる: `preamble.h`（C ヘッダ先頭＝i
 * enum の拡張: 明示値・非連続値・フラグ（ビット或）。
 * 値（スカラ/enum/struct/str）戻り＋エラーの組み合わせ（out 引数かセンチネルか要決定。現状は失敗なしのみ）。
 * optional ハンドル（`?*T`）— nullable ポインタで容易だが現状 live な利用メソッドが無く未生成。
-* `awt.Image` の値返し（`icon()` / `setIcon`）— GPU Texture を包む値型で、C から Image を得る手段
-  （巨大な lucide enum / device・allocator 要）も getIcon の値返し（alloc+none/error 曖昧）も bespoke。棚上げ。
-* Timer（`setTimeout` の callback + `!TimerId`）/ List `CellFactory` — bespoke。棚上げ。
+* 名前マップ型 curated enum（`nmIcon` を生成に乗せ IR にも出す）— 現状は手書き preamble。上記「Image / icon」。
+* Timer（`setTimeout` の callback + `!TimerId`）/ List `CellFactory` — bespoke。棚上げ（`doc/c_api_codegen_backlog.md`）。
 
 ## シンボル名の規約: 公開 ABI 名と awt-c 内部名を分ける
 かつて awt-c（`glfw_shim.c`）の C 関数が公開 ABI と同じ `nmGetBackendVersion` を名乗っており、

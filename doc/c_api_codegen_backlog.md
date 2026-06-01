@@ -38,7 +38,10 @@ typedef struct { void* userdata; nmCell (*create)(void* userdata); } nmCellFacto
 ---
 
 ## #6a awt.Image（値返し / setIcon）
-**設計確定**（実装は未着手）。所有モデル・C ハンドル方針・lucide 引数の出し方すべて決定済み。
+**実装済み（2026-06-01）。正式な記述は [c_api_codegen.md](c_api_codegen.md)「Image / icon」へ移動した。**
+以下は検討経緯の記録（この backlog 削除時に一緒に捨てて良い）。実装は curated `nmIcon` enum +
+`nmAppIconNamed` 文字列フォールバック、借用は alloc-free フィールド参照、owned は loader 産のみ、
+Image 関数群は preamble 手書き・`nmImage` typedef のみ生成、という確定どおり。
 
 ### 何
 `awt.Image = { texture: Texture, width: i32, height: i32 }`（GPU テクスチャを包む値型、awt/src/Image.zig）。

@@ -35,6 +35,7 @@ fn setLastError(err: anyerror) void {
 fn errorToCode(err: anyerror) c_int {
     return switch (err) {
         error.OutOfMemory => 1,
+        error.IconNotFound => 2,
         else => 99,
     };
 }
@@ -83,6 +84,126 @@ export fn nmAppCreate() ?*framework.Application {
 
 export fn nmAppDestroy(self: *framework.Application) void {
     self.deinit(); // also frees the Application itself (allocator.destroy(self))
+}
+
+// ── images / icons (bespoke; see doc/c_api_codegen.md「Image / icon」) ────────
+// awt.Image wraps a GPU texture. These are hand-written, not generated: getIcon
+// returns the ADDRESS of an optional field (not a method call), setIcon derefs
+// an optional handle, the loader boxes a by-value return, and the icon getters
+// return a cache pointer after a method call — none expressible in apigen.
+//
+// Ownership: nmAppLoadImage produces an OWNED boxed Image (free once with
+// nmImageDestroy). nmAppIcon / nmAppIconNamed / nmButtonGetIcon return BORROWED
+// pointers (into the Application's icon cache / a Button's icon field) — never
+// destroy them; they live as long as their owner.
+
+/// Curated built-in icons exposed across the ABI. nimbus owns this enum (stable
+/// order, append-only), unlike the ~1700-member lucide.Icon whose ordering is
+/// upstream-owned. Mirrors the C `nmIcon` in preamble_protos.h — keep in sync.
+const nmIcon = enum(c_int) {
+    open,
+    save,
+    save_as,
+    undo,
+    redo,
+    cut,
+    copy,
+    paste,
+};
+
+/// Map a curated nmIcon to its lucide glyph. Referencing the lucide members
+/// directly IS the drift check: an upstream rename / removal makes a switch arm
+/// fail to resolve (a compile error), so this can never silently point at the
+/// wrong icon. Returns null for an out-of-range integer.
+fn nmIconToLucide(id: c_int) ?framework.lucide.Icon {
+    const count = @typeInfo(nmIcon).@"enum".fields.len;
+    if (id < 0 or id >= count) return null;
+    const ic: nmIcon = @enumFromInt(id);
+    return switch (ic) {
+        .open => .folder_open,
+        .save => .save,
+        .save_as => .save_all,
+        .undo => .undo,
+        .redo => .redo,
+        .cut => .scissors,
+        .copy => .copy,
+        .paste => .clipboard_paste,
+    };
+}
+
+/// Decode image bytes into an OWNED, heap-boxed Image (uses the Application's
+/// device + allocator transiently for decode). Failure = NULL + last_error;
+/// any texture decoded before a later failure is released (no leak).
+export fn nmAppLoadImage(app: *framework.Application, bytes: [*]const u8, len: usize) ?*awt.Image {
+    var img = awt.Image.fromMemory(app.allocator, app.device, bytes[0..len]) catch |e| {
+        setLastError(e);
+        return null;
+    };
+    const boxed = std.heap.c_allocator.create(awt.Image) catch |e| {
+        img.deinit(); // release the GPU texture we just uploaded
+        setLastError(e);
+        return null;
+    };
+    boxed.* = img;
+    return boxed;
+}
+
+/// Free an OWNED Image (from nmAppLoadImage). Deinits the texture + frees the
+/// box. Must NOT be called on a borrowed Image (icon getters).
+export fn nmImageDestroy(self: *awt.Image) void {
+    self.deinit();
+    std.heap.c_allocator.destroy(self);
+}
+
+export fn nmImageWidth(self: *const awt.Image) i32 {
+    return self.width;
+}
+
+export fn nmImageHeight(self: *const awt.Image) i32 {
+    return self.height;
+}
+
+/// Built-in curated icon as a BORROWED Image (pointer into the Application's
+/// icon cache; lives as long as the Application). Decodes + caches on first use.
+export fn nmAppIcon(self: *framework.Application, id: c_int) ?*awt.Image {
+    const lucide_id = nmIconToLucide(id) orelse {
+        setLastError(error.IconNotFound);
+        return null;
+    };
+    _ = self.icon(lucide_id) catch |e| {
+        setLastError(e);
+        return null;
+    };
+    return &self.icon_cache[@intFromEnum(lucide_id)].?;
+}
+
+/// Built-in icon by lucide name (e.g. "circle_plus") — the escape hatch for
+/// icons outside the curated nmIcon set. Unknown name = NULL + last_error.
+export fn nmAppIconNamed(self: *framework.Application, name: [*:0]const u8) ?*awt.Image {
+    // lucide.Icon has ~1700 members; stringToEnum builds a comptime lookup over
+    // all of them, which exceeds the default branch quota.
+    @setEvalBranchQuota(20000);
+    const id = std.meta.stringToEnum(framework.lucide.Icon, std.mem.span(name)) orelse {
+        setLastError(error.IconNotFound);
+        return null;
+    };
+    _ = self.icon(id) catch |e| {
+        setLastError(e);
+        return null;
+    };
+    return &self.icon_cache[@intFromEnum(id)].?;
+}
+
+/// BORROWED pointer into the Button's icon field (NULL = no icon, not an error).
+export fn nmButtonGetIcon(self: *framework.Button) ?*awt.Image {
+    if (self.icon) |*img| return img;
+    return null;
+}
+
+/// Set / clear the Button's icon. Copies the Image by value (a borrow — the
+/// Button does not own the texture). Pass null to clear.
+export fn nmButtonSetIcon(self: *framework.Button, icon: ?*awt.Image) void {
+    self.setIcon(if (icon) |p| p.* else null);
 }
 
 // ── generated exports (do not edit; regenerate with `zig build apigen`) ──
