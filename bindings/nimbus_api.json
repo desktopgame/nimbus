@@ -14,6 +14,7 @@
     { "name": "ScrollBar", "c": "nmScrollBar", "extends": "Component" },
     { "name": "TextField", "c": "nmTextField", "extends": "Component" },
     { "name": "TextArea", "c": "nmTextArea", "extends": "Component" },
+    { "name": "ScrollPane", "c": "nmScrollPane", "extends": "Container" },
     { "name": "Window", "c": "nmWindow", "extends": null },
     { "name": "Dialog", "c": "nmDialog", "extends": null },
     { "name": "MenuItem", "c": "nmMenuItem", "extends": "Component" },
@@ -43,7 +44,8 @@
     { "name": "nmOrientation", "members": [{ "name": "horizontal", "value": 0 }, { "name": "vertical", "value": 1 }] },
     { "name": "nmScrollOrientation", "members": [{ "name": "horizontal", "value": 0 }, { "name": "vertical", "value": 1 }] },
     { "name": "nmBorderRegion", "members": [{ "name": "north", "value": 0 }, { "name": "south", "value": 1 }, { "name": "east", "value": 2 }, { "name": "west", "value": 3 }, { "name": "center", "value": 4 }] },
-    { "name": "nmDialogResult", "members": [{ "name": "none", "value": 0 }, { "name": "ok", "value": 1 }, { "name": "cancel", "value": 2 }] }
+    { "name": "nmDialogResult", "members": [{ "name": "none", "value": 0 }, { "name": "ok", "value": 1 }, { "name": "cancel", "value": 2 }] },
+    { "name": "nmScrollPanePolicy", "members": [{ "name": "as_needed", "value": 0 }, { "name": "always", "value": 1 }, { "name": "never", "value": 2 }] }
   ],
   "callbacks": [
     { "name": "nmChangeListener", "event": "opaque" }
@@ -2162,6 +2164,149 @@
       "fail": "err"
     },
     {
+      "c": "nmAppScrollPane",
+      "owner": "Application",
+      "method": "scrollPane",
+      "names": { "py": "scroll_pane", "js": "scrollPane" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "view", "type": "handle", "handle": "Component", "ownership": "transfer" }],
+      "ret": { "type": "handle", "handle": "ScrollPane", "ownership": "owned" },
+      "fail": "null"
+    },
+    {
+      "c": "nmScrollPaneGetView",
+      "owner": "ScrollPane",
+      "method": "getView",
+      "names": { "py": "get_view", "js": "getView" },
+      "kind": "method",
+      "receiver": "value",
+      "params": [],
+      "ret": { "type": "handle", "handle": "Component", "ownership": "borrowed" },
+      "fail": null
+    },
+    {
+      "c": "nmScrollPaneSetView",
+      "owner": "ScrollPane",
+      "method": "setView",
+      "names": { "py": "set_view", "js": "setView" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "view", "type": "handle", "handle": "Component", "ownership": "transfer" }],
+      "ret": { "type": "void" },
+      "fail": null
+    },
+    {
+      "c": "nmScrollPaneGetScrollX",
+      "owner": "ScrollPane",
+      "method": "getScrollX",
+      "names": { "py": "get_scroll_x", "js": "getScrollX" },
+      "kind": "method",
+      "receiver": "value",
+      "params": [],
+      "ret": { "type": "f32" },
+      "fail": null
+    },
+    {
+      "c": "nmScrollPaneGetScrollY",
+      "owner": "ScrollPane",
+      "method": "getScrollY",
+      "names": { "py": "get_scroll_y", "js": "getScrollY" },
+      "kind": "method",
+      "receiver": "value",
+      "params": [],
+      "ret": { "type": "f32" },
+      "fail": null
+    },
+    {
+      "c": "nmScrollPaneSetScrollX",
+      "owner": "ScrollPane",
+      "method": "setScrollX",
+      "names": { "py": "set_scroll_x", "js": "setScrollX" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "px", "type": "f32" }],
+      "ret": { "type": "void" },
+      "fail": null
+    },
+    {
+      "c": "nmScrollPaneSetScrollY",
+      "owner": "ScrollPane",
+      "method": "setScrollY",
+      "names": { "py": "set_scroll_y", "js": "setScrollY" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "px", "type": "f32" }],
+      "ret": { "type": "void" },
+      "fail": null
+    },
+    {
+      "c": "nmScrollPaneSetHorizontalPolicy",
+      "owner": "ScrollPane",
+      "method": "setHorizontalPolicy",
+      "names": { "py": "set_horizontal_policy", "js": "setHorizontalPolicy" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "policy", "type": "enum", "enum": "nmScrollPanePolicy" }],
+      "ret": { "type": "void" },
+      "fail": null
+    },
+    {
+      "c": "nmScrollPaneSetVerticalPolicy",
+      "owner": "ScrollPane",
+      "method": "setVerticalPolicy",
+      "names": { "py": "set_vertical_policy", "js": "setVerticalPolicy" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "policy", "type": "enum", "enum": "nmScrollPanePolicy" }],
+      "ret": { "type": "void" },
+      "fail": null
+    },
+    {
+      "c": "nmScrollPaneSetUnitIncrement",
+      "owner": "ScrollPane",
+      "method": "setUnitIncrement",
+      "names": { "py": "set_unit_increment", "js": "setUnitIncrement" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "px", "type": "f32" }],
+      "ret": { "type": "void" },
+      "fail": null
+    },
+    {
+      "c": "nmScrollPaneScrollRectToVisible",
+      "owner": "ScrollPane",
+      "method": "scrollRectToVisible",
+      "names": { "py": "scroll_rect_to_visible", "js": "scrollRectToVisible" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "rect", "type": "struct", "struct": "nmRect" }],
+      "ret": { "type": "void" },
+      "fail": null
+    },
+    {
+      "c": "nmScrollPaneOnChange",
+      "owner": "ScrollPane",
+      "method": "addChangeListener",
+      "names": { "py": "add_change_listener", "js": "addChangeListener" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "cb", "type": "callback", "callback": "nmChangeListener", "role": "event_handler" }],
+      "ret": { "type": "void" },
+      "fail": "err"
+    },
+    {
+      "c": "nmScrollPaneOffChange",
+      "owner": "ScrollPane",
+      "method": "removeChangeListener",
+      "names": { "py": "remove_change_listener", "js": "removeChangeListener" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "cb", "type": "callback", "callback": "nmChangeListener", "role": "event_handler" }],
+      "ret": { "type": "void" },
+      "fail": null
+    },
+    {
       "c": "nmAppLoadImage",
       "impl": "manual",
       "owner": "Application",
@@ -2407,6 +2552,7 @@
     { "c": "nmMenuBarAsComponent", "from": "MenuBar", "to": "Component" },
     { "c": "nmMenuSeparatorAsComponent", "from": "MenuSeparator", "to": "Component" },
     { "c": "nmPanelAsContainer", "from": "Panel", "to": "Container" },
+    { "c": "nmScrollPaneAsContainer", "from": "ScrollPane", "to": "Container" },
     { "c": "nmFrameAsWindow", "from": "Frame", "to": "Window" },
     { "c": "nmDialogAsWindow", "from": "Dialog", "to": "Window" }
   ],

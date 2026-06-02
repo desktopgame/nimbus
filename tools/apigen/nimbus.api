@@ -83,6 +83,10 @@ opaque Slider      : Component
 opaque ScrollBar   : Component
 opaque TextField   : Component
 opaque TextArea    : Component
+# ScrollPane embeds a Container (-> Component). The 2-level upcast is two single
+# casts (ScrollPane->Container, Container->Component); the binding composes them
+# via this inheritance chain — no 2-stage cast machinery needed.
+opaque ScrollPane  : Container
 # Top-level window (borrowed via nmFrameAsWindow; the Frame owns it). Not a Component.
 opaque Window
 # Owner-bound dialog (modal or modeless). Caller-owned (the Application registers
@@ -141,6 +145,8 @@ enum nmBorderRegion = BorderLayout.Region { north south east west center }
 # so arbitrary i32 codes still pass through @enumFromInt/@intFromEnum; only these
 # three carry names + a drift check.
 enum nmDialogResult = Dialog.Result { none ok cancel }
+# ScrollPane scrollbar visibility policy.
+enum nmScrollPanePolicy = ScrollPane.Policy { as_needed always never }
 
 # Event-handler callback. native event = ChangeListenerList.Event; the C side
 # passes a { fn, userdata } box pointer and receives the event as an opaque
@@ -420,6 +426,23 @@ fn nmContainerSetLayout  = Container.setLayout (&self, layout:?*LayoutManager @b
 fn nmContainerGetLayout  = Container.getLayout (&self) -> ?*LayoutManager @borrowed
 fn nmBorderLayoutAdd     = BorderLayout.add (container:*Container, region:nmBorderRegion, child:*Component @transfer) -> void !err
 
+# ScrollPane (#4). view ownership transfers to the pane (factory + setView).
+# getView is borrowed. asComponent は出さず、nmScrollPaneAsContainer →
+# nmContainerAsComponent の 2 段で binding 側が合成する（#6 却下の理由を参照）。
+fn nmAppScrollPane                = Application.scrollPane (&self, view:*Component @transfer) -> *ScrollPane !null @owned
+fn nmScrollPaneGetView            = ScrollPane.getView   (=self) -> *Component @borrowed
+fn nmScrollPaneSetView            = ScrollPane.setView   (&self, view:*Component @transfer) -> void
+fn nmScrollPaneGetScrollX         = ScrollPane.getScrollX (=self) -> f32
+fn nmScrollPaneGetScrollY         = ScrollPane.getScrollY (=self) -> f32
+fn nmScrollPaneSetScrollX         = ScrollPane.setScrollX (&self, px:f32) -> void
+fn nmScrollPaneSetScrollY         = ScrollPane.setScrollY (&self, px:f32) -> void
+fn nmScrollPaneSetHorizontalPolicy = ScrollPane.setHorizontalPolicy (&self, policy:nmScrollPanePolicy) -> void
+fn nmScrollPaneSetVerticalPolicy   = ScrollPane.setVerticalPolicy   (&self, policy:nmScrollPanePolicy) -> void
+fn nmScrollPaneSetUnitIncrement   = ScrollPane.setUnitIncrement (&self, px:f32) -> void
+fn nmScrollPaneScrollRectToVisible = ScrollPane.scrollRectToVisible (&self, rect:nmRect) -> void
+fn nmScrollPaneOnChange  = ScrollPane.addChangeListener    (&self, cb:nmChangeListener) -> void !err
+fn nmScrollPaneOffChange = ScrollPane.removeChangeListener (&self, cb:nmChangeListener) -> void
+
 # Upcast to the embedded Component (one-line `return &self.<field>`). Lets a
 # binding reach Container methods on any widget and feed nmComponentDestroy.
 cast nmButtonAsComponent    = Button.component    -> Component
@@ -437,8 +460,9 @@ cast nmCheckBoxMenuItemAsComponent = CheckBoxMenuItem.component -> Component
 cast nmMenuAsComponent             = Menu.component             -> Component
 cast nmMenuBarAsComponent          = MenuBar.component          -> Component
 cast nmMenuSeparatorAsComponent    = MenuSeparator.component    -> Component
-# Panel wraps a Container (-> Component via nmContainerAsComponent).
+# Panel / ScrollPane wrap a Container (-> Component via nmContainerAsComponent).
 cast nmPanelAsContainer            = Panel.container            -> Container
+cast nmScrollPaneAsContainer       = ScrollPane.container       -> Container
 # Frame owns its top-level Window.
 cast nmFrameAsWindow               = Frame.window               -> Window
 # Dialog embeds its top-level Window (populate the dialog via Window methods).

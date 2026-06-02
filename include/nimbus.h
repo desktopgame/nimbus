@@ -33,6 +33,7 @@ typedef struct nmSlider nmSlider;
 typedef struct nmScrollBar nmScrollBar;
 typedef struct nmTextField nmTextField;
 typedef struct nmTextArea nmTextArea;
+typedef struct nmScrollPane nmScrollPane;
 typedef struct nmWindow nmWindow;
 typedef struct nmDialog nmDialog;
 typedef struct nmMenuItem nmMenuItem;
@@ -63,6 +64,7 @@ typedef enum { nmOrientation_horizontal, nmOrientation_vertical } nmOrientation;
 typedef enum { nmScrollOrientation_horizontal, nmScrollOrientation_vertical } nmScrollOrientation;
 typedef enum { nmBorderRegion_north, nmBorderRegion_south, nmBorderRegion_east, nmBorderRegion_west, nmBorderRegion_center } nmBorderRegion;
 typedef enum { nmDialogResult_none, nmDialogResult_ok, nmDialogResult_cancel } nmDialogResult;
+typedef enum { nmScrollPanePolicy_as_needed, nmScrollPanePolicy_always, nmScrollPanePolicy_never } nmScrollPanePolicy;
 
 /* ── event-handler callbacks ── */
 typedef struct { void (*fn)(void* userdata, const void* event); void* userdata; } nmChangeListener;
@@ -379,6 +381,19 @@ nmLayoutManager* nmBorderLayoutGet(void);
 void nmContainerSetLayout(nmContainer* self, nmLayoutManager* layout);
 nmLayoutManager* nmContainerGetLayout(nmContainer* self);
 int nmBorderLayoutAdd(nmContainer* container, nmBorderRegion region, nmComponent* child);
+nmScrollPane* nmAppScrollPane(nmApplication* self, nmComponent* view);
+nmComponent* nmScrollPaneGetView(const nmScrollPane* self);
+void nmScrollPaneSetView(nmScrollPane* self, nmComponent* view);
+float nmScrollPaneGetScrollX(const nmScrollPane* self);
+float nmScrollPaneGetScrollY(const nmScrollPane* self);
+void nmScrollPaneSetScrollX(nmScrollPane* self, float px);
+void nmScrollPaneSetScrollY(nmScrollPane* self, float px);
+void nmScrollPaneSetHorizontalPolicy(nmScrollPane* self, nmScrollPanePolicy policy);
+void nmScrollPaneSetVerticalPolicy(nmScrollPane* self, nmScrollPanePolicy policy);
+void nmScrollPaneSetUnitIncrement(nmScrollPane* self, float px);
+void nmScrollPaneScrollRectToVisible(nmScrollPane* self, nmRect rect);
+int nmScrollPaneOnChange(nmScrollPane* self, nmChangeListener* cb);
+void nmScrollPaneOffChange(nmScrollPane* self, nmChangeListener* cb);
 
 /* ── upcasts ── */
 nmComponent* nmButtonAsComponent(nmButton* self);
@@ -397,6 +412,7 @@ nmComponent* nmMenuAsComponent(nmMenu* self);
 nmComponent* nmMenuBarAsComponent(nmMenuBar* self);
 nmComponent* nmMenuSeparatorAsComponent(nmMenuSeparator* self);
 nmContainer* nmPanelAsContainer(nmPanel* self);
+nmContainer* nmScrollPaneAsContainer(nmScrollPane* self);
 nmWindow* nmFrameAsWindow(nmFrame* self);
 nmWindow* nmDialogAsWindow(nmDialog* self);
 

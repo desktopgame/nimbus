@@ -381,6 +381,12 @@ comptime {
     std.debug.assert(@intFromEnum(framework.Dialog.Result.cancel) == 2);
 }
 
+comptime {
+    std.debug.assert(@intFromEnum(framework.ScrollPane.Policy.as_needed) == 0);
+    std.debug.assert(@intFromEnum(framework.ScrollPane.Policy.always) == 1);
+    std.debug.assert(@intFromEnum(framework.ScrollPane.Policy.never) == 2);
+}
+
 const nmChangeListener = extern struct {
     fn_ptr: ?*const fn (?*anyopaque, ?*const anyopaque) callconv(.c) void,
     userdata: ?*anyopaque,
@@ -1397,6 +1403,65 @@ export fn nmBorderLayoutAdd(container: *framework.Container, region: c_int, chil
     return 0;
 }
 
+export fn nmAppScrollPane(self: *framework.Application, view: *framework.Component) ?*framework.ScrollPane {
+    return self.scrollPane(view) catch |e| {
+        setLastError(e);
+        return null;
+    };
+}
+
+export fn nmScrollPaneGetView(self: *framework.ScrollPane) *framework.Component {
+    return self.getView();
+}
+
+export fn nmScrollPaneSetView(self: *framework.ScrollPane, view: *framework.Component) void {
+    self.setView(view);
+}
+
+export fn nmScrollPaneGetScrollX(self: *framework.ScrollPane) f32 {
+    return self.getScrollX();
+}
+
+export fn nmScrollPaneGetScrollY(self: *framework.ScrollPane) f32 {
+    return self.getScrollY();
+}
+
+export fn nmScrollPaneSetScrollX(self: *framework.ScrollPane, px: f32) void {
+    self.setScrollX(px);
+}
+
+export fn nmScrollPaneSetScrollY(self: *framework.ScrollPane, px: f32) void {
+    self.setScrollY(px);
+}
+
+export fn nmScrollPaneSetHorizontalPolicy(self: *framework.ScrollPane, policy: c_int) void {
+    self.setHorizontalPolicy(@enumFromInt(policy));
+}
+
+export fn nmScrollPaneSetVerticalPolicy(self: *framework.ScrollPane, policy: c_int) void {
+    self.setVerticalPolicy(@enumFromInt(policy));
+}
+
+export fn nmScrollPaneSetUnitIncrement(self: *framework.ScrollPane, px: f32) void {
+    self.setUnitIncrement(px);
+}
+
+export fn nmScrollPaneScrollRectToVisible(self: *framework.ScrollPane, rect: nmRect) void {
+    self.scrollRectToVisible(.{ .x = rect.x, .y = rect.y, .width = rect.width, .height = rect.height });
+}
+
+export fn nmScrollPaneOnChange(self: *framework.ScrollPane, cb: *nmChangeListener) c_int {
+    self.addChangeListener(nmChangeListener, nm_trampoline_nmChangeListener, cb) catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
+}
+
+export fn nmScrollPaneOffChange(self: *framework.ScrollPane, cb: *nmChangeListener) void {
+    self.removeChangeListener(nmChangeListener, nm_trampoline_nmChangeListener, cb);
+}
+
 export fn nmButtonAsComponent(self: *framework.Button) *framework.Component {
     return &self.component;
 }
@@ -1458,6 +1523,10 @@ export fn nmMenuSeparatorAsComponent(self: *framework.MenuSeparator) *framework.
 }
 
 export fn nmPanelAsContainer(self: *framework.Panel) *framework.Container {
+    return &self.container;
+}
+
+export fn nmScrollPaneAsContainer(self: *framework.ScrollPane) *framework.Container {
     return &self.container;
 }
 

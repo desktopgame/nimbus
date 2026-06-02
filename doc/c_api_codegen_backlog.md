@@ -14,8 +14,9 @@ apigen（[c_api_codegen.md](c_api_codegen.md)）の残件。書き方・運用�
 完了条件の共通基準（各項目では固有条件のみ記す）: 対象 API が C から呼べる・apigen 再生成が決定的・
 `zig build install` / `zig build test` が緑・`nimbus.h` の構文チェック OK。
 
-次の一手の推奨: **残る A は #4（ScrollPane、依存 #6）のみ**（#1 / #2 / #3 / #13 と #5 は完了）。
-#4 は #6（2 段 cast）で完結する。
+次の一手の推奨: **純 A の総ざらいは完了**（#1 / #2 / #3 / #4 / #13、および小拡張 #5。#6 は不要で却下）。
+残るは bespoke の C 群（#10 Timer / #11 ButtonGroup / #12 putProperty / #14 Menu icon）と投機の #15、
+optional スカラ #7・値+err #8・値構造体ネスト #9。いずれも実需（point-of-need）が出てから着手でよい。
 
 ---
 
@@ -103,23 +104,26 @@ Dialog をファクトリで生成し、modal / 非 modal で開閉・結果取�
 ---
 
 ## #4 ScrollPane の中身公開
-- 状態: 未着手
+- 状態: 完了
 - 優先度: 中
-- 影響範囲: `nimbus.api`（新規 opaque `ScrollPane`・enum `Policy`、Application ファクトリ）
+- 影響範囲: `nimbus.api`（opaque `ScrollPane : Container`・enum `nmScrollPanePolicy`、Application ファクトリ、cast）
 - 更新日: 2026-06-02
-- 依存: #6（`asComponent` の 2 段 cast。無いと破棄経路が不完全）
+- 依存: なし（当初 #6 に依存と書いたが #6 却下により解消。下記参照）
+
+完了（2026-06-02）: factory `nmAppScrollPane(view:*Component @transfer)@owned`、getView(@borrowed)/setView
+(@transfer・旧 view は破棄)/getScrollX・Y/setScrollX・Y/setUnitIncrement/setHorizontal-・VerticalPolicy
+(enum `nmScrollPanePolicy`)/scrollRectToVisible(`nmRect`)/change listener、`cast nmScrollPaneAsContainer`。
+opaque 30・生成関数 205。**2 段 cast は不要だった**（#6 参照）: `opaque ScrollPane : Container` ＋
+`nmScrollPaneAsContainer` ＋ 既存 `nmContainerAsComponent` の 2 本を binding が継承チェーンで合成する。
+検証: 全緑（clang で 2 段 upcast の手合成 → nmComponentDestroy まで構文チェック）。
 
 ### 何
 `getView`/`setView`/`getScrollX`/`getScrollY`/`setScrollX`/`setScrollY`/`setUnitIncrement`/
 `setHorizontalPolicy`/`setVerticalPolicy`（enum `Policy`）/`scrollRectToVisible(nmRect)`/change listener。
 `asComponent` 以外は今すぐ出せる。
 
-### 決めること
-- `app.scrollPane(view:*Component)` の view 所有権（transfer）。
-- `asComponent` を #6（2 段 cast）で出すか、1 行 bespoke シムで出すか。
-
 ### 完了条件
-ScrollPane をファクトリで生成し、スクロール操作・policy 設定が C から可能。Component upcast 経路あり。
+ScrollPane をファクトリで生成し、スクロール操作・policy 設定が C から可能。Component upcast 経路あり。← 達成。
 
 ---
 
@@ -141,25 +145,34 @@ nullable 文字列引数 `?str`（C は nullable `const char*`、Zig は `?[]con
 ---
 
 ## #6 2 段 cast のサポート
-- 状態: 未着手
-- 優先度: 中
-- 影響範囲: 生成器 `main.zig`（cast 構文）、`ScrollPane.asComponent`
+- 状態: 却下
+- 優先度: 低
+- 影響範囲: なし（生成器拡張は不要と判明）
 - 更新日: 2026-06-02
 - 依存: なし
 
 ### 何
-`ScrollPane.asComponent` は `&self.container.component`（2 段）で現 cast 構文に乗らない。
+`ScrollPane.asComponent` は `&self.container.component`（2 段）で、単段 cast 構文に直接は乗らない。
 
-### 候補アプローチ
-- 案A: cast 構文を `cast = Type.field.subfield` に拡張（2 段以上を許す）。
-  メリット: 同種が出ても再利用可。デメリット: 構文・生成器をやや複雑化。
-- 案B: ScrollPane 用に 1 行 bespoke シムを preamble に手書き。
-  メリット: 生成器を触らない。デメリット: ad-hoc・横展開しない。
-- 判断軸: 2 段 cast が他にも出るなら A、ScrollPane 限りなら B。
-- 推奨: 案A（cast は安価な機構で、今後 Panel 等でも `container.component` 形が出うる）。最終判断は作者。
+### 却下理由（2026-06-02）
+**中間型 `Container` が宣言済み opaque なので、2 段 upcast は単段 cast 2 本に分解できる**。専用の
+「2 段 cast」生成器機能は要らなかった:
+- `cast nmScrollPaneAsContainer = ScrollPane.container -> Container`（単段・今の構文で valid）
+  ＋ 既存 `cast nmContainerAsComponent = Container.component -> Component`。
+- IR に継承 `opaque ScrollPane : Container`（`Container : Component` は既存）を記録すると、バインディングは
+  ScrollPane を Container→Component のサブクラスとして出し、**多段 upcast を `extends` チェーンに沿って
+  単段 cast を順に呼ぶ形（`nmContainerAsComponent(nmScrollPaneAsContainer(h))`）で内部合成**する。
+  利用者は 2 段を意識しない。破棄も同じ合成で `nmComponentDestroy` へ繋がる。
+- **一般原則**: 中間型がすべて宣言済み opaque なら、N 段 upcast は常に単段 N 本へ分解でき、binding が
+  合成して吸収する。専用の 2 段 cast 機能が要るのは中間が匿名/非公開で cast ターゲットに出せない型のとき
+  だけ（nimbus の widget では Container 等が一級の opaque なので該当しない）。
+- 背景: なぜ AsComponent が型ごとに要るか — widget は継承でなく `component: Component` の**埋め込み（合成）**で
+  Component を持ち、Zig の `auto` レイアウトは field を並べ替えうるので `component` の byte offset は型ごとに
+  異なりうる（先頭固定の保証なし）。C は generics もレイアウト知識も無いので、型ごとに `&self.component` を
+  焼き込んだ単段 cast を生成する。`#4` ではその単段 2 本を binding が繋ぐだけで足りる。
 
 ### 完了条件
-`ScrollPane` の Component upcast が出る（#4 が完結する）。
+（却下のため無し。#4 は本機能なしで完結済み。）
 
 ---
 
