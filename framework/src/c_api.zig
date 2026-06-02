@@ -332,11 +332,27 @@ const nmColor = extern struct { r: f32, g: f32, b: f32, a: f32, };
 
 const nmSize = extern struct { width: f32, height: f32, };
 
+const nmWindowPoint = extern struct { x: i32, y: i32, };
+
+const nmWindowSize = extern struct { width: i32, height: i32, };
+
+const nmPoint = extern struct { x: f32, y: f32, };
+
 comptime {
     std.debug.assert(@intFromEnum(framework.Component.Alignment.start) == 0);
     std.debug.assert(@intFromEnum(framework.Component.Alignment.center) == 1);
     std.debug.assert(@intFromEnum(framework.Component.Alignment.end) == 2);
     std.debug.assert(@intFromEnum(framework.Component.Alignment.stretch) == 3);
+}
+
+comptime {
+    std.debug.assert(@intFromEnum(framework.Slider.Orientation.horizontal) == 0);
+    std.debug.assert(@intFromEnum(framework.Slider.Orientation.vertical) == 1);
+}
+
+comptime {
+    std.debug.assert(@intFromEnum(framework.ScrollBar.Orientation.horizontal) == 0);
+    std.debug.assert(@intFromEnum(framework.ScrollBar.Orientation.vertical) == 1);
 }
 
 const nmChangeListener = extern struct {
@@ -496,6 +512,687 @@ export fn nmListOffChange(self: *framework.List, cb: *nmChangeListener) void {
     self.removeChangeListener(nmChangeListener, nm_trampoline_nmChangeListener, cb);
 }
 
+export fn nmAppLabel(self: *framework.Application, text: [*:0]const u8) ?*framework.Label {
+    return self.label(std.mem.span(text)) catch |e| {
+        setLastError(e);
+        return null;
+    };
+}
+
+export fn nmAppContainer(self: *framework.Application) ?*framework.Container {
+    return self.container() catch |e| {
+        setLastError(e);
+        return null;
+    };
+}
+
+export fn nmAppPanel(self: *framework.Application) ?*framework.Panel {
+    return self.panel() catch |e| {
+        setLastError(e);
+        return null;
+    };
+}
+
+export fn nmAppCheckBox(self: *framework.Application, text: [*:0]const u8) ?*framework.CheckBox {
+    return self.checkBox(std.mem.span(text)) catch |e| {
+        setLastError(e);
+        return null;
+    };
+}
+
+export fn nmAppRadioButton(self: *framework.Application, text: [*:0]const u8) ?*framework.RadioButton {
+    return self.radioButton(std.mem.span(text)) catch |e| {
+        setLastError(e);
+        return null;
+    };
+}
+
+export fn nmAppSlider(self: *framework.Application, orientation: c_int, min: i32, value: i32, max: i32) ?*framework.Slider {
+    return self.slider(@enumFromInt(orientation), min, value, max) catch |e| {
+        setLastError(e);
+        return null;
+    };
+}
+
+export fn nmAppScrollBar(self: *framework.Application, orientation: c_int, min: i32, value: i32, max: i32) ?*framework.ScrollBar {
+    return self.scrollBar(@enumFromInt(orientation), min, value, max) catch |e| {
+        setLastError(e);
+        return null;
+    };
+}
+
+export fn nmAppTextField(self: *framework.Application, text: [*:0]const u8) ?*framework.TextField {
+    return self.textField(std.mem.span(text)) catch |e| {
+        setLastError(e);
+        return null;
+    };
+}
+
+export fn nmAppTextArea(self: *framework.Application, text: [*:0]const u8) ?*framework.TextArea {
+    return self.textArea(std.mem.span(text)) catch |e| {
+        setLastError(e);
+        return null;
+    };
+}
+
+export fn nmAppFiller(self: *framework.Application) ?*framework.Panel {
+    return self.filler() catch |e| {
+        setLastError(e);
+        return null;
+    };
+}
+
+export fn nmAppToolBar(self: *framework.Application) ?*framework.Panel {
+    return self.toolBar() catch |e| {
+        setLastError(e);
+        return null;
+    };
+}
+
+export fn nmAppMenu(self: *framework.Application, text: [*:0]const u8) ?*framework.Menu {
+    return self.menu(std.mem.span(text)) catch |e| {
+        setLastError(e);
+        return null;
+    };
+}
+
+export fn nmAppMenuItem(self: *framework.Application, text: [*:0]const u8) ?*framework.MenuItem {
+    return self.menuItem(std.mem.span(text)) catch |e| {
+        setLastError(e);
+        return null;
+    };
+}
+
+export fn nmAppCheckBoxMenuItem(self: *framework.Application, text: [*:0]const u8) ?*framework.CheckBoxMenuItem {
+    return self.checkBoxMenuItem(std.mem.span(text)) catch |e| {
+        setLastError(e);
+        return null;
+    };
+}
+
+export fn nmAppMenuBar(self: *framework.Application) ?*framework.MenuBar {
+    return self.menuBar() catch |e| {
+        setLastError(e);
+        return null;
+    };
+}
+
+export fn nmAppPopupMenu(self: *framework.Application) ?*framework.PopupMenu {
+    return self.popupMenu() catch |e| {
+        setLastError(e);
+        return null;
+    };
+}
+
+export fn nmAppMenuSeparator(self: *framework.Application) ?*framework.MenuSeparator {
+    return self.menuSeparator() catch |e| {
+        setLastError(e);
+        return null;
+    };
+}
+
+export fn nmLabelSetText(self: *framework.Label, text: [*:0]const u8) c_int {
+    self.setText(std.mem.span(text)) catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
+}
+
+export fn nmLabelGetText(self: *framework.Label) nmStr {
+    const _s = self.getText();
+    return .{ .ptr = _s.ptr, .len = _s.len };
+}
+
+export fn nmLabelSetColor(self: *framework.Label, c: nmColor) void {
+    self.setColor(.{ .r = c.r, .g = c.g, .b = c.b, .a = c.a });
+}
+
+export fn nmLabelGetColor(self: *framework.Label) nmColor {
+    const _ret = self.getColor();
+    return .{ .r = _ret.r, .g = _ret.g, .b = _ret.b, .a = _ret.a };
+}
+
+export fn nmCheckBoxGetText(self: *framework.CheckBox) nmStr {
+    const _s = self.getText();
+    return .{ .ptr = _s.ptr, .len = _s.len };
+}
+
+export fn nmCheckBoxSetText(self: *framework.CheckBox, text: [*:0]const u8) c_int {
+    self.setText(std.mem.span(text)) catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
+}
+
+export fn nmCheckBoxIsSelected(self: *framework.CheckBox) bool {
+    return self.isSelected();
+}
+
+export fn nmCheckBoxSetSelected(self: *framework.CheckBox, v: bool) void {
+    self.setSelected(v);
+}
+
+export fn nmCheckBoxGetModel(self: *framework.CheckBox) *framework.ToggleButtonModel {
+    return self.getModel();
+}
+
+export fn nmRadioButtonGetText(self: *framework.RadioButton) nmStr {
+    const _s = self.getText();
+    return .{ .ptr = _s.ptr, .len = _s.len };
+}
+
+export fn nmRadioButtonSetText(self: *framework.RadioButton, text: [*:0]const u8) c_int {
+    self.setText(std.mem.span(text)) catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
+}
+
+export fn nmRadioButtonIsSelected(self: *framework.RadioButton) bool {
+    return self.isSelected();
+}
+
+export fn nmRadioButtonSetSelected(self: *framework.RadioButton, v: bool) void {
+    self.setSelected(v);
+}
+
+export fn nmRadioButtonGetModel(self: *framework.RadioButton) *framework.ToggleButtonModel {
+    return self.getModel();
+}
+
+export fn nmSliderGetOrientation(self: *framework.Slider) c_int {
+    return @intFromEnum(self.getOrientation());
+}
+
+export fn nmSliderSetOrientation(self: *framework.Slider, o: c_int) void {
+    self.setOrientation(@enumFromInt(o));
+}
+
+export fn nmSliderGetModel(self: *framework.Slider) *framework.BoundedRangeModel {
+    return self.getModel();
+}
+
+export fn nmScrollBarGetModel(self: *framework.ScrollBar) *framework.BoundedRangeModel {
+    return self.getModel();
+}
+
+export fn nmScrollBarGetValue(self: *framework.ScrollBar) i32 {
+    return self.getValue();
+}
+
+export fn nmScrollBarSetValue(self: *framework.ScrollBar, v: i32) void {
+    self.setValue(v);
+}
+
+export fn nmScrollBarGetOrientation(self: *framework.ScrollBar) c_int {
+    return @intFromEnum(self.getOrientation());
+}
+
+export fn nmScrollBarSetUnitIncrement(self: *framework.ScrollBar, px: i32) void {
+    self.setUnitIncrement(px);
+}
+
+export fn nmScrollBarSetBlockIncrement(self: *framework.ScrollBar, px: i32) void {
+    self.setBlockIncrement(px);
+}
+
+export fn nmScrollBarOnChange(self: *framework.ScrollBar, cb: *nmChangeListener) c_int {
+    self.addChangeListener(nmChangeListener, nm_trampoline_nmChangeListener, cb) catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
+}
+
+export fn nmScrollBarOffChange(self: *framework.ScrollBar, cb: *nmChangeListener) void {
+    self.removeChangeListener(nmChangeListener, nm_trampoline_nmChangeListener, cb);
+}
+
+export fn nmPanelGetBackground(self: *framework.Panel, out: *nmColor) bool {
+    const _v = self.getBackground();
+    if (_v) |s| {
+        out.* = .{ .r = s.r, .g = s.g, .b = s.b, .a = s.a };
+        return true;
+    }
+    return false;
+}
+
+export fn nmPanelSetBackground(self: *framework.Panel, c: ?*const nmColor) void {
+    self.setBackground(if (c) |_p| .{ .r = _p.r, .g = _p.g, .b = _p.b, .a = _p.a } else null);
+}
+
+export fn nmTextFieldGetText(self: *framework.TextField) nmStr {
+    const _s = self.getText();
+    return .{ .ptr = _s.ptr, .len = _s.len };
+}
+
+export fn nmTextFieldSetText(self: *framework.TextField, text: [*:0]const u8) c_int {
+    self.setText(std.mem.span(text)) catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
+}
+
+export fn nmTextFieldGetCaretColor(self: *framework.TextField) nmColor {
+    const _ret = self.getCaretColor();
+    return .{ .r = _ret.r, .g = _ret.g, .b = _ret.b, .a = _ret.a };
+}
+
+export fn nmTextFieldSetCaretColor(self: *framework.TextField, c: nmColor) void {
+    self.setCaretColor(.{ .r = c.r, .g = c.g, .b = c.b, .a = c.a });
+}
+
+export fn nmTextFieldGetBackground(self: *framework.TextField) nmColor {
+    const _ret = self.getBackground();
+    return .{ .r = _ret.r, .g = _ret.g, .b = _ret.b, .a = _ret.a };
+}
+
+export fn nmTextFieldSetBackground(self: *framework.TextField, c: nmColor) void {
+    self.setBackground(.{ .r = c.r, .g = c.g, .b = c.b, .a = c.a });
+}
+
+export fn nmTextFieldOnSubmit(self: *framework.TextField, cb: *nmChangeListener) c_int {
+    self.addSubmitListener(nmChangeListener, nm_trampoline_nmChangeListener, cb) catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
+}
+
+export fn nmTextFieldOffSubmit(self: *framework.TextField, cb: *nmChangeListener) void {
+    self.removeSubmitListener(nmChangeListener, nm_trampoline_nmChangeListener, cb);
+}
+
+export fn nmTextFieldOnCancel(self: *framework.TextField, cb: *nmChangeListener) c_int {
+    self.addCancelListener(nmChangeListener, nm_trampoline_nmChangeListener, cb) catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
+}
+
+export fn nmTextFieldOffCancel(self: *framework.TextField, cb: *nmChangeListener) void {
+    self.removeCancelListener(nmChangeListener, nm_trampoline_nmChangeListener, cb);
+}
+
+export fn nmTextAreaGetText(self: *framework.TextArea) nmStr {
+    const _s = self.getText();
+    return .{ .ptr = _s.ptr, .len = _s.len };
+}
+
+export fn nmTextAreaSetText(self: *framework.TextArea, text: [*:0]const u8) c_int {
+    self.setText(std.mem.span(text)) catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
+}
+
+export fn nmTextAreaGetLineWrap(self: *framework.TextArea) bool {
+    return self.getLineWrap();
+}
+
+export fn nmTextAreaSetLineWrap(self: *framework.TextArea, wrap: bool) void {
+    self.setLineWrap(wrap);
+}
+
+export fn nmTextAreaGetCaretColor(self: *framework.TextArea) nmColor {
+    const _ret = self.getCaretColor();
+    return .{ .r = _ret.r, .g = _ret.g, .b = _ret.b, .a = _ret.a };
+}
+
+export fn nmTextAreaSetCaretColor(self: *framework.TextArea, c: nmColor) void {
+    self.setCaretColor(.{ .r = c.r, .g = c.g, .b = c.b, .a = c.a });
+}
+
+export fn nmTextAreaGetBackground(self: *framework.TextArea) nmColor {
+    const _ret = self.getBackground();
+    return .{ .r = _ret.r, .g = _ret.g, .b = _ret.b, .a = _ret.a };
+}
+
+export fn nmTextAreaSetBackground(self: *framework.TextArea, c: nmColor) void {
+    self.setBackground(.{ .r = c.r, .g = c.g, .b = c.b, .a = c.a });
+}
+
+export fn nmWindowSetTitle(self: *framework.Window, title: [*:0]const u8) c_int {
+    self.setTitle(std.mem.span(title)) catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
+}
+
+export fn nmWindowGetTitle(self: *framework.Window) nmStr {
+    const _s = self.getTitle();
+    return .{ .ptr = _s.ptr, .len = _s.len };
+}
+
+export fn nmWindowAdd(self: *framework.Window, child: *framework.Component) c_int {
+    self.add(child) catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
+}
+
+export fn nmWindowSetPos(self: *framework.Window, x: i32, y: i32) void {
+    self.setPos(x, y);
+}
+
+export fn nmWindowSetSize(self: *framework.Window, width: i32, height: i32) void {
+    self.setSize(width, height);
+}
+
+export fn nmWindowGetPos(self: *framework.Window) nmWindowPoint {
+    const _ret = self.getPos();
+    return .{ .x = _ret.x, .y = _ret.y };
+}
+
+export fn nmWindowGetSize(self: *framework.Window) nmWindowSize {
+    const _ret = self.getSize();
+    return .{ .width = _ret.width, .height = _ret.height };
+}
+
+export fn nmWindowGetBackground(self: *framework.Window) nmColor {
+    const _ret = self.getBackground();
+    return .{ .r = _ret.r, .g = _ret.g, .b = _ret.b, .a = _ret.a };
+}
+
+export fn nmWindowSetBackground(self: *framework.Window, c: nmColor) void {
+    self.setBackground(.{ .r = c.r, .g = c.g, .b = c.b, .a = c.a });
+}
+
+export fn nmWindowRepaint(self: *framework.Window) void {
+    self.repaint();
+}
+
+export fn nmWindowRedraw(self: *framework.Window) void {
+    self.redraw();
+}
+
+export fn nmWindowDispose(self: *framework.Window) void {
+    self.dispose();
+}
+
+export fn nmWindowShouldClose(self: *framework.Window) bool {
+    return self.shouldClose();
+}
+
+export fn nmMenuItemGetText(self: *framework.MenuItem) nmStr {
+    const _s = self.getText();
+    return .{ .ptr = _s.ptr, .len = _s.len };
+}
+
+export fn nmMenuItemSetText(self: *framework.MenuItem, text: [*:0]const u8) c_int {
+    self.setText(std.mem.span(text)) catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
+}
+
+export fn nmMenuItemGetModel(self: *framework.MenuItem) *framework.ButtonModel {
+    return self.getModel();
+}
+
+export fn nmCheckBoxMenuItemGetText(self: *framework.CheckBoxMenuItem) nmStr {
+    const _s = self.getText();
+    return .{ .ptr = _s.ptr, .len = _s.len };
+}
+
+export fn nmCheckBoxMenuItemSetText(self: *framework.CheckBoxMenuItem, text: [*:0]const u8) c_int {
+    self.setText(std.mem.span(text)) catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
+}
+
+export fn nmCheckBoxMenuItemIsChecked(self: *framework.CheckBoxMenuItem) bool {
+    return self.isChecked();
+}
+
+export fn nmCheckBoxMenuItemSetChecked(self: *framework.CheckBoxMenuItem, v: bool) void {
+    self.setChecked(v);
+}
+
+export fn nmCheckBoxMenuItemGetModel(self: *framework.CheckBoxMenuItem) *framework.ToggleButtonModel {
+    return self.getModel();
+}
+
+export fn nmMenuGetText(self: *framework.Menu) nmStr {
+    const _s = self.getText();
+    return .{ .ptr = _s.ptr, .len = _s.len };
+}
+
+export fn nmMenuSetText(self: *framework.Menu, text: [*:0]const u8) c_int {
+    self.setText(std.mem.span(text)) catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
+}
+
+export fn nmMenuGetModel(self: *framework.Menu) *framework.ButtonModel {
+    return self.getModel();
+}
+
+export fn nmMenuAdd(self: *framework.Menu, child: *framework.Component) c_int {
+    self.add(child) catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
+}
+
+export fn nmMenuAddSeparator(self: *framework.Menu) c_int {
+    self.addSeparator() catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
+}
+
+export fn nmMenuShow(self: *framework.Menu, w: *framework.Window, anchor: nmPoint) c_int {
+    self.show(w, .{ .x = anchor.x, .y = anchor.y }) catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
+}
+
+export fn nmMenuHide(self: *framework.Menu) void {
+    self.hide();
+}
+
+export fn nmMenuBarAdd(self: *framework.MenuBar, menu: *framework.Menu) c_int {
+    self.add(menu) catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
+}
+
+export fn nmMenuBarCount(self: *framework.MenuBar) usize {
+    return self.count();
+}
+
+export fn nmPopupMenuAdd(self: *framework.PopupMenu, item: *framework.Component) c_int {
+    self.add(item) catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
+}
+
+export fn nmPopupMenuAddSeparator(self: *framework.PopupMenu) c_int {
+    self.addSeparator() catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
+}
+
+export fn nmPopupMenuShow(self: *framework.PopupMenu, w: *framework.Window, x: f32, y: f32) c_int {
+    self.show(w, x, y) catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
+}
+
+export fn nmPopupMenuHide(self: *framework.PopupMenu) void {
+    self.hide();
+}
+
+export fn nmPopupMenuDestroy(self: *framework.PopupMenu) void {
+    self.destroy();
+}
+
+export fn nmButtonModelSetPressed(self: *framework.ButtonModel, v: bool) void {
+    self.setPressed(v);
+}
+
+export fn nmButtonModelIsPressed(self: *framework.ButtonModel) bool {
+    return self.isPressed();
+}
+
+export fn nmButtonModelSetArmed(self: *framework.ButtonModel, v: bool) void {
+    self.setArmed(v);
+}
+
+export fn nmButtonModelIsArmed(self: *framework.ButtonModel) bool {
+    return self.isArmed();
+}
+
+export fn nmButtonModelSetRollover(self: *framework.ButtonModel, v: bool) void {
+    self.setRollover(v);
+}
+
+export fn nmButtonModelIsRollover(self: *framework.ButtonModel) bool {
+    return self.isRollover();
+}
+
+export fn nmButtonModelSetEnabled(self: *framework.ButtonModel, v: bool) void {
+    self.setEnabled(v);
+}
+
+export fn nmButtonModelIsEnabled(self: *framework.ButtonModel) bool {
+    return self.isEnabled();
+}
+
+export fn nmButtonModelFireAction(self: *framework.ButtonModel) void {
+    self.fireAction();
+}
+
+export fn nmButtonModelOnChange(self: *framework.ButtonModel, cb: *nmChangeListener) c_int {
+    self.addChangeListener(nmChangeListener, nm_trampoline_nmChangeListener, cb) catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
+}
+
+export fn nmButtonModelOffChange(self: *framework.ButtonModel, cb: *nmChangeListener) void {
+    self.removeChangeListener(nmChangeListener, nm_trampoline_nmChangeListener, cb);
+}
+
+export fn nmButtonModelOnAction(self: *framework.ButtonModel, cb: *nmChangeListener) c_int {
+    self.addActionListener(nmChangeListener, nm_trampoline_nmChangeListener, cb) catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
+}
+
+export fn nmButtonModelOffAction(self: *framework.ButtonModel, cb: *nmChangeListener) void {
+    self.removeActionListener(nmChangeListener, nm_trampoline_nmChangeListener, cb);
+}
+
+export fn nmToggleButtonModelIsSelected(self: *framework.ToggleButtonModel) bool {
+    return self.isSelected();
+}
+
+export fn nmToggleButtonModelSetSelected(self: *framework.ToggleButtonModel, v: bool) void {
+    self.setSelected(v);
+}
+
+export fn nmToggleButtonModelFireAction(self: *framework.ToggleButtonModel) void {
+    self.fireAction();
+}
+
+export fn nmToggleButtonModelOnChange(self: *framework.ToggleButtonModel, cb: *nmChangeListener) c_int {
+    self.addChangeListener(nmChangeListener, nm_trampoline_nmChangeListener, cb) catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
+}
+
+export fn nmToggleButtonModelOffChange(self: *framework.ToggleButtonModel, cb: *nmChangeListener) void {
+    self.removeChangeListener(nmChangeListener, nm_trampoline_nmChangeListener, cb);
+}
+
+export fn nmToggleButtonModelOnAction(self: *framework.ToggleButtonModel, cb: *nmChangeListener) c_int {
+    self.addActionListener(nmChangeListener, nm_trampoline_nmChangeListener, cb) catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
+}
+
+export fn nmToggleButtonModelOffAction(self: *framework.ToggleButtonModel, cb: *nmChangeListener) void {
+    self.removeActionListener(nmChangeListener, nm_trampoline_nmChangeListener, cb);
+}
+
+export fn nmBoundedRangeModelGetValue(self: *framework.BoundedRangeModel) i32 {
+    return self.getValue();
+}
+
+export fn nmBoundedRangeModelSetValue(self: *framework.BoundedRangeModel, v: i32) void {
+    self.setValue(v);
+}
+
+export fn nmBoundedRangeModelGetMin(self: *framework.BoundedRangeModel) i32 {
+    return self.getMin();
+}
+
+export fn nmBoundedRangeModelGetMax(self: *framework.BoundedRangeModel) i32 {
+    return self.getMax();
+}
+
+export fn nmBoundedRangeModelGetExtent(self: *framework.BoundedRangeModel) i32 {
+    return self.getExtent();
+}
+
+export fn nmBoundedRangeModelSetRange(self: *framework.BoundedRangeModel, min: i32, max: i32) void {
+    self.setRange(min, max);
+}
+
+export fn nmBoundedRangeModelSetExtent(self: *framework.BoundedRangeModel, extent: i32) void {
+    self.setExtent(extent);
+}
+
+export fn nmBoundedRangeModelSetRangeProperties(self: *framework.BoundedRangeModel, min: i32, value: i32, max: i32, extent: i32) void {
+    self.setRangeProperties(min, value, max, extent);
+}
+
+export fn nmBoundedRangeModelOnChange(self: *framework.BoundedRangeModel, cb: *nmChangeListener) c_int {
+    self.addChangeListener(nmChangeListener, nm_trampoline_nmChangeListener, cb) catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
+}
+
+export fn nmBoundedRangeModelOffChange(self: *framework.BoundedRangeModel, cb: *nmChangeListener) void {
+    self.removeChangeListener(nmChangeListener, nm_trampoline_nmChangeListener, cb);
+}
+
 export fn nmButtonAsComponent(self: *framework.Button) *framework.Component {
     return &self.component;
 }
@@ -506,6 +1203,62 @@ export fn nmContainerAsComponent(self: *framework.Container) *framework.Componen
 
 export fn nmListAsComponent(self: *framework.List) *framework.Component {
     return &self.component;
+}
+
+export fn nmLabelAsComponent(self: *framework.Label) *framework.Component {
+    return &self.component;
+}
+
+export fn nmCheckBoxAsComponent(self: *framework.CheckBox) *framework.Component {
+    return &self.component;
+}
+
+export fn nmRadioButtonAsComponent(self: *framework.RadioButton) *framework.Component {
+    return &self.component;
+}
+
+export fn nmSliderAsComponent(self: *framework.Slider) *framework.Component {
+    return &self.component;
+}
+
+export fn nmScrollBarAsComponent(self: *framework.ScrollBar) *framework.Component {
+    return &self.component;
+}
+
+export fn nmTextFieldAsComponent(self: *framework.TextField) *framework.Component {
+    return &self.component;
+}
+
+export fn nmTextAreaAsComponent(self: *framework.TextArea) *framework.Component {
+    return &self.component;
+}
+
+export fn nmMenuItemAsComponent(self: *framework.MenuItem) *framework.Component {
+    return &self.component;
+}
+
+export fn nmCheckBoxMenuItemAsComponent(self: *framework.CheckBoxMenuItem) *framework.Component {
+    return &self.component;
+}
+
+export fn nmMenuAsComponent(self: *framework.Menu) *framework.Component {
+    return &self.component;
+}
+
+export fn nmMenuBarAsComponent(self: *framework.MenuBar) *framework.Component {
+    return &self.component;
+}
+
+export fn nmMenuSeparatorAsComponent(self: *framework.MenuSeparator) *framework.Component {
+    return &self.component;
+}
+
+export fn nmPanelAsContainer(self: *framework.Panel) *framework.Container {
+    return &self.container;
+}
+
+export fn nmFrameAsWindow(self: *framework.Frame) *framework.Window {
+    return &self.window;
 }
 
 export fn nmComponentDestroy(self: *framework.Component) void {

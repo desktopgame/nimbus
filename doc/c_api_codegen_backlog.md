@@ -4,6 +4,8 @@ apigen（[c_api_codegen.md](c_api_codegen.md)）で**後回しにした項目**�
 2026-06-02 時点の状況:
 - 実装済み: `#1` ブートストラップ / `#2` 文字列戻り / `#3` 文字列配列引数 / `#5` optional 値構造体 /
   `#6c` リスナー remove、そして **`#4` List CellFactory / `#6a` Image**（正式記述は c_api_codegen.md に移動）。
+- **純 A のウィジェット一括公開も完了**（2026-06-02）: Label/Panel/CheckBox/RadioButton/Slider/ScrollBar/
+  TextField/TextArea/Window/Menu 系/3 モデル/残り Application ファクトリ。詳細は末尾「次の一手の候補」。
 - 棚上げ中（bespoke）: **`#6b` Timer のみ**。
 - その他: 「軽微な未対応」一覧と、末尾の「公開 API の C ABI 生成カバレッジ調査」。
 
@@ -225,6 +227,26 @@ usize 実装により index/count/size 系が A に昇格済み（残る B は o
 - allocator / io ブートストラップ: `Application.init`（→ `nmAppCreate` 実装済み）、`Window.init`
 
 ### 次の一手の候補
-1. **純 A のウィジェット一括公開**（Label/CheckBox/RadioButton/Slider/Panel/TextField/Window/Menu 系/各 Model/
-   残り Application ファクトリ）を nimbus.api に追記 — 手書きゼロで実用カバレッジが一気に上がる。
+1. ~~**純 A のウィジェット一括公開**~~ — ✅ 実装済み（2026-06-02）。Label / Panel / CheckBox /
+   RadioButton / Slider / ScrollBar / TextField / TextArea / Window / Menu 系（Menu / MenuItem /
+   CheckBoxMenuItem / MenuBar / MenuSeparator / PopupMenu）/ 3 モデル（ButtonModel /
+   ToggleButtonModel / BoundedRangeModel）/ 残り Application ファクトリ（label/container/panel/
+   checkBox/radioButton/slider/scrollBar/textField/textArea/filler/toolBar/menu 系）を nimbus.api に
+   手書きゼロで追記。opaque 27・関数 154（生成）。新規 value struct（nmWindowPoint/nmWindowSize/
+   nmPoint）・enum（nmOrientation/nmScrollOrientation）・cast 14 個。`zig build install`/`test` 緑・
+   apigen 決定的・C ヘッダー構文 OK。
 2. ~~usize スカラ追加~~ — ✅ 実装済み（2026-06-02）。
+
+#### 一括公開で判明した「あと一歩」の point-of-need 項目
+純 A の網羅中に、すぐ隣にあるが現状の語彙では出せず**意図的に外した**ものを記録しておく
+（いずれも「使う公開メソッドが出た時点」で対処する方針）。
+- **optional ハンドル引数 `?*T`**: `Frame.setMenuBar(?*MenuBar)` / `Window.setMenuBar(?*Component)` /
+  `Window.requestFocusFor(?*Component)`。メニューバーを Frame に取り付ける最後の一手がこれ待ち。
+  parseArgType に `?*` を足すだけの小拡張（B 相当、実需が出た）。
+- **optional ハンドル戻り `?*T`**: `MenuBar.at(usize) ?*Menu` / `ButtonGroup.getSelected()`。軽微な未対応のまま。
+- **Menu/MenuItem の icon get/set**: `awt.Image` 値の box/unbox が要る → Button の icon と同じ bespoke
+  （preamble 手書き。#6a と同じ手で足せる）。今回は text/model のみ公開。
+- **ButtonGroup**: `deinit` + `allocator.destroy` の 2 段破棄で、Component の vtable destroy に乗らない
+  （非 Component）。bespoke な destroy シムが要るので今回は除外（RadioButton 排他はモデル経由で可能）。
+- **Panel.Border**: フィールドが `thickness:f32` + ネストした `Color` → 値構造体のネスト未対応。background のみ公開。
+- **ScrollPane**: `asComponent` が 2 段（`&self.container.component`）で cast 構文に乗らない（既出の棚上げ）。

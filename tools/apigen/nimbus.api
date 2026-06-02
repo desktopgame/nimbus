@@ -68,6 +68,31 @@ opaque Button    : Component
 opaque ComboBox  : Component
 opaque Frame
 opaque Application
+
+# Pure-A widgets: properties / factories / listeners that generate with no
+# hand-writing. Inheritance (`: <Parent>`) records the upcast chain for the IR.
+opaque Label       : Component
+opaque Panel       : Container
+opaque CheckBox    : Component
+opaque RadioButton : Component
+opaque Slider      : Component
+opaque ScrollBar   : Component
+opaque TextField   : Component
+opaque TextArea    : Component
+# Top-level window (borrowed via nmFrameAsWindow; the Frame owns it). Not a Component.
+opaque Window
+# Menu family. All are Components except PopupMenu, a free overlay with its own destructor.
+opaque MenuItem         : Component
+opaque CheckBoxMenuItem : Component
+opaque Menu             : Component
+opaque MenuBar          : Component
+opaque MenuSeparator    : Component
+opaque PopupMenu
+# Widget state models (owned by their widget; reached via getModel as a borrow).
+opaque ButtonModel
+opaque ToggleButtonModel
+opaque BoundedRangeModel
+
 # awt.Image (a GPU-texture-backed value type) boxed as a handle. Its methods
 # (load / destroy / width / height / getIcon / setIcon / app icon) are bespoke
 # and hand-written in preamble.zig (see doc/c_api_codegen.md「Image / icon」);
@@ -86,10 +111,19 @@ opaque ListModel
 # Field names must match the native awt.Graphics.Color (else a compile error).
 struct nmColor { r:f32 g:f32 b:f32 a:f32 }
 struct nmSize  { width:f32 height:f32 }
+# Window geometry is integer device pixels (awt.Window.Point / awt.Window.Size).
+struct nmWindowPoint { x:i32 y:i32 }
+struct nmWindowSize  { width:i32 height:i32 }
+# Float coordinate point (Component.Point) — e.g. Menu.show anchor.
+struct nmPoint { x:f32 y:f32 }
 
 # Enum: crosses the ABI as an int. Member order must match the native enum;
 # a comptime check (against Component.Alignment) makes a mismatch a build error.
 enum nmAlignment = Component.Alignment { start center end stretch }
+# Slider and ScrollBar share the same member order but are distinct native enums;
+# each gets its own drift-checked mirror.
+enum nmOrientation       = Slider.Orientation    { horizontal vertical }
+enum nmScrollOrientation = ScrollBar.Orientation { horizontal vertical }
 
 # Event-handler callback. native event = ChangeListenerList.Event; the C side
 # passes a { fn, userdata } box pointer and receives the event as an opaque
@@ -143,11 +177,198 @@ fn nmListEdit         = List.edit         (&self, idx:usize) -> void
 fn nmListOnChange     = List.addChangeListener    (&self, cb:nmChangeListener) -> void !err
 fn nmListOffChange    = List.removeChangeListener (&self, cb:nmChangeListener) -> void
 
+# ── Pure-A widgets (bulk) ─────────────────────────────────────────────────────
+# Property get/set, the remaining factories, and listeners that fit the generator
+# with no hand-writing. Receiver: &self for *Self / *const Self methods, =self for
+# by-value. getModel returns are @borrowed (the widget owns its model). add()
+# transfers child ownership to the container (as nmContainerAdd). All listeners
+# deliver ChangeListenerList.Event, so they reuse nmChangeListener.
+
+# Application factories (the rest; each allocates a widget -> owned *T).
+fn nmAppLabel            = Application.label            (&self, text:str) -> *Label       !null @owned
+fn nmAppContainer        = Application.container        (&self) -> *Container   !null @owned
+fn nmAppPanel            = Application.panel            (&self) -> *Panel       !null @owned
+fn nmAppCheckBox         = Application.checkBox         (&self, text:str) -> *CheckBox    !null @owned
+fn nmAppRadioButton      = Application.radioButton      (&self, text:str) -> *RadioButton !null @owned
+fn nmAppSlider           = Application.slider           (&self, orientation:nmOrientation, min:i32, value:i32, max:i32) -> *Slider !null @owned
+fn nmAppScrollBar        = Application.scrollBar        (&self, orientation:nmScrollOrientation, min:i32, value:i32, max:i32) -> *ScrollBar !null @owned
+fn nmAppTextField        = Application.textField        (&self, text:str) -> *TextField !null @owned
+fn nmAppTextArea         = Application.textArea         (&self, text:str) -> *TextArea  !null @owned
+fn nmAppFiller           = Application.filler           (&self) -> *Panel !null @owned
+fn nmAppToolBar          = Application.toolBar          (&self) -> *Panel !null @owned
+fn nmAppMenu             = Application.menu             (&self, text:str) -> *Menu !null @owned
+fn nmAppMenuItem         = Application.menuItem         (&self, text:str) -> *MenuItem !null @owned
+fn nmAppCheckBoxMenuItem = Application.checkBoxMenuItem (&self, text:str) -> *CheckBoxMenuItem !null @owned
+fn nmAppMenuBar          = Application.menuBar          (&self) -> *MenuBar !null @owned
+fn nmAppPopupMenu        = Application.popupMenu        (&self) -> *PopupMenu !null @owned
+fn nmAppMenuSeparator    = Application.menuSeparator    (&self) -> *MenuSeparator !null @owned
+
+# Label (setFont/getFont take awt.Graphics.TextFont, which wraps a Font handle -> bespoke)
+fn nmLabelSetText  = Label.setText  (&self, text:str) -> void !err
+fn nmLabelGetText  = Label.getText  (=self) -> str
+fn nmLabelSetColor = Label.setColor (&self, c:nmColor) -> void
+fn nmLabelGetColor = Label.getColor (=self) -> nmColor
+
+# CheckBox
+fn nmCheckBoxGetText     = CheckBox.getText     (=self) -> str
+fn nmCheckBoxSetText     = CheckBox.setText     (&self, text:str) -> void !err
+fn nmCheckBoxIsSelected  = CheckBox.isSelected  (=self) -> bool
+fn nmCheckBoxSetSelected = CheckBox.setSelected (&self, v:bool) -> void
+fn nmCheckBoxGetModel    = CheckBox.getModel    (=self) -> *ToggleButtonModel @borrowed
+
+# RadioButton
+fn nmRadioButtonGetText     = RadioButton.getText     (=self) -> str
+fn nmRadioButtonSetText     = RadioButton.setText     (&self, text:str) -> void !err
+fn nmRadioButtonIsSelected  = RadioButton.isSelected  (=self) -> bool
+fn nmRadioButtonSetSelected = RadioButton.setSelected (&self, v:bool) -> void
+fn nmRadioButtonGetModel    = RadioButton.getModel    (=self) -> *ToggleButtonModel @borrowed
+
+# Slider
+fn nmSliderGetOrientation = Slider.getOrientation (=self) -> nmOrientation
+fn nmSliderSetOrientation = Slider.setOrientation (&self, o:nmOrientation) -> void
+fn nmSliderGetModel       = Slider.getModel       (=self) -> *BoundedRangeModel @borrowed
+
+# ScrollBar
+fn nmScrollBarGetModel          = ScrollBar.getModel          (=self) -> *BoundedRangeModel @borrowed
+fn nmScrollBarGetValue          = ScrollBar.getValue          (=self) -> i32
+fn nmScrollBarSetValue          = ScrollBar.setValue          (&self, v:i32) -> void
+fn nmScrollBarGetOrientation    = ScrollBar.getOrientation    (=self) -> nmScrollOrientation
+fn nmScrollBarSetUnitIncrement  = ScrollBar.setUnitIncrement  (&self, px:i32) -> void
+fn nmScrollBarSetBlockIncrement = ScrollBar.setBlockIncrement (&self, px:i32) -> void
+fn nmScrollBarOnChange          = ScrollBar.addChangeListener    (&self, cb:nmChangeListener) -> void !err
+fn nmScrollBarOffChange         = ScrollBar.removeChangeListener (&self, cb:nmChangeListener) -> void
+
+# Panel (background is an optional Color; Border has a nested Color -> not yet supported)
+fn nmPanelGetBackground = Panel.getBackground (=self) -> ?nmColor
+fn nmPanelSetBackground = Panel.setBackground (&self, c:?nmColor) -> void
+
+# TextField
+fn nmTextFieldGetText       = TextField.getText       (=self) -> str
+fn nmTextFieldSetText       = TextField.setText       (&self, text:str) -> void !err
+fn nmTextFieldGetCaretColor = TextField.getCaretColor (=self) -> nmColor
+fn nmTextFieldSetCaretColor = TextField.setCaretColor (&self, c:nmColor) -> void
+fn nmTextFieldGetBackground = TextField.getBackground (=self) -> nmColor
+fn nmTextFieldSetBackground = TextField.setBackground (&self, c:nmColor) -> void
+fn nmTextFieldOnSubmit  = TextField.addSubmitListener    (&self, cb:nmChangeListener) -> void !err
+fn nmTextFieldOffSubmit = TextField.removeSubmitListener (&self, cb:nmChangeListener) -> void
+fn nmTextFieldOnCancel  = TextField.addCancelListener    (&self, cb:nmChangeListener) -> void !err
+fn nmTextFieldOffCancel = TextField.removeCancelListener (&self, cb:nmChangeListener) -> void
+
+# TextArea (getText takes *self here, hence &self)
+fn nmTextAreaGetText       = TextArea.getText       (&self) -> str
+fn nmTextAreaSetText       = TextArea.setText       (&self, text:str) -> void !err
+fn nmTextAreaGetLineWrap   = TextArea.getLineWrap   (=self) -> bool
+fn nmTextAreaSetLineWrap   = TextArea.setLineWrap   (&self, wrap:bool) -> void
+fn nmTextAreaGetCaretColor = TextArea.getCaretColor (=self) -> nmColor
+fn nmTextAreaSetCaretColor = TextArea.setCaretColor (&self, c:nmColor) -> void
+fn nmTextAreaGetBackground = TextArea.getBackground (=self) -> nmColor
+fn nmTextAreaSetBackground = TextArea.setBackground (&self, c:nmColor) -> void
+
+# Window (borrowed via nmFrameAsWindow). setMenuBar / requestFocusFor need
+# optional-handle args (?*T), not yet supported — see the backlog.
+fn nmWindowSetTitle      = Window.setTitle      (&self, title:str) -> void !err
+fn nmWindowGetTitle      = Window.getTitle      (=self) -> str
+fn nmWindowAdd           = Window.add           (&self, child:*Component @transfer) -> void !err
+fn nmWindowSetPos        = Window.setPos        (&self, x:i32, y:i32) -> void
+fn nmWindowSetSize       = Window.setSize       (&self, width:i32, height:i32) -> void
+fn nmWindowGetPos        = Window.getPos        (=self) -> nmWindowPoint
+fn nmWindowGetSize       = Window.getSize       (=self) -> nmWindowSize
+fn nmWindowGetBackground = Window.getBackground (=self) -> nmColor
+fn nmWindowSetBackground = Window.setBackground (&self, c:nmColor) -> void
+fn nmWindowRepaint       = Window.repaint       (&self) -> void
+fn nmWindowRedraw        = Window.redraw        (&self) -> void
+fn nmWindowDispose       = Window.dispose       (&self) -> void
+fn nmWindowShouldClose   = Window.shouldClose   (=self) -> bool
+
+# MenuItem (icon get/set take awt.Image by value -> bespoke, like Button's)
+fn nmMenuItemGetText  = MenuItem.getText  (=self) -> str
+fn nmMenuItemSetText  = MenuItem.setText  (&self, text:str) -> void !err
+fn nmMenuItemGetModel = MenuItem.getModel (=self) -> *ButtonModel @borrowed
+
+# CheckBoxMenuItem
+fn nmCheckBoxMenuItemGetText    = CheckBoxMenuItem.getText    (=self) -> str
+fn nmCheckBoxMenuItemSetText    = CheckBoxMenuItem.setText    (&self, text:str) -> void !err
+fn nmCheckBoxMenuItemIsChecked  = CheckBoxMenuItem.isChecked  (=self) -> bool
+fn nmCheckBoxMenuItemSetChecked = CheckBoxMenuItem.setChecked (&self, v:bool) -> void
+fn nmCheckBoxMenuItemGetModel   = CheckBoxMenuItem.getModel   (=self) -> *ToggleButtonModel @borrowed
+
+# Menu
+fn nmMenuGetText      = Menu.getText      (=self) -> str
+fn nmMenuSetText      = Menu.setText      (&self, text:str) -> void !err
+fn nmMenuGetModel     = Menu.getModel     (=self) -> *ButtonModel @borrowed
+fn nmMenuAdd          = Menu.add          (&self, child:*Component @transfer) -> void !err
+fn nmMenuAddSeparator = Menu.addSeparator (&self) -> void !err
+fn nmMenuShow         = Menu.show         (&self, w:*Window, anchor:nmPoint) -> void !err
+fn nmMenuHide         = Menu.hide         (&self) -> void
+
+# MenuBar (at() returns ?*Menu — optional handle, not yet supported)
+fn nmMenuBarAdd   = MenuBar.add   (&self, menu:*Menu @transfer) -> void !err
+fn nmMenuBarCount = MenuBar.count (=self) -> usize
+
+# PopupMenu (a free overlay, not a Component: it owns its own destructor)
+fn nmPopupMenuAdd          = PopupMenu.add          (&self, item:*Component @transfer) -> void !err
+fn nmPopupMenuAddSeparator = PopupMenu.addSeparator (&self) -> void !err
+fn nmPopupMenuShow         = PopupMenu.show         (&self, w:*Window, x:f32, y:f32) -> void !err
+fn nmPopupMenuHide         = PopupMenu.hide         (&self) -> void
+fn nmPopupMenuDestroy      = PopupMenu.destroy      (&self) -> void
+
+# ButtonModel (state flags + change / action listeners)
+fn nmButtonModelSetPressed  = ButtonModel.setPressed  (&self, v:bool) -> void
+fn nmButtonModelIsPressed   = ButtonModel.isPressed   (&self) -> bool
+fn nmButtonModelSetArmed    = ButtonModel.setArmed    (&self, v:bool) -> void
+fn nmButtonModelIsArmed     = ButtonModel.isArmed     (&self) -> bool
+fn nmButtonModelSetRollover = ButtonModel.setRollover (&self, v:bool) -> void
+fn nmButtonModelIsRollover  = ButtonModel.isRollover  (&self) -> bool
+fn nmButtonModelSetEnabled  = ButtonModel.setEnabled  (&self, v:bool) -> void
+fn nmButtonModelIsEnabled   = ButtonModel.isEnabled   (&self) -> bool
+fn nmButtonModelFireAction  = ButtonModel.fireAction  (&self) -> void
+fn nmButtonModelOnChange    = ButtonModel.addChangeListener    (&self, cb:nmChangeListener) -> void !err
+fn nmButtonModelOffChange   = ButtonModel.removeChangeListener (&self, cb:nmChangeListener) -> void
+fn nmButtonModelOnAction    = ButtonModel.addActionListener    (&self, cb:nmChangeListener) -> void !err
+fn nmButtonModelOffAction   = ButtonModel.removeActionListener (&self, cb:nmChangeListener) -> void
+
+# ToggleButtonModel
+fn nmToggleButtonModelIsSelected  = ToggleButtonModel.isSelected  (&self) -> bool
+fn nmToggleButtonModelSetSelected = ToggleButtonModel.setSelected (&self, v:bool) -> void
+fn nmToggleButtonModelFireAction  = ToggleButtonModel.fireAction  (&self) -> void
+fn nmToggleButtonModelOnChange    = ToggleButtonModel.addChangeListener    (&self, cb:nmChangeListener) -> void !err
+fn nmToggleButtonModelOffChange   = ToggleButtonModel.removeChangeListener (&self, cb:nmChangeListener) -> void
+fn nmToggleButtonModelOnAction    = ToggleButtonModel.addActionListener    (&self, cb:nmChangeListener) -> void !err
+fn nmToggleButtonModelOffAction   = ToggleButtonModel.removeActionListener (&self, cb:nmChangeListener) -> void
+
+# BoundedRangeModel (Slider / ScrollBar value model)
+fn nmBoundedRangeModelGetValue           = BoundedRangeModel.getValue           (&self) -> i32
+fn nmBoundedRangeModelSetValue           = BoundedRangeModel.setValue           (&self, v:i32) -> void
+fn nmBoundedRangeModelGetMin             = BoundedRangeModel.getMin             (&self) -> i32
+fn nmBoundedRangeModelGetMax             = BoundedRangeModel.getMax             (&self) -> i32
+fn nmBoundedRangeModelGetExtent          = BoundedRangeModel.getExtent          (&self) -> i32
+fn nmBoundedRangeModelSetRange           = BoundedRangeModel.setRange           (&self, min:i32, max:i32) -> void
+fn nmBoundedRangeModelSetExtent          = BoundedRangeModel.setExtent          (&self, extent:i32) -> void
+fn nmBoundedRangeModelSetRangeProperties = BoundedRangeModel.setRangeProperties (&self, min:i32, value:i32, max:i32, extent:i32) -> void
+fn nmBoundedRangeModelOnChange           = BoundedRangeModel.addChangeListener    (&self, cb:nmChangeListener) -> void !err
+fn nmBoundedRangeModelOffChange          = BoundedRangeModel.removeChangeListener (&self, cb:nmChangeListener) -> void
+
 # Upcast to the embedded Component (one-line `return &self.<field>`). Lets a
 # binding reach Container methods on any widget and feed nmComponentDestroy.
 cast nmButtonAsComponent    = Button.component    -> Component
 cast nmContainerAsComponent = Container.component -> Component
 cast nmListAsComponent      = List.component      -> Component
+cast nmLabelAsComponent            = Label.component            -> Component
+cast nmCheckBoxAsComponent         = CheckBox.component         -> Component
+cast nmRadioButtonAsComponent      = RadioButton.component      -> Component
+cast nmSliderAsComponent           = Slider.component           -> Component
+cast nmScrollBarAsComponent        = ScrollBar.component        -> Component
+cast nmTextFieldAsComponent        = TextField.component        -> Component
+cast nmTextAreaAsComponent         = TextArea.component         -> Component
+cast nmMenuItemAsComponent         = MenuItem.component         -> Component
+cast nmCheckBoxMenuItemAsComponent = CheckBoxMenuItem.component -> Component
+cast nmMenuAsComponent             = Menu.component             -> Component
+cast nmMenuBarAsComponent          = MenuBar.component          -> Component
+cast nmMenuSeparatorAsComponent    = MenuSeparator.component    -> Component
+# Panel wraps a Container (-> Component via nmContainerAsComponent).
+cast nmPanelAsContainer            = Panel.container            -> Container
+# Frame owns its top-level Window.
+cast nmFrameAsWindow               = Frame.window               -> Window
 
 # Single generic destructor: dispatches the widget's own vtable.destroy using
 # the allocator stored on the Component. Free any widget via its nmComponent*.
