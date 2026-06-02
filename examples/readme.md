@@ -70,14 +70,18 @@ nimbus の C ABI（`include/nimbus.h` + `libnimbus`）だけを使い、**C 言�
 
 2. **素朴に直叩き**（配布された `nimbus.h` + `nimbus.dll` を C アプリから使う最短経路）。
    まず一度 `zig build` してライブラリを出す（`zig-out/include/nimbus.h`・`zig-out/lib/nimbus.lib`・
-   `zig-out/bin/nimbus.dll`）。あとは普通の C コンパイラで 1 発：
+   `zig-out/bin/nimbus.dll`）。あとは同梱の `build.bat` が zig cc コンパイル＋`nimbus.dll` コピーをして、
+   この `examples/cnimbus_editor/` に exe + dll を並べる：
+   ```
+   examples\cnimbus_editor\build.bat
+   examples\cnimbus_editor\cnimbus_editor.exe
+   ```
+   バッチがやっているのは次の 2 行だけ（`-I` でヘッダー、`-L` + `-lnimbus` で import ライブラリにリンク。
+   clang / MSVC `cl` / gcc も同じ要領）。動的リンクなので、実行時に `nimbus.dll` が exe の隣か PATH 上に要る：
    ```
    zig cc examples/cnimbus_editor/main.c -I zig-out/include -L zig-out/lib -lnimbus -o examples/cnimbus_editor/cnimbus_editor.exe
-   copy zig-out\bin\nimbus.dll examples\cnimbus_editor\      # 実行時に隣に要る
-   ./examples/cnimbus_editor/cnimbus_editor.exe
+   copy zig-out\bin\nimbus.dll examples\cnimbus_editor\
    ```
-   `-I` でヘッダー、`-L` + `-lnimbus` で import ライブラリにリンクするだけ（clang / MSVC `cl` / gcc も
-   同じ要領）。動的リンクなので、実行時に `nimbus.dll` が exe の隣か PATH 上に要る。
 
    > DLL 不要の単一 exe が欲しい場合は、build.zig で C ABI を `linkage = .static` の静的ライブラリとして
    > リンクすれば self-contained な exe（~21MB、nimbus/DX12/GLFW/FreeType を内包）が作れる。ただし手で
