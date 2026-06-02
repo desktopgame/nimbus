@@ -223,6 +223,20 @@ const Model = struct {
 // All string slices in the model point into the spec buffer, which is kept
 // alive for the whole run, so nothing here owns its strings.
 
+/// Free every list a Model owns. Used by `main`'s defer and by the tests.
+fn deinitModel(gpa: std.mem.Allocator, model: *Model) void {
+    for (model.funcs.items) |*f| f.args.deinit(gpa);
+    model.funcs.deinit(gpa);
+    for (model.structs.items) |*s| s.fields.deinit(gpa);
+    model.structs.deinit(gpa);
+    for (model.enums.items) |*e| e.members.deinit(gpa);
+    model.enums.deinit(gpa);
+    model.callbacks.deinit(gpa);
+    model.opaques.deinit(gpa);
+    model.casts.deinit(gpa);
+    model.destructors.deinit(gpa);
+}
+
 pub fn main(init: std.process.Init) !void {
     const gpa = init.gpa;
     const io = init.io;
@@ -240,18 +254,7 @@ pub fn main(init: std.process.Init) !void {
     defer gpa.free(pre_ir);
 
     var model: Model = .{};
-    defer {
-        for (model.funcs.items) |*f| f.args.deinit(gpa);
-        model.funcs.deinit(gpa);
-        for (model.structs.items) |*s| s.fields.deinit(gpa);
-        model.structs.deinit(gpa);
-        for (model.enums.items) |*e| e.members.deinit(gpa);
-        model.enums.deinit(gpa);
-        model.callbacks.deinit(gpa);
-        model.opaques.deinit(gpa);
-        model.casts.deinit(gpa);
-        model.destructors.deinit(gpa);
-    }
+    defer deinitModel(gpa, &model);
     try parse(gpa, spec, &model);
 
     // Hand-written IR fragments (sectioned text → merged into the JSON arrays).
@@ -1213,4 +1216,235 @@ fn print(
     const s = try std.fmt.allocPrint(gpa, fmt, args);
     defer gpa.free(s);
     try buf.appendSlice(gpa, s);
+}
+
+// ── tests ──────────────────────────────────────────────────────────────────
+// The parser and emitters are pure (no I/O), so they test directly: feed a spec
+// string, inspect the Model or the emitted text. `std.testing.allocator` also
+// catches any leak (verifies deinitModel covers every list).
+
+const testing = std.testing;
+
+test "stripComment cuts at the first #" {
+    try testing.expectEqualStrings("opaque Button ", stripComment("opaque Button # a comment"));
+    try testing.expectEqualStrings("plain", stripComment("plain"));
+    try testing.expectEqualStrings("", stripComment("# whole-line comment"));
+}
+
+test "Scalar.parse and spellings" {
+    try testing.expectEqual(Scalar.usize, Scalar.parse("usize").?);
+    try testing.expectEqual(Scalar.f32, Scalar.parse("f32").?);
+    try testing.expect(Scalar.parse("f16") == null);
+    try testing.expectEqualStrings("size_t", Scalar.usize.cName());
+    try testing.expectEqualStrings("usize", Scalar.usize.zigName());
+}
+
+test "tokenize splits punctuation, keeps compound tokens" {
+    const gpa = testing.allocator;
+    var toks: std.ArrayList([]const u8) = .empty;
+    defer toks.deinit(gpa);
+    try tokenize(gpa, "fn x = T.m ( a:str , b:f32 ) -> void", &toks);
+    const want = [_][]const u8{ "fn", "x", "=", "T.m", "(", "a:str", ",", "b:f32", ")", "->", "void" };
+    try testing.expectEqual(want.len, toks.items.len);
+    for (want, toks.items) |w, got| try testing.expectEqualStrings(w, got);
+}
+
+test "parse: opaque with and without parent" {
+    const gpa = testing.allocator;
+    var model: Model = .{};
+    defer deinitModel(gpa, &model);
+    try parse(gpa, "opaque Component\nopaque Button : Component\n", &model);
+    try testing.expectEqual(@as(usize, 2), model.opaques.items.len);
+    try testing.expect(model.opaques.items[0].parent == null);
+    try testing.expectEqualStrings("Button", model.opaques.items[1].name);
+    try testing.expectEqualStrings("Component", model.opaques.items[1].parent.?);
+}
+
+test "parse: struct and enum members in order" {
+    const gpa = testing.allocator;
+    var model: Model = .{};
+    defer deinitModel(gpa, &model);
+    try parse(gpa,
+        \\struct nmColor { r:f32 g:f32 b:f32 a:f32 }
+        \\enum nmAlignment = Component.Alignment { start center end stretch }
+        \\
+    , &model);
+    try testing.expectEqual(@as(usize, 1), model.structs.items.len);
+    try testing.expectEqualStrings("nmColor", model.structs.items[0].cname);
+    try testing.expectEqual(@as(usize, 4), model.structs.items[0].fields.items.len);
+    try testing.expectEqualStrings("r", model.structs.items[0].fields.items[0].name);
+    try testing.expectEqual(Scalar.f32, model.structs.items[0].fields.items[0].scalar);
+    try testing.expectEqualStrings("Component.Alignment", model.enums.items[0].native);
+    try testing.expectEqual(@as(usize, 4), model.enums.items[0].members.items.len);
+    try testing.expectEqualStrings("start", model.enums.items[0].members.items[0]);
+}
+
+test "parse fn: handle arg + @transfer + !err" {
+    const gpa = testing.allocator;
+    var model: Model = .{};
+    defer deinitModel(gpa, &model);
+    try parse(gpa, "fn nmContainerAdd = Container.add (&self, child:*Component @transfer) -> void !err\n", &model);
+    const f = model.funcs.items[0];
+    try testing.expectEqualStrings("nmContainerAdd", f.cname);
+    try testing.expectEqualStrings("Container", f.ztype);
+    try testing.expectEqualStrings("add", f.method);
+    try testing.expectEqual(Recv.ptr, f.recv);
+    try testing.expectEqual(Fail.err, f.fail);
+    try testing.expectEqual(@as(usize, 1), f.args.items.len);
+    try testing.expectEqualStrings("child", f.args.items[0].name);
+    try testing.expectEqual(Ownership.transfer, f.args.items[0].ownership);
+    switch (f.args.items[0].ty) {
+        .handle => |zt| try testing.expectEqualStrings("Component", zt),
+        else => return error.WrongArgType,
+    }
+}
+
+test "parse fn: optional handle / optional str args" {
+    const gpa = testing.allocator;
+    var model: Model = .{};
+    defer deinitModel(gpa, &model);
+    try parse(gpa,
+        \\fn a = Frame.setMenuBar (&self, bar:?*MenuBar @transfer) -> void !err
+        \\fn b = Component.setName (&self, name:?str) -> void
+        \\
+    , &model);
+    switch (model.funcs.items[0].args.items[0].ty) {
+        .handle_opt => |zt| try testing.expectEqualStrings("MenuBar", zt),
+        else => return error.WrongArgType,
+    }
+    switch (model.funcs.items[1].args.items[0].ty) {
+        .str_opt => {},
+        else => return error.WrongArgType,
+    }
+}
+
+test "parse fn: optional handle return + ownership, =self receiver" {
+    const gpa = testing.allocator;
+    var model: Model = .{};
+    defer deinitModel(gpa, &model);
+    try parse(gpa, "fn g = Frame.getMenuBar (=self) -> ?*MenuBar @borrowed\n", &model);
+    const f = model.funcs.items[0];
+    try testing.expectEqual(Recv.value, f.recv);
+    try testing.expectEqual(Ownership.borrowed, f.ret_ownership);
+    switch (f.ret) {
+        .ptr_opt => |zt| try testing.expectEqualStrings("MenuBar", zt),
+        else => return error.WrongRet,
+    }
+}
+
+test "parse fn: str / usize / enum returns" {
+    const gpa = testing.allocator;
+    var model: Model = .{};
+    defer deinitModel(gpa, &model);
+    try parse(gpa,
+        \\enum nmAlignment = Component.Alignment { start center end stretch }
+        \\fn t = Button.getText (=self) -> str
+        \\fn c = ComboBox.getItemCount (=self) -> usize
+        \\fn a = Component.getAlignX (&self) -> nmAlignment
+        \\
+    , &model);
+    try testing.expectEqual(Ret.str, model.funcs.items[0].ret);
+    switch (model.funcs.items[1].ret) {
+        .scalar => |s| try testing.expectEqual(Scalar.usize, s),
+        else => return error.WrongRet,
+    }
+    switch (model.funcs.items[2].ret) {
+        .enum_ref => |en| try testing.expectEqualStrings("nmAlignment", en),
+        else => return error.WrongRet,
+    }
+}
+
+test "parse: cast and destroy" {
+    const gpa = testing.allocator;
+    var model: Model = .{};
+    defer deinitModel(gpa, &model);
+    try parse(gpa,
+        \\cast nmButtonAsComponent = Button.component -> Component
+        \\destroy nmComponentDestroy = Component
+        \\
+    , &model);
+    try testing.expectEqualStrings("Button", model.casts.items[0].ztype);
+    try testing.expectEqualStrings("component", model.casts.items[0].field);
+    try testing.expectEqualStrings("Component", model.casts.items[0].target);
+    try testing.expectEqualStrings("nmComponentDestroy", model.destructors.items[0].cname);
+    try testing.expectEqualStrings("Component", model.destructors.items[0].ztype);
+}
+
+test "parse rejects: value+fail, unknown keyword, bad scalar, strs without fail" {
+    const gpa = testing.allocator;
+    const bad = [_][]const u8{
+        "fn x = T.m (=self) -> f32 !null\n", // value return cannot combine with !fail
+        "frobnicate X\n", // unknown statement keyword
+        "struct nmX { v:f16 }\n", // unsupported scalar
+        "fn x = App.combo (&self, items:strs) -> void\n", // strs needs !null/!err
+    };
+    for (bad) |src| {
+        var model: Model = .{};
+        defer deinitModel(gpa, &model);
+        try testing.expectError(error.SpecParse, parse(gpa, src, &model));
+    }
+}
+
+test "parseFragment splits @sections and ignores the header" {
+    const gpa = testing.allocator;
+    var frag: std.ArrayList(IrSection) = .empty;
+    defer frag.deinit(gpa);
+    try parseFragment(
+        \\# header line ignored
+        \\@functions
+        \\  { "c": "x" }
+        \\@types
+        \\  { "name": "Y" }
+        \\
+    , &frag, gpa);
+    try testing.expectEqual(@as(usize, 2), frag.items.len);
+    try testing.expectEqualStrings("functions", frag.items[0].name);
+    try testing.expectEqualStrings("types", frag.items[1].name);
+    try testing.expect(fragText(frag.items, "functions") != null);
+    try testing.expect(fragText(frag.items, "missing") == null);
+}
+
+test "emit smoke: header / zig / json carry the function and inheritance" {
+    const gpa = testing.allocator;
+    var model: Model = .{};
+    defer deinitModel(gpa, &model);
+    try parse(gpa,
+        \\opaque Component
+        \\opaque Button : Component
+        \\fn nmButtonSetText = Button.setText (&self, text:str) -> void !err
+        \\
+    , &model);
+
+    var h: std.ArrayList(u8) = .empty;
+    defer h.deinit(gpa);
+    var z: std.ArrayList(u8) = .empty;
+    defer z.deinit(gpa);
+    var j: std.ArrayList(u8) = .empty;
+    defer j.deinit(gpa);
+    try emitHeader(gpa, &h, "", "", &model);
+    try emitZig(gpa, &z, "", &model);
+    try emitJson(gpa, &j, &model, &[_]IrSection{});
+
+    try testing.expect(std.mem.indexOf(u8, h.items, "typedef struct nmButton nmButton;") != null);
+    try testing.expect(std.mem.indexOf(u8, h.items, "int nmButtonSetText(nmButton* self, const char* text);") != null);
+    try testing.expect(std.mem.indexOf(u8, z.items, "export fn nmButtonSetText(self: *framework.Button, text: [*:0]const u8) c_int") != null);
+    try testing.expect(std.mem.indexOf(u8, j.items, "\"c\": \"nmButtonSetText\"") != null);
+    try testing.expect(std.mem.indexOf(u8, j.items, "\"extends\": \"Component\"") != null);
+}
+
+test "emit: hand-written IR fragment is merged into the functions array" {
+    const gpa = testing.allocator;
+    var model: Model = .{};
+    defer deinitModel(gpa, &model);
+    try parse(gpa, "fn nmGenerated = T.m (&self) -> void\n", &model);
+
+    var frag: std.ArrayList(IrSection) = .empty;
+    defer frag.deinit(gpa);
+    try parseFragment("@functions\n    { \"c\": \"nmHandwritten\", \"impl\": \"manual\" }\n", &frag, gpa);
+
+    var j: std.ArrayList(u8) = .empty;
+    defer j.deinit(gpa);
+    try emitJson(gpa, &j, &model, frag.items);
+    try testing.expect(std.mem.indexOf(u8, j.items, "\"c\": \"nmGenerated\"") != null);
+    try testing.expect(std.mem.indexOf(u8, j.items, "\"c\": \"nmHandwritten\"") != null);
 }

@@ -225,6 +225,14 @@ pub fn build(b: *std.Build) void {
 
     // ── tests ────────────────────────────────────────────────────
     const test_step = b.step("test", "Run all unit tests");
+
+    // apigen parser / emitter unit tests (host tool; pure, no I/O).
+    const apigen_test_mod = b.createModule(.{
+        .root_source_file = b.path("tools/apigen/main.zig"),
+        .target = b.graph.host,
+        .optimize = .Debug,
+    });
+    test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = apigen_test_mod })).step);
     inline for (.{
         .{ "awt", awt_mod },
         .{ "framework", framework_mod },
