@@ -1,5 +1,6 @@
 # c_api-codegen バックログ（棚上げ案件）
 apigen（[c_api_codegen.md](c_api_codegen.md)）で**後回しにした項目**のメモ。
+バックログ自体の書き方・運用規約は [backlog.md](backlog.md) を参照。
 
 2026-06-02 時点の状況:
 - 実装済み: `#1` ブートストラップ / `#2` 文字列戻り / `#3` 文字列配列引数 / `#5` optional 値構造体 /

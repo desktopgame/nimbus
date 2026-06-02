@@ -14,6 +14,7 @@ Zig も C ヘッダも解析せずに済む。
 
 関連: バインディング全体の設計方針は [binding](framework/doc/binding.md)、
 エラーの C ABI 表現は CLAUDE.md「エラーのC_ABIでの表現」を参照。
+棚上げ項目とカバレッジ監査は [c_api_codegen_backlog.md](c_api_codegen_backlog.md) を参照。
 
 ## 何を真実とするか
 2 つの真実を区別する。
