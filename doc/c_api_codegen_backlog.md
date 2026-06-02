@@ -254,3 +254,46 @@ usize 実装により index/count/size 系が A に昇格済み（残る B は o
   （非 Component）。bespoke な destroy シムが要るので今回は除外（RadioButton 排他はモデル経由で可能）。
 - **Panel.Border**: フィールドが `thickness:f32` + ネストした `Color` → 値構造体のネスト未対応。background のみ公開。
 - **ScrollPane**: `asComponent` が 2 段（`&self.container.component`）で cast 構文に乗らない（既出の棚上げ）。
+
+---
+
+## 残存露出カバレッジ監査（2026-06-02）
+「今の仕組みで露出できるのに**まだ nimbus.api に書いていない**ものは何か」を `framework/src` の公開 API と
+現状の露出分を突き合わせて棚卸しした結果。仕組みの限界ではなく「spec 行が未記述」のものが A にまだ多い。
+入力は 2 系統（① `nimbus.api`=生成、② 手書き preamble、IR は出力の 1 つ）である点に注意。
+
+### A. 追記するだけで出せる純 A（生成器変更ゼロ・未着手）
+最大の取りこぼし。**Component 共通メソッドは全ウィジェットに効く**ので優先度高。
+- **Component 共通**（前回 X 軸だけ出して Y 軸等が漏れている）:
+  - `getGrowY`/`setGrowY`、`getAlignY`/`setAlignY`（`grow`/`align` は X しか出していない）
+  - `isFocusable`/`setFocusable`、`requestFocus`、`repaint`、`markLayoutDirty`
+  - `getName`（`?str` 戻りで可）、`containsWindowPoint(f32,f32)->bool`
+  - `getBounds`/`setBounds`、`absoluteOriginInWindow` → **`nmRect{x,y,width,height:f32}` を宣言するだけ**
+    （awt.Graphics.Rect は素の値構造体・生成器変更不要）。`nmPoint` は既存。
+- **各ウィジェットの取りこぼし**: `Button.getModel`(→`*ButtonModel`)、`ComboBox.isEnabled`/`setEnabled`、
+  `Container.remove(*Component)`。
+- **Dialog 一式**: `app.dialog(owner:*Window,…)`（ハンドル引数＋戻り、`?*T` 実装後に可）＋ `Result` enum ＋
+  `show`/`close(Result)`/`getResult`/`isModal`/`isShown`。`showModal` は二次ループ（ブロッキング）だが
+  値戻りで生成自体は可。
+- **ScrollPane の中身**: `getView`/`setView`/`getScrollX`/`getScrollY`/`setScrollX`/`setScrollY`/
+  `setUnitIncrement`/`setHorizontalPolicy`/`setVerticalPolicy`(enum)/`scrollRectToVisible(nmRect)`/
+  change listener。**`asComponent`(2 段 cast) 以外は今すぐ出せる**。
+- **意図的に出さない**: `getMinSize`/`setMinSize`/`getMaxSize`/`setMaxSize` は生成可能だが、CLAUDE.md が
+  「minimumSize/preferredSize/maximumSize の複雑さは取り入れない」と明言 → 設計判断で除外。
+
+### B. 小拡張が要る（`?*T` と同型の小追加）
+- **`?str` 引数**: `Component.setName(?[]const u8)`。戻りの `?str` はあるが引数が無い。`?*T` と同型の小拡張。
+- **2 段 cast**: `ScrollPane.asComponent`=`&self.container.component`。`cast = Type.field.subfield` を許すか、
+  1 行 bespoke シム。これで ScrollPane が完全になる。
+- optional スカラ `?usize`/`?f64`（`List.getEditing` 等）、値＋エラー戻り（#6b と共通機構）。
+
+### C. 手書き preamble で出せる bespoke（未着手）
+- `Component.putProperty`/`getProperty`/`removeProperty`（`void*` userdata — List と同種のグルー）。
+- `LayoutManager` + `BoxLayout`/`BorderLayout` 生成 + `Container.setLayout`/`getLayout`（opaque ＋ allocator ファクトリ要）。
+- `ButtonGroup`（`deinit`+`destroy` の 2 段破棄 — bespoke デストラクタ）。
+- **#6b Timer**（唯一の昔からの棚上げ）。
+
+### 次の一手の推奨
+**A の総ざらい**（`nmRect` 追加 → Component 共通の残り＋`Button.getModel`/`ComboBox.enabled`/`Container.remove`
+→ Dialog → ScrollPane 中身）。生成器変更ゼロで実用カバレッジが大きく上がる。続けて B の `?str` 引数と
+2 段 cast を足せば ScrollPane と `setName` も埋まる。
