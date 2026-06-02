@@ -95,6 +95,8 @@ opaque PopupMenu
 opaque ButtonModel
 opaque ToggleButtonModel
 opaque BoundedRangeModel
+# Layout manager (built-in instances are process-wide singletons; always borrowed).
+opaque LayoutManager
 
 # awt.Image (a GPU-texture-backed value type) boxed as a handle. Its methods
 # (load / destroy / width / height / getIcon / setIcon / app icon) are bespoke
@@ -127,6 +129,8 @@ enum nmAlignment = Component.Alignment { start center end stretch }
 # each gets its own drift-checked mirror.
 enum nmOrientation       = Slider.Orientation    { horizontal vertical }
 enum nmScrollOrientation = ScrollBar.Orientation { horizontal vertical }
+# BorderLayout region for child placement (BorderLayout.add).
+enum nmBorderRegion = BorderLayout.Region { north south east west center }
 
 # Event-handler callback. native event = ChangeListenerList.Event; the C side
 # passes a { fn, userdata } box pointer and receives the event as an opaque
@@ -360,6 +364,17 @@ fn nmBoundedRangeModelSetExtent          = BoundedRangeModel.setExtent          
 fn nmBoundedRangeModelSetRangeProperties = BoundedRangeModel.setRangeProperties (&self, min:i32, value:i32, max:i32, extent:i32) -> void
 fn nmBoundedRangeModelOnChange           = BoundedRangeModel.addChangeListener    (&self, cb:nmChangeListener) -> void !err
 fn nmBoundedRangeModelOffChange          = BoundedRangeModel.removeChangeListener (&self, cb:nmChangeListener) -> void
+
+# Layout managers (#13). Built-in layouts are process-wide singletons taken by
+# receiver-less zero-arg factories (no allocator) — always borrowed, never freed.
+# setLayout/getLayout ride on the optional handle (?*LayoutManager). BorderLayout
+# places children by region via add() (wraps the raw void* hint internally).
+fn nmBoxLayoutHorizontal = BoxLayout.horizontal () -> *LayoutManager @borrowed
+fn nmBoxLayoutVertical   = BoxLayout.vertical   () -> *LayoutManager @borrowed
+fn nmBorderLayoutGet     = BorderLayout.get     () -> *LayoutManager @borrowed
+fn nmContainerSetLayout  = Container.setLayout (&self, layout:?*LayoutManager @borrowed) -> void
+fn nmContainerGetLayout  = Container.getLayout (&self) -> ?*LayoutManager @borrowed
+fn nmBorderLayoutAdd     = BorderLayout.add (container:*Container, region:nmBorderRegion, child:*Component @transfer) -> void !err
 
 # Upcast to the embedded Component (one-line `return &self.<field>`). Lets a
 # binding reach Container methods on any widget and feed nmComponentDestroy.

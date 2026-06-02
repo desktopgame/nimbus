@@ -24,6 +24,7 @@
     { "name": "ButtonModel", "c": "nmButtonModel", "extends": null },
     { "name": "ToggleButtonModel", "c": "nmToggleButtonModel", "extends": null },
     { "name": "BoundedRangeModel", "c": "nmBoundedRangeModel", "extends": null },
+    { "name": "LayoutManager", "c": "nmLayoutManager", "extends": null },
     { "name": "Image", "c": "nmImage", "extends": null },
     { "name": "List", "c": "nmList", "extends": "Component" },
     { "name": "ListModel", "c": "nmListModel", "extends": null }
@@ -38,7 +39,8 @@
   "enums": [
     { "name": "nmAlignment", "members": [{ "name": "start", "value": 0 }, { "name": "center", "value": 1 }, { "name": "end", "value": 2 }, { "name": "stretch", "value": 3 }] },
     { "name": "nmOrientation", "members": [{ "name": "horizontal", "value": 0 }, { "name": "vertical", "value": 1 }] },
-    { "name": "nmScrollOrientation", "members": [{ "name": "horizontal", "value": 0 }, { "name": "vertical", "value": 1 }] }
+    { "name": "nmScrollOrientation", "members": [{ "name": "horizontal", "value": 0 }, { "name": "vertical", "value": 1 }] },
+    { "name": "nmBorderRegion", "members": [{ "name": "north", "value": 0 }, { "name": "south", "value": 1 }, { "name": "east", "value": 2 }, { "name": "west", "value": 3 }, { "name": "center", "value": 4 }] }
   ],
   "callbacks": [
     { "name": "nmChangeListener", "event": "opaque" }
@@ -1803,6 +1805,72 @@
       "params": [{ "name": "cb", "type": "callback", "callback": "nmChangeListener", "role": "event_handler" }],
       "ret": { "type": "void" },
       "fail": null
+    },
+    {
+      "c": "nmBoxLayoutHorizontal",
+      "owner": "BoxLayout",
+      "method": "horizontal",
+      "names": { "py": "horizontal", "js": "horizontal" },
+      "kind": "static",
+      "receiver": null,
+      "params": [],
+      "ret": { "type": "handle", "handle": "LayoutManager", "ownership": "borrowed" },
+      "fail": null
+    },
+    {
+      "c": "nmBoxLayoutVertical",
+      "owner": "BoxLayout",
+      "method": "vertical",
+      "names": { "py": "vertical", "js": "vertical" },
+      "kind": "static",
+      "receiver": null,
+      "params": [],
+      "ret": { "type": "handle", "handle": "LayoutManager", "ownership": "borrowed" },
+      "fail": null
+    },
+    {
+      "c": "nmBorderLayoutGet",
+      "owner": "BorderLayout",
+      "method": "get",
+      "names": { "py": "get", "js": "get" },
+      "kind": "static",
+      "receiver": null,
+      "params": [],
+      "ret": { "type": "handle", "handle": "LayoutManager", "ownership": "borrowed" },
+      "fail": null
+    },
+    {
+      "c": "nmContainerSetLayout",
+      "owner": "Container",
+      "method": "setLayout",
+      "names": { "py": "set_layout", "js": "setLayout" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "layout", "type": "handle", "handle": "LayoutManager", "optional": true, "ownership": "borrowed" }],
+      "ret": { "type": "void" },
+      "fail": null
+    },
+    {
+      "c": "nmContainerGetLayout",
+      "owner": "Container",
+      "method": "getLayout",
+      "names": { "py": "get_layout", "js": "getLayout" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [],
+      "ret": { "type": "handle", "handle": "LayoutManager", "optional": true, "ownership": "borrowed" },
+      "fail": null
+    },
+    {
+      "c": "nmBorderLayoutAdd",
+      "owner": "BorderLayout",
+      "method": "add",
+      "names": { "py": "add", "js": "add" },
+      "kind": "static",
+      "receiver": null,
+      "params": [{ "name": "container", "type": "handle", "handle": "Container" }, { "name": "region", "type": "enum", "enum": "nmBorderRegion" }, { "name": "child", "type": "handle", "handle": "Component", "ownership": "transfer" }],
+      "ret": { "type": "void" },
+      "fail": "err"
     },
     {
       "c": "nmAppLoadImage",

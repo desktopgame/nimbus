@@ -14,8 +14,8 @@ apigen（[c_api_codegen.md](c_api_codegen.md)）の残件。書き方・運用�
 完了条件の共通基準（各項目では固有条件のみ記す）: 対象 API が C から呼べる・apigen 再生成が決定的・
 `zig build install` / `zig build test` が緑・`nimbus.h` の構文チェック OK。
 
-次の一手の推奨: **A の総ざらい（#1 → #2 → #3 → #4 → #13）**。生成器変更ゼロで実用カバレッジが大きく上がる
-（#13 レイアウトも A。詳細は当該項目）。続けて #5（`?str` 引数）と #6（2 段 cast）で setName と ScrollPane を埋める。
+次の一手の推奨: **A の総ざらい（#1 → #2 → #3 → #4）**（#13 レイアウトは完了）。生成器変更ゼロで実用
+カバレッジが大きく上がる。続けて #5（`?str` 引数）と #6（2 段 cast）で setName と ScrollPane を埋める。
 
 ---
 
@@ -292,11 +292,15 @@ C から void* プロパティの put / get / remove ができる。
 ---
 
 ## #13 LayoutManager とレイアウト適用 + Container.setLayout / getLayout
-- 状態: 未着手
+- 状態: 完了
 - 優先度: 中
 - 影響範囲: `nimbus.api`（opaque `LayoutManager`・enum `nmBorderRegion`、Container / BoxLayout / BorderLayout）
 - 更新日: 2026-06-02
 - 依存: なし
+
+完了（2026-06-02）: 下記 spec 行どおり追加。opaque 28・生成関数 166。**初の receiver なし生成関数**
+（`framework.BoxLayout.horizontal()` を直接呼ぶ）。検証: apigen 決定的・`zig build install`/`test` 緑・
+`nimbus.h` を clang で構文チェック（singleton factory・`?*LayoutManager`・region enum・BorderLayout.add）。
 
 ### 何
 `Container.setLayout(?*LayoutManager)` / `getLayout() ?*LayoutManager`、ビルトインレイアウトの取得

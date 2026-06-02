@@ -43,6 +43,7 @@ typedef struct nmPopupMenu nmPopupMenu;
 typedef struct nmButtonModel nmButtonModel;
 typedef struct nmToggleButtonModel nmToggleButtonModel;
 typedef struct nmBoundedRangeModel nmBoundedRangeModel;
+typedef struct nmLayoutManager nmLayoutManager;
 typedef struct nmImage nmImage;
 typedef struct nmList nmList;
 typedef struct nmListModel nmListModel;
@@ -58,6 +59,7 @@ typedef struct { float x; float y; } nmPoint;
 typedef enum { nmAlignment_start, nmAlignment_center, nmAlignment_end, nmAlignment_stretch } nmAlignment;
 typedef enum { nmOrientation_horizontal, nmOrientation_vertical } nmOrientation;
 typedef enum { nmScrollOrientation_horizontal, nmScrollOrientation_vertical } nmScrollOrientation;
+typedef enum { nmBorderRegion_north, nmBorderRegion_south, nmBorderRegion_east, nmBorderRegion_west, nmBorderRegion_center } nmBorderRegion;
 
 /* ── event-handler callbacks ── */
 typedef struct { void (*fn)(void* userdata, const void* event); void* userdata; } nmChangeListener;
@@ -337,6 +339,12 @@ void nmBoundedRangeModelSetExtent(nmBoundedRangeModel* self, int32_t extent);
 void nmBoundedRangeModelSetRangeProperties(nmBoundedRangeModel* self, int32_t min, int32_t value, int32_t max, int32_t extent);
 int nmBoundedRangeModelOnChange(nmBoundedRangeModel* self, nmChangeListener* cb);
 void nmBoundedRangeModelOffChange(nmBoundedRangeModel* self, nmChangeListener* cb);
+nmLayoutManager* nmBoxLayoutHorizontal(void);
+nmLayoutManager* nmBoxLayoutVertical(void);
+nmLayoutManager* nmBorderLayoutGet(void);
+void nmContainerSetLayout(nmContainer* self, nmLayoutManager* layout);
+nmLayoutManager* nmContainerGetLayout(nmContainer* self);
+int nmBorderLayoutAdd(nmContainer* container, nmBorderRegion region, nmComponent* child);
 
 /* ── upcasts ── */
 nmComponent* nmButtonAsComponent(nmButton* self);

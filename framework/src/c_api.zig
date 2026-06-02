@@ -355,6 +355,14 @@ comptime {
     std.debug.assert(@intFromEnum(framework.ScrollBar.Orientation.vertical) == 1);
 }
 
+comptime {
+    std.debug.assert(@intFromEnum(framework.BorderLayout.Region.north) == 0);
+    std.debug.assert(@intFromEnum(framework.BorderLayout.Region.south) == 1);
+    std.debug.assert(@intFromEnum(framework.BorderLayout.Region.east) == 2);
+    std.debug.assert(@intFromEnum(framework.BorderLayout.Region.west) == 3);
+    std.debug.assert(@intFromEnum(framework.BorderLayout.Region.center) == 4);
+}
+
 const nmChangeListener = extern struct {
     fn_ptr: ?*const fn (?*anyopaque, ?*const anyopaque) callconv(.c) void,
     userdata: ?*anyopaque,
@@ -1227,6 +1235,34 @@ export fn nmBoundedRangeModelOnChange(self: *framework.BoundedRangeModel, cb: *n
 
 export fn nmBoundedRangeModelOffChange(self: *framework.BoundedRangeModel, cb: *nmChangeListener) void {
     self.removeChangeListener(nmChangeListener, nm_trampoline_nmChangeListener, cb);
+}
+
+export fn nmBoxLayoutHorizontal() *framework.LayoutManager {
+    return framework.BoxLayout.horizontal();
+}
+
+export fn nmBoxLayoutVertical() *framework.LayoutManager {
+    return framework.BoxLayout.vertical();
+}
+
+export fn nmBorderLayoutGet() *framework.LayoutManager {
+    return framework.BorderLayout.get();
+}
+
+export fn nmContainerSetLayout(self: *framework.Container, layout: ?*framework.LayoutManager) void {
+    self.setLayout(layout);
+}
+
+export fn nmContainerGetLayout(self: *framework.Container) ?*framework.LayoutManager {
+    return self.getLayout();
+}
+
+export fn nmBorderLayoutAdd(container: *framework.Container, region: c_int, child: *framework.Component) c_int {
+    framework.BorderLayout.add(container, @enumFromInt(region), child) catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
 }
 
 export fn nmButtonAsComponent(self: *framework.Button) *framework.Component {
