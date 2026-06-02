@@ -112,3 +112,8 @@ void nmListModelClear(nmListModel* self);
 void nmListModelMove(nmListModel* self, size_t from, size_t to);
 size_t nmListModelGetSize(nmListModel* self);
 void* nmListModelGetElementAt(nmListModel* self, size_t idx);
+
+/* Free an OWNED Dialog (from nmAppDialog). Caller-owned: the Application never
+ * frees dialogs. Deinits the window + frees the box. Do not call while shown
+ * modally. The rest of the Dialog API is generated — see nimbus.api. */
+void nmDialogDestroy(nmDialog* self);

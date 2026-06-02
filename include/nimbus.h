@@ -34,6 +34,7 @@ typedef struct nmScrollBar nmScrollBar;
 typedef struct nmTextField nmTextField;
 typedef struct nmTextArea nmTextArea;
 typedef struct nmWindow nmWindow;
+typedef struct nmDialog nmDialog;
 typedef struct nmMenuItem nmMenuItem;
 typedef struct nmCheckBoxMenuItem nmCheckBoxMenuItem;
 typedef struct nmMenu nmMenu;
@@ -61,6 +62,7 @@ typedef enum { nmAlignment_start, nmAlignment_center, nmAlignment_end, nmAlignme
 typedef enum { nmOrientation_horizontal, nmOrientation_vertical } nmOrientation;
 typedef enum { nmScrollOrientation_horizontal, nmScrollOrientation_vertical } nmScrollOrientation;
 typedef enum { nmBorderRegion_north, nmBorderRegion_south, nmBorderRegion_east, nmBorderRegion_west, nmBorderRegion_center } nmBorderRegion;
+typedef enum { nmDialogResult_none, nmDialogResult_ok, nmDialogResult_cancel } nmDialogResult;
 
 /* ── event-handler callbacks ── */
 typedef struct { void (*fn)(void* userdata, const void* event); void* userdata; } nmChangeListener;
@@ -178,6 +180,11 @@ void nmListModelClear(nmListModel* self);
 void nmListModelMove(nmListModel* self, size_t from, size_t to);
 size_t nmListModelGetSize(nmListModel* self);
 void* nmListModelGetElementAt(nmListModel* self, size_t idx);
+
+/* Free an OWNED Dialog (from nmAppDialog). Caller-owned: the Application never
+ * frees dialogs. Deinits the window + frees the box. Do not call while shown
+ * modally. The rest of the Dialog API is generated — see nimbus.api. */
+void nmDialogDestroy(nmDialog* self);
 
 /* ── functions ── */
 int nmAppRun(nmApplication* self);
@@ -306,6 +313,13 @@ void nmWindowRequestFocus(nmWindow* self, nmComponent* c);
 int nmFrameSetMenuBar(nmFrame* self, nmMenuBar* bar);
 int nmFrameSetMenuBarBorrowed(nmFrame* self, nmMenuBar* bar);
 nmMenuBar* nmFrameGetMenuBar(const nmFrame* self);
+nmDialog* nmAppDialog(nmApplication* self, nmWindow* owner, const char* title, uint32_t w, uint32_t h);
+nmDialogResult nmDialogShowModal(nmDialog* self);
+int nmDialogShow(nmDialog* self);
+void nmDialogClose(nmDialog* self, nmDialogResult result);
+nmDialogResult nmDialogGetResult(const nmDialog* self);
+bool nmDialogIsModal(const nmDialog* self);
+bool nmDialogIsShown(const nmDialog* self);
 nmStr nmMenuItemGetText(const nmMenuItem* self);
 int nmMenuItemSetText(nmMenuItem* self, const char* text);
 nmButtonModel* nmMenuItemGetModel(const nmMenuItem* self);
@@ -384,6 +398,7 @@ nmComponent* nmMenuBarAsComponent(nmMenuBar* self);
 nmComponent* nmMenuSeparatorAsComponent(nmMenuSeparator* self);
 nmContainer* nmPanelAsContainer(nmPanel* self);
 nmWindow* nmFrameAsWindow(nmFrame* self);
+nmWindow* nmDialogAsWindow(nmDialog* self);
 
 /* ── destructors ── */
 void nmComponentDestroy(nmComponent* self);

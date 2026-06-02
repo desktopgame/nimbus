@@ -85,6 +85,9 @@ opaque TextField   : Component
 opaque TextArea    : Component
 # Top-level window (borrowed via nmFrameAsWindow; the Frame owns it). Not a Component.
 opaque Window
+# Owner-bound dialog (modal or modeless). Caller-owned (the Application registers
+# it with a no-op destroy), so it is freed by the hand-written nmDialogDestroy.
+opaque Dialog
 # Menu family. All are Components except PopupMenu, a free overlay with its own destructor.
 opaque MenuItem         : Component
 opaque CheckBoxMenuItem : Component
@@ -134,6 +137,10 @@ enum nmOrientation       = Slider.Orientation    { horizontal vertical }
 enum nmScrollOrientation = ScrollBar.Orientation { horizontal vertical }
 # BorderLayout region for child placement (BorderLayout.add).
 enum nmBorderRegion = BorderLayout.Region { north south east west center }
+# Modal dialog outcome. Native Dialog.Result is non-exhaustive (enum(i32) + `_`),
+# so arbitrary i32 codes still pass through @enumFromInt/@intFromEnum; only these
+# three carry names + a drift check.
+enum nmDialogResult = Dialog.Result { none ok cancel }
 
 # Event-handler callback. native event = ChangeListenerList.Event; the C side
 # passes a { fn, userdata } box pointer and receives the event as an opaque
@@ -322,6 +329,17 @@ fn nmFrameSetMenuBar         = Frame.setMenuBar         (&self, bar:?*MenuBar @t
 fn nmFrameSetMenuBarBorrowed = Frame.setMenuBarBorrowed (&self, bar:?*MenuBar @borrowed) -> void !err
 fn nmFrameGetMenuBar         = Frame.getMenuBar         (=self) -> ?*MenuBar @borrowed
 
+# Dialog (#3). Caller-owned: nmDialogDestroy is hand-written (deinit + free; the
+# Application does not free dialogs). showModal blocks (nested UI loop) and returns
+# the result; populate the dialog via nmDialogAsWindow (Window.add etc.).
+fn nmAppDialog       = Application.dialog (&self, owner:*Window, title:str, w:u32, h:u32) -> *Dialog !null @owned
+fn nmDialogShowModal = Dialog.showModal (&self) -> nmDialogResult
+fn nmDialogShow      = Dialog.show      (&self) -> void !err
+fn nmDialogClose     = Dialog.close     (&self, result:nmDialogResult) -> void
+fn nmDialogGetResult = Dialog.getResult (=self) -> nmDialogResult
+fn nmDialogIsModal   = Dialog.isModal   (=self) -> bool
+fn nmDialogIsShown   = Dialog.isShown   (=self) -> bool
+
 # MenuItem (icon get/set take awt.Image by value -> bespoke, like Button's)
 fn nmMenuItemGetText  = MenuItem.getText  (=self) -> str
 fn nmMenuItemSetText  = MenuItem.setText  (&self, text:str) -> void !err
@@ -423,6 +441,8 @@ cast nmMenuSeparatorAsComponent    = MenuSeparator.component    -> Component
 cast nmPanelAsContainer            = Panel.container            -> Container
 # Frame owns its top-level Window.
 cast nmFrameAsWindow               = Frame.window               -> Window
+# Dialog embeds its top-level Window (populate the dialog via Window methods).
+cast nmDialogAsWindow              = Dialog.window               -> Window
 
 # Single generic destructor: dispatches the widget's own vtable.destroy using
 # the allocator stored on the Component. Free any widget via its nmComponent*.

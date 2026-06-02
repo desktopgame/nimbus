@@ -233,4 +233,16 @@
       "params": [{ "name": "idx", "type": "usize" }],
       "ret": { "type": "opaque_ptr", "optional": true },
       "fail": null
+    },
+    {
+      "c": "nmDialogDestroy",
+      "impl": "manual",
+      "owner": "Dialog",
+      "method": "destroy",
+      "names": { "py": "destroy", "js": "destroy" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [],
+      "ret": { "type": "void" },
+      "fail": null
     }

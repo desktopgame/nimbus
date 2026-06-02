@@ -155,6 +155,16 @@ export fn nmImageDestroy(self: *awt.Image) void {
     std.heap.c_allocator.destroy(self);
 }
 
+/// Free an OWNED Dialog (from nmAppDialog). Caller-owned: the Application
+/// registers dialogs with a no-op destroy, so it never frees them. This deinits
+/// the window (unregistering it if still shown) + frees the Dialog box with the
+/// allocator it was created from. Do not call while the dialog is shown modally.
+export fn nmDialogDestroy(self: *framework.Dialog) void {
+    const allocator = self.allocator;
+    self.deinit();
+    allocator.destroy(self);
+}
+
 export fn nmImageWidth(self: *const awt.Image) i32 {
     return self.width;
 }
@@ -363,6 +373,12 @@ comptime {
     std.debug.assert(@intFromEnum(framework.BorderLayout.Region.east) == 2);
     std.debug.assert(@intFromEnum(framework.BorderLayout.Region.west) == 3);
     std.debug.assert(@intFromEnum(framework.BorderLayout.Region.center) == 4);
+}
+
+comptime {
+    std.debug.assert(@intFromEnum(framework.Dialog.Result.none) == 0);
+    std.debug.assert(@intFromEnum(framework.Dialog.Result.ok) == 1);
+    std.debug.assert(@intFromEnum(framework.Dialog.Result.cancel) == 2);
 }
 
 const nmChangeListener = extern struct {
@@ -1043,6 +1059,41 @@ export fn nmFrameGetMenuBar(self: *framework.Frame) ?*framework.MenuBar {
     return self.getMenuBar();
 }
 
+export fn nmAppDialog(self: *framework.Application, owner: *framework.Window, title: [*:0]const u8, w: u32, h: u32) ?*framework.Dialog {
+    return self.dialog(owner, std.mem.span(title), w, h) catch |e| {
+        setLastError(e);
+        return null;
+    };
+}
+
+export fn nmDialogShowModal(self: *framework.Dialog) c_int {
+    return @intFromEnum(self.showModal());
+}
+
+export fn nmDialogShow(self: *framework.Dialog) c_int {
+    self.show() catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
+}
+
+export fn nmDialogClose(self: *framework.Dialog, result: c_int) void {
+    self.close(@enumFromInt(result));
+}
+
+export fn nmDialogGetResult(self: *framework.Dialog) c_int {
+    return @intFromEnum(self.getResult());
+}
+
+export fn nmDialogIsModal(self: *framework.Dialog) bool {
+    return self.isModal();
+}
+
+export fn nmDialogIsShown(self: *framework.Dialog) bool {
+    return self.isShown();
+}
+
 export fn nmMenuItemGetText(self: *framework.MenuItem) nmStr {
     const _s = self.getText();
     return .{ .ptr = _s.ptr, .len = _s.len };
@@ -1411,6 +1462,10 @@ export fn nmPanelAsContainer(self: *framework.Panel) *framework.Container {
 }
 
 export fn nmFrameAsWindow(self: *framework.Frame) *framework.Window {
+    return &self.window;
+}
+
+export fn nmDialogAsWindow(self: *framework.Dialog) *framework.Window {
     return &self.window;
 }
 

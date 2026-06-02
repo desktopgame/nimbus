@@ -15,6 +15,7 @@
     { "name": "TextField", "c": "nmTextField", "extends": "Component" },
     { "name": "TextArea", "c": "nmTextArea", "extends": "Component" },
     { "name": "Window", "c": "nmWindow", "extends": null },
+    { "name": "Dialog", "c": "nmDialog", "extends": null },
     { "name": "MenuItem", "c": "nmMenuItem", "extends": "Component" },
     { "name": "CheckBoxMenuItem", "c": "nmCheckBoxMenuItem", "extends": "Component" },
     { "name": "Menu", "c": "nmMenu", "extends": "Component" },
@@ -41,7 +42,8 @@
     { "name": "nmAlignment", "members": [{ "name": "start", "value": 0 }, { "name": "center", "value": 1 }, { "name": "end", "value": 2 }, { "name": "stretch", "value": 3 }] },
     { "name": "nmOrientation", "members": [{ "name": "horizontal", "value": 0 }, { "name": "vertical", "value": 1 }] },
     { "name": "nmScrollOrientation", "members": [{ "name": "horizontal", "value": 0 }, { "name": "vertical", "value": 1 }] },
-    { "name": "nmBorderRegion", "members": [{ "name": "north", "value": 0 }, { "name": "south", "value": 1 }, { "name": "east", "value": 2 }, { "name": "west", "value": 3 }, { "name": "center", "value": 4 }] }
+    { "name": "nmBorderRegion", "members": [{ "name": "north", "value": 0 }, { "name": "south", "value": 1 }, { "name": "east", "value": 2 }, { "name": "west", "value": 3 }, { "name": "center", "value": 4 }] },
+    { "name": "nmDialogResult", "members": [{ "name": "none", "value": 0 }, { "name": "ok", "value": 1 }, { "name": "cancel", "value": 2 }] }
   ],
   "callbacks": [
     { "name": "nmChangeListener", "event": "opaque" }
@@ -1434,6 +1436,83 @@
       "fail": null
     },
     {
+      "c": "nmAppDialog",
+      "owner": "Application",
+      "method": "dialog",
+      "names": { "py": "dialog", "js": "dialog" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "owner", "type": "handle", "handle": "Window" }, { "name": "title", "type": "str" }, { "name": "w", "type": "u32" }, { "name": "h", "type": "u32" }],
+      "ret": { "type": "handle", "handle": "Dialog", "ownership": "owned" },
+      "fail": "null"
+    },
+    {
+      "c": "nmDialogShowModal",
+      "owner": "Dialog",
+      "method": "showModal",
+      "names": { "py": "show_modal", "js": "showModal" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [],
+      "ret": { "type": "enum", "enum": "nmDialogResult" },
+      "fail": null
+    },
+    {
+      "c": "nmDialogShow",
+      "owner": "Dialog",
+      "method": "show",
+      "names": { "py": "show", "js": "show" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [],
+      "ret": { "type": "void" },
+      "fail": "err"
+    },
+    {
+      "c": "nmDialogClose",
+      "owner": "Dialog",
+      "method": "close",
+      "names": { "py": "close", "js": "close" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "result", "type": "enum", "enum": "nmDialogResult" }],
+      "ret": { "type": "void" },
+      "fail": null
+    },
+    {
+      "c": "nmDialogGetResult",
+      "owner": "Dialog",
+      "method": "getResult",
+      "names": { "py": "get_result", "js": "getResult" },
+      "kind": "method",
+      "receiver": "value",
+      "params": [],
+      "ret": { "type": "enum", "enum": "nmDialogResult" },
+      "fail": null
+    },
+    {
+      "c": "nmDialogIsModal",
+      "owner": "Dialog",
+      "method": "isModal",
+      "names": { "py": "is_modal", "js": "isModal" },
+      "kind": "method",
+      "receiver": "value",
+      "params": [],
+      "ret": { "type": "bool" },
+      "fail": null
+    },
+    {
+      "c": "nmDialogIsShown",
+      "owner": "Dialog",
+      "method": "isShown",
+      "names": { "py": "is_shown", "js": "isShown" },
+      "kind": "method",
+      "receiver": "value",
+      "params": [],
+      "ret": { "type": "bool" },
+      "fail": null
+    },
+    {
       "c": "nmMenuItemGetText",
       "owner": "MenuItem",
       "method": "getText",
@@ -2297,6 +2376,18 @@
       "params": [{ "name": "idx", "type": "usize" }],
       "ret": { "type": "opaque_ptr", "optional": true },
       "fail": null
+    },
+    {
+      "c": "nmDialogDestroy",
+      "impl": "manual",
+      "owner": "Dialog",
+      "method": "destroy",
+      "names": { "py": "destroy", "js": "destroy" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [],
+      "ret": { "type": "void" },
+      "fail": null
     }
   ],
   "casts": [
@@ -2316,7 +2407,8 @@
     { "c": "nmMenuBarAsComponent", "from": "MenuBar", "to": "Component" },
     { "c": "nmMenuSeparatorAsComponent", "from": "MenuSeparator", "to": "Component" },
     { "c": "nmPanelAsContainer", "from": "Panel", "to": "Container" },
-    { "c": "nmFrameAsWindow", "from": "Frame", "to": "Window" }
+    { "c": "nmFrameAsWindow", "from": "Frame", "to": "Window" },
+    { "c": "nmDialogAsWindow", "from": "Dialog", "to": "Window" }
   ],
   "destructors": [
     { "c": "nmComponentDestroy", "type": "Component" }

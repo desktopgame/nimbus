@@ -155,6 +155,16 @@ export fn nmImageDestroy(self: *awt.Image) void {
     std.heap.c_allocator.destroy(self);
 }
 
+/// Free an OWNED Dialog (from nmAppDialog). Caller-owned: the Application
+/// registers dialogs with a no-op destroy, so it never frees them. This deinits
+/// the window (unregistering it if still shown) + frees the Dialog box with the
+/// allocator it was created from. Do not call while the dialog is shown modally.
+export fn nmDialogDestroy(self: *framework.Dialog) void {
+    const allocator = self.allocator;
+    self.deinit();
+    allocator.destroy(self);
+}
+
 export fn nmImageWidth(self: *const awt.Image) i32 {
     return self.width;
 }

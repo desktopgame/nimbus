@@ -14,7 +14,7 @@ apigen（[c_api_codegen.md](c_api_codegen.md)）の残件。書き方・運用�
 完了条件の共通基準（各項目では固有条件のみ記す）: 対象 API が C から呼べる・apigen 再生成が決定的・
 `zig build install` / `zig build test` が緑・`nimbus.h` の構文チェック OK。
 
-次の一手の推奨: **残る A は #3（Dialog）→ #4（ScrollPane、依存 #6）**（#1 / #2 / #13 と #5 は完了）。
+次の一手の推奨: **残る A は #4（ScrollPane、依存 #6）のみ**（#1 / #2 / #3 / #13 と #5 は完了）。
 #4 は #6（2 段 cast）で完結する。
 
 ---
@@ -69,23 +69,36 @@ Component の共通プロパティ系を公開する。前回 X 軸だけ出し�
 ---
 
 ## #3 Dialog 一式の公開
-- 状態: 未着手
+- 状態: 完了
 - 優先度: 中
-- 影響範囲: `nimbus.api`（新規 opaque `Dialog`・enum `Result`、Application ファクトリ）
+- 影響範囲: `nimbus.api`（opaque `Dialog`・enum `nmDialogResult`、Application ファクトリ、cast）＋
+  preamble（bespoke destroy）
 - 更新日: 2026-06-02
 - 依存: なし
+
+完了（2026-06-02）: 下記決定どおり実装。生成（A）= `nmAppDialog(owner:*Window,…)@owned`・`nmDialogShowModal`・
+`nmDialogShow`・`nmDialogClose`・`nmDialogGetResult`・`nmDialogIsModal`・`nmDialogIsShown`・
+`cast nmDialogAsWindow`（埋め込み Window でダイアログに widget を載せる）。手書き（C）= `nmDialogDestroy`
+（deinit + allocator.destroy）。opaque 29・生成関数 192。検証: 全緑（clang で showModal・任意コードの
+キャスト・destroy・AsWindow まで構文チェック）。
 
 ### 何
 `app.dialog(owner:*Window, …) -> *Dialog`（ハンドル引数＋戻り）＋ `Result` enum ＋
 `show`/`close(Result)`/`getResult`/`isModal`/`isShown`。`showModal` は二次ループ（ブロッキング）だが
 値戻りなので生成自体は可。
 
-### 決めること
-- `Result` enum のメンバ（native の `Dialog.Result` に合わせる）。
-- `showModal` のブロッキングを C / バインディングでどう扱うか（戻り値のみで素直に出せるか確認）。
+### 決めること（決定: すべて案A）
+- **Result の C 表現 → 案A: C 固定 enum `nmDialogResult{none,ok,cancel}`**。apigen の enum は
+  `@enumFromInt`/`@intFromEnum` を通すので、native の非網羅 `enum(i32)+_` の任意コードも C 側で
+  `(nmDialogResult)42` のキャストでそのまま通る（補完＋drift 検査を足しつつ非網羅性を失わない）。
+- **showModal のブロッキング → 案A: 素直な同期ブロッキング関数**（`nmDialogShowModal(*Dialog) -> nmDialogResult`）。
+  C ABI 層は特別な仕掛け不要。「UI スレッドをブロックする」注記はバインディング doc 側で扱う。
+- **破棄/所有 → 案A: 専用 destroy シムを手書き**（`nmDialogDestroy` = `deinit` + `allocator.destroy`）。
+  Dialog は非 Component かつ caller-owned（Application は `noopDestroy` で登録し解放しない）ため、汎用
+  `nmComponentDestroy` が使えず 2 段破棄が要る（#11 ButtonGroup と同型）。factory は `@owned`。
 
 ### 完了条件
-Dialog をファクトリで生成し、modal / 非 modal で開閉・結果取得が C から可能。
+Dialog をファクトリで生成し、modal / 非 modal で開閉・結果取得が C から可能。← 達成。
 
 ---
 
