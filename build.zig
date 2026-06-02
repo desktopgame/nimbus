@@ -215,6 +215,12 @@ pub fn build(b: *std.Build) void {
     addExample(b, "widget_listdnd", framework_mod, null, target, optimize);
     addExample(b, "widget_layoutcost", framework_mod, null, target, optimize);
 
+    // ── C ABI example: drive nimbus from a C program (cnimbus_*) ─────────
+    // A pure-C executable that links the public C ABI shared lib (libnimbus)
+    // and includes only include/nimbus.h — no Zig. Proves the generated ABI is
+    // usable from C exactly as a future Python/JS binding would consume it.
+    addCExample(b, "cnimbus_editor", libnimbus, target, optimize);
+
     // ── tests ────────────────────────────────────────────────────
     const test_step = b.step("test", "Run all unit tests");
     inline for (.{
@@ -321,6 +327,35 @@ fn addExample(
             .imports = imports.items,
         }),
     });
+    b.installArtifact(exe);
+
+    const run_step = b.step("run-" ++ name, "Run the " ++ name ++ " example");
+    const run = b.addRunArtifact(exe);
+    if (b.args) |args| run.addArgs(args);
+    run_step.dependOn(&run.step);
+}
+
+/// A C-language example: a pure-C executable (examples/<name>/main.c) that uses
+/// only include/nimbus.h and links the public C ABI shared lib `libnimbus`.
+fn addCExample(
+    b: *std.Build,
+    comptime name: []const u8,
+    libnimbus: *std.Build.Step.Compile,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+) void {
+    const mod = b.createModule(.{
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    mod.addIncludePath(b.path("include"));
+    mod.addCSourceFile(.{
+        .file = b.path("examples/" ++ name ++ "/main.c"),
+        .flags = &.{ "-std=c11", "-Wall", "-Wextra" },
+    });
+    mod.linkLibrary(libnimbus);
+    const exe = b.addExecutable(.{ .name = name, .root_module = mod });
     b.installArtifact(exe);
 
     const run_step = b.step("run-" ++ name, "Run the " ++ name ++ " example");

@@ -50,3 +50,6 @@ frameworkのDnD基盤を使用して、`List` の行をドラッグして同じ 
 
 ## widget_layoutcost
 frameworkのAPIを使用して、向きが階層ごとに交互に変わる BoxLayout コンテナーを深く・多子にネストする（デフォルト ~3万ノード）。起動時に強制再レイアウトを多数回実行してコスト（1回あたりの所要時間）を計測・表示し、さらに**毎フレーム**ツリー全体を再レイアウトし続けるのでウィンドウが目に見えてカクつく。レイアウトエンジンのベンチマーク／体感用シーン（`doc/optimize.md` 参照）。描画が律速にならないよう葉の塗りは間引いている。引数で `depth fanout iters` を指定可能（例: より重くするなら `zig build run-widget_layoutcost -- 10 3 10`、軽くして比較するなら `-- 6 3 200`）。
+
+## cnimbus_editor
+nimbus の C ABI（`include/nimbus.h` + `libnimbus`）だけを使い、**C 言語**でエディタ風の画面を組むサンプル（Zig を一切使わない）。メニューバー（File / Edit）、上部のツールバー（north）、スクロールペインに入れたテキストエリア（center）を BorderLayout で配置する。将来の Python / JS バインディングが C ABI をどう叩くかの実証も兼ねる。`zig build` で他のサンプルと一緒にビルドされ、`zig build run-cnimbus_editor` で起動できる。

@@ -1534,6 +1534,10 @@ export fn nmFrameAsWindow(self: *framework.Frame) *framework.Window {
     return &self.window;
 }
 
+export fn nmWindowAsContainer(self: *framework.Window) *framework.Container {
+    return &self.container;
+}
+
 export fn nmDialogAsWindow(self: *framework.Dialog) *framework.Window {
     return &self.window;
 }

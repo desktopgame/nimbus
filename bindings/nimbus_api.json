@@ -2554,6 +2554,7 @@
     { "c": "nmPanelAsContainer", "from": "Panel", "to": "Container" },
     { "c": "nmScrollPaneAsContainer", "from": "ScrollPane", "to": "Container" },
     { "c": "nmFrameAsWindow", "from": "Frame", "to": "Window" },
+    { "c": "nmWindowAsContainer", "from": "Window", "to": "Container" },
     { "c": "nmDialogAsWindow", "from": "Dialog", "to": "Window" }
   ],
   "destructors": [

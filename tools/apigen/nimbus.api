@@ -465,6 +465,9 @@ cast nmPanelAsContainer            = Panel.container            -> Container
 cast nmScrollPaneAsContainer       = ScrollPane.container       -> Container
 # Frame owns its top-level Window.
 cast nmFrameAsWindow               = Frame.window               -> Window
+# Window's root Container (defaults to BorderLayout) — reach it to place children
+# by region (BorderLayout.add) from C, as the Zig examples do via window.container.
+cast nmWindowAsContainer           = Window.container            -> Container
 # Dialog embeds its top-level Window (populate the dialog via Window methods).
 cast nmDialogAsWindow              = Dialog.window               -> Window
 

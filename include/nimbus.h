@@ -414,6 +414,7 @@ nmComponent* nmMenuSeparatorAsComponent(nmMenuSeparator* self);
 nmContainer* nmPanelAsContainer(nmPanel* self);
 nmContainer* nmScrollPaneAsContainer(nmScrollPane* self);
 nmWindow* nmFrameAsWindow(nmFrame* self);
+nmContainer* nmWindowAsContainer(nmWindow* self);
 nmWindow* nmDialogAsWindow(nmDialog* self);
 
 /* ── destructors ── */
