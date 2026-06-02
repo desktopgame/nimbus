@@ -1,300 +1,355 @@
-# c_api-codegen バックログ（棚上げ案件）
-apigen（[c_api_codegen.md](c_api_codegen.md)）で**後回しにした項目**のメモ。
-バックログ自体の書き方・運用規約は [backlog.md](backlog.md) を参照。
+# c_api-codegen バックログ
+apigen（[c_api_codegen.md](c_api_codegen.md)）の残件。書き方・運用規約は [backlog.md](backlog.md) を参照。
 
-2026-06-02 時点の状況:
-- 実装済み: `#1` ブートストラップ / `#2` 文字列戻り / `#3` 文字列配列引数 / `#5` optional 値構造体 /
-  `#6c` リスナー remove、そして **`#4` List CellFactory / `#6a` Image**（正式記述は c_api_codegen.md に移動）。
-- **純 A のウィジェット一括公開も完了**（2026-06-02）: Label/Panel/CheckBox/RadioButton/Slider/ScrollBar/
-  TextField/TextArea/Window/Menu 系/3 モデル/残り Application ファクトリ。詳細は末尾「次の一手の候補」。
-- 棚上げ中（bespoke）: **`#6b` Timer のみ**。
-- その他: 「軽微な未対応」一覧と、末尾の「公開 API の C ABI 生成カバレッジ調査」。
+2026-06-02 に新スタイルへ移行し、解決済み項目を削除して残件をゼロから採番し直した
+（消した項目は git 履歴から復元可能）。実装済みの機能一覧は c_api_codegen.md「実装済み」を参照。
 
-`#4` / `#6a` の項は実装後も検討経緯の記録として残してある（この backlog を削除する時に一緒に捨てて良い）。
-各 bespoke 項目は「何 / なぜ bespoke / 候補アプローチ / 決めること」で書く。
+難易度の分類（この領域固有）:
+- **A** = 今すぐ生成可（`nimbus.api` に書くだけ・生成器変更ゼロ）
+- **B** = 小拡張で生成可（生成器に小機能追加）
+- **C** = 手書き bespoke（preamble 3 点に手書き）
+
+カバレッジ概数（2026-06-02）: A ≈ 70〜75% / B ≈ 10% / C ≈ 15〜20%。
+
+完了条件の共通基準（各項目では固有条件のみ記す）: 対象 API が C から呼べる・apigen 再生成が決定的・
+`zig build install` / `zig build test` が緑・`nimbus.h` の構文チェック OK。
+
+次の一手の推奨: **A の総ざらい（#1 → #2 → #3 → #4）**。生成器変更ゼロで実用カバレッジが大きく上がる。
+続けて #5（`?str` 引数）と #6（2 段 cast）で setName と ScrollPane を埋める。
 
 ---
 
-## #4 List の CellFactory
-**実装済み（2026-06-01）。正式な記述は [c_api_codegen.md](c_api_codegen.md)「List / CellFactory」へ移動した。**
-factory→cell の 2 段アダプタ（C 関数ポインタ → native fnptr）、cell プロトコル構造体、ListModel /
-選択 / index 群を preamble 手書き、typedef・rowHeight・change-listener・upcast は生成、という形で確定。
-セル編集（`Cell.edit`）と `ScrollPane` ラップは未公開（制約として doc に記載）。以下は検討経緯の記録
-（この backlog 削除時に一緒に捨てて良い）。
+## #1 Component 共通メソッドの公開
+- 状態: 未着手
+- 優先度: 高
+- 影響範囲: `nimbus.api`（全ウィジェットに効く。各 AsComponent 経由）、新規 value struct `nmRect`
+- 更新日: 2026-06-02
+- 依存: なし
 
 ### 何
-`Application.list(factory: List.CellFactory) !*List`。`CellFactory` は関数ポインタの構造体
-（`create: fn(*anyopaque, allocator) !Cell` など）で、生成物 `Cell` 自体も
-`{ component: *Component, update: fn(*anyopaque, ctx) void, destroy: fn(*anyopaque, allocator) void }`
-のように**関数ポインタ＋状態を持つ**。JavaFX VirtualFlow 方式（可視ぶんの実セル + recycle、
-[[project-list-cell-design]] 相当）なので update は recycle のたびに呼ばれる。
+Component の共通プロパティ系を公開する。前回 X 軸だけ出して漏れているものが中心:
+- `getGrowY`/`setGrowY`、`getAlignY`/`setAlignY`（grow/align は X しか出していない）
+- `isFocusable`/`setFocusable`、`requestFocus`、`repaint`、`markLayoutDirty`
+- `getName`（`?str` 戻り）、`containsWindowPoint(f32,f32)->bool`
+- `getBounds`/`setBounds`、`absoluteOriginInWindow` ← `nmRect{x,y,width,height:f32}` を宣言するだけ
+  （awt.Graphics.Rect は素の値構造体・生成器変更不要）。`nmPoint` は既存。
 
-### なぜ bespoke
-単一コールバックではなく「**インターフェースを返すインターフェース**」。`callback` 機構（box +
-トランポリン 1 段）では表せない。Cell の状態の所有・寿命、CellContext（行 index 等）の受け渡し、
-recycle 時の update 再呼び出しまで絡む。
-
-### 候補アプローチ
-preamble に **C フレンドリーな cell API を手書き**してアダプトする（ブートストラップと同類の bespoke グルー）。
-たとえば:
-```c
-typedef struct { void* component; void (*update)(void* cell_ud, /* ctx */); void (*destroy)(void* cell_ud); } nmCell;
-typedef struct { void* userdata; nmCell (*create)(void* userdata); } nmCellFactory;
-```
-を受け取り、native の `CellFactory`/`Cell` に変換する薄い Zig アダプタを書く。
+### なぜ（保留理由）
+純 A だが spec 行が未記述なだけ。全ウィジェットに効くので最優先。
 
 ### 決めること
-- C 側の cell / factory API の具体形（CellContext の何を C に渡すか：index・selected 等）。
-- cell 状態の所有（バインディングが cell userdata を所有し、destroy で解放）。
-- recycle の update に何を渡すか（行データは userdata 経由か、ctx で index を渡すか）。
+- `setName(?str)` は `?str` 引数が要る（#5）。getName だけ先に出すか、#5 完了を待って両方出すか。
+
+### 完了条件
+上記メソッドが C から呼べる（`setName` を除く、または #5 完了後）。`nmRect` を宣言。
+
+意図的に出さない: `getMinSize`/`setMinSize`/`getMaxSize`/`setMaxSize` は生成可能だが、CLAUDE.md が
+「minimumSize/preferredSize/maximumSize の複雑さは取り入れない」と明言 → 設計判断で除外。
 
 ---
 
-## #6a awt.Image（値返し / setIcon）
-**実装済み（2026-06-01）。正式な記述は [c_api_codegen.md](c_api_codegen.md)「Image / icon」へ移動した。**
-以下は検討経緯の記録（この backlog 削除時に一緒に捨てて良い）。実装は curated `nmIcon` enum +
-`nmAppIconNamed` 文字列フォールバック、借用は alloc-free フィールド参照、owned は loader 産のみ、
-Image 関数群は preamble 手書き・`nmImage` typedef のみ生成、という確定どおり。
+## #2 ウィジェットの取りこぼし公開
+- 状態: 未着手
+- 優先度: 中
+- 影響範囲: `nimbus.api`（Button / ComboBox / Container）
+- 更新日: 2026-06-02
+- 依存: なし
 
 ### 何
-`awt.Image = { texture: Texture, width: i32, height: i32 }`（GPU テクスチャを包む値型、awt/src/Image.zig）。
-関連 API: `Button.getIcon() ?Image` / `setIcon(?Image)`、`Image.fromMemory(allocator, device, bytes) !Image`、
-`Image.deinit()`（texture を解放）、`Application.icon(id: lucide.Icon) !Image`（lucide/icons.zig）。
+純 A だが未記述のもの: `Button.getModel`（→ `*ButtonModel` @borrowed）、`ComboBox.isEnabled`/`setEnabled`、
+`Container.remove(*Component)`。
 
-### 所有モデル（確定）
-Image の入口は 3 つ、所有は **owned 一系統（loader 産のみ）/ あとは全部借用** にきれいに割れる。
-
-| 入口 | texture の所有者 | 解放するのは | C ハンドル | nmImageDestroy |
-|---|---|---|---|---|
-| `Image.fromMemory` (loader) | 呼び出し元 owned | 呼び出し元が一度 | heap box（1 alloc） | **する** |
-| `Application.icon(id)` | App の `icon_cache` | App.deinit のみ | 借用 = cache スロットへの参照 | しない |
-| `Button.getIcon()` | 元の owner（loader or App icon） | その owner | 借用 = `&button.icon.?` | しない |
-
-確認根拠:
-- `Button.icon: ?awt.Image` は値保持だけ（Button.zig:28）。`setIcon` は `self.icon = img;` の値コピー、
-  `getIcon` は `return self.icon;` の値コピー。**`Button.destroy` は icon を deinit しない**（Button.zig:291–300）。
-- `Application.icon` はコメントに `The returned Image is borrowed; do not call deinit on it.`（Application.zig:642）。
-  `icon_cache: [lucide.Icon.count]?awt.Image` を遅延デコードしてキャッシュし借用を返す。解放は App.deinit のみ。
-  App はルートで最後まで生きるので**この借用は実質ダングリングしない**＝最も安全な借用クラス。
-
-ライフタイム危険は「**owner が先に free → 借用している widget / getIcon 戻りが use-after-free**」の向き
-（widget が死んで texture が消えるのではない）。owner は常に一点なので構造は単純。
-
-### なぜ bespoke
-- 値型だが内部に GPU `Texture`（バックエンドハンドル）を持つ。nmColor のような純データ値構造体には
-  できない（texture は C にとって意味のある値ではなく、コピーは外部所有の GPU 実体を指す借用になる）。
-- **C から Image を得る手段が無い**：`icon(id)` の引数 `lucide.Icon` は数百メンバの巨大 enum（公開非現実的）、
-  `fromMemory` は device/allocator が要る。→ setIcon に渡す Image を C 側で用意できない＝**生成口を手書き必須**。
-
-### アプローチ（確定）：opaque ハンドル + 借用は alloc-free
-所有を loader 産 owned 一系統に寄せ、借用は箱を作らずフィールド参照で返す。
-
-- **生成口は手書き**：`nmImage* nmImageLoadPng(const char* path)` 等（owned → `nmImageDestroy` で `Image.deinit`）。
-  device/allocator は内部の Application から取る。**loader だけが alloc（heap box）を払う。**
-- `setIcon(?Image)`：C は `nmImage*`、シムは deref して**値コピーを Button に渡す**（所有は移さない＝今の Zig と同じ借用）。
-- `getIcon() ?Image`：**(b) alloc-free に確定**。`&button.icon.?` 相当でフィールドのアドレスを返す（box を作らない）。
-  寿命は widget 従属。none は null。
-- `Application.icon(id)`：**借用に確定**。`&self.icon_cache[idx].?`（cache は App 上の固定長配列でアドレス安定）を返す。
-  初回デコードで `!Image` なので失敗 = NULL + last_error。`nmImageDestroy` は呼ばない。
-- `nmImageDestroy` は **loader 産の owned ハンドルにのみ呼ぶ**。借用 2 つ（getIcon / Application.icon）は
-  裸のフィールド参照で box を持たず、destroy しない。
-
-不採用: 値構造体で texture を opaque フィールド露出（内部漏れ・脆い）。
-
-### バインディング側の keep-alive（free/no-free とは別軸）
-binding は「**widget が借用先 Image を生かし続ける**」方向に pin する:
-```python
-img = nm.Image.load_png("a.png")  # owned
-btn.set_icon(img)                 # 生成器が btn._icon_ref = img を仕込む
-del img                           # 変数が消えても Button が参照保持 → texture 生存
-```
-副作用として **`btn.get_icon()` は新規ラッパーを作らず、キャッシュ済みの同じ Python オブジェクト
-(`btn._icon_ref`) を返せる** → alloc-on-return も寿命問題も消える（icon が binding 経由で set された場合）。
-`Application.icon` の借用は App を pin すればよいが、App はルートで全てより長生きするので keep-alive は実質コスト 0。
-
-`ownership` タグ（owned/borrowed）が double-free を防ぎ、この keep-alive が use-after-free を防ぐ。2 軸の役割が違う。
-
-### lucide 引数の出し方（確定）：curated enum + 文字列フォールバック
-`lucide.Icon` は ~1700 メンバの巨大 enum（icons.zig 自動生成、各 variant が 64×64 PNG）。全 enum 露出は
-不採用 — メンバ順を**上流が所有**するため、lucide 更新で値がズレ、shared-lib + バインディングで「黙って違う
-アイコンが出る」ABI 破壊になる（nmAlignment は nimbus 所有 4 個なので安全、という違い）。代わりに 2 入口:
-
-```c
-nmImage* nmAppIcon     (nmApplication* self, nmIcon id);        // curated, 補完が効く
-nmImage* nmAppIconNamed(nmApplication* self, const char* name); // それ以外も文字列で（未知 = NULL + last_error）
-```
-- **curated `nmIcon`** は nimbus 所有の小さな安定 enum（種は CLAUDE.md ビルトインアセット: open/save/save_as/
-  undo/redo/cut/copy/paste …）。順序を nimbus が所有するので値が安定（追加は末尾 append）。
-- **文字列パス**は int の ABI 値を持たず、契約は文字列名。lucide が改名/削除しても**黙って誤アイコンではなく
-  明示エラー**（`stringToEnum` → null → NULL + last_error）。全 enum 露出の弱点をエラーに変換でき、むしろ堅い。
-- 名前は lucide メンバ名で揃える（`nmIcon.save` ⇔ `"save"`）。binding は型で振り分けてメソッド 1 個に統合可
-  （`app.icon(nm.Icon.SAVE)` / `app.icon("circle_plus")`）。
-- **コスト**: curated リストを nimbus が手で保つ（＝どのアイコンを補完対象にするかの設計判断。小さく負担軽）。
-
-### apigen への影響（実装時にやること）
-- **名前マップ型 curated enum** 構文を追加。既存の「ネイティブ enum を同順ミラー + index assert」は使えない
-  （curated は部分集合で index が native と不一致）。代わりに `nmIcon → lucide.Icon` の switch を生成し、各腕を
-  `@field(lucide.Icon, "save")` で引く＝**drift 検査が名前ベース**（上流の改名/削除がコンパイルエラーになる）。
-- `nmAppIconNamed` は `stringToEnum` 一発なので apigen 汎用化せず **preamble.zig に手書きシム**で足す。
-- 借用 2 つ（getIcon / Application.icon）は **(b) alloc-free のフィールド参照**で出す（box を作らない）。
-  loader (`nmImageLoadPng` 等) だけが owned＝heap box を払い、`nmImageDestroy` の対象もそれだけ。
+### 完了条件
+上記が C から呼べる。
 
 ---
 
-## #6b Timer（setTimeout / setInterval / clearTimer）
+## #3 Dialog 一式の公開
+- 状態: 未着手
+- 優先度: 中
+- 影響範囲: `nimbus.api`（新規 opaque `Dialog`・enum `Result`、Application ファクトリ）
+- 更新日: 2026-06-02
+- 依存: なし
+
 ### 何
-`Application.setTimeout(ms: u32, cb: TimerCallback, user_data: *anyopaque) !TimerId`、`setInterval`、
-`clearTimer(id: TimerId)`。`TimerCallback = *const fn(*anyopaque) void`（**event 無し・生の関数ポインタ**）。
-`TimerId = u32`。戻りは `!TimerId`（値 + エラー）。
-
-### なぜ bespoke（リスナーと違う点が 3 つ）
-1. **event 無し**のコールバック（現 `callback` 機構は event 前提）。
-2. **raw 関数ポインタ登録**：setTimeout は `*const fn(*anyopaque)void` を直接取る。リスナーの
-   typed `addXxxListener(comptime T, f, ud)` 経路ではない。→ コールバック引数の展開が違う
-   （リスナー= `(T, トランポリン, box)`、Timer= `(トランポリンの fn ポインタ, box)` の 2 ランタイム引数）。
-3. **値 + エラー戻り**（`!TimerId`）。
-
-### 候補アプローチ
-- `callback` を **native_event 省略可**に一般化：トランポリン `fn(box: *Box) void { box.fn(box.userdata); }`、C は `void(*fn)(void*)`。
-- 登録の種別フラグ：そのメソッドが「typed listener」か「raw fnptr」かを spec で区別（callback 宣言か fn 側に印）。
-- **値 + エラー戻りは out 引数**で（`#5` の optional 戻りと同じ機構を一般化）：
-  `int nmAppSetTimeout(nmApplication*, uint32_t ms, nmTimerCallback* cb, uint32_t* out_id)`。
-- `clearTimer(id: u32)` はスカラ引数で容易。
+`app.dialog(owner:*Window, …) -> *Dialog`（ハンドル引数＋戻り）＋ `Result` enum ＋
+`show`/`close(Result)`/`getResult`/`isModal`/`isShown`。`showModal` は二次ループ（ブロッキング）だが
+値戻りなので生成自体は可。
 
 ### 決めること
-- **one-shot の box 寿命**が肝。setTimeout は一度発火したら消える → box をいつ誰が解放するか
-  （発火後にトランポリン側で free？ それともバインディングが TimerId で管理し clearTimer / 発火後に解放？）。
-  interval は clearTimer まで生存。ここを決めないとリーク or use-after-free になる。
-- raw-fnptr 登録を spec でどう表すか（`callback ... raw` のような種別、または fn 側の注記）。
+- `Result` enum のメンバ（native の `Dialog.Result` に合わせる）。
+- `showModal` のブロッキングを C / バインディングでどう扱うか（戻り値のみで素直に出せるか確認）。
+
+### 完了条件
+Dialog をファクトリで生成し、modal / 非 modal で開閉・結果取得が C から可能。
 
 ---
 
-## 軽微な未対応（bespoke ではない、拡張で済む）
-詳細は [c_api_codegen.md](c_api_codegen.md)「実装済み / 未対応」を参照。
+## #4 ScrollPane の中身公開
+- 状態: 未着手
+- 優先度: 中
+- 影響範囲: `nimbus.api`（新規 opaque `ScrollPane`・enum `Policy`、Application ファクトリ）
+- 更新日: 2026-06-02
+- 依存: #6（`asComponent` の 2 段 cast。無いと破棄経路が不完全）
 
-- ~~optional ハンドル `?*T`~~：✅ 実装済み（2026-06-02、引数・戻り両対応）。メニューバー API で実証。
-- 値（スカラ/enum/struct/str）戻り + エラーの一般形（out 引数 or センチネル。#6b の TimerId と共通）。
-- `@ctor` / `@dtor` を型側 IR に紐づけ（現状はファクトリ + 汎用 destroy で代替できている）。
+### 何
+`getView`/`setView`/`getScrollX`/`getScrollY`/`setScrollX`/`setScrollY`/`setUnitIncrement`/
+`setHorizontalPolicy`/`setVerticalPolicy`（enum `Policy`）/`scrollRectToVisible(nmRect)`/change listener。
+`asComponent` 以外は今すぐ出せる。
+
+### 決めること
+- `app.scrollPane(view:*Component)` の view 所有権（transfer）。
+- `asComponent` を #6（2 段 cast）で出すか、1 行 bespoke シムで出すか。
+
+### 完了条件
+ScrollPane をファクトリで生成し、スクロール操作・policy 設定が C から可能。Component upcast 経路あり。
+
+---
+
+## #5 `?str` 引数のサポート
+- 状態: 未着手
+- 優先度: 中
+- 影響範囲: 生成器 `main.zig`（ArgType 追加）、`Component.setName`
+- 更新日: 2026-06-02
+- 依存: なし
+
+### 何
+nullable 文字列引数 `?str`（C は nullable `const char*`、Zig は `?[]const u8`）。戻りの `?str` はあるが
+引数が無い。`?*T` と同型の小拡張。consumer = `Component.setName(?[]const u8)`。
+
+### 完了条件
+`?str` 引数が生成でき、`nmComponentSetName(?str)` が NULL 許容で動く（#1 の setName を埋める）。
+
+---
+
+## #6 2 段 cast のサポート
+- 状態: 未着手
+- 優先度: 中
+- 影響範囲: 生成器 `main.zig`（cast 構文）、`ScrollPane.asComponent`
+- 更新日: 2026-06-02
+- 依存: なし
+
+### 何
+`ScrollPane.asComponent` は `&self.container.component`（2 段）で現 cast 構文に乗らない。
+
+### 候補アプローチ
+- 案A: cast 構文を `cast = Type.field.subfield` に拡張（2 段以上を許す）。
+  メリット: 同種が出ても再利用可。デメリット: 構文・生成器をやや複雑化。
+- 案B: ScrollPane 用に 1 行 bespoke シムを preamble に手書き。
+  メリット: 生成器を触らない。デメリット: ad-hoc・横展開しない。
+- 判断軸: 2 段 cast が他にも出るなら A、ScrollPane 限りなら B。
+- 推奨: 案A（cast は安価な機構で、今後 Panel 等でも `container.component` 形が出うる）。最終判断は作者。
+
+### 完了条件
+`ScrollPane` の Component upcast が出る（#4 が完結する）。
+
+---
+
+## #7 optional スカラ `?usize` / `?f64`
+- 状態: 棚上げ
+- 優先度: 低
+- 影響範囲: 生成器 `main.zig`
+- 更新日: 2026-06-02
+- 依存: なし
+
+### 何
+optional なスカラ戻り / 引数。consumer 候補: `List.getEditing`（`?usize`）、`earliestDueIn`（`?f64`）。
+
+### なぜ（保留理由）
+live な利用メソッドが少なく、出す強い実需が未到来（point-of-need）。
+
+### 完了条件
+`?usize`/`?f64` が out 引数 or センチネルで生成でき、consumer で実証。
+
+---
+
+## #8 値＋エラー戻りの一般形
+- 状態: 棚上げ
+- 優先度: 低
+- 影響範囲: 生成器 `main.zig`
+- 更新日: 2026-06-02
+- 依存: なし（#10 Timer と機構を共有）
+
+### 何
+値（スカラ / enum / struct / str）＋ `!error` の戻り。現状は「値戻りは失敗なし」のみ対応。
+
+### 候補アプローチ
+- 案A: out 引数 + bool/int（`#5` の optional 値構造体と同じ機構の一般化）。
+  メリット: 既存パターンの踏襲。デメリット: シグネチャに out が増える。
+- 案B: センチネル値（型ごとに「失敗値」を決める）。
+  メリット: 戻り 1 個で素直。デメリット: 型ごとにセンチネル規約が要る・誤用しやすい。
+- 判断軸: 一貫性・安全側なら A、呼び心地なら B。
+- 推奨: 案A。最終判断は作者。
+
+### 完了条件
+値＋エラー戻りが生成でき、Timer の TimerId 等で実証。
+
+---
+
+## #9 値構造体のネスト対応
+- 状態: 棚上げ
+- 優先度: 低
+- 影響範囲: 生成器 `main.zig`、`Panel.getBorder`/`setBorder`
+- 更新日: 2026-06-02
+- 依存: なし
+
+### 何
+フィールドにネストした値構造体を持つ struct。consumer = `Panel.Border{thickness:f32, color:Color}`
+（現状 Panel は background のみ公開）。
+
+### 候補アプローチ
+- 案A: ネストを平坦化して 1 つの extern struct に（`border_thickness`,`border_r`,…）。
+  メリット: 生成器が単純。デメリット: フィールド名が冗長・native との対応が見えにくい。
+- 案B: ネスト struct をそのまま extern struct のフィールドに持つ。
+  メリット: C ABI が native 構造を素直に反映。デメリット: 生成器に再帰的な詰め替えが要る。
+- 判断軸: C ABI の素直さ（B）vs 生成器の単純さ（A）。
+- 推奨: 未定（consumer が増えてから決める）。
+
+### 完了条件
+`Panel.getBorder`/`setBorder` が C から扱える。
+
+---
+
+## #10 Timer（setTimeout / setInterval / clearTimer）
+- 状態: 棚上げ
+- 優先度: 低
+- 影響範囲: 生成器（callback 一般化）＋ preamble、`Application` のイベントループ
+- 更新日: 2026-06-02
+- 依存: #8（値＋エラー戻りの機構を共有）
+
+### 何
+`Application.setTimeout(ms:u32, cb:TimerCallback, user_data:*anyopaque) !TimerId`、`setInterval`、
+`clearTimer(id:TimerId)`。`TimerCallback = *const fn(*anyopaque) void`（event 無し・生の関数ポインタ）。
+`TimerId = u32`。戻りは `!TimerId`。
+
+### なぜ bespoke（リスナーと違う 3 点）
+1. event 無しコールバック（現 `callback` 機構は event 前提）。
+2. raw 関数ポインタ登録（typed `addXxxListener(T,f,ud)` 経路でない）。
+3. 値＋エラー戻り（`!TimerId`）。
+
+### 候補アプローチ
+- `callback` を native_event 省略可に一般化（トランポリン `fn(box){box.fn(box.ud)}`、C は `void(*)(void*)`）。
+- 登録種別フラグ（typed listener / raw fnptr）を spec で区別。
+- 値＋エラー戻りは out 引数（#8 と共通）。`clearTimer(id:u32)` はスカラ引数で容易。
+
+### 決めること
+- one-shot の box 寿命が肝: 発火後に誰がいつ box を解放するか（トランポリンで free か、TimerId 管理で
+  clearTimer / 発火後に解放か）。interval は clearTimer まで生存。決めないとリーク or UAF。
+- raw-fnptr 登録を spec でどう表すか（`callback … raw` 種別か fn 側注記か）。
+
+### 完了条件
+C から setTimeout / setInterval / clearTimer が使え、box がリーク / UAF なく回収される。
+
+作者メモ: あまり使わないので優先度低（後回し可）。
+
+---
+
+## #11 ButtonGroup の公開
+- 状態: 棚上げ
+- 優先度: 低
+- 影響範囲: preamble（bespoke destroy）、`nimbus.api`
+- 更新日: 2026-06-02
+- 依存: なし
+
+### 何
+`ButtonGroup`（ラジオの排他グループ）。`add`/`remove(*ToggleButtonModel)`、`getSelected() ?*ToggleButtonModel`。
+
+### なぜ bespoke
+`deinit` + `allocator.destroy` の 2 段破棄で、Component の vtable destroy に乗らない（非 Component）。
+汎用 `nmComponentDestroy` が使えず、専用 destroy シムが要る。
+
+### 候補アプローチ
+- preamble に `nmButtonGroupDestroy`（deinit + allocator.destroy）を手書き。add/remove/getSelected は
+  `?*T` 対応済みなので生成可（getSelected は `?*T` 戻り）。
+
+### 決めること
+- 専用 destroy を出すか、`destroy` 構文を「非 Component の deinit + free」型に一般化するか。
+
+### 完了条件
+C から buttonGroup を生成・add/remove・getSelected・破棄できる。
+
+備考: RadioButton の排他自体はモデル経由で既に可能（ButtonGroup 未公開でも動く）。
+
+---
+
+## #12 Component の putProperty / getProperty / removeProperty
+- 状態: 棚上げ
+- 優先度: 低
+- 影響範囲: preamble、`nimbus.api`
+- 更新日: 2026-06-02
+- 依存: なし
+
+### 何
+`Component.putProperty(key, *anyopaque)` / `getProperty(key) ?*anyopaque` / `removeProperty(key)`。
+任意の `void*` userdata を component に紐づける汎用機構。
+
+### なぜ bespoke
+`*anyopaque`（C の `void*`）userdata で apigen のハンドル語彙に乗らない（List の item と同種）。
+
+### 完了条件
+C から void* プロパティの put / get / remove ができる。
+
+---
+
+## #13 LayoutManager とレイアウト生成 + Container.setLayout / getLayout
+- 状態: 未着手
+- 優先度: 中
+- 影響範囲: preamble（ファクトリ）、`nimbus.api`（opaque `LayoutManager`、setLayout は `?*T`）
+- 更新日: 2026-06-02
+- 依存: なし
+
+### 何
+`Container.setLayout(?*LayoutManager)` / `getLayout() ?*LayoutManager`、および `BoxLayout`/`BorderLayout`
+の生成。レイアウトは GUI の中核。
+
+### なぜ bespoke
+`BoxLayout`/`BorderLayout` の生成に allocator が要る（→ ファクトリを手書き）。setLayout / getLayout 自体は
+`?*T`（実装済み）で生成可だが、肝心の LayoutManager を C 側で作る口が無いと使えない。
+
+### 決めること
+- レイアウトのファクトリをどこに置くか（`app.boxLayout(orientation)` 等）。
+- BoxLayout / BorderLayout のパラメータ（orientation・gap 等）の渡し方。
+
+### 完了条件
+C からレイアウトを生成して `setLayout` でコンテナに設定できる。
+
+---
+
+## #14 Menu / MenuItem の icon get / set
+- 状態: 棚上げ
+- 優先度: 低
+- 影響範囲: preamble、`nimbus.api`
+- 更新日: 2026-06-02
+- 依存: なし
+
+### 何
+`Menu.getIcon`/`setIcon`、`MenuItem.getIcon`/`setIcon`（`?awt.Image`）。現状 text / model のみ公開。
+
+### なぜ bespoke
+`awt.Image` 値の box / unbox が要る（Button の icon と同じ）。Image 関連は既に preamble 手書きなので
+同じ手で足せる。
+
+### 完了条件
+C から Menu / MenuItem に icon を set / get できる。
+
+---
+
+## #15 投機的な生成器拡張（実需待ち）
+- 状態: 棚上げ
+- 優先度: 低
+- 影響範囲: 生成器 `main.zig`
+- 更新日: 2026-06-02
+- 依存: なし
+
+### 何
+現状 live な consumer が無く、point-of-need で保留している生成器拡張をまとめて記録（実需が出た項目は
+個別 item に切り出す）:
 - enum の明示値・非連続値・フラグ（ビット或）。
-- 値構造体のネスト / 配列 / enum フィールド。
-- コールバックの event に追加 typed 引数を持つ署名（今の nimbus のリスナーは event 1 個のみ）。
+- `@ctor` / `@dtor` を型側 IR に紐づける（現状はファクトリ + 汎用 destroy で代替）。
+- コールバックの event に追加 typed 引数を持つ署名（今のリスナーは event 1 個のみ。DnD `onDragStart` 等が候補）。
 
-方針（2026-06-02 確認）: これらは **live な利用者が無い** ので先回り実装しない（投機的・検証不能）。
-各項目は「それを使う公開済みメソッドが出た時点」で concrete に実装する（point-of-need）。
+### なぜ（保留理由）
+実需が無い拡張は投機的・検証不能。使う公開メソッドが出た時点で concrete に実装する。
 
-**usize スカラは実装済み（2026-06-02）**: `Scalar` に `usize`（→ C `size_t`）追加。実需があったので
-例外的に先行実装し、実利用者で検証 — `List.edit` を手書き `nmListEdit` から**生成に移行**、`ComboBox` の
-index API（`getSelectedIndex`/`setSelectedIndex`/`getItemCount` = `size_t`、`getItem(size_t)->?str`）を公開。
-
----
-
-## 公開 API の C ABI 生成カバレッジ調査（2026-06-02）
-「現状の apigen で nimbus.api を書くだけでどれだけ露出できるか」を `framework/src` の公開 `pub fn` で
-分類した結果（内部 = vtable 実装 / GapBuffer / log / 各 create・init・deinit は除外）。
-A = 今すぐ生成可、B = 小拡張で生成可、C = bespoke 手書き。
-
-### 概数
-- **A（追記ゼロで生成可）≈ 70〜75%**（usize 実装後。index/count/size 系が A に昇格）
-- **B（小拡張で生成可）≈ 10%**
-- **C（手書き必須）≈ 15〜20%**
-
-> 補正: 初回調査はリスナー登録（`addXxxListener`/`removeXxxListener`）と `?Size`/`?str` 戻りを手書き側に
-> 数えていたが、これらは**既に生成対応済み**（callback 機構・optional 値構造体・?str）。よって実際の A は
-> 調査の素の値（~55%）より高い ~65〜70%。
-
-### A（今すぐ生成可）— ウィジェット API の主流
-プロパティ get/set・ファクトリ・リスナー登録のスタイルは丸ごと生成可:
-- Label / Button / CheckBox / RadioButton / Slider / ScrollBar（text・color・bool・enum・f32 系）
-- TextField / TextArea（text・各色）、Menu / MenuItem / CheckBoxMenuItem / Panel / Frame
-- Component の bounds / grow / align / focus / name 系 ~25 メソッド
-- Application のファクトリ ~28 個（label/panel/button/.../textArea — 全部「widget 確保 → `*T` 返し」）
-- 各 Model の bool/i32 state（ButtonModel / ToggleButtonModel / BoundedRangeModel / ScrollBar）
-- リスナー（既存 callback 機構）、`?Size`/`?str` 戻り（実装済み）、value struct（Color/Size/Border 等）
-
-### B（小拡張で生成可）— ROI 順
-| 拡張 | 影響 | 備考 |
-|---|---|---|
-| ~~usize / size_t スカラ追加~~ | ~~最多~~ | **✅ 実装済み（2026-06-02）。`Scalar` に usize 追加・`ComboBox` index API + `List.edit` で実証** |
-| ~~optional ハンドル `?*T`（引数・戻り）~~ | ~~メニューバー他~~ | **✅ 実装済み（2026-06-02）。Frame/Window のメニューバー API・`MenuBar.at` で実証** |
-| optional スカラ `?usize` / `?f64` | 数件（`List.getEditing` / `earliestDueIn`） | 残 |
-| 値 + エラー戻り `!T`（T が値） | 数件 | #6b TimerId と共通機構。残 |
-| Panel `Border` 等の value struct | 数件 | フィールドが f32+Color なら平坦化で A。残 |
-
-usize 実装により index/count/size 系が A に昇格済み（残る B は optional スカラ・値+エラー等）。
-
-### C（手書き必須）— 性質が判明済み・パターン確立済み
-- bespoke プロトコル（関数ポインタ構造体）: List `CellFactory`/`Cell`（実装済み）、DnD transfer、overlay/popup 配置
-- `void*` / `*anyopaque` userdata: `Component.putProperty`/`getProperty`、`OverlayManager.remove(owner)`
-- event 以外の追加引数を持つコールバック: DnD `onDragStart`/`onOver` 等
-- allocator / io ブートストラップ: `Application.init`（→ `nmAppCreate` 実装済み）、`Window.init`
-
-### 次の一手の候補
-1. ~~**純 A のウィジェット一括公開**~~ — ✅ 実装済み（2026-06-02）。Label / Panel / CheckBox /
-   RadioButton / Slider / ScrollBar / TextField / TextArea / Window / Menu 系（Menu / MenuItem /
-   CheckBoxMenuItem / MenuBar / MenuSeparator / PopupMenu）/ 3 モデル（ButtonModel /
-   ToggleButtonModel / BoundedRangeModel）/ 残り Application ファクトリ（label/container/panel/
-   checkBox/radioButton/slider/scrollBar/textField/textArea/filler/toolBar/menu 系）を nimbus.api に
-   手書きゼロで追記。opaque 27・関数 154（生成）。新規 value struct（nmWindowPoint/nmWindowSize/
-   nmPoint）・enum（nmOrientation/nmScrollOrientation）・cast 14 個。`zig build install`/`test` 緑・
-   apigen 決定的・C ヘッダー構文 OK。
-2. ~~usize スカラ追加~~ — ✅ 実装済み（2026-06-02）。
-
-#### 一括公開で判明した「あと一歩」の point-of-need 項目
-純 A の網羅中に、すぐ隣にあるが現状の語彙では出せず**意図的に外した**ものを記録しておく
-（いずれも「使う公開メソッドが出た時点」で対処する方針）。
-- ~~**optional ハンドル引数 `?*T`**~~ ✅ **実装済み（2026-06-02）**。`?*T` を引数・戻りの両方で対応
-  （ArgType `handle_opt` / Ret `ptr_opt`、C は nullable ポインタ、Zig シムは `?*framework.T`）。
-  メニューバー API を公開: `nmFrameSetMenuBar`(@transfer)/`nmFrameSetMenuBarBorrowed`(@borrowed)/
-  `nmFrameGetMenuBar`(戻り @borrowed)・`nmWindowSetMenuBar`/`nmWindowRequestFocus`・`nmMenuBarAt`(戻り)。
-  `?*T` 戻りは NULL=none なので `!fail` と併用不可（パース時にエラー）。
-- **optional ハンドル戻り `?*T`** ✅ 機構は実装済み（上記）。残: `ButtonGroup.getSelected()` は
-  ButtonGroup 自体が下記の 2 段破棄問題で未公開なので保留。
-- **Menu/MenuItem の icon get/set**: `awt.Image` 値の box/unbox が要る → Button の icon と同じ bespoke
-  （preamble 手書き。#6a と同じ手で足せる）。今回は text/model のみ公開。
-- **ButtonGroup**: `deinit` + `allocator.destroy` の 2 段破棄で、Component の vtable destroy に乗らない
-  （非 Component）。bespoke な destroy シムが要るので今回は除外（RadioButton 排他はモデル経由で可能）。
-- **Panel.Border**: フィールドが `thickness:f32` + ネストした `Color` → 値構造体のネスト未対応。background のみ公開。
-- **ScrollPane**: `asComponent` が 2 段（`&self.container.component`）で cast 構文に乗らない（既出の棚上げ）。
-
----
-
-## 残存露出カバレッジ監査（2026-06-02）
-「今の仕組みで露出できるのに**まだ nimbus.api に書いていない**ものは何か」を `framework/src` の公開 API と
-現状の露出分を突き合わせて棚卸しした結果。仕組みの限界ではなく「spec 行が未記述」のものが A にまだ多い。
-入力は 2 系統（① `nimbus.api`=生成、② 手書き preamble、IR は出力の 1 つ）である点に注意。
-
-### A. 追記するだけで出せる純 A（生成器変更ゼロ・未着手）
-最大の取りこぼし。**Component 共通メソッドは全ウィジェットに効く**ので優先度高。
-- **Component 共通**（前回 X 軸だけ出して Y 軸等が漏れている）:
-  - `getGrowY`/`setGrowY`、`getAlignY`/`setAlignY`（`grow`/`align` は X しか出していない）
-  - `isFocusable`/`setFocusable`、`requestFocus`、`repaint`、`markLayoutDirty`
-  - `getName`（`?str` 戻りで可）、`containsWindowPoint(f32,f32)->bool`
-  - `getBounds`/`setBounds`、`absoluteOriginInWindow` → **`nmRect{x,y,width,height:f32}` を宣言するだけ**
-    （awt.Graphics.Rect は素の値構造体・生成器変更不要）。`nmPoint` は既存。
-- **各ウィジェットの取りこぼし**: `Button.getModel`(→`*ButtonModel`)、`ComboBox.isEnabled`/`setEnabled`、
-  `Container.remove(*Component)`。
-- **Dialog 一式**: `app.dialog(owner:*Window,…)`（ハンドル引数＋戻り、`?*T` 実装後に可）＋ `Result` enum ＋
-  `show`/`close(Result)`/`getResult`/`isModal`/`isShown`。`showModal` は二次ループ（ブロッキング）だが
-  値戻りで生成自体は可。
-- **ScrollPane の中身**: `getView`/`setView`/`getScrollX`/`getScrollY`/`setScrollX`/`setScrollY`/
-  `setUnitIncrement`/`setHorizontalPolicy`/`setVerticalPolicy`(enum)/`scrollRectToVisible(nmRect)`/
-  change listener。**`asComponent`(2 段 cast) 以外は今すぐ出せる**。
-- **意図的に出さない**: `getMinSize`/`setMinSize`/`getMaxSize`/`setMaxSize` は生成可能だが、CLAUDE.md が
-  「minimumSize/preferredSize/maximumSize の複雑さは取り入れない」と明言 → 設計判断で除外。
-
-### B. 小拡張が要る（`?*T` と同型の小追加）
-- **`?str` 引数**: `Component.setName(?[]const u8)`。戻りの `?str` はあるが引数が無い。`?*T` と同型の小拡張。
-- **2 段 cast**: `ScrollPane.asComponent`=`&self.container.component`。`cast = Type.field.subfield` を許すか、
-  1 行 bespoke シム。これで ScrollPane が完全になる。
-- optional スカラ `?usize`/`?f64`（`List.getEditing` 等）、値＋エラー戻り（#6b と共通機構）。
-
-### C. 手書き preamble で出せる bespoke（未着手）
-- `Component.putProperty`/`getProperty`/`removeProperty`（`void*` userdata — List と同種のグルー）。
-- `LayoutManager` + `BoxLayout`/`BorderLayout` 生成 + `Container.setLayout`/`getLayout`（opaque ＋ allocator ファクトリ要）。
-- `ButtonGroup`（`deinit`+`destroy` の 2 段破棄 — bespoke デストラクタ）。
-- **#6b Timer**（唯一の昔からの棚上げ）。
-
-### 次の一手の推奨
-**A の総ざらい**（`nmRect` 追加 → Component 共通の残り＋`Button.getModel`/`ComboBox.enabled`/`Container.remove`
-→ Dialog → ScrollPane 中身）。生成器変更ゼロで実用カバレッジが大きく上がる。続けて B の `?str` 引数と
-2 段 cast を足せば ScrollPane と `setName` も埋まる。
+### 完了条件
+本 item は index。実需が出た拡張を個別 item として起票・実装する。
