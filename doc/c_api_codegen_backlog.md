@@ -509,3 +509,67 @@ CLAUDE.md「アロケーター」方針（グローバル非依存・寿命管�
 
 ### 完了条件
 C 側のアロケーター（または内部 debug アロケーター）でフレームワーク側の確保/解放が追跡でき、リークが検出できる。
+
+---
+
+## #20 Graphics の C ABI（描画プリミティブ）
+- 状態: 棚上げ
+- 優先度: 中
+- 影響範囲: `nimbus.api` / preamble（`awt.Graphics` の描画 API を C へ）
+- 更新日: 2026-06-02
+- 依存: なし
+
+### 何
+`paint` から使う描画プリミティブ（setColor / drawRect / fillRoundedRect / drawText / clip / transform 等）を
+C に出す。**カスタムペイント（CLAUDE.md 目標「paintComponent」）と #21 の paint フックの前提**。現状 C ABI に
+描画関数は無い（`nmColor` だけ）。
+
+### 候補アプローチ
+- `awt.Graphics` を opaque `nmGraphics` ハンドル＋関数群で露出。paint フックに `*awt.Graphics` を `nmGraphics*`
+  として渡す。座標は float（CLAUDE.md）。
+
+### 決めること
+- 最小プリミティブ集合（rect / rounded-rect / line / circle / image / text くらいから）。
+- `nmGraphics` ハンドルの寿命（paint 呼び出し中だけ有効な借用）。
+- テキスト描画はフォント/レイアウト依存なので切り出し方を別途検討。
+
+### 完了条件
+C の paint フックから基本図形＋テキストが描ける。
+
+---
+
+## #21 C 側でのカスタムコンポーネント定義（VTable 注入）
+- 状態: 棚上げ
+- 優先度: 中
+- 影響範囲: preamble（Component コンストラクタ＋C-vtable トランポリン）、`nimbus.api`
+- 更新日: 2026-06-02
+- 依存: paint フックは #20（Graphics C ABI）。processEvent は既存の不透明 event＋アクセサで可。
+
+### 何
+**最終目標: nimbus lib を使う利用者が C 側で新しいコンポーネントを定義できる**ようにする。フル VTable
+（install / uninstall / paint / processEvent / destroy）を C 関数ポインタで供給し、widget 状態は `void*`
+userdata に持つ。既存 widget のメソッド差し替え（vtable 装飾。右クリックメニュー等で Zig 例がやっている
+[[reference-vtable-decoration]]）は、同じ機構の**軽量サブセット**（一部だけ差し替え＋base 委譲）。
+
+### なぜ bespoke
+VTable は Zig callconv の多メソッド構造体。C-callconv フックとの間に**トランポリン**が要る（コールバック機構の
+拡張）。加えて Component の生成（`init` は allocator＋vtable）、userdata の保持、破棄（C destroy フック＋
+Component 解放）の寿命設計が絡む。生 `setVTable` を素で開けるのは footgun なので、整えたプリミティブにする。
+
+### 候補アプローチ
+- 新規定義: `nmComponentNew(const nmComponentVTable* vt, void* userdata) -> nmComponent*`。Component を確保し、
+  各メソッドを C フックへ中継する固定 Zig トランポリン vtable を仕込み、userdata を保持。
+- 既存装飾: `nmComponentOverride(c, hooks, userdata)`。元 vtable を退避して一部だけ差し替え＋**base 委譲（super 呼び）**。
+- paint フックは #20 の `nmGraphics*` を受け取る。processEvent は不透明 event＋`nmEventKind`/`nmEventSource`。
+
+### 決めること
+- **install/uninstall/destroy を C に出す際の安全性**（teardown 順、base 実装への委譲の要否）。利用者は出したいと
+  考えている（生 vtable 全供給）ので、安全に供給する形を設計する。
+- **サイズ/レイアウト参加**: カスタム widget は最小サイズ等を宣言する必要があるが、min/max size は CLAUDE.md
+  方針で非公開。カスタム widget 用にどうサイズを与えるか要設計（`size_query` 露出 or 専用 setter）。← 方針判断あり。
+- userdata の所有（destroy フックで C 側が解放）。
+- base 実装への委譲（super 呼び）の出し方。
+
+### 完了条件
+C だけで新しいコンポーネント（独自 paint ＋ 入力処理）を定義し、コンテナに add して動く。装飾（既存 widget の
+一部差し替え）も同じ機構で可能。
