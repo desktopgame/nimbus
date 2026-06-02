@@ -1167,6 +1167,61 @@
       "fail": null
     },
     {
+      "c": "nmWindowSetMenuBar",
+      "owner": "Window",
+      "method": "setMenuBar",
+      "names": { "py": "set_menu_bar", "js": "setMenuBar" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "bar", "type": "handle", "handle": "Component", "optional": true, "ownership": "borrowed" }],
+      "ret": { "type": "void" },
+      "fail": "err"
+    },
+    {
+      "c": "nmWindowRequestFocus",
+      "owner": "Window",
+      "method": "requestFocusFor",
+      "names": { "py": "request_focus_for", "js": "requestFocusFor" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "c", "type": "handle", "handle": "Component", "optional": true, "ownership": "borrowed" }],
+      "ret": { "type": "void" },
+      "fail": null
+    },
+    {
+      "c": "nmFrameSetMenuBar",
+      "owner": "Frame",
+      "method": "setMenuBar",
+      "names": { "py": "set_menu_bar", "js": "setMenuBar" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "bar", "type": "handle", "handle": "MenuBar", "optional": true, "ownership": "transfer" }],
+      "ret": { "type": "void" },
+      "fail": "err"
+    },
+    {
+      "c": "nmFrameSetMenuBarBorrowed",
+      "owner": "Frame",
+      "method": "setMenuBarBorrowed",
+      "names": { "py": "set_menu_bar_borrowed", "js": "setMenuBarBorrowed" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "bar", "type": "handle", "handle": "MenuBar", "optional": true, "ownership": "borrowed" }],
+      "ret": { "type": "void" },
+      "fail": "err"
+    },
+    {
+      "c": "nmFrameGetMenuBar",
+      "owner": "Frame",
+      "method": "getMenuBar",
+      "names": { "py": "get_menu_bar", "js": "getMenuBar" },
+      "kind": "method",
+      "receiver": "value",
+      "params": [],
+      "ret": { "type": "handle", "handle": "MenuBar", "optional": true, "ownership": "borrowed" },
+      "fail": null
+    },
+    {
       "c": "nmMenuItemGetText",
       "owner": "MenuItem",
       "method": "getText",
@@ -1351,6 +1406,17 @@
       "receiver": "value",
       "params": [],
       "ret": { "type": "usize" },
+      "fail": null
+    },
+    {
+      "c": "nmMenuBarAt",
+      "owner": "MenuBar",
+      "method": "at",
+      "names": { "py": "at", "js": "at" },
+      "kind": "method",
+      "receiver": "value",
+      "params": [{ "name": "index", "type": "usize" }],
+      "ret": { "type": "handle", "handle": "Menu", "optional": true, "ownership": "borrowed" },
       "fail": null
     },
     {

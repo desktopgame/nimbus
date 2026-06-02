@@ -86,6 +86,8 @@ const ArgType = union(enum) {
     str_array,
     /// `?<struct>` — optional value struct argument (nullable `const <CName>*`).
     struct_opt: []const u8,
+    /// `?*T` — optional handle argument (nullable pointer; null = none). Payload = Zig type name.
+    handle_opt: []const u8,
 };
 
 /// Function return shape.
@@ -93,6 +95,8 @@ const Ret = union(enum) {
     void,
     /// Owned/borrowed handle pointer; payload is the Zig type name (e.g. "Button").
     ptr: []const u8,
+    /// `?*T` optional handle pointer return (nullable; null = none). Payload = Zig type name.
+    ptr_opt: []const u8,
     /// By-value struct return; payload is the declared ABI struct name.
     struct_ref: []const u8,
     /// Primitive scalar return (passed straight through).
@@ -405,6 +409,8 @@ fn parseFn(
         f.ret = .str_opt;
     } else if (rt.len > 1 and rt[0] == '?' and model.findStruct(rt[1..]) != null) {
         f.ret = .{ .struct_opt = rt[1..] };
+    } else if (rt.len > 2 and rt[0] == '?' and rt[1] == '*') {
+        f.ret = .{ .ptr_opt = rt[2..] };
     } else if (rt.len > 1 and rt[0] == '*') {
         f.ret = .{ .ptr = rt[1..] };
     } else if (Scalar.parse(rt)) |sc| {
@@ -434,11 +440,12 @@ fn parseFn(
     }
 
     const ret_is_value = switch (f.ret) {
-        .struct_ref, .scalar, .enum_ref, .str, .str_opt, .struct_opt => true,
+        .struct_ref, .scalar, .enum_ref, .str, .str_opt, .struct_opt, .ptr_opt => true,
         else => false,
     };
+    // `?*T` already signals "none" with NULL, so it cannot also use !null/!err.
     if (ret_is_value and f.fail != .none)
-        return fail(line_no, "value (struct/scalar/enum/str) return combined with !fail is not supported yet");
+        return fail(line_no, "value or optional-handle (?*T) return combined with !fail is not supported");
 
     // `strs` allocates a temp slice in the shim, so the function must have a
     // failure channel to report OOM.
@@ -454,6 +461,7 @@ fn parseArgType(model: *const Model, s: []const u8) ?ArgType {
     if (std.mem.eql(u8, s, "str")) return .str;
     if (std.mem.eql(u8, s, "strs")) return .str_array;
     if (s.len > 1 and s[0] == '?' and model.findStruct(s[1..]) != null) return .{ .struct_opt = s[1..] };
+    if (s.len > 2 and s[0] == '?' and s[1] == '*') return .{ .handle_opt = s[2..] };
     if (s.len > 1 and s[0] == '*') return .{ .handle = s[1..] };
     if (Scalar.parse(s)) |sc| return .{ .scalar = sc };
     if (model.findCallback(s)) return .{ .callback = s };
@@ -701,7 +709,7 @@ fn emitHeaderProto(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), f: *const Fu
     // return type (optional value struct -> bool + out-param, see below)
     switch (f.ret) {
         .void => try buf.appendSlice(gpa, if (f.fail == .err) "int" else "void"),
-        .ptr => |zt| try print(gpa, buf, "nm{s}*", .{zt}),
+        .ptr, .ptr_opt => |zt| try print(gpa, buf, "nm{s}*", .{zt}),
         .struct_ref => |sn| try buf.appendSlice(gpa, sn),
         .scalar => |sc| try buf.appendSlice(gpa, sc.cName()),
         .enum_ref => |en| try buf.appendSlice(gpa, en),
@@ -720,7 +728,7 @@ fn emitHeaderProto(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), f: *const Fu
         if (wrote) try buf.appendSlice(gpa, ", ");
         switch (a.ty) {
             .str => try print(gpa, buf, "const char* {s}", .{a.name}),
-            .handle => |zt| try print(gpa, buf, "nm{s}* {s}", .{ zt, a.name }),
+            .handle, .handle_opt => |zt| try print(gpa, buf, "nm{s}* {s}", .{ zt, a.name }),
             .struct_ref => |sn| try print(gpa, buf, "{s} {s}", .{ sn, a.name }),
             .scalar => |sc| try print(gpa, buf, "{s} {s}", .{ sc.cName(), a.name }),
             .enum_ref => |en| try print(gpa, buf, "{s} {s}", .{ en, a.name }),
@@ -837,6 +845,7 @@ fn emitZigShim(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), model: *const Mo
         switch (a.ty) {
             .str => try print(gpa, buf, "{s}: [*:0]const u8", .{a.name}),
             .handle => |zt| try print(gpa, buf, "{s}: *framework.{s}", .{ a.name, zt }),
+            .handle_opt => |zt| try print(gpa, buf, "{s}: ?*framework.{s}", .{ a.name, zt }),
             .struct_ref => |sn| try print(gpa, buf, "{s}: {s}", .{ a.name, sn }),
             .scalar => |sc| try print(gpa, buf, "{s}: {s}", .{ a.name, sc.zigName() }),
             // Enums cross as int; convert at the call site.
@@ -865,6 +874,7 @@ fn emitZigShim(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), model: *const Mo
                 try print(gpa, buf, "*framework.{s}", .{zt});
             }
         },
+        .ptr_opt => |zt| try print(gpa, buf, "?*framework.{s}", .{zt}),
         .struct_ref => |sn| try buf.appendSlice(gpa, sn),
         .scalar => |sc| try buf.appendSlice(gpa, sc.zigName()),
         .enum_ref => try buf.appendSlice(gpa, "c_int"),
@@ -898,7 +908,7 @@ fn emitZigShim(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), model: *const Mo
         if (idx != 0) try call.appendSlice(gpa, ", ");
         switch (a.ty) {
             .str => try print(gpa, &call, "std.mem.span({s})", .{a.name}),
-            .handle => try call.appendSlice(gpa, a.name),
+            .handle, .handle_opt => try call.appendSlice(gpa, a.name),
             .struct_ref => |sn| try appendStructLiteral(gpa, &call, a.name, model.findStruct(sn).?),
             .scalar => try call.appendSlice(gpa, a.name),
             .enum_ref => try print(gpa, &call, "@enumFromInt({s})", .{a.name}),
@@ -935,7 +945,7 @@ fn emitZigShim(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), model: *const Mo
         .none => {
             switch (f.ret) {
                 .void => try print(gpa, buf, "    {s};\n", .{call.items}),
-                .ptr, .scalar => try print(gpa, buf, "    return {s};\n", .{call.items}),
+                .ptr, .ptr_opt, .scalar => try print(gpa, buf, "    return {s};\n", .{call.items}),
                 .enum_ref => try print(gpa, buf, "    return @intFromEnum({s});\n", .{call.items}),
                 .struct_ref => |sn| {
                     // native struct -> ABI extern struct, field by field.
@@ -1125,6 +1135,7 @@ fn emitJsonFunc(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), f: *const Func)
         switch (a.ty) {
             .str => try buf.appendSlice(gpa, "\"type\": \"str\""),
             .handle => |zt| try print(gpa, buf, "\"type\": \"handle\", \"handle\": \"{s}\"", .{zt}),
+            .handle_opt => |zt| try print(gpa, buf, "\"type\": \"handle\", \"handle\": \"{s}\", \"optional\": true", .{zt}),
             .struct_ref => |sn| try print(gpa, buf, "\"type\": \"struct\", \"struct\": \"{s}\"", .{sn}),
             .scalar => |sc| try print(gpa, buf, "\"type\": \"{s}\"", .{sc.zigName()}),
             .enum_ref => |en| try print(gpa, buf, "\"type\": \"enum\", \"enum\": \"{s}\"", .{en}),
@@ -1142,6 +1153,11 @@ fn emitJsonFunc(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), f: *const Func)
         .void => try buf.appendSlice(gpa, "      \"ret\": { \"type\": \"void\" },\n"),
         .ptr => |zt| {
             try print(gpa, buf, "      \"ret\": {{ \"type\": \"handle\", \"handle\": \"{s}\"", .{zt});
+            if (ownStr(f.ret_ownership)) |o| try print(gpa, buf, ", \"ownership\": \"{s}\"", .{o});
+            try buf.appendSlice(gpa, " },\n");
+        },
+        .ptr_opt => |zt| {
+            try print(gpa, buf, "      \"ret\": {{ \"type\": \"handle\", \"handle\": \"{s}\", \"optional\": true", .{zt});
             if (ownStr(f.ret_ownership)) |o| try print(gpa, buf, ", \"ownership\": \"{s}\"", .{o});
             try buf.appendSlice(gpa, " },\n");
         },

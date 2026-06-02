@@ -922,6 +922,38 @@ export fn nmWindowShouldClose(self: *framework.Window) bool {
     return self.shouldClose();
 }
 
+export fn nmWindowSetMenuBar(self: *framework.Window, bar: ?*framework.Component) c_int {
+    self.setMenuBar(bar) catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
+}
+
+export fn nmWindowRequestFocus(self: *framework.Window, c: ?*framework.Component) void {
+    self.requestFocusFor(c);
+}
+
+export fn nmFrameSetMenuBar(self: *framework.Frame, bar: ?*framework.MenuBar) c_int {
+    self.setMenuBar(bar) catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
+}
+
+export fn nmFrameSetMenuBarBorrowed(self: *framework.Frame, bar: ?*framework.MenuBar) c_int {
+    self.setMenuBarBorrowed(bar) catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
+}
+
+export fn nmFrameGetMenuBar(self: *framework.Frame) ?*framework.MenuBar {
+    return self.getMenuBar();
+}
+
 export fn nmMenuItemGetText(self: *framework.MenuItem) nmStr {
     const _s = self.getText();
     return .{ .ptr = _s.ptr, .len = _s.len };
@@ -1019,6 +1051,10 @@ export fn nmMenuBarAdd(self: *framework.MenuBar, menu: *framework.Menu) c_int {
 
 export fn nmMenuBarCount(self: *framework.MenuBar) usize {
     return self.count();
+}
+
+export fn nmMenuBarAt(self: *framework.MenuBar, index: usize) ?*framework.Menu {
+    return self.at(index);
 }
 
 export fn nmPopupMenuAdd(self: *framework.PopupMenu, item: *framework.Component) c_int {

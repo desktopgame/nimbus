@@ -106,10 +106,13 @@ fn <CName> = <ZigType>.<method> ( [<recv> ,] <arg>* ) -> <ret> [!<fail>] [<own>]
     （opaque は値で渡せないのでポインタのまま渡し、シムが間接参照する）。
   * 省略時はレシーバなし（静的関数として `framework.<ZigType>.<method>` を呼ぶ）。
 * `<arg>`: `<name>:<type> [<own>]` 形式。`<type>` は `str` / `strs`（文字列配列）/
-  `*<ZigType>`（ハンドル）/ スカラ（`f32`/`f64`/`i32`/`u32`/`usize`/`bool`）/ 宣言済み値構造体 /
+  `*<ZigType>`（ハンドル）/ `?*<ZigType>`（optional ハンドル、nullable ポインタ）/
+  スカラ（`f32`/`f64`/`i32`/`u32`/`usize`/`bool`）/ 宣言済み値構造体 /
   `?<値構造体>`（optional、nullable const ポインタ）/ 宣言済み enum。
-* `<ret>`: `void` / `*<ZigType>` / スカラ / 宣言済み値構造体 / `?<値構造体>`（out 引数 + bool）/
-  宣言済み enum / `str`（借用 `[]const u8` → `nmStr`）/ `?str`（`?[]const u8` → `nmStr`、none は ptr=null）。
+* `<ret>`: `void` / `*<ZigType>` / `?*<ZigType>`（optional ハンドル、null=none）/ スカラ /
+  宣言済み値構造体 / `?<値構造体>`（out 引数 + bool）/ 宣言済み enum /
+  `str`（借用 `[]const u8` → `nmStr`）/ `?str`（`?[]const u8` → `nmStr`、none は ptr=null）。
+  `?*<ZigType>` 戻りは NULL が none を兼ねるので `!fail` とは併用できない。
 * `<fail>`: 失敗の通知方法。省略可。
   * `!null` — 失敗時 NULL を返し `last_error` を設定する（`*T` 戻り向け）。
   * `!err`  — 失敗時 0 以外の int コードを返す（`void` 戻り向け、0 = 成功）。
@@ -143,7 +146,9 @@ vtable ディスパッチなので、Component を持つ任意の widget をこ�
 | `opaque T`（レシーバ） | `nmT*` | `*framework.T` | ハンドルはポインタ |
 | `str`（引数） | `const char*` | `[*:0]const u8` | シムが `std.mem.span` で `[]const u8` に変換 |
 | `*T`（引数） | `nmT*` | `*framework.T` | ハンドルをそのまま渡す |
+| `?*T`（引数） | `nmT*`（nullable） | `?*framework.T` | NULL=none。そのまま渡す（`Frame.setMenuBar` 等） |
 | `*T`（戻り、`!null`） | `nmT*` | `?*framework.T` | `catch` で `null` |
+| `?*T`（戻り） | `nmT*`（nullable） | `?*framework.T` | none を NULL で返す。`!fail` 併用不可（`Frame.getMenuBar`/`MenuBar.at` 等） |
 | スカラ（引数・戻り） | `int32_t`/`float`/`size_t`/… | `i32`/`f32`/`usize`/… | そのまま素通し（変換なし）。`usize`=`size_t` |
 | enum（引数・戻り） | `<CName>`（C enum） | `c_int` | `@enumFromInt` / `@intFromEnum` で変換 |
 | 値構造体（引数） | `<CName>` | `<CName>`（extern） | シムがフィールドごとに native へ詰め替え |
@@ -526,8 +531,9 @@ preamble は 4 ファイルに分かれる: `preamble.h`（C ヘッダ先頭＝i
 実装済み（生成器が出力する）:
 
 * opaque 宣言・継承（`: <Parent>` → IR `extends`）。
-* `&self` / `=self` / レシーバなしの関数、`str` 引数、ハンドル引数 `*T`、
-  `*T`（`!null`）/ `void`（`!err`）戻り。
+* `&self` / `=self` / レシーバなしの関数、`str` 引数、ハンドル引数 `*T` / `?*T`、
+  `*T`（`!null`）/ `?*T`（optional ハンドル、null=none）/ `void`（`!err`）戻り。
+  `?*T` は Frame / Window のメニューバー API（`nmFrameSetMenuBar` 等）や `MenuBar.at` で使用。
 * スカラ（`f32`/`f64`/`i32`/`u32`/`usize`/`bool`）の引数・戻り（素通し）。`usize` は C `size_t`
   （index / count / size 系。`ComboBox` の index API や `List.edit` で使用）。
 * enum（`enum` 宣言、int ABI + comptime ドリフト検知、引数・戻り）。
@@ -560,7 +566,6 @@ preamble は 4 ファイルに分かれる: `preamble.h`（C ヘッダ先頭＝i
 * 値構造体の拡張: ネスト構造体・配列・enum フィールド、値戻り＋エラーの組み合わせ。
 * enum の拡張: 明示値・非連続値・フラグ（ビット或）。
 * 値（スカラ/enum/struct/str）戻り＋エラーの組み合わせ（out 引数かセンチネルか要決定。現状は失敗なしのみ）。
-* optional ハンドル（`?*T`）— nullable ポインタで容易だが現状 live な利用メソッドが無く未生成。
 * 名前マップ型 curated enum（`nmIcon` を生成に乗せ IR にも出す）— 現状は手書き preamble。上記「Image / icon」。
 * List のセル編集（`Cell.edit`）・`ScrollPane` ラップ — 上記「List / CellFactory」制約。
 * Timer（`setTimeout` の event 無し callback + `!TimerId` 値戻り）— bespoke。棚上げ（`doc/c_api_codegen_backlog.md` #6b）。

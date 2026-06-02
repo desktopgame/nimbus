@@ -35,10 +35,13 @@
 #   fn <CName> = <ZigType>.<method> ( [<recv> ,] <arg>* ) -> <ret> [!<fail>] [<own>]
 #       <recv> : &self   receiver is *T   (Zig: self: *T)
 #                =self   receiver is T     (by value; still a pointer in C)
-#       <arg>  : <name>:<type> [<own>]    type in { str, *<ZigType> }
-#       <ret>  : void | *<ZigType> | <scalar> | <struct> | <enum>
+#       <arg>  : <name>:<type> [<own>]    type in { str, *<ZigType>, ?*<ZigType> }
+#                ?*<ZigType> = optional handle arg (nullable pointer; null = none).
+#       <ret>  : void | *<ZigType> | ?*<ZigType> | <scalar> | <struct> | <enum>
 #                | str    borrowed []const u8 -> nmStr {ptr,len} (UTF-8, not NUL-term)
 #                | ?str   optional ?[]const u8 -> nmStr (ptr = null when none)
+#                | ?*<ZigType>  optional handle return (nullable pointer; null = none;
+#                               cannot combine with !fail since NULL already = none)
 #       <fail> : !null   failure = NULL  + last_error          (for *T returns)
 #                !err    failure = nonzero int (0 = ok)         (for void returns)
 #       <own>  : @owned     caller owns the returned handle (must free it)
@@ -264,8 +267,9 @@ fn nmTextAreaSetCaretColor = TextArea.setCaretColor (&self, c:nmColor) -> void
 fn nmTextAreaGetBackground = TextArea.getBackground (=self) -> nmColor
 fn nmTextAreaSetBackground = TextArea.setBackground (&self, c:nmColor) -> void
 
-# Window (borrowed via nmFrameAsWindow). setMenuBar / requestFocusFor need
-# optional-handle args (?*T), not yet supported — see the backlog.
+# Window (borrowed via nmFrameAsWindow). setMenuBar / requestFocusFor take an
+# optional handle (?*T): pass NULL to clear. The bar's ownership is managed by
+# the Frame (Window borrows it), so no transfer here.
 fn nmWindowSetTitle      = Window.setTitle      (&self, title:str) -> void !err
 fn nmWindowGetTitle      = Window.getTitle      (=self) -> str
 fn nmWindowAdd           = Window.add           (&self, child:*Component @transfer) -> void !err
@@ -279,6 +283,14 @@ fn nmWindowRepaint       = Window.repaint       (&self) -> void
 fn nmWindowRedraw        = Window.redraw        (&self) -> void
 fn nmWindowDispose       = Window.dispose       (&self) -> void
 fn nmWindowShouldClose   = Window.shouldClose   (=self) -> bool
+fn nmWindowSetMenuBar    = Window.setMenuBar      (&self, bar:?*Component @borrowed) -> void !err
+fn nmWindowRequestFocus  = Window.requestFocusFor (&self, c:?*Component @borrowed) -> void
+
+# Frame menu bar. setMenuBar takes ownership (Frame destroys the bar on replace /
+# deinit); setMenuBarBorrowed does not. Pass NULL to detach. getMenuBar borrows.
+fn nmFrameSetMenuBar         = Frame.setMenuBar         (&self, bar:?*MenuBar @transfer) -> void !err
+fn nmFrameSetMenuBarBorrowed = Frame.setMenuBarBorrowed (&self, bar:?*MenuBar @borrowed) -> void !err
+fn nmFrameGetMenuBar         = Frame.getMenuBar         (=self) -> ?*MenuBar @borrowed
 
 # MenuItem (icon get/set take awt.Image by value -> bespoke, like Button's)
 fn nmMenuItemGetText  = MenuItem.getText  (=self) -> str
@@ -301,9 +313,10 @@ fn nmMenuAddSeparator = Menu.addSeparator (&self) -> void !err
 fn nmMenuShow         = Menu.show         (&self, w:*Window, anchor:nmPoint) -> void !err
 fn nmMenuHide         = Menu.hide         (&self) -> void
 
-# MenuBar (at() returns ?*Menu — optional handle, not yet supported)
+# MenuBar
 fn nmMenuBarAdd   = MenuBar.add   (&self, menu:*Menu @transfer) -> void !err
 fn nmMenuBarCount = MenuBar.count (=self) -> usize
+fn nmMenuBarAt    = MenuBar.at    (=self, index:usize) -> ?*Menu @borrowed
 
 # PopupMenu (a free overlay, not a Component: it owns its own destructor)
 fn nmPopupMenuAdd          = PopupMenu.add          (&self, item:*Component @transfer) -> void !err

@@ -171,7 +171,7 @@ nmImage* nmAppIconNamed(nmApplication* self, const char* name); // それ以外�
 ## 軽微な未対応（bespoke ではない、拡張で済む）
 詳細は [c_api_codegen.md](c_api_codegen.md)「実装済み / 未対応」を参照。
 
-- optional ハンドル `?*T`：nullable ポインタで容易だが、現状 live な利用メソッドが無く未生成。
+- ~~optional ハンドル `?*T`~~：✅ 実装済み（2026-06-02、引数・戻り両対応）。メニューバー API で実証。
 - 値（スカラ/enum/struct/str）戻り + エラーの一般形（out 引数 or センチネル。#6b の TimerId と共通）。
 - `@ctor` / `@dtor` を型側 IR に紐づけ（現状はファクトリ + 汎用 destroy で代替できている）。
 - enum の明示値・非連続値・フラグ（ビット或）。
@@ -214,6 +214,7 @@ A = 今すぐ生成可、B = 小拡張で生成可、C = bespoke 手書き。
 | 拡張 | 影響 | 備考 |
 |---|---|---|
 | ~~usize / size_t スカラ追加~~ | ~~最多~~ | **✅ 実装済み（2026-06-02）。`Scalar` に usize 追加・`ComboBox` index API + `List.edit` で実証** |
+| ~~optional ハンドル `?*T`（引数・戻り）~~ | ~~メニューバー他~~ | **✅ 実装済み（2026-06-02）。Frame/Window のメニューバー API・`MenuBar.at` で実証** |
 | optional スカラ `?usize` / `?f64` | 数件（`List.getEditing` / `earliestDueIn`） | 残 |
 | 値 + エラー戻り `!T`（T が値） | 数件 | #6b TimerId と共通機構。残 |
 | Panel `Border` 等の value struct | 数件 | フィールドが f32+Color なら平坦化で A。残 |
@@ -240,10 +241,13 @@ usize 実装により index/count/size 系が A に昇格済み（残る B は o
 #### 一括公開で判明した「あと一歩」の point-of-need 項目
 純 A の網羅中に、すぐ隣にあるが現状の語彙では出せず**意図的に外した**ものを記録しておく
 （いずれも「使う公開メソッドが出た時点」で対処する方針）。
-- **optional ハンドル引数 `?*T`**: `Frame.setMenuBar(?*MenuBar)` / `Window.setMenuBar(?*Component)` /
-  `Window.requestFocusFor(?*Component)`。メニューバーを Frame に取り付ける最後の一手がこれ待ち。
-  parseArgType に `?*` を足すだけの小拡張（B 相当、実需が出た）。
-- **optional ハンドル戻り `?*T`**: `MenuBar.at(usize) ?*Menu` / `ButtonGroup.getSelected()`。軽微な未対応のまま。
+- ~~**optional ハンドル引数 `?*T`**~~ ✅ **実装済み（2026-06-02）**。`?*T` を引数・戻りの両方で対応
+  （ArgType `handle_opt` / Ret `ptr_opt`、C は nullable ポインタ、Zig シムは `?*framework.T`）。
+  メニューバー API を公開: `nmFrameSetMenuBar`(@transfer)/`nmFrameSetMenuBarBorrowed`(@borrowed)/
+  `nmFrameGetMenuBar`(戻り @borrowed)・`nmWindowSetMenuBar`/`nmWindowRequestFocus`・`nmMenuBarAt`(戻り)。
+  `?*T` 戻りは NULL=none なので `!fail` と併用不可（パース時にエラー）。
+- **optional ハンドル戻り `?*T`** ✅ 機構は実装済み（上記）。残: `ButtonGroup.getSelected()` は
+  ButtonGroup 自体が下記の 2 段破棄問題で未公開なので保留。
 - **Menu/MenuItem の icon get/set**: `awt.Image` 値の box/unbox が要る → Button の icon と同じ bespoke
   （preamble 手書き。#6a と同じ手で足せる）。今回は text/model のみ公開。
 - **ButtonGroup**: `deinit` + `allocator.destroy` の 2 段破棄で、Component の vtable destroy に乗らない
