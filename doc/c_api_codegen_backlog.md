@@ -14,8 +14,8 @@ apigen（[c_api_codegen.md](c_api_codegen.md)）の残件。書き方・運用�
 完了条件の共通基準（各項目では固有条件のみ記す）: 対象 API が C から呼べる・apigen 再生成が決定的・
 `zig build install` / `zig build test` が緑・`nimbus.h` の構文チェック OK。
 
-次の一手の推奨: **A の総ざらい（#1 → #2 → #3 → #4）**。生成器変更ゼロで実用カバレッジが大きく上がる。
-続けて #5（`?str` 引数）と #6（2 段 cast）で setName と ScrollPane を埋める。
+次の一手の推奨: **A の総ざらい（#1 → #2 → #3 → #4 → #13）**。生成器変更ゼロで実用カバレッジが大きく上がる
+（#13 レイアウトも A。詳細は当該項目）。続けて #5（`?str` 引数）と #6（2 段 cast）で setName と ScrollPane を埋める。
 
 ---
 
@@ -291,27 +291,45 @@ C から void* プロパティの put / get / remove ができる。
 
 ---
 
-## #13 LayoutManager とレイアウト生成 + Container.setLayout / getLayout
+## #13 LayoutManager とレイアウト適用 + Container.setLayout / getLayout
 - 状態: 未着手
 - 優先度: 中
-- 影響範囲: preamble（ファクトリ）、`nimbus.api`（opaque `LayoutManager`、setLayout は `?*T`）
+- 影響範囲: `nimbus.api`（opaque `LayoutManager`・enum `nmBorderRegion`、Container / BoxLayout / BorderLayout）
 - 更新日: 2026-06-02
 - 依存: なし
 
 ### 何
-`Container.setLayout(?*LayoutManager)` / `getLayout() ?*LayoutManager`、および `BoxLayout`/`BorderLayout`
-の生成。レイアウトは GUI の中核。
+`Container.setLayout(?*LayoutManager)` / `getLayout() ?*LayoutManager`、ビルトインレイアウトの取得
+（`BoxLayout.horizontal`/`vertical`、`BorderLayout.get`）、`BorderLayout.add(container, region, child)`。
+レイアウトは GUI の中核。
 
-### なぜ bespoke
-`BoxLayout`/`BorderLayout` の生成に allocator が要る（→ ファクトリを手書き）。setLayout / getLayout 自体は
-`?*T`（実装済み）で生成可だが、肝心の LayoutManager を C 側で作る口が無いと使えない。
+### 分類: A（生成器変更ゼロ）
+当初 C（bespoke）と誤記していたが、実コード確認の結果 **A** に訂正（2026-06-02）。理由:
+- ビルトインレイアウトは **allocator を取らないプロセス全体のシングルトン**。`BoxLayout.horizontal()` /
+  `vertical()` / `BorderLayout.get()` は **receiver なし・引数なし**で `*LayoutManager` を返す（生成器の
+  レシーバなしパスで出せる）。これが最初の receiver なし生成関数になる。
+- `setLayout(?*LayoutManager)` / `getLayout() ?*LayoutManager` は `?*T` 引数・戻り（実装済み）に乗る。
+- 所有: シングルトンは**借用・誰も解放しない**（`Container.deinit` は layout に触れない）→ `@borrowed`・destroy 不要。
+- region 配置は `Container.addWithHint` が生 `*anyopaque` hint を使う（void* で bespoke）が、便利関数
+  `BorderLayout.add(container, region, child)`（receiver なし static・enum 引数）がその void* を内部で包むので、
+  これを公開すれば void* に触れず region 配置できる。
 
-### 決めること
-- レイアウトのファクトリをどこに置くか（`app.boxLayout(orientation)` 等）。
-- BoxLayout / BorderLayout のパラメータ（orientation・gap 等）の渡し方。
+### 具体的な spec 行（すべて A）
+```
+opaque LayoutManager
+enum nmBorderRegion = BorderLayout.Region { north south east west center }
+fn nmBoxLayoutHorizontal = BoxLayout.horizontal () -> *LayoutManager @borrowed
+fn nmBoxLayoutVertical   = BoxLayout.vertical   () -> *LayoutManager @borrowed
+fn nmBorderLayoutGet     = BorderLayout.get     () -> *LayoutManager @borrowed
+fn nmContainerSetLayout  = Container.setLayout (&self, layout:?*LayoutManager @borrowed) -> void
+fn nmContainerGetLayout  = Container.getLayout (&self) -> ?*LayoutManager @borrowed
+fn nmBorderLayoutAdd     = BorderLayout.add (container:*Container, region:nmBorderRegion, child:*Component @transfer) -> void !err
+```
 
 ### 完了条件
-C からレイアウトを生成して `setLayout` でコンテナに設定できる。
+C からビルトインレイアウトを取得して `setLayout` で適用でき、BorderLayout の region 配置ができる。
+
+備考: `Container.addWithHint`（生 void* hint）だけは別途 bespoke（#12 系）。region 配置は上記でカバー済み。
 
 ---
 
