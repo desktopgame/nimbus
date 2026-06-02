@@ -106,9 +106,9 @@ fn <CName> = <ZigType>.<method> ( [<recv> ,] <arg>* ) -> <ret> [!<fail>] [<own>]
   * `=self` — Zig 側 `self: T`（値渡し）。C 側 `const nmT* self`
     （opaque は値で渡せないのでポインタのまま渡し、シムが間接参照する）。
   * 省略時はレシーバなし（静的関数として `framework.<ZigType>.<method>` を呼ぶ）。
-* `<arg>`: `<name>:<type> [<own>]` 形式。`<type>` は `str` / `strs`（文字列配列）/
-  `*<ZigType>`（ハンドル）/ `?*<ZigType>`（optional ハンドル、nullable ポインタ）/
-  スカラ（`f32`/`f64`/`i32`/`u32`/`usize`/`bool`）/ 宣言済み値構造体 /
+* `<arg>`: `<name>:<type> [<own>]` 形式。`<type>` は `str` / `?str`（optional 文字列、nullable
+  `const char*`）/ `strs`（文字列配列）/ `*<ZigType>`（ハンドル）/ `?*<ZigType>`（optional ハンドル、
+  nullable ポインタ）/ スカラ（`f32`/`f64`/`i32`/`u32`/`usize`/`bool`）/ 宣言済み値構造体 /
   `?<値構造体>`（optional、nullable const ポインタ）/ 宣言済み enum。
 * `<ret>`: `void` / `*<ZigType>` / `?*<ZigType>`（optional ハンドル、null=none）/ スカラ /
   宣言済み値構造体 / `?<値構造体>`（out 引数 + bool）/ 宣言済み enum /
@@ -146,6 +146,7 @@ vtable ディスパッチなので、Component を持つ任意の widget をこ�
 |---|---|---|---|
 | `opaque T`（レシーバ） | `nmT*` | `*framework.T` | ハンドルはポインタ |
 | `str`（引数） | `const char*` | `[*:0]const u8` | シムが `std.mem.span` で `[]const u8` に変換 |
+| `?str`（引数） | `const char*`（nullable） | `?[*:0]const u8` | NULL=none。present 時 `std.mem.span`、none は `null` |
 | `*T`（引数） | `nmT*` | `*framework.T` | ハンドルをそのまま渡す |
 | `?*T`（引数） | `nmT*`（nullable） | `?*framework.T` | NULL=none。そのまま渡す（`Frame.setMenuBar` 等） |
 | `*T`（戻り、`!null`） | `nmT*` | `?*framework.T` | `catch` で `null` |
@@ -532,7 +533,7 @@ preamble は 4 ファイルに分かれる: `preamble.h`（C ヘッダ先頭＝i
 実装済み（生成器が出力する）:
 
 * opaque 宣言・継承（`: <Parent>` → IR `extends`）。
-* `&self` / `=self` / レシーバなしの関数、`str` 引数、ハンドル引数 `*T` / `?*T`、
+* `&self` / `=self` / レシーバなしの関数、`str` / `?str` 引数、ハンドル引数 `*T` / `?*T`、
   `*T`（`!null`）/ `?*T`（optional ハンドル、null=none）/ `void`（`!err`）戻り。
   `?*T` は Frame / Window のメニューバー API（`nmFrameSetMenuBar` 等）や `MenuBar.at` で使用。
 * スカラ（`f32`/`f64`/`i32`/`u32`/`usize`/`bool`）の引数・戻り（素通し）。`usize` は C `size_t`

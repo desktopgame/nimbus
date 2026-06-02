@@ -338,6 +338,8 @@ const nmWindowSize = extern struct { width: i32, height: i32, };
 
 const nmPoint = extern struct { x: f32, y: f32, };
 
+const nmRect = extern struct { x: f32, y: f32, width: f32, height: f32, };
+
 comptime {
     std.debug.assert(@intFromEnum(framework.Component.Alignment.start) == 0);
     std.debug.assert(@intFromEnum(framework.Component.Alignment.center) == 1);
@@ -402,6 +404,10 @@ export fn nmContainerAdd(self: *framework.Container, child: *framework.Component
     return 0;
 }
 
+export fn nmContainerRemove(self: *framework.Container, child: *framework.Component) void {
+    self.remove(child);
+}
+
 export fn nmButtonSetColor(self: *framework.Button, c: nmColor) void {
     self.setColor(.{ .r = c.r, .g = c.g, .b = c.b, .a = c.a });
 }
@@ -409,6 +415,10 @@ export fn nmButtonSetColor(self: *framework.Button, c: nmColor) void {
 export fn nmButtonGetColor(self: *framework.Button) nmColor {
     const _ret = self.getColor();
     return .{ .r = _ret.r, .g = _ret.g, .b = _ret.b, .a = _ret.a };
+}
+
+export fn nmButtonGetModel(self: *framework.Button) *framework.ButtonModel {
+    return self.getModel();
 }
 
 export fn nmButtonGetText(self: *framework.Button) nmStr {
@@ -457,6 +467,69 @@ export fn nmComponentGetAlignX(self: *framework.Component) c_int {
     return @intFromEnum(self.getAlignX());
 }
 
+export fn nmComponentSetGrowY(self: *framework.Component, v: f32) void {
+    self.setGrowY(v);
+}
+
+export fn nmComponentGetGrowY(self: *framework.Component) f32 {
+    return self.getGrowY();
+}
+
+export fn nmComponentSetAlignY(self: *framework.Component, a: c_int) void {
+    self.setAlignY(@enumFromInt(a));
+}
+
+export fn nmComponentGetAlignY(self: *framework.Component) c_int {
+    return @intFromEnum(self.getAlignY());
+}
+
+export fn nmComponentIsFocusable(self: *framework.Component) bool {
+    return self.isFocusable();
+}
+
+export fn nmComponentSetFocusable(self: *framework.Component, v: bool) void {
+    self.setFocusable(v);
+}
+
+export fn nmComponentRequestFocus(self: *framework.Component) void {
+    self.requestFocus();
+}
+
+export fn nmComponentRepaint(self: *framework.Component) void {
+    self.repaint();
+}
+
+export fn nmComponentMarkLayoutDirty(self: *framework.Component) void {
+    self.markLayoutDirty();
+}
+
+export fn nmComponentGetName(self: *framework.Component) nmStr {
+    const _s = self.getName();
+    return if (_s) |v| .{ .ptr = v.ptr, .len = v.len } else .{ .ptr = null, .len = 0 };
+}
+
+export fn nmComponentSetName(self: *framework.Component, name: ?[*:0]const u8) void {
+    self.setName(if (name) |_p| std.mem.span(_p) else null);
+}
+
+export fn nmComponentContainsWindowPoint(self: *framework.Component, x: f32, y: f32) bool {
+    return self.containsWindowPoint(x, y);
+}
+
+export fn nmComponentGetBounds(self: *framework.Component) nmRect {
+    const _ret = self.getBounds();
+    return .{ .x = _ret.x, .y = _ret.y, .width = _ret.width, .height = _ret.height };
+}
+
+export fn nmComponentSetBounds(self: *framework.Component, r: nmRect) void {
+    self.setBounds(.{ .x = r.x, .y = r.y, .width = r.width, .height = r.height });
+}
+
+export fn nmComponentAbsoluteOrigin(self: *framework.Component) nmPoint {
+    const _ret = self.absoluteOriginInWindow();
+    return .{ .x = _ret.x, .y = _ret.y };
+}
+
 export fn nmAppComboBox(self: *framework.Application, items: [*]const [*:0]const u8, items_len: usize) ?*framework.ComboBox {
     const _items = std.heap.c_allocator.alloc([]const u8, items_len) catch |e| { setLastError(e); return null; };
     defer std.heap.c_allocator.free(_items);
@@ -494,6 +567,14 @@ export fn nmComboBoxItemCount(self: *framework.ComboBox) usize {
 export fn nmComboBoxGetItem(self: *framework.ComboBox, idx: usize) nmStr {
     const _s = self.getItem(idx);
     return if (_s) |v| .{ .ptr = v.ptr, .len = v.len } else .{ .ptr = null, .len = 0 };
+}
+
+export fn nmComboBoxIsEnabled(self: *framework.ComboBox) bool {
+    return self.isEnabled();
+}
+
+export fn nmComboBoxSetEnabled(self: *framework.ComboBox, v: bool) void {
+    self.setEnabled(v);
 }
 
 export fn nmListGetRowHeight(self: *framework.List) f32 {

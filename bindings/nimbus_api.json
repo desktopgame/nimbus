@@ -34,7 +34,8 @@
     { "name": "nmSize", "fields": [{ "name": "width", "type": "f32" }, { "name": "height", "type": "f32" }] },
     { "name": "nmWindowPoint", "fields": [{ "name": "x", "type": "i32" }, { "name": "y", "type": "i32" }] },
     { "name": "nmWindowSize", "fields": [{ "name": "width", "type": "i32" }, { "name": "height", "type": "i32" }] },
-    { "name": "nmPoint", "fields": [{ "name": "x", "type": "f32" }, { "name": "y", "type": "f32" }] }
+    { "name": "nmPoint", "fields": [{ "name": "x", "type": "f32" }, { "name": "y", "type": "f32" }] },
+    { "name": "nmRect", "fields": [{ "name": "x", "type": "f32" }, { "name": "y", "type": "f32" }, { "name": "width", "type": "f32" }, { "name": "height", "type": "f32" }] }
   ],
   "enums": [
     { "name": "nmAlignment", "members": [{ "name": "start", "value": 0 }, { "name": "center", "value": 1 }, { "name": "end", "value": 2 }, { "name": "stretch", "value": 3 }] },
@@ -91,6 +92,17 @@
       "fail": "err"
     },
     {
+      "c": "nmContainerRemove",
+      "owner": "Container",
+      "method": "remove",
+      "names": { "py": "remove", "js": "remove" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "child", "type": "handle", "handle": "Component" }],
+      "ret": { "type": "void" },
+      "fail": null
+    },
+    {
       "c": "nmButtonSetColor",
       "owner": "Button",
       "method": "setColor",
@@ -110,6 +122,17 @@
       "receiver": "value",
       "params": [],
       "ret": { "type": "struct", "struct": "nmColor" },
+      "fail": null
+    },
+    {
+      "c": "nmButtonGetModel",
+      "owner": "Button",
+      "method": "getModel",
+      "names": { "py": "get_model", "js": "getModel" },
+      "kind": "method",
+      "receiver": "value",
+      "params": [],
+      "ret": { "type": "handle", "handle": "ButtonModel", "ownership": "borrowed" },
       "fail": null
     },
     {
@@ -212,6 +235,171 @@
       "fail": null
     },
     {
+      "c": "nmComponentSetGrowY",
+      "owner": "Component",
+      "method": "setGrowY",
+      "names": { "py": "set_grow_y", "js": "setGrowY" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "v", "type": "f32" }],
+      "ret": { "type": "void" },
+      "fail": null
+    },
+    {
+      "c": "nmComponentGetGrowY",
+      "owner": "Component",
+      "method": "getGrowY",
+      "names": { "py": "get_grow_y", "js": "getGrowY" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [],
+      "ret": { "type": "f32" },
+      "fail": null
+    },
+    {
+      "c": "nmComponentSetAlignY",
+      "owner": "Component",
+      "method": "setAlignY",
+      "names": { "py": "set_align_y", "js": "setAlignY" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "a", "type": "enum", "enum": "nmAlignment" }],
+      "ret": { "type": "void" },
+      "fail": null
+    },
+    {
+      "c": "nmComponentGetAlignY",
+      "owner": "Component",
+      "method": "getAlignY",
+      "names": { "py": "get_align_y", "js": "getAlignY" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [],
+      "ret": { "type": "enum", "enum": "nmAlignment" },
+      "fail": null
+    },
+    {
+      "c": "nmComponentIsFocusable",
+      "owner": "Component",
+      "method": "isFocusable",
+      "names": { "py": "is_focusable", "js": "isFocusable" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [],
+      "ret": { "type": "bool" },
+      "fail": null
+    },
+    {
+      "c": "nmComponentSetFocusable",
+      "owner": "Component",
+      "method": "setFocusable",
+      "names": { "py": "set_focusable", "js": "setFocusable" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "v", "type": "bool" }],
+      "ret": { "type": "void" },
+      "fail": null
+    },
+    {
+      "c": "nmComponentRequestFocus",
+      "owner": "Component",
+      "method": "requestFocus",
+      "names": { "py": "request_focus", "js": "requestFocus" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [],
+      "ret": { "type": "void" },
+      "fail": null
+    },
+    {
+      "c": "nmComponentRepaint",
+      "owner": "Component",
+      "method": "repaint",
+      "names": { "py": "repaint", "js": "repaint" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [],
+      "ret": { "type": "void" },
+      "fail": null
+    },
+    {
+      "c": "nmComponentMarkLayoutDirty",
+      "owner": "Component",
+      "method": "markLayoutDirty",
+      "names": { "py": "mark_layout_dirty", "js": "markLayoutDirty" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [],
+      "ret": { "type": "void" },
+      "fail": null
+    },
+    {
+      "c": "nmComponentGetName",
+      "owner": "Component",
+      "method": "getName",
+      "names": { "py": "get_name", "js": "getName" },
+      "kind": "method",
+      "receiver": "value",
+      "params": [],
+      "ret": { "type": "str", "optional": true, "ownership": "borrowed" },
+      "fail": null
+    },
+    {
+      "c": "nmComponentSetName",
+      "owner": "Component",
+      "method": "setName",
+      "names": { "py": "set_name", "js": "setName" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "name", "type": "str", "optional": true }],
+      "ret": { "type": "void" },
+      "fail": null
+    },
+    {
+      "c": "nmComponentContainsWindowPoint",
+      "owner": "Component",
+      "method": "containsWindowPoint",
+      "names": { "py": "contains_window_point", "js": "containsWindowPoint" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "x", "type": "f32" }, { "name": "y", "type": "f32" }],
+      "ret": { "type": "bool" },
+      "fail": null
+    },
+    {
+      "c": "nmComponentGetBounds",
+      "owner": "Component",
+      "method": "getBounds",
+      "names": { "py": "get_bounds", "js": "getBounds" },
+      "kind": "method",
+      "receiver": "value",
+      "params": [],
+      "ret": { "type": "struct", "struct": "nmRect" },
+      "fail": null
+    },
+    {
+      "c": "nmComponentSetBounds",
+      "owner": "Component",
+      "method": "setBounds",
+      "names": { "py": "set_bounds", "js": "setBounds" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "r", "type": "struct", "struct": "nmRect" }],
+      "ret": { "type": "void" },
+      "fail": null
+    },
+    {
+      "c": "nmComponentAbsoluteOrigin",
+      "owner": "Component",
+      "method": "absoluteOriginInWindow",
+      "names": { "py": "absolute_origin_in_window", "js": "absoluteOriginInWindow" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [],
+      "ret": { "type": "struct", "struct": "nmPoint" },
+      "fail": null
+    },
+    {
       "c": "nmAppComboBox",
       "owner": "Application",
       "method": "comboBox",
@@ -286,6 +474,28 @@
       "receiver": "value",
       "params": [{ "name": "idx", "type": "usize" }],
       "ret": { "type": "str", "optional": true, "ownership": "borrowed" },
+      "fail": null
+    },
+    {
+      "c": "nmComboBoxIsEnabled",
+      "owner": "ComboBox",
+      "method": "isEnabled",
+      "names": { "py": "is_enabled", "js": "isEnabled" },
+      "kind": "method",
+      "receiver": "value",
+      "params": [],
+      "ret": { "type": "bool" },
+      "fail": null
+    },
+    {
+      "c": "nmComboBoxSetEnabled",
+      "owner": "ComboBox",
+      "method": "setEnabled",
+      "names": { "py": "set_enabled", "js": "setEnabled" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "v", "type": "bool" }],
+      "ret": { "type": "void" },
       "fail": null
     },
     {

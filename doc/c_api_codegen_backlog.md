@@ -14,17 +14,21 @@ apigen（[c_api_codegen.md](c_api_codegen.md)）の残件。書き方・運用�
 完了条件の共通基準（各項目では固有条件のみ記す）: 対象 API が C から呼べる・apigen 再生成が決定的・
 `zig build install` / `zig build test` が緑・`nimbus.h` の構文チェック OK。
 
-次の一手の推奨: **A の総ざらい（#1 → #2 → #3 → #4）**（#13 レイアウトは完了）。生成器変更ゼロで実用
-カバレッジが大きく上がる。続けて #5（`?str` 引数）と #6（2 段 cast）で setName と ScrollPane を埋める。
+次の一手の推奨: **残る A は #3（Dialog）→ #4（ScrollPane、依存 #6）**（#1 / #2 / #13 と #5 は完了）。
+#4 は #6（2 段 cast）で完結する。
 
 ---
 
 ## #1 Component 共通メソッドの公開
-- 状態: 未着手
+- 状態: 完了
 - 優先度: 高
 - 影響範囲: `nimbus.api`（全ウィジェットに効く。各 AsComponent 経由）、新規 value struct `nmRect`
 - 更新日: 2026-06-02
 - 依存: なし
+
+完了（2026-06-02）: growY/alignY、isFocusable/setFocusable、requestFocus、repaint、markLayoutDirty、
+getName（?str）、setName（?str・#5）、containsWindowPoint、getBounds/setBounds（`nmRect`）、
+absoluteOriginInWindow（`nmPoint`）を公開。min/max size は方針どおり非公開。検証: 全緑。
 
 ### 何
 Component の共通プロパティ系を公開する。前回 X 軸だけ出して漏れているものが中心:
@@ -49,7 +53,7 @@ Component の共通プロパティ系を公開する。前回 X 軸だけ出し�
 ---
 
 ## #2 ウィジェットの取りこぼし公開
-- 状態: 未着手
+- 状態: 完了
 - 優先度: 中
 - 影響範囲: `nimbus.api`（Button / ComboBox / Container）
 - 更新日: 2026-06-02
@@ -59,8 +63,8 @@ Component の共通プロパティ系を公開する。前回 X 軸だけ出し�
 純 A だが未記述のもの: `Button.getModel`（→ `*ButtonModel` @borrowed）、`ComboBox.isEnabled`/`setEnabled`、
 `Container.remove(*Component)`。
 
-### 完了条件
-上記が C から呼べる。
+完了（2026-06-02）: `nmButtonGetModel` / `nmComboBoxIsEnabled` / `nmComboBoxSetEnabled` /
+`nmContainerRemove`（detach のみ・child は借用）を公開。検証: 全緑。
 
 ---
 
@@ -107,7 +111,7 @@ ScrollPane をファクトリで生成し、スクロール操作・policy 設�
 ---
 
 ## #5 `?str` 引数のサポート
-- 状態: 未着手
+- 状態: 完了
 - 優先度: 中
 - 影響範囲: 生成器 `main.zig`（ArgType 追加）、`Component.setName`
 - 更新日: 2026-06-02
@@ -117,8 +121,9 @@ ScrollPane をファクトリで生成し、スクロール操作・policy 設�
 nullable 文字列引数 `?str`（C は nullable `const char*`、Zig は `?[]const u8`）。戻りの `?str` はあるが
 引数が無い。`?*T` と同型の小拡張。consumer = `Component.setName(?[]const u8)`。
 
-### 完了条件
-`?str` 引数が生成でき、`nmComponentSetName(?str)` が NULL 許容で動く（#1 の setName を埋める）。
+完了（2026-06-02）: ArgType に `str_opt` を追加（C は nullable `const char*`、Zig シムは `?[*:0]const u8`、
+呼出は `if (p) |_p| std.mem.span(_p) else null`、IR は `"optional": true`）。`nmComponentSetName(?str)` で実証。
+検証: apigen 決定的・install/test 緑・clang で NULL 渡し構文チェック。
 
 ---
 

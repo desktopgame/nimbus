@@ -88,6 +88,8 @@ const ArgType = union(enum) {
     struct_opt: []const u8,
     /// `?*T` — optional handle argument (nullable pointer; null = none). Payload = Zig type name.
     handle_opt: []const u8,
+    /// `?str` — optional UTF-8 string argument (nullable `const char*`; null = none).
+    str_opt,
 };
 
 /// Function return shape.
@@ -459,6 +461,7 @@ fn parseFn(
 
 fn parseArgType(model: *const Model, s: []const u8) ?ArgType {
     if (std.mem.eql(u8, s, "str")) return .str;
+    if (std.mem.eql(u8, s, "?str")) return .str_opt;
     if (std.mem.eql(u8, s, "strs")) return .str_array;
     if (s.len > 1 and s[0] == '?' and model.findStruct(s[1..]) != null) return .{ .struct_opt = s[1..] };
     if (s.len > 2 and s[0] == '?' and s[1] == '*') return .{ .handle_opt = s[2..] };
@@ -727,7 +730,7 @@ fn emitHeaderProto(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), f: *const Fu
     for (f.args.items) |a| {
         if (wrote) try buf.appendSlice(gpa, ", ");
         switch (a.ty) {
-            .str => try print(gpa, buf, "const char* {s}", .{a.name}),
+            .str, .str_opt => try print(gpa, buf, "const char* {s}", .{a.name}),
             .handle, .handle_opt => |zt| try print(gpa, buf, "nm{s}* {s}", .{ zt, a.name }),
             .struct_ref => |sn| try print(gpa, buf, "{s} {s}", .{ sn, a.name }),
             .scalar => |sc| try print(gpa, buf, "{s} {s}", .{ sc.cName(), a.name }),
@@ -844,6 +847,7 @@ fn emitZigShim(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), model: *const Mo
         if (wrote) try buf.appendSlice(gpa, ", ");
         switch (a.ty) {
             .str => try print(gpa, buf, "{s}: [*:0]const u8", .{a.name}),
+            .str_opt => try print(gpa, buf, "{s}: ?[*:0]const u8", .{a.name}),
             .handle => |zt| try print(gpa, buf, "{s}: *framework.{s}", .{ a.name, zt }),
             .handle_opt => |zt| try print(gpa, buf, "{s}: ?*framework.{s}", .{ a.name, zt }),
             .struct_ref => |sn| try print(gpa, buf, "{s}: {s}", .{ a.name, sn }),
@@ -908,6 +912,7 @@ fn emitZigShim(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), model: *const Mo
         if (idx != 0) try call.appendSlice(gpa, ", ");
         switch (a.ty) {
             .str => try print(gpa, &call, "std.mem.span({s})", .{a.name}),
+            .str_opt => try print(gpa, &call, "if ({s}) |_p| std.mem.span(_p) else null", .{a.name}),
             .handle, .handle_opt => try call.appendSlice(gpa, a.name),
             .struct_ref => |sn| try appendStructLiteral(gpa, &call, a.name, model.findStruct(sn).?),
             .scalar => try call.appendSlice(gpa, a.name),
@@ -1134,6 +1139,7 @@ fn emitJsonFunc(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), f: *const Func)
         try print(gpa, buf, "{{ \"name\": \"{s}\", ", .{a.name});
         switch (a.ty) {
             .str => try buf.appendSlice(gpa, "\"type\": \"str\""),
+            .str_opt => try buf.appendSlice(gpa, "\"type\": \"str\", \"optional\": true"),
             .handle => |zt| try print(gpa, buf, "\"type\": \"handle\", \"handle\": \"{s}\"", .{zt}),
             .handle_opt => |zt| try print(gpa, buf, "\"type\": \"handle\", \"handle\": \"{s}\", \"optional\": true", .{zt}),
             .struct_ref => |sn| try print(gpa, buf, "\"type\": \"struct\", \"struct\": \"{s}\"", .{sn}),

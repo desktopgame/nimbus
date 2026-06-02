@@ -35,7 +35,8 @@
 #   fn <CName> = <ZigType>.<method> ( [<recv> ,] <arg>* ) -> <ret> [!<fail>] [<own>]
 #       <recv> : &self   receiver is *T   (Zig: self: *T)
 #                =self   receiver is T     (by value; still a pointer in C)
-#       <arg>  : <name>:<type> [<own>]    type in { str, *<ZigType>, ?*<ZigType> }
+#       <arg>  : <name>:<type> [<own>]    type in { str, ?str, *<ZigType>, ?*<ZigType> }
+#                ?str        = optional UTF-8 string arg (nullable const char*; null = none).
 #                ?*<ZigType> = optional handle arg (nullable pointer; null = none).
 #       <ret>  : void | *<ZigType> | ?*<ZigType> | <scalar> | <struct> | <enum>
 #                | str    borrowed []const u8 -> nmStr {ptr,len} (UTF-8, not NUL-term)
@@ -121,6 +122,8 @@ struct nmWindowPoint { x:i32 y:i32 }
 struct nmWindowSize  { width:i32 height:i32 }
 # Float coordinate point (Component.Point) — e.g. Menu.show anchor.
 struct nmPoint { x:f32 y:f32 }
+# Component.Rect (awt.Graphics.Rect) — float bounds.
+struct nmRect { x:f32 y:f32 width:f32 height:f32 }
 
 # Enum: crosses the ABI as an int. Member order must match the native enum;
 # a comptime check (against Component.Alignment) makes a mismatch a build error.
@@ -143,8 +146,11 @@ fn nmAppRun        = Application.run    (&self) -> void !err
 fn nmAppButton     = Application.button (&self, text:str) -> *Button !null @owned
 fn nmButtonSetText = Button.setText     (&self, text:str) -> void    !err
 fn nmContainerAdd  = Container.add       (&self, child:*Component @transfer) -> void !err
+# remove detaches the child (does not destroy it) — borrowed arg.
+fn nmContainerRemove = Container.remove   (&self, child:*Component) -> void
 fn nmButtonSetColor = Button.setColor    (&self, c:nmColor) -> void
 fn nmButtonGetColor = Button.getColor    (=self) -> nmColor
+fn nmButtonGetModel = Button.getModel    (=self) -> *ButtonModel @borrowed
 
 # Borrowed string return (nmStr = ptr + len, UTF-8, not NUL-terminated).
 fn nmButtonGetText       = Button.getText          (=self) -> str
@@ -162,6 +168,24 @@ fn nmComponentGetGrowX = Component.getGrowX  (&self) -> f32
 fn nmComponentSetAlignX = Component.setAlignX (&self, a:nmAlignment) -> void
 fn nmComponentGetAlignX = Component.getAlignX (&self) -> nmAlignment
 
+# Component common methods (#1). Apply to every widget via the AsComponent casts.
+# min/max size は CLAUDE.md 方針で意図的に非公開。
+fn nmComponentSetGrowY  = Component.setGrowY  (&self, v:f32) -> void
+fn nmComponentGetGrowY  = Component.getGrowY  (&self) -> f32
+fn nmComponentSetAlignY = Component.setAlignY (&self, a:nmAlignment) -> void
+fn nmComponentGetAlignY = Component.getAlignY (&self) -> nmAlignment
+fn nmComponentIsFocusable  = Component.isFocusable  (&self) -> bool
+fn nmComponentSetFocusable = Component.setFocusable (&self, v:bool) -> void
+fn nmComponentRequestFocus = Component.requestFocus (&self) -> void
+fn nmComponentRepaint      = Component.repaint      (&self) -> void
+fn nmComponentMarkLayoutDirty = Component.markLayoutDirty (&self) -> void
+fn nmComponentGetName = Component.getName (=self) -> ?str
+fn nmComponentSetName = Component.setName (&self, name:?str) -> void
+fn nmComponentContainsWindowPoint = Component.containsWindowPoint (&self, x:f32, y:f32) -> bool
+fn nmComponentGetBounds = Component.getBounds (=self) -> nmRect
+fn nmComponentSetBounds = Component.setBounds (&self, r:nmRect) -> void
+fn nmComponentAbsoluteOrigin = Component.absoluteOriginInWindow (&self) -> nmPoint
+
 # Factory taking a string array (strs -> const char* const* + count).
 fn nmAppComboBox       = Application.comboBox (&self, items:strs) -> *ComboBox !null @owned
 
@@ -175,6 +199,8 @@ fn nmComboBoxGetSelectedIndex = ComboBox.getSelectedIndex (=self) -> usize
 fn nmComboBoxSetSelectedIndex = ComboBox.setSelectedIndex (&self, idx:usize) -> void
 fn nmComboBoxItemCount        = ComboBox.getItemCount      (=self) -> usize
 fn nmComboBoxGetItem          = ComboBox.getItem           (=self, idx:usize) -> ?str
+fn nmComboBoxIsEnabled        = ComboBox.isEnabled         (=self) -> bool
+fn nmComboBoxSetEnabled       = ComboBox.setEnabled        (&self, v:bool) -> void
 
 # List: the parts that fit the generator (scalar row height, change listener).
 # The factory / model / selection / edit API is hand-written (preamble.zig).
