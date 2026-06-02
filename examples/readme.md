@@ -52,4 +52,35 @@ frameworkのDnD基盤を使用して、`List` の行をドラッグして同じ 
 frameworkのAPIを使用して、向きが階層ごとに交互に変わる BoxLayout コンテナーを深く・多子にネストする（デフォルト ~3万ノード）。起動時に強制再レイアウトを多数回実行してコスト（1回あたりの所要時間）を計測・表示し、さらに**毎フレーム**ツリー全体を再レイアウトし続けるのでウィンドウが目に見えてカクつく。レイアウトエンジンのベンチマーク／体感用シーン（`doc/optimize.md` 参照）。描画が律速にならないよう葉の塗りは間引いている。引数で `depth fanout iters` を指定可能（例: より重くするなら `zig build run-widget_layoutcost -- 10 3 10`、軽くして比較するなら `-- 6 3 200`）。
 
 ## cnimbus_editor
-nimbus の C ABI（`include/nimbus.h` + `libnimbus`）だけを使い、**C 言語**でエディタ風の画面を組むサンプル（Zig を一切使わない）。メニューバー（File / Edit）、上部のツールバー（north）、スクロールペインに入れたテキストエリア（center）を BorderLayout で配置する。将来の Python / JS バインディングが C ABI をどう叩くかの実証も兼ねる。`zig build` で他のサンプルと一緒にビルドされ、`zig build run-cnimbus_editor` で起動できる。
+nimbus の C ABI（`include/nimbus.h` + `libnimbus`）だけを使い、**C 言語**でエディタ風の画面を組むサンプル（Zig を一切使わない）。メニューバー（File / Edit）、上部のツールバー（north）、スクロールペインに入れたテキストエリア（center）を BorderLayout で配置する。将来の Python / JS バインディングが C ABI をどう叩くかの実証も兼ねる。
+
+**動的リンク（`nimbus.dll` を横に置く）が基本**。将来の Python / JS バインディングも結局 `nimbus.dll` を
+読む形になるので、C サンプルもそれに合わせている。ビルド・実行は 2 通り：
+
+1. **build.zig 経由**（他のサンプルと一緒に CI でビルド検証される）。`libnimbus`（動的）にリンクする：
+   ```
+   zig build run-cnimbus_editor      # run ステップが nimbus.dll を解決して起動
+   ```
+   `examples/` 配下に exe として置きたいなら、`exe` と `nimbus.dll` の両方をコピー：
+   ```
+   zig build
+   copy zig-out\bin\cnimbus_editor.exe examples\cnimbus_editor\
+   copy zig-out\bin\nimbus.dll        examples\cnimbus_editor\
+   ```
+
+2. **素朴に直叩き**（配布された `nimbus.h` + `nimbus.dll` を C アプリから使う最短経路）。
+   まず一度 `zig build` してライブラリを出す（`zig-out/include/nimbus.h`・`zig-out/lib/nimbus.lib`・
+   `zig-out/bin/nimbus.dll`）。あとは普通の C コンパイラで 1 発：
+   ```
+   zig cc examples/cnimbus_editor/main.c -I zig-out/include -L zig-out/lib -lnimbus -o examples/cnimbus_editor/cnimbus_editor.exe
+   copy zig-out\bin\nimbus.dll examples\cnimbus_editor\      # 実行時に隣に要る
+   ./examples/cnimbus_editor/cnimbus_editor.exe
+   ```
+   `-I` でヘッダー、`-L` + `-lnimbus` で import ライブラリにリンクするだけ（clang / MSVC `cl` / gcc も
+   同じ要領）。動的リンクなので、実行時に `nimbus.dll` が exe の隣か PATH 上に要る。
+
+   > DLL 不要の単一 exe が欲しい場合は、build.zig で C ABI を `linkage = .static` の静的ライブラリとして
+   > リンクすれば self-contained な exe（~21MB、nimbus/DX12/GLFW/FreeType を内包）が作れる。ただし手で
+   > `zig cc` する場合は、静的アーカイブが依存する awt-c / GLFW / FreeType（キャッシュ内）やシステム lib
+   > （d3d12 / dxgi / dxguid / d3dcompiler_47 / imm32 / user32 / gdi32 / shell32）を内包しないため全部
+   > 並べる必要があり非現実的。単一 exe にするならビルドシステム経由で静的リンクするのが筋。
