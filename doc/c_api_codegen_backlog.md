@@ -471,3 +471,41 @@ IR 表現）を 1 つの記述子へまとめ、各 emit 段がそれを引く�
 
 ### 完了条件
 型種の追加が 1〜2 箇所の編集で済むようになる（既存生成物は不変＝決定的出力が一致）。
+
+---
+
+## #19 C 側からのアロケーター注入（リーク検知）
+- 状態: 棚上げ
+- 優先度: 低
+- 影響範囲: preamble（`nmAppCreateWithAllocator` 等）、`Application` のブートストラップ
+- 更新日: 2026-06-02
+- 依存: なし
+
+### 何
+現状 `nmAppCreate` は `std.heap.c_allocator` をハードコードし、C からメモリ確保はブラックボックス。
+C 側からアロケーター（alloc/free 関数ポインタ）を渡せるようにして、トラッキング版を差せばフレームワーク側の
+**リーク検知**ができるようにする。`Application.init(allocator, io)` は元々 allocator を取るので注入自体は小改修。
+CLAUDE.md「アロケーター」方針（グローバル非依存・寿命管理）とも合致。
+
+### 候補アプローチ
+- 案A: **C 関数ポインタを注入**。`nmAllocator{ alloc(ctx,len,align), free(ctx,ptr,len,align), ctx }` を
+  受け、preamble で `std.mem.Allocator` の vtable に包む。`nmAppCreate` は既定（libc）のまま、
+  `nmAppCreateWithAllocator` を追加。メリット: C アプリ自身のツールに乗せられて柔軟。デメリット:
+  アライメント尊重・free 時の len/align 取り決めが要る（素の malloc/free は不可。`resize=false`・
+  `remap=alloc+copy` でアダプト可）。
+- 案B: **nimbus 内部に debug トラッキングアロケーター**（Zig の DebugAllocator/GPA 相当）を持ち、debug
+  ビルドで使って `nmAppDestroy` 時にリーク報告。メリット: C 側ゼロで楽。デメリット: 柔軟性は劣る。
+- 判断軸: 柔軟性（A）vs 手軽さ（B）。両立も可（既定 B・必要なら A）。
+- 推奨: 未定（実需が出てから）。
+
+### 重要な制約（射程）
+**捕捉できるのは nimbus フレームワーク側の Zig 確保ぶんのみ**（Application/Window/Frame/各 widget/Container は
+すべて `app.allocator` を通る）。**awt-c（GLFW / FreeType / DX12）と GPU ドライバ管理メモリは自前の C ランタイム/
+ドライバで確保するのでこのアロケーターを通らない**＝プロセス全体ではなく「フレームワークが確保した widget ツリー
+等」のリーク検知になる。期待値として明記する。
+
+### なぜ（保留理由）
+今すぐの実需が無い「やってみたい」系。point-of-need で、検知したい場面が出たら着手。
+
+### 完了条件
+C 側のアロケーター（または内部 debug アロケーター）でフレームワーク側の確保/解放が追跡でき、リークが検出できる。
