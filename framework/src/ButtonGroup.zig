@@ -53,6 +53,18 @@ pub fn create(allocator: std.mem.Allocator) !*ButtonGroup {
     return g;
 }
 
+/// Free a heap group (from `create`) in a single call: detach every member
+/// (`deinit`) and release the allocation itself. A ButtonGroup is
+/// caller-owned — it lives outside the widget tree and only borrows member
+/// models — so the caller calls this exactly once when done. Use this
+/// instead of the `deinit` + `allocator.destroy` pair. (Stack-allocated
+/// groups from `init` use `deinit` directly.)
+pub fn destroy(self: *ButtonGroup) void {
+    const allocator = self.allocator;
+    self.deinit();
+    allocator.destroy(self);
+}
+
 /// Add `model` to the group. From this point on, when the model becomes
 /// selected, all other group members are deselected automatically.
 /// If `model` is already selected at the moment of add, every other

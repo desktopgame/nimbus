@@ -33,8 +33,7 @@ fn refreshLabel(state: *State) void {
     state.label.setText(display) catch {};
 }
 
-fn tick(user_data: *anyopaque) void {
-    const state: *State = @ptrCast(@alignCast(user_data));
+fn onFieldChange(state: *State, _: *const nimbus.ChangeListenerList.Event) void {
     refreshLabel(state);
 }
 
@@ -95,10 +94,11 @@ pub fn main(init: std.process.Init) !void {
 
     try nimbus.BorderLayout.add(&frame.window.container, .center, &col.component);
 
-    // No public ChangeListener API on TextField in v1 — instead we drive
-    // the mirror update from a low-frequency timer.
+    // Mirror the field into the label via TextField's change listener
+    // (fires only on actual content changes — no polling timer needed).
     var state = State{ .field = field, .label = label };
-    _ = try app.setInterval(120, tick, @ptrCast(&state));
+    try field.addChangeListener(State, onFieldChange, &state);
+    refreshLabel(&state); // initial sync
 
     std.debug.print("Type into the field; the label mirrors the contents.\n", .{});
     try app.run();

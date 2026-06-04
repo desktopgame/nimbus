@@ -56,10 +56,7 @@ pub fn main(init: std.process.Init) !void {
     // Build the group AFTER the radios but BEFORE wiring listeners
     // (so order of `defer ... deinit` is: group first, then radios).
     const group = try app.buttonGroup();
-    defer {
-        group.deinit();
-        init.gpa.destroy(group);
-    }
+    defer group.destroy();
     try group.add(rb_small.getModel());
     try group.add(rb_medium.getModel());
     try group.add(rb_large.getModel());

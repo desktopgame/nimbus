@@ -72,6 +72,18 @@ pub fn deinit(self: *Dialog) void {
     self.window.deinit();
 }
 
+/// Free the dialog in a single call: release internal resources (`deinit`)
+/// and the heap allocation itself. A Dialog is caller-owned — it lives
+/// outside Application's window tree, so nothing frees it automatically;
+/// the caller calls this exactly once when done. Use this instead of the
+/// `deinit` + `allocator.destroy` pair (mirrors how tree-owned widgets are
+/// torn down by their container).
+pub fn destroy(self: *Dialog) void {
+    const allocator = self.allocator;
+    self.deinit();
+    allocator.destroy(self);
+}
+
 // ── show / close ──────────────────────────────────────────────────────────
 
 /// Show the dialog and block the caller until it is closed, returning the

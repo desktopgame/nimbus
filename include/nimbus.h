@@ -289,6 +289,8 @@ int nmTextFieldOnSubmit(nmTextField* self, nmChangeListener* cb);
 void nmTextFieldOffSubmit(nmTextField* self, nmChangeListener* cb);
 int nmTextFieldOnCancel(nmTextField* self, nmChangeListener* cb);
 void nmTextFieldOffCancel(nmTextField* self, nmChangeListener* cb);
+int nmTextFieldOnChange(nmTextField* self, nmChangeListener* cb);
+void nmTextFieldOffChange(nmTextField* self, nmChangeListener* cb);
 nmStr nmTextAreaGetText(nmTextArea* self);
 int nmTextAreaSetText(nmTextArea* self, const char* text);
 bool nmTextAreaGetLineWrap(const nmTextArea* self);

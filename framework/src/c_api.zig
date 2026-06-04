@@ -156,13 +156,11 @@ export fn nmImageDestroy(self: *awt.Image) void {
 }
 
 /// Free an OWNED Dialog (from nmAppDialog). Caller-owned: the Application
-/// registers dialogs with a no-op destroy, so it never frees them. This deinits
-/// the window (unregistering it if still shown) + frees the Dialog box with the
-/// allocator it was created from. Do not call while the dialog is shown modally.
+/// registers dialogs with a no-op destroy, so it never frees them. Delegates
+/// to Dialog.destroy (deinit + free) so the C ABI and the Zig API can never
+/// drift on teardown. Do not call while the dialog is shown modally.
 export fn nmDialogDestroy(self: *framework.Dialog) void {
-    const allocator = self.allocator;
-    self.deinit();
-    allocator.destroy(self);
+    self.destroy();
 }
 
 export fn nmImageWidth(self: *const awt.Image) i32 {
@@ -928,6 +926,18 @@ export fn nmTextFieldOnCancel(self: *framework.TextField, cb: *nmChangeListener)
 
 export fn nmTextFieldOffCancel(self: *framework.TextField, cb: *nmChangeListener) void {
     self.removeCancelListener(nmChangeListener, nm_trampoline_nmChangeListener, cb);
+}
+
+export fn nmTextFieldOnChange(self: *framework.TextField, cb: *nmChangeListener) c_int {
+    self.addChangeListener(nmChangeListener, nm_trampoline_nmChangeListener, cb) catch |e| {
+        setLastError(e);
+        return errorToCode(e);
+    };
+    return 0;
+}
+
+export fn nmTextFieldOffChange(self: *framework.TextField, cb: *nmChangeListener) void {
+    self.removeChangeListener(nmChangeListener, nm_trampoline_nmChangeListener, cb);
 }
 
 export fn nmTextAreaGetText(self: *framework.TextArea) nmStr {

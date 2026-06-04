@@ -69,6 +69,11 @@ submit_listeners: ChangeListenerList,
 /// Fired (and the key consumed) when Escape is pressed — "cancel". Used e.g.
 /// by a List cell editor to revert.
 cancel_listeners: ChangeListenerList,
+/// Fired (kind = .change) whenever the text content actually changes — edit
+/// keys, typing, cut/paste, or `setText`. NOT fired for caret movement,
+/// selection, focus, or IME preedit (uncommitted). Lets callers observe the
+/// field without polling (mirrors Swing's DocumentListener at widget level).
+change_listeners: ChangeListenerList,
 allocator:      std.mem.Allocator,
 
 pub const vtable = Component.VTable{
@@ -113,6 +118,7 @@ pub fn create(
         .preedit_target_end   = 0,
         .submit_listeners = ChangeListenerList.init(allocator),
         .cancel_listeners = ChangeListenerList.init(allocator),
+        .change_listeners = ChangeListenerList.init(allocator),
         .allocator      = allocator,
     };
     tf.applyMetrics();
@@ -132,6 +138,7 @@ pub fn setText(self: *TextField, new_text: []const u8) !void {
     self.caret_byte = self.text.items.len;
     self.mark_byte = self.text.items.len;
     self.applyMetrics();
+    self.change_listeners.fire(&.{ .source = self, .kind = .change });
     self.component.repaint();
 }
 
@@ -170,6 +177,16 @@ pub fn addCancelListener(self: *TextField, comptime T: type, comptime f: fn (*T,
 
 pub fn removeCancelListener(self: *TextField, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) void {
     self.cancel_listeners.removeTyped(T, f, user_data);
+}
+
+/// Listener fired (kind = .change) whenever the text content changes. Lets a
+/// caller mirror / validate the field without polling. Multiple allowed.
+pub fn addChangeListener(self: *TextField, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) !void {
+    try self.change_listeners.addTyped(T, f, user_data);
+}
+
+pub fn removeChangeListener(self: *TextField, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) void {
+    self.change_listeners.removeTyped(T, f, user_data);
 }
 
 // ── layout ───────────────────────────────────────────────────────────────
@@ -370,6 +387,7 @@ fn destroy(self: *Component, allocator: std.mem.Allocator) void {
     tf.preedit_text.deinit(allocator);
     tf.submit_listeners.deinit();
     tf.cancel_listeners.deinit();
+    tf.change_listeners.deinit();
     allocator.destroy(tf);
 }
 
@@ -441,48 +459,55 @@ fn handleKey(tf: *TextField, ev: *Component.Event, k: awt.Event.KeyEvent) void {
             const new_caret = prevCodepointBoundary(tf.text.items, tf.caret_byte);
             tf.caret_byte = new_caret;
             if (!shift) tf.mark_byte = tf.caret_byte;
-            tf.afterEdit(ev);
+            tf.afterEdit(ev, false);
         },
         .arrow_right => {
             const new_caret = nextCodepointBoundary(tf.text.items, tf.caret_byte);
             tf.caret_byte = new_caret;
             if (!shift) tf.mark_byte = tf.caret_byte;
-            tf.afterEdit(ev);
+            tf.afterEdit(ev, false);
         },
         .home => {
             tf.caret_byte = 0;
             if (!shift) tf.mark_byte = tf.caret_byte;
-            tf.afterEdit(ev);
+            tf.afterEdit(ev, false);
         },
         .end => {
             tf.caret_byte = tf.text.items.len;
             if (!shift) tf.mark_byte = tf.caret_byte;
-            tf.afterEdit(ev);
+            tf.afterEdit(ev, false);
         },
         .backspace => {
+            var changed = false;
             if (tf.hasSelection()) {
                 tf.deleteSelection() catch {};
+                changed = true;
             } else if (tf.caret_byte > 0) {
                 const prev = prevCodepointBoundary(tf.text.items, tf.caret_byte);
                 tf.text.replaceRange(tf.allocator, prev, tf.caret_byte - prev, &.{}) catch {};
                 tf.caret_byte = prev;
                 tf.mark_byte = prev;
+                changed = true;
             }
-            tf.afterEdit(ev);
+            tf.afterEdit(ev, changed);
         },
         .delete => {
+            var changed = false;
             if (tf.hasSelection()) {
                 tf.deleteSelection() catch {};
+                changed = true;
             } else if (tf.caret_byte < tf.text.items.len) {
                 const next = nextCodepointBoundary(tf.text.items, tf.caret_byte);
                 tf.text.replaceRange(tf.allocator, tf.caret_byte, next - tf.caret_byte, &.{}) catch {};
+                changed = true;
             }
-            tf.afterEdit(ev);
+            tf.afterEdit(ev, changed);
         },
         .a => if (ctrl) {
+            // Select-all is a selection change, not a content change.
             tf.mark_byte = 0;
             tf.caret_byte = tf.text.items.len;
-            tf.afterEdit(ev);
+            tf.afterEdit(ev, false);
         },
         .c => if (ctrl) {
             tf.copyToClipboard();
@@ -490,12 +515,13 @@ fn handleKey(tf: *TextField, ev: *Component.Event, k: awt.Event.KeyEvent) void {
         },
         .x => if (ctrl) {
             tf.copyToClipboard();
-            if (tf.hasSelection()) tf.deleteSelection() catch {};
-            tf.afterEdit(ev);
+            const had_sel = tf.hasSelection();
+            if (had_sel) tf.deleteSelection() catch {};
+            tf.afterEdit(ev, had_sel);
         },
         .v => if (ctrl) {
             tf.pasteFromClipboard() catch {};
-            tf.afterEdit(ev);
+            tf.afterEdit(ev, true);
         },
         .enter => {
             // Single-line: Enter submits. Fire listeners and consume so the
@@ -520,10 +546,14 @@ fn handleChar(tf: *TextField, ev: *Component.Event, ch: awt.Event.CharEvent) voi
     tf.text.insertSlice(tf.allocator, tf.caret_byte, buf[0..n]) catch return;
     tf.caret_byte += n;
     tf.mark_byte = tf.caret_byte;
-    tf.afterEdit(ev);
+    tf.afterEdit(ev, true);
 }
 
-fn afterEdit(tf: *TextField, ev: *Component.Event) void {
+/// Common tail for every key/char handler. `changed` is true only when the
+/// text content was actually mutated (not for caret movement / selection),
+/// in which case change listeners fire before the repaint.
+fn afterEdit(tf: *TextField, ev: *Component.Event, changed: bool) void {
+    if (changed) tf.change_listeners.fire(&.{ .source = tf, .kind = .change });
     tf.caret_visible = true;
     tf.ensureCaretVisible();
     tf.component.repaint();

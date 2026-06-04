@@ -299,6 +299,8 @@ fn nmTextFieldOnSubmit  = TextField.addSubmitListener    (&self, cb:nmChangeList
 fn nmTextFieldOffSubmit = TextField.removeSubmitListener (&self, cb:nmChangeListener) -> void
 fn nmTextFieldOnCancel  = TextField.addCancelListener    (&self, cb:nmChangeListener) -> void !err
 fn nmTextFieldOffCancel = TextField.removeCancelListener (&self, cb:nmChangeListener) -> void
+fn nmTextFieldOnChange  = TextField.addChangeListener    (&self, cb:nmChangeListener) -> void !err
+fn nmTextFieldOffChange = TextField.removeChangeListener (&self, cb:nmChangeListener) -> void
 
 # TextArea (getText takes *self here, hence &self)
 fn nmTextAreaGetText       = TextArea.getText       (&self) -> str

@@ -1152,6 +1152,28 @@
       "fail": null
     },
     {
+      "c": "nmTextFieldOnChange",
+      "owner": "TextField",
+      "method": "addChangeListener",
+      "names": { "py": "add_change_listener", "js": "addChangeListener" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "cb", "type": "callback", "callback": "nmChangeListener", "role": "event_handler" }],
+      "ret": { "type": "void" },
+      "fail": "err"
+    },
+    {
+      "c": "nmTextFieldOffChange",
+      "owner": "TextField",
+      "method": "removeChangeListener",
+      "names": { "py": "remove_change_listener", "js": "removeChangeListener" },
+      "kind": "method",
+      "receiver": "ptr",
+      "params": [{ "name": "cb", "type": "callback", "callback": "nmChangeListener", "role": "event_handler" }],
+      "ret": { "type": "void" },
+      "fail": null
+    },
+    {
       "c": "nmTextAreaGetText",
       "owner": "TextArea",
       "method": "getText",

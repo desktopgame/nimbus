@@ -91,17 +91,11 @@ pub fn main(init: std.process.Init) !void {
 
     // Dialogs are caller-owned — create up front, reuse across clicks, free here.
     const modal = try app.dialog(&frame.window, "確認", 320, 140);
-    defer {
-        modal.deinit();
-        init.gpa.destroy(modal);
-    }
+    defer modal.destroy();
     try buildModal(app, modal);
 
     const modeless = try app.dialog(&frame.window, "検索", 360, 120);
-    defer {
-        modeless.deinit();
-        init.gpa.destroy(modeless);
-    }
+    defer modeless.destroy();
     try buildModeless(app, modeless);
 
     const label = try app.label("last result: (none yet)");
