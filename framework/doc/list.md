@@ -13,7 +13,7 @@ Swing の `JList` 相当だが、 セルの実現方法は JavaFX の `ListView`
 v1 スコープ:
 * 単一選択のみ (複数選択は機能要望)
 * 固定の行高 (可変行高は機能要望)
-* セルは **読み取り専用** (項目の値をセルへ投影するだけ)。 セル内のボタン等は押せるが、 セル内でのテキスト編集は対象外 (「編集 (CellEditor)」を参照)
+* セルは既定で **読み取り専用** (項目の値をセルへ投影するだけ)。 セル内のボタン等は押せる。 加えて、 `Cell.edit` を与えたセルは **編集モード** (セル内テキスト編集) を持てる (「セルの編集 (CellEditor)」を参照)
 
 ## 型定義
 ```zig
@@ -27,6 +27,9 @@ pub const List = struct {
     pool:             std.ArrayList(PooledCell), // 可視範囲を覆う実セル群 (List が所有)
     has_focus:        bool,               // キーボードフォーカス保持中か (ctx.focused 用)
     hovered:          ?*Component,         // ポインタが乗っているセル (hover 解除用、 後述)
+    editing:          ?usize,             // 編集中の行 (高々 1 つ。 読み取り専用なら常に none)
+    edit_trigger:     EditTrigger,        // 編集開始トリガ (既定 .double_click_or_enter)
+    focus_lost:       FocusLostPolicy,    // 編集中フォーカス喪失時の決着 (既定 .commit)
     change_listeners: ChangeListenerList, // 選択変更通知
     allocator:        std.mem.Allocator,
 
@@ -53,13 +56,42 @@ pub const CellFactory = struct {
 1 つの実セル。
 `component` がセル部分木のルートで、 leaf (Label 等) でも `Container` (ラベル + ボタン等) でもよい。
 `update` は JavaFX の `updateItem` 相当で、 そのセルを **ある行のデータに束縛し直す**ときに呼ばれる (生成直後と recycle 時)。
+`edit` は編集可能セルだけが持つ任意の編集ライフサイクルで、 読み取り専用セルは null のまま (「セルの編集 (CellEditor)」を参照)。
 
 ```zig
 pub const Cell = struct {
     component: *Component,   // セル部分木のルート (この Cell が所有)
     update:    *const fn (self: *anyopaque, ctx: CellContext) void,
     destroy:   *const fn (self: *anyopaque, allocator: std.mem.Allocator) void,
+    edit:      ?CellEdit = null,   // null = 読み取り専用 (編集不可)
     user_data: *anyopaque,   // セルごとの状態構造体 (factory が new したもの)
+};
+```
+
+セルが編集可能なら `edit` に編集ライフサイクルを与える。
+`start` で編集モードへ入り (部分木をスクラッチ入力へ差し替え、 item で seed)、 `commit` でスクラッチを item へ書き戻し、 `cancel` で破棄して表示モードへ戻す。
+
+```zig
+pub const CellEdit = struct {
+    start:  *const fn (self: *anyopaque, ctx: CellContext) void,
+    commit: *const fn (self: *anyopaque) void,
+    cancel: *const fn (self: *anyopaque) void,
+};
+```
+
+編集の開始トリガと、 編集中にスクラッチがフォーカスを失ったときの決着方針。
+
+```zig
+pub const EditTrigger = enum {
+    double_click,
+    enter,
+    double_click_or_enter,   // 既定
+    manual,                  // edit(idx) のみ。 UI からは開始しない
+};
+
+pub const FocusLostPolicy = enum {
+    commit,   // 既定。 フォーカス喪失で確定
+    cancel,   // フォーカス喪失で取り消し
 };
 ```
 
@@ -164,6 +196,22 @@ pub fn removeChangeListener(self: *List, comptime T: type, comptime f: fn (*T, *
 
 `selected` が変化した瞬間に発火する。
 hover やセル内ボタンの押下では発火しない (それらはセルが配線したコールバックの領分)。
+
+## セルの編集 (CellEditor)
+```zig
+pub fn edit              (self: *List, idx: usize) void;
+pub fn commitEdit        (self: *List) void;
+pub fn cancelEdit        (self: *List) void;
+pub fn getEditing        (self: List) ?usize;
+pub fn setEditTrigger    (self: *List, t: EditTrigger) void;
+pub fn setFocusLostPolicy(self: *List, p: FocusLostPolicy) void;
+```
+
+`edit` は `idx` 行の編集を開始する。 別の行が編集中なら先に確定 (`commitEdit`) し、 対象行を可視範囲へスクロール + 実体化してからそのセルの `edit.start` を呼ぶ。 範囲外、 またはセルの `edit` が null (読み取り専用) なら no-op。
+`commitEdit` は編集中セルに `edit.commit` を呼ばせてスクラッチを item へ書き戻し、 表示モードへ戻して再投影する。 `cancelEdit` は `edit.cancel` でスクラッチを破棄し、 item は変えない。 どちらも編集中でなければ no-op で、 終了後はフォーカスを List 本体へ戻す (矢印キー操作のため)。
+`getEditing` は編集中の行 (なければ none)。 `setEditTrigger` / `setFocusLostPolicy` は開始トリガ / フォーカス喪失時の決着を変更する。
+
+同時に編集状態になるセルは高々 1 つ。 編集中の行は reconcile で投影 (`update`) をスキップし、 プールへ返さない (recycle しない) ため、 キャレットや IME 未確定文字が投影で消えたりセルが別行へ束縛し直されたりしない (設計の根拠は narrative 参照)。 編集中のキーは固定で **Enter** = commit、 **Escape** = cancel。 動く例は `{REPO_ROOT}/examples/widget_listedit`。
 
 ---
 
@@ -273,7 +321,6 @@ for (rows) |*r| try list.model.add(@ptrCast(r));
 * 細粒度の変更通知 (`ListDataListener` 相当、 挿入 / 削除レンジを引数で渡す)
 * 抽象 `ListModel` (vtable 化して computed / 仮想モデルを許す)
 * 同じセル機構の 2 次元拡張としての Table (行 / 列)、 階層版としての Tree
-* `CellEditor` (「編集」参照) — セルを編集モードへトグルする機構。 List では不要だが Table / Tree で必須
 * incremental search (キー入力で先頭一致する item へジャンプ)
 * `ListModel` の順序変更 op (`move(from, to)` / `insert(idx, item)`) — 行の drag-to-reorder に要る (`dnd.md`「List の行並べ替え」)。 現状は `clear` + `add` 再投入で代用。 モデル層の追加で List ウィジェット本体は非変更
 * drop-indicator フック — 行間の挿入線を描くための組み込みの便宜フック。 必須ではない: `List` ソースを変えずとも vtable 装飾 (元の `paint` を呼んでから線を描く) か passthrough overlay で出せる (`dnd.md`「List の行並べ替え」)。 頻用するなら標準化する候補という位置づけ
