@@ -1,5 +1,5 @@
 ---
-unsafe: true
+unsafe: false
 ---
 
 # list
@@ -320,7 +320,8 @@ for (rows) |*r| try list.model.add(@ptrCast(r));
 * 行全体の hover ハイライト (現状は選択行のみ背景を描く。 セル内ウィジェットの rollover は「hover の解除」機構で機能するが、 行をまたぐ hover 表示は未対応)
 * 細粒度の変更通知 (`ListDataListener` 相当、 挿入 / 削除レンジを引数で渡す)
 * 抽象 `ListModel` (vtable 化して computed / 仮想モデルを許す)
-* 同じセル機構の 2 次元拡張としての Table (行 / 列)、 階層版としての Tree
+* レイアウト方向 / wrap グリッド表示 (Swing `JList.setLayoutOrientation` 相当の `VERTICAL` / `HORIZONTAL_WRAP` / `VERTICAL_WRAP`)。 **1 次元モデルのまま**セルを折り返してグリッド状に並べる (アイコンビュー風)。 これは行 × 列の 2 次元モデルを持つ Table とは別物 — セルはどれも「1 要素 = 1 セル」で列ごとの型 / 幅の概念は無い。 可視範囲算出を行インデックス → (col, row) の 2 次元に拡張する必要があり、 recycle / 可視範囲ロジックに影響する
+* 同じセル機構の 2 次元 (行 / 列) **モデル**拡張としての Table、 階層版としての Tree。 上の wrap グリッドと違い、 こちらは列ごとに renderer / editor / 幅を持つ本物の表 (Swing `JTable` / `TableModel` 相当)
 * incremental search (キー入力で先頭一致する item へジャンプ)
 * `ListModel` の順序変更 op (`move(from, to)` / `insert(idx, item)`) — 行の drag-to-reorder に要る (`dnd.md`「List の行並べ替え」)。 現状は `clear` + `add` 再投入で代用。 モデル層の追加で List ウィジェット本体は非変更
 * drop-indicator フック — 行間の挿入線を描くための組み込みの便宜フック。 必須ではない: `List` ソースを変えずとも vtable 装飾 (元の `paint` を呼んでから線を描く) か passthrough overlay で出せる (`dnd.md`「List の行並べ替え」)。 頻用するなら標準化する候補という位置づけ

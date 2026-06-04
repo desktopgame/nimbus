@@ -1,5 +1,5 @@
 ---
-unsafe: true
+unsafe: false
 ---
 
 # slider
@@ -247,3 +247,4 @@ model.setValue(75);
 * `setInverted(bool)` で方向反転（min 側を右 / 上に）
 * 範囲スライダー（2 つのツマミで `[a, b]` 区間を選ぶ）
 * ホイールスクロールで値変更
+* float / double 値の対応（現状 `BoundedRangeModel` は `i32` 固定 = Swing `JSlider` 準拠）。連続値（音量 / 不透明度 / 0.0〜1.0 の比率など）を扱いたいケース向け。pixel 位置 ↔ 値の写像はすでに float 計算なので、Model の値型を広げるのが本体。実装案: 別系統の浮動小数 Model（例 `BoundedFloatRangeModel`）を足すか、`BoundedRangeModel` を値型で総称化するか。ScrollBar が同じ `BoundedRangeModel` を共有しており、そちらは整数ステップが自然なので、共有 Model を総称化すると影響が広い点に注意（着手時に backlog 化して案を比較する）
