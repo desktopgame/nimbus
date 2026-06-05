@@ -1,5 +1,5 @@
 ---
-unsafe: true
+unsafe: false
 ---
 
 # component
@@ -193,8 +193,6 @@ pub fn enclosingScrollController(self: *Component) ?*ScrollController;
 ビュー (例: `TextArea`) は `enclosingScrollController` で親方向に最も近いものを探し、キャレット矩形を渡してスクロールを依頼する。
 `ScrollPane` の外で使われている場合は `null` が返り、追従は no-op になる。
 `enclosingScrollController` は自分自身は対象に含めず、親から上を探す。
-
-TODO: ScrollControllerは一度チェックの可能性高。
 
 ## install / uninstall
 `install` を呼んだら必ず対応する `uninstall` も呼び出さなければならない。
