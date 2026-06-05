@@ -6,7 +6,7 @@
 const std = @import("std");
 const awt = @import("awt");
 const Component = @import("Component.zig");
-const Event = @import("ChangeListenerList.zig").Event;
+const ChangeEvent = @import("listener.zig").ChangeEvent;
 const ToggleButtonModel = @import("ToggleButtonModel.zig");
 
 const RadioButton = @This();
@@ -143,7 +143,7 @@ fn uninstall(self: *Component) void {
     rb.model.removeChangeListener(Component, onModelChange, self);
 }
 
-fn onModelChange(comp: *Component, _: *const Event) void {
+fn onModelChange(comp: *Component, _: *const ChangeEvent) void {
     comp.repaint();
 }
 

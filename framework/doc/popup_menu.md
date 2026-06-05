@@ -131,7 +131,7 @@ try dropdown.add(&(try MenuItem.create(allocator, "Option B", font, black)).comp
 
 const btn = try app.button("Choose ▾");
 try btn.getModel().addActionListener(Ctx, struct {
-    fn show(ctx: *Ctx, _: *const Event) void {
+    fn show(ctx: *Ctx, _: *const ActionEvent) void {
         const origin = ctx.btn.component.absoluteOriginInWindow();
         dropdown.show(ctx.win, origin.x, origin.y + ctx.btn.component.size.height) catch {};
     }

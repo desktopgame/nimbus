@@ -32,9 +32,11 @@ Button には 2 種類の通知系統がある。これは Swing の `JButton` �
 * アクションは「ユーザーが意図的にクリックした」セマンティクスを 1 回だけ通知すべきもの
 * この 2 つを混ぜると、利用者が「ユーザーがクリックした時だけ何かしたい」と書きづらくなる
 
-実装上は両方とも `ChangeListenerList` を内部で使うが、API として別エントリーポイント（`addChangeListener` vs `addActionListener`）を提供して区別する。
-
-TODO: なぜ、ActionEvent型やActionListener型が存在しない？
+実装上は `state_listeners: ChangeListenerList`（`ChangeEvent` を配送）と
+`action_listeners: ActionListenerList`（`ActionEvent` を配送）の 2 本を持ち、
+`addChangeListener` / `addActionListener` という別エントリーポイントで登録する。
+イベント型自体が `ChangeEvent` / `ActionEvent` に分かれているので、ハンドラのシグネチャを見れば
+どちらの通知を受けるのかが分かる（`model.md`「ChangeEvent と ActionEvent」参照）。
 
 ## armed と pressed の違い
 | | 意味 |

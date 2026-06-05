@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # dialog
@@ -163,10 +163,10 @@ switch (result) {
 ```
 
 ```zig
-fn onOk(d: *nimbus.Dialog, _: *const Event) void {
+fn onOk(d: *nimbus.Dialog, _: *const ActionEvent) void {
     d.close(.ok);
 }
-fn onCancel(d: *nimbus.Dialog, _: *const Event) void {
+fn onCancel(d: *nimbus.Dialog, _: *const ActionEvent) void {
     d.close(.cancel);
 }
 ```

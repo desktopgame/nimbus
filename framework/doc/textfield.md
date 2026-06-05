@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 #  textfield
@@ -96,10 +96,10 @@ pub fn setBackground(self: *TextField, c: awt.Graphics.Color) void;
 
 ## submit / cancel リスナー
 ```zig
-pub fn addSubmitListener   (self: *TextField, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) !void;
-pub fn removeSubmitListener(self: *TextField, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) void;
-pub fn addCancelListener   (self: *TextField, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) void;
-pub fn removeCancelListener(self: *TextField, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) void;
+pub fn addSubmitListener   (self: *TextField, comptime T: type, comptime f: fn (*T, *const ActionEvent) void, user_data: *T) !void;
+pub fn removeSubmitListener(self: *TextField, comptime T: type, comptime f: fn (*T, *const ActionEvent) void, user_data: *T) void;
+pub fn addCancelListener   (self: *TextField, comptime T: type, comptime f: fn (*T, *const ActionEvent) void, user_data: *T) void;
+pub fn removeCancelListener(self: *TextField, comptime T: type, comptime f: fn (*T, *const ActionEvent) void, user_data: *T) void;
 ```
 
 `Enter` 押下で submit リスナーが、`Escape` 押下で cancel リスナーが発火し、 そのキーは **consume される** (バブルしない)。

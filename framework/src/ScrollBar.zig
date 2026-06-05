@@ -8,9 +8,9 @@
 const std = @import("std");
 const awt = @import("awt");
 const Component = @import("Component.zig");
-const Event = @import("ChangeListenerList.zig").Event;
+const listener = @import("listener.zig");
+const ChangeEvent = listener.ChangeEvent;
 const BoundedRangeModel = @import("BoundedRangeModel.zig");
-const ChangeListenerList = @import("ChangeListenerList.zig");
 
 const ScrollBar = @This();
 
@@ -137,7 +137,7 @@ pub fn setBlockIncrement(self: *ScrollBar, px: i32) void {
 pub fn addChangeListener(
     self: *ScrollBar,
     comptime T: type,
-    comptime f: fn (*T, *const Event) void,
+    comptime f: fn (*T, *const ChangeEvent) void,
     user_data: *T,
 ) !void {
     try self.model.addChangeListener(T, f, user_data);
@@ -146,7 +146,7 @@ pub fn addChangeListener(
 pub fn removeChangeListener(
     self: *ScrollBar,
     comptime T: type,
-    comptime f: fn (*T, *const Event) void,
+    comptime f: fn (*T, *const ChangeEvent) void,
     user_data: *T,
 ) void {
     self.model.removeChangeListener(T, f, user_data);
@@ -211,7 +211,7 @@ fn uninstall(self: *Component) void {
     sb.model.removeChangeListener(Component, onModelChange, self);
 }
 
-fn onModelChange(comp: *Component, _: *const Event) void {
+fn onModelChange(comp: *Component, _: *const ChangeEvent) void {
     comp.repaint();
 }
 

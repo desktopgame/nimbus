@@ -4,7 +4,9 @@
 const std = @import("std");
 const awt = @import("awt");
 const Component = @import("Component.zig");
-const Event = @import("ChangeListenerList.zig").Event;
+const listener = @import("listener.zig");
+const ChangeEvent = listener.ChangeEvent;
+const ActionEvent = listener.ActionEvent;
 const Container = @import("Container.zig");
 const ButtonModel = @import("ButtonModel.zig");
 const MenuItem = @import("MenuItem.zig");
@@ -246,7 +248,7 @@ fn onOverlayDismiss(user_data: *anyopaque) void {
     for (self.items.items) |item| item.parent = null;
 }
 
-fn onItemAction(self: *Menu, _: *const Event) void {
+fn onItemAction(self: *Menu, _: *const ActionEvent) void {
     if (self.window) |w| w.overlays.dismissAll();
 }
 
@@ -275,7 +277,7 @@ fn uninstall(self: *Component) void {
     menu.model.removeChangeListener(Component, onModelChange, self);
 }
 
-fn onModelChange(comp: *Component, _: *const Event) void {
+fn onModelChange(comp: *Component, _: *const ChangeEvent) void {
     comp.repaint();
 }
 

@@ -48,7 +48,8 @@
     { "name": "nmScrollPanePolicy", "members": [{ "name": "as_needed", "value": 0 }, { "name": "always", "value": 1 }, { "name": "never", "value": 2 }] }
   ],
   "callbacks": [
-    { "name": "nmChangeListener", "event": "opaque" }
+    { "name": "nmChangeListener", "event": "opaque" },
+    { "name": "nmActionListener", "event": "opaque" }
   ],
   "functions": [
     {
@@ -1114,7 +1115,7 @@
       "names": { "py": "add_submit_listener", "js": "addSubmitListener" },
       "kind": "method",
       "receiver": "ptr",
-      "params": [{ "name": "cb", "type": "callback", "callback": "nmChangeListener", "role": "event_handler" }],
+      "params": [{ "name": "cb", "type": "callback", "callback": "nmActionListener", "role": "event_handler" }],
       "ret": { "type": "void" },
       "fail": "err"
     },
@@ -1125,7 +1126,7 @@
       "names": { "py": "remove_submit_listener", "js": "removeSubmitListener" },
       "kind": "method",
       "receiver": "ptr",
-      "params": [{ "name": "cb", "type": "callback", "callback": "nmChangeListener", "role": "event_handler" }],
+      "params": [{ "name": "cb", "type": "callback", "callback": "nmActionListener", "role": "event_handler" }],
       "ret": { "type": "void" },
       "fail": null
     },
@@ -1136,7 +1137,7 @@
       "names": { "py": "add_cancel_listener", "js": "addCancelListener" },
       "kind": "method",
       "receiver": "ptr",
-      "params": [{ "name": "cb", "type": "callback", "callback": "nmChangeListener", "role": "event_handler" }],
+      "params": [{ "name": "cb", "type": "callback", "callback": "nmActionListener", "role": "event_handler" }],
       "ret": { "type": "void" },
       "fail": "err"
     },
@@ -1147,7 +1148,7 @@
       "names": { "py": "remove_cancel_listener", "js": "removeCancelListener" },
       "kind": "method",
       "receiver": "ptr",
-      "params": [{ "name": "cb", "type": "callback", "callback": "nmChangeListener", "role": "event_handler" }],
+      "params": [{ "name": "cb", "type": "callback", "callback": "nmActionListener", "role": "event_handler" }],
       "ret": { "type": "void" },
       "fail": null
     },
@@ -1917,7 +1918,7 @@
       "names": { "py": "add_action_listener", "js": "addActionListener" },
       "kind": "method",
       "receiver": "ptr",
-      "params": [{ "name": "cb", "type": "callback", "callback": "nmChangeListener", "role": "event_handler" }],
+      "params": [{ "name": "cb", "type": "callback", "callback": "nmActionListener", "role": "event_handler" }],
       "ret": { "type": "void" },
       "fail": "err"
     },
@@ -1928,7 +1929,7 @@
       "names": { "py": "remove_action_listener", "js": "removeActionListener" },
       "kind": "method",
       "receiver": "ptr",
-      "params": [{ "name": "cb", "type": "callback", "callback": "nmChangeListener", "role": "event_handler" }],
+      "params": [{ "name": "cb", "type": "callback", "callback": "nmActionListener", "role": "event_handler" }],
       "ret": { "type": "void" },
       "fail": null
     },
@@ -1994,7 +1995,7 @@
       "names": { "py": "add_action_listener", "js": "addActionListener" },
       "kind": "method",
       "receiver": "ptr",
-      "params": [{ "name": "cb", "type": "callback", "callback": "nmChangeListener", "role": "event_handler" }],
+      "params": [{ "name": "cb", "type": "callback", "callback": "nmActionListener", "role": "event_handler" }],
       "ret": { "type": "void" },
       "fail": "err"
     },
@@ -2005,7 +2006,7 @@
       "names": { "py": "remove_action_listener", "js": "removeActionListener" },
       "kind": "method",
       "receiver": "ptr",
-      "params": [{ "name": "cb", "type": "callback", "callback": "nmChangeListener", "role": "event_handler" }],
+      "params": [{ "name": "cb", "type": "callback", "callback": "nmActionListener", "role": "event_handler" }],
       "ret": { "type": "void" },
       "fail": null
     },

@@ -560,7 +560,7 @@ Component 解放）の寿命設計が絡む。生 `setVTable` を素で開ける
 - 新規定義: `nmComponentNew(const nmComponentVTable* vt, void* userdata) -> nmComponent*`。Component を確保し、
   各メソッドを C フックへ中継する固定 Zig トランポリン vtable を仕込み、userdata を保持。
 - 既存装飾: `nmComponentOverride(c, hooks, userdata)`。元 vtable を退避して一部だけ差し替え＋**base 委譲（super 呼び）**。
-- paint フックは #20 の `nmGraphics*` を受け取る。processEvent は不透明 event＋`nmEventKind`/`nmEventSource`。
+- paint フックは #20 の `nmGraphics*` を受け取る。processEvent は不透明 event＋`nmEventSource`（生入力 event の accessor は別途要検討）。
 
 ### 決めること
 - **install/uninstall/destroy を C に出す際の安全性**（teardown 順、base 実装への委譲の要否）。利用者は出したいと

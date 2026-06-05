@@ -68,6 +68,7 @@ typedef enum { nmScrollPanePolicy_as_needed, nmScrollPanePolicy_always, nmScroll
 
 /* ── event-handler callbacks ── */
 typedef struct { void (*fn)(void* userdata, const void* event); void* userdata; } nmChangeListener;
+typedef struct { void (*fn)(void* userdata, const void* event); void* userdata; } nmActionListener;
 /* Hand-written prototypes. Emitted by tools/apigen AFTER the generated opaque
  * typedefs, so they may reference handle types (e.g. nmApplication). Their
  * implementations live in tools/apigen/preamble.zig. Keep the two in sync. */
@@ -80,8 +81,7 @@ const char* nmLastErrorMessage(void);
 const char* nmGetBackendVersion(void);
 
 /* ── event accessors (for the opaque `event` in listener callbacks) ── */
-/* kind: 0 = change, 1 = action */
-int nmEventKind(const void* event);
+/* Serves both nmChangeListener and nmActionListener events (identical layout). */
 void* nmEventSource(const void* event);
 
 /* ── bootstrap (needs allocator / io; nmAppRun is generated) ── */
@@ -285,10 +285,10 @@ nmColor nmTextFieldGetCaretColor(const nmTextField* self);
 void nmTextFieldSetCaretColor(nmTextField* self, nmColor c);
 nmColor nmTextFieldGetBackground(const nmTextField* self);
 void nmTextFieldSetBackground(nmTextField* self, nmColor c);
-int nmTextFieldOnSubmit(nmTextField* self, nmChangeListener* cb);
-void nmTextFieldOffSubmit(nmTextField* self, nmChangeListener* cb);
-int nmTextFieldOnCancel(nmTextField* self, nmChangeListener* cb);
-void nmTextFieldOffCancel(nmTextField* self, nmChangeListener* cb);
+int nmTextFieldOnSubmit(nmTextField* self, nmActionListener* cb);
+void nmTextFieldOffSubmit(nmTextField* self, nmActionListener* cb);
+int nmTextFieldOnCancel(nmTextField* self, nmActionListener* cb);
+void nmTextFieldOffCancel(nmTextField* self, nmActionListener* cb);
 int nmTextFieldOnChange(nmTextField* self, nmChangeListener* cb);
 void nmTextFieldOffChange(nmTextField* self, nmChangeListener* cb);
 nmStr nmTextAreaGetText(nmTextArea* self);
@@ -358,15 +358,15 @@ bool nmButtonModelIsEnabled(nmButtonModel* self);
 void nmButtonModelFireAction(nmButtonModel* self);
 int nmButtonModelOnChange(nmButtonModel* self, nmChangeListener* cb);
 void nmButtonModelOffChange(nmButtonModel* self, nmChangeListener* cb);
-int nmButtonModelOnAction(nmButtonModel* self, nmChangeListener* cb);
-void nmButtonModelOffAction(nmButtonModel* self, nmChangeListener* cb);
+int nmButtonModelOnAction(nmButtonModel* self, nmActionListener* cb);
+void nmButtonModelOffAction(nmButtonModel* self, nmActionListener* cb);
 bool nmToggleButtonModelIsSelected(nmToggleButtonModel* self);
 void nmToggleButtonModelSetSelected(nmToggleButtonModel* self, bool v);
 void nmToggleButtonModelFireAction(nmToggleButtonModel* self);
 int nmToggleButtonModelOnChange(nmToggleButtonModel* self, nmChangeListener* cb);
 void nmToggleButtonModelOffChange(nmToggleButtonModel* self, nmChangeListener* cb);
-int nmToggleButtonModelOnAction(nmToggleButtonModel* self, nmChangeListener* cb);
-void nmToggleButtonModelOffAction(nmToggleButtonModel* self, nmChangeListener* cb);
+int nmToggleButtonModelOnAction(nmToggleButtonModel* self, nmActionListener* cb);
+void nmToggleButtonModelOffAction(nmToggleButtonModel* self, nmActionListener* cb);
 int32_t nmBoundedRangeModelGetValue(nmBoundedRangeModel* self);
 void nmBoundedRangeModelSetValue(nmBoundedRangeModel* self, int32_t v);
 int32_t nmBoundedRangeModelGetMin(nmBoundedRangeModel* self);

@@ -82,8 +82,8 @@ pub fn setEnabled(self: *ComboBox, v: bool) void;
 
 ## ChangeListener
 ```zig
-pub fn addChangeListener   (self: *ComboBox, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) !void;
-pub fn removeChangeListener(self: *ComboBox, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) void;
+pub fn addChangeListener   (self: *ComboBox, comptime T: type, comptime f: fn (*T, *const ChangeEvent) void, user_data: *T) !void;
+pub fn removeChangeListener(self: *ComboBox, comptime T: type, comptime f: fn (*T, *const ChangeEvent) void, user_data: *T) void;
 ```
 
 選択 (`selected_index`) が変化した瞬間に発火する。

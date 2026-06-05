@@ -23,7 +23,7 @@
 #       `const void*` (read via nmEvent* accessors in the preamble). A generated
 #       Zig trampoline plugs into the typed addXxxListener. Use as an arg
 #       (<name>:<CName>). <NativeEventType> is framework-relative (the event the
-#       native listener delivers, e.g. ChangeListenerList.Event).
+#       native listener delivers, e.g. ChangeEvent / ActionEvent).
 #
 #   opaque <ZigType> [: <Parent>]
 #       Declares an opaque handle. Emitted as
@@ -148,10 +148,13 @@ enum nmDialogResult = Dialog.Result { none ok cancel }
 # ScrollPane scrollbar visibility policy.
 enum nmScrollPanePolicy = ScrollPane.Policy { as_needed always never }
 
-# Event-handler callback. native event = ChangeListenerList.Event; the C side
-# passes a { fn, userdata } box pointer and receives the event as an opaque
-# const void* (read via nmEventKind / nmEventSource).
-callback nmChangeListener = ChangeListenerList.Event
+# Event-handler callbacks. The C side passes a { fn, userdata } box pointer and
+# receives the event as an opaque const void* (read via nmEventSource). The two
+# callback types mirror the native ChangeEvent / ActionEvent split: a change
+# listener observes state changes, an action listener fires on discrete actions
+# (button click, field submit / cancel). Both events carry only `source`.
+callback nmChangeListener = ChangeEvent
+callback nmActionListener = ActionEvent
 
 # Run the event loop until all windows close. (nmAppCreate / nmAppDestroy are
 # hand-written in preamble.zig — they need an allocator / io.)
@@ -295,10 +298,10 @@ fn nmTextFieldGetCaretColor = TextField.getCaretColor (=self) -> nmColor
 fn nmTextFieldSetCaretColor = TextField.setCaretColor (&self, c:nmColor) -> void
 fn nmTextFieldGetBackground = TextField.getBackground (=self) -> nmColor
 fn nmTextFieldSetBackground = TextField.setBackground (&self, c:nmColor) -> void
-fn nmTextFieldOnSubmit  = TextField.addSubmitListener    (&self, cb:nmChangeListener) -> void !err
-fn nmTextFieldOffSubmit = TextField.removeSubmitListener (&self, cb:nmChangeListener) -> void
-fn nmTextFieldOnCancel  = TextField.addCancelListener    (&self, cb:nmChangeListener) -> void !err
-fn nmTextFieldOffCancel = TextField.removeCancelListener (&self, cb:nmChangeListener) -> void
+fn nmTextFieldOnSubmit  = TextField.addSubmitListener    (&self, cb:nmActionListener) -> void !err
+fn nmTextFieldOffSubmit = TextField.removeSubmitListener (&self, cb:nmActionListener) -> void
+fn nmTextFieldOnCancel  = TextField.addCancelListener    (&self, cb:nmActionListener) -> void !err
+fn nmTextFieldOffCancel = TextField.removeCancelListener (&self, cb:nmActionListener) -> void
 fn nmTextFieldOnChange  = TextField.addChangeListener    (&self, cb:nmChangeListener) -> void !err
 fn nmTextFieldOffChange = TextField.removeChangeListener (&self, cb:nmChangeListener) -> void
 
@@ -393,8 +396,8 @@ fn nmButtonModelIsEnabled   = ButtonModel.isEnabled   (&self) -> bool
 fn nmButtonModelFireAction  = ButtonModel.fireAction  (&self) -> void
 fn nmButtonModelOnChange    = ButtonModel.addChangeListener    (&self, cb:nmChangeListener) -> void !err
 fn nmButtonModelOffChange   = ButtonModel.removeChangeListener (&self, cb:nmChangeListener) -> void
-fn nmButtonModelOnAction    = ButtonModel.addActionListener    (&self, cb:nmChangeListener) -> void !err
-fn nmButtonModelOffAction   = ButtonModel.removeActionListener (&self, cb:nmChangeListener) -> void
+fn nmButtonModelOnAction    = ButtonModel.addActionListener    (&self, cb:nmActionListener) -> void !err
+fn nmButtonModelOffAction   = ButtonModel.removeActionListener (&self, cb:nmActionListener) -> void
 
 # ToggleButtonModel
 fn nmToggleButtonModelIsSelected  = ToggleButtonModel.isSelected  (&self) -> bool
@@ -402,8 +405,8 @@ fn nmToggleButtonModelSetSelected = ToggleButtonModel.setSelected (&self, v:bool
 fn nmToggleButtonModelFireAction  = ToggleButtonModel.fireAction  (&self) -> void
 fn nmToggleButtonModelOnChange    = ToggleButtonModel.addChangeListener    (&self, cb:nmChangeListener) -> void !err
 fn nmToggleButtonModelOffChange   = ToggleButtonModel.removeChangeListener (&self, cb:nmChangeListener) -> void
-fn nmToggleButtonModelOnAction    = ToggleButtonModel.addActionListener    (&self, cb:nmChangeListener) -> void !err
-fn nmToggleButtonModelOffAction   = ToggleButtonModel.removeActionListener (&self, cb:nmChangeListener) -> void
+fn nmToggleButtonModelOnAction    = ToggleButtonModel.addActionListener    (&self, cb:nmActionListener) -> void !err
+fn nmToggleButtonModelOffAction   = ToggleButtonModel.removeActionListener (&self, cb:nmActionListener) -> void
 
 # BoundedRangeModel (Slider / ScrollBar value model)
 fn nmBoundedRangeModelGetValue           = BoundedRangeModel.getValue           (&self) -> i32

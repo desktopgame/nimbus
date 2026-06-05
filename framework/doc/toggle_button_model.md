@@ -64,10 +64,10 @@ pub fn setSelected(self: *ToggleButtonModel, v: bool) void;
 
 ## リスナー登録
 ```zig
-pub fn addChangeListener   (self: *ToggleButtonModel, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) !void;
-pub fn removeChangeListener(self: *ToggleButtonModel, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) void;
-pub fn addActionListener   (self: *ToggleButtonModel, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) !void;
-pub fn removeActionListener(self: *ToggleButtonModel, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) void;
+pub fn addChangeListener   (self: *ToggleButtonModel, comptime T: type, comptime f: fn (*T, *const ChangeEvent) void, user_data: *T) !void;
+pub fn removeChangeListener(self: *ToggleButtonModel, comptime T: type, comptime f: fn (*T, *const ChangeEvent) void, user_data: *T) void;
+pub fn addActionListener   (self: *ToggleButtonModel, comptime T: type, comptime f: fn (*T, *const ActionEvent) void, user_data: *T) !void;
+pub fn removeActionListener(self: *ToggleButtonModel, comptime T: type, comptime f: fn (*T, *const ActionEvent) void, user_data: *T) void;
 ```
 
 いずれも内部の `button` に委譲するだけのラッパー。

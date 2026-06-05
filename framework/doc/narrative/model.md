@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # model
@@ -81,12 +81,22 @@ setter のスタックの中でリスナーが呼ばれて、setter が return �
 非同期にしたい場合はリスナー側で `EventQueue.invokeLater` を使う。
 Model 自体は同期発火の単純な仕様に留める。
 
-## ChangeEvent と専用イベント型
-nimbus の `ChangeListener` は引数を持たない（fn ptr の引数は user_data のみ）。
-「何が変わったか」を伝える必要があれば、リスナーは user_data 経由で Model のポインタを受け取り、Model の現在値を直接読む。
+## ChangeEvent と ActionEvent（専用イベント型）
+リスナーは `*const Event` を受け取る。`Event` は意味別に 2 つの型に分かれている。
 
+* `ChangeEvent` — 状態が変わった（Swing の `ChangeEvent` 相当）
+* `ActionEvent` — 確定的なアクション（クリック、submit / cancel。Swing の `ActionEvent` 相当）
+
+両者は同一レイアウト（`source` だけ）だが**別の型**であり、ハンドラのシグネチャがどちらを
+受け取るかを表す。当初は `kind` タグ付きの単一 `Event` で兼ねていたが（「いまはこれでよい」と
+した暫定形）、型で区別する本来の形に分割した。共通プリミティブ `ListenerList(E)` を
+イベント型 `E` でジェネリック化し、`ChangeListenerList = ListenerList(ChangeEvent)` /
+`ActionListenerList = ListenerList(ActionEvent)` として具体化している。
+
+イベントが運ぶのは `source`（発火した Model）だけ。「何が変わったか」を伝える必要があれば、
+リスナーは source（または user_data）経由で Model のポインタを受け取り、Model の現在値を直接読む。
 Swing は変更内容を `DocumentEvent.getOffset()` のように伝えるが、nimbus はシンプルにする。
 「変わった、現在値はこれ」だけを観測する。
 
 将来「何が変わったか」を細かく区別したい Model（Document の挿入 / 削除など）が出てきたら、その Model に専用のリスナー型を追加する（`DocumentListener` 等）。
-共通プリミティブは `ChangeListenerList` を踏襲できる（fn_ptr の型とイベント型をジェネリック化）。
+その型も `ListenerList(E)` を別のイベント型で具体化すれば踏襲できる。

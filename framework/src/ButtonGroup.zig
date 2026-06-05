@@ -9,8 +9,7 @@
 
 const std = @import("std");
 const ToggleButtonModel = @import("ToggleButtonModel.zig");
-const ChangeListenerList = @import("ChangeListenerList.zig");
-const Event = ChangeListenerList.Event;
+const ChangeEvent = @import("listener.zig").ChangeEvent;
 
 const ButtonGroup = @This();
 
@@ -138,7 +137,7 @@ fn clearOthers(self: *ButtonGroup, winner: *ToggleButtonModel) void {
     }
 }
 
-fn onMemberChange(self: *ButtonGroup, _: *const Event) void {
+fn onMemberChange(self: *ButtonGroup, _: *const ChangeEvent) void {
     if (self.muting) return;
 
     // Listeners fire for any state change (pressed/armed/rollover/selected).

@@ -15,8 +15,9 @@ const Container = @import("Container.zig");
 const ScrollBar = @import("ScrollBar.zig");
 const BoundedRangeModel = @import("BoundedRangeModel.zig");
 const LayoutManager = @import("LayoutManager.zig");
-const ChangeListenerList = @import("ChangeListenerList.zig");
-const Event = ChangeListenerList.Event;
+const listener = @import("listener.zig");
+const ChangeListenerList = listener.ChangeListenerList;
+const ChangeEvent = listener.ChangeEvent;
 
 const ScrollPane = @This();
 
@@ -219,7 +220,7 @@ fn scrollRectToVisibleImpl(user_data: *anyopaque, rect: Component.Rect) void {
 pub fn addChangeListener(
     self: *ScrollPane,
     comptime T: type,
-    comptime f: fn (*T, *const Event) void,
+    comptime f: fn (*T, *const ChangeEvent) void,
     user_data: *T,
 ) !void {
     try self.h_model.addChangeListener(T, f, user_data);
@@ -230,7 +231,7 @@ pub fn addChangeListener(
 pub fn removeChangeListener(
     self: *ScrollPane,
     comptime T: type,
-    comptime f: fn (*T, *const Event) void,
+    comptime f: fn (*T, *const ChangeEvent) void,
     user_data: *T,
 ) void {
     self.h_model.removeChangeListener(T, f, user_data);
@@ -334,7 +335,7 @@ fn layoutComputeMaxSize(_: *LayoutManager, _: *const Container) Component.Size {
 
 // ── scroll wiring ──────────────────────────────────────────────────────────
 
-fn onScrollChange(self: *ScrollPane, _: *const Event) void {
+fn onScrollChange(self: *ScrollPane, _: *const ChangeEvent) void {
     // Cheap update: just move the view; no relayout needed.
     self.view.position = .{
         .x = -@as(f32, @floatFromInt(self.h_model.value)),

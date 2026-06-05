@@ -19,7 +19,7 @@ pub const ButtonModel = struct {
     rollover: bool = false,        // マウスホバー中
     enabled:  bool = true,         // false なら入力無効 + 視覚的にグレーアウト
     state_listeners:  ChangeListenerList,
-    action_listeners: ChangeListenerList,
+    action_listeners: ActionListenerList,
 
     // ... メソッド
 };
@@ -48,9 +48,9 @@ pub const Button = struct {
 };
 ```
 
-`ActionListener` は専用の型ではなく、`ChangeListener` の構造（`fn_ptr` + `user_data`）を再利用する。
-内部の `action_listeners` も `ChangeListenerList` の使い回し。
-意味上だけ区別する。
+状態変化は `state_listeners`（`ChangeListenerList` = `ChangeEvent` を配送）、アクションは
+`action_listeners`（`ActionListenerList` = `ActionEvent` を配送）に分かれる。
+イベント型が `ChangeEvent` / `ActionEvent` で別なので、ハンドラのシグネチャでどちらの通知かが分かる。
 
 ## ButtonModel の初期化
 ```zig
@@ -102,14 +102,14 @@ pub fn fireAction(self: *ButtonModel) void;
 pub fn addChangeListener(
     self: *ButtonModel,
     comptime T: type,
-    comptime f: fn (*T, *const Event) void,
+    comptime f: fn (*T, *const ChangeEvent) void,
     user_data: *T,
 ) !void;
 
 pub fn removeChangeListener(
     self: *ButtonModel,
     comptime T: type,
-    comptime f: fn (*T, *const Event) void,
+    comptime f: fn (*T, *const ChangeEvent) void,
     user_data: *T,
 ) void;
 ```
@@ -122,14 +122,14 @@ pub fn removeChangeListener(
 pub fn addActionListener(
     self: *ButtonModel,
     comptime T: type,
-    comptime f: fn (*T, *const Event) void,
+    comptime f: fn (*T, *const ActionEvent) void,
     user_data: *T,
 ) !void;
 
 pub fn removeActionListener(
     self: *ButtonModel,
     comptime T: type,
-    comptime f: fn (*T, *const Event) void,
+    comptime f: fn (*T, *const ActionEvent) void,
     user_data: *T,
 ) void;
 ```
@@ -249,7 +249,7 @@ button.component.setBounds(.{ .x = 20, .y = 20, .width = 100, .height = 32 });
 try frame.window.add(&button.component);
 
 // クリックハンドラを登録
-fn onOkClicked(ctx: *AppContext, _: *const Event) void {
+fn onOkClicked(ctx: *AppContext, _: *const ActionEvent) void {
     ctx.dialog_result = .ok;
     ctx.loop.exit(0);
 }
@@ -284,7 +284,7 @@ const menu_save    = try Button.createWithModel(allocator, model, "Save", font, 
 状態変化を観察したいケース（rollover 中だけ別のフィードバックを出すなど）。
 
 ```zig
-fn onButtonStateChanged(btn: *Button, _: *const Event) void {
+fn onButtonStateChanged(btn: *Button, _: *const ChangeEvent) void {
     if (btn.getModel().isRollover()) showTooltip();
 }
 

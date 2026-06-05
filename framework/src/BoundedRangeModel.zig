@@ -1,13 +1,14 @@
 //! Bounded range model (Slider state). See `framework/doc/slider.md`.
 
 const std = @import("std");
-const ChangeListenerList = @import("ChangeListenerList.zig");
-const Event = ChangeListenerList.Event;
+const listener = @import("listener.zig");
+const ChangeListenerList = listener.ChangeListenerList;
+const ChangeEvent = listener.ChangeEvent;
 
 const BoundedRangeModel = @This();
 
 fn fireChange(self: *BoundedRangeModel) void {
-    self.change_listeners.fire(&.{ .source = self, .kind = .change });
+    self.change_listeners.fire(&.{ .source = self });
 }
 
 min:    i32,
@@ -89,7 +90,7 @@ pub fn setRangeProperties(self: *BoundedRangeModel, min: i32, value: i32, max: i
 pub fn addChangeListener(
     self: *BoundedRangeModel,
     comptime T: type,
-    comptime f: fn (*T, *const Event) void,
+    comptime f: fn (*T, *const ChangeEvent) void,
     user_data: *T,
 ) !void {
     try self.change_listeners.addTyped(T, f, user_data);
@@ -98,7 +99,7 @@ pub fn addChangeListener(
 pub fn removeChangeListener(
     self: *BoundedRangeModel,
     comptime T: type,
-    comptime f: fn (*T, *const Event) void,
+    comptime f: fn (*T, *const ChangeEvent) void,
     user_data: *T,
 ) void {
     self.change_listeners.removeTyped(T, f, user_data);
@@ -110,7 +111,7 @@ test "setValue clamps and fires" {
 
     const Ctx = struct {
         count: u32 = 0,
-        fn cb(self: *@This(), e: *const Event) void {
+        fn cb(self: *@This(), e: *const ChangeEvent) void {
             _ = e;
             self.count += 1;
         }

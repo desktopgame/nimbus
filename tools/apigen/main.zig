@@ -177,8 +177,8 @@ const Destructor = struct {
 /// `callback <CName> = <NativeEventType>` — an event-handler callback.
 /// The C side passes a `{ fn, userdata }` box (approach C); a generated
 /// Zig-callconv trampoline bridges to the typed listener registration.
-/// `native_event` (framework-relative, e.g. "ChangeListenerList.Event") is the
-/// event type the native listener delivers; it crosses to C as an opaque
+/// `native_event` (framework-relative, e.g. "ChangeEvent" / "ActionEvent") is
+/// the event type the native listener delivers; it crosses to C as an opaque
 /// `const void*` (read via hand-written accessors in the preamble).
 const CallbackDecl = struct {
     cname: []const u8,

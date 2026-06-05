@@ -15,7 +15,7 @@
 
 const std = @import("std");
 const nimbus = @import("nimbus");
-const Event = nimbus.ChangeListenerList.Event;
+const Event = nimbus.ChangeEvent;
 
 const State = struct {
     combo: *nimbus.ComboBox,

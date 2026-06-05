@@ -8,8 +8,9 @@
 
 const std = @import("std");
 const ButtonModel = @import("ButtonModel.zig");
-const ChangeListenerList = @import("ChangeListenerList.zig");
-const Event = ChangeListenerList.Event;
+const listener = @import("listener.zig");
+const ChangeEvent = listener.ChangeEvent;
+const ActionEvent = listener.ActionEvent;
 
 const ToggleButtonModel = @This();
 
@@ -79,7 +80,7 @@ pub fn setSelected(self: *ToggleButtonModel, v: bool) void {
 pub fn addChangeListener(
     self: *ToggleButtonModel,
     comptime T: type,
-    comptime f: fn (*T, *const Event) void,
+    comptime f: fn (*T, *const ChangeEvent) void,
     user_data: *T,
 ) !void {
     try self.button.addChangeListener(T, f, user_data);
@@ -88,7 +89,7 @@ pub fn addChangeListener(
 pub fn removeChangeListener(
     self: *ToggleButtonModel,
     comptime T: type,
-    comptime f: fn (*T, *const Event) void,
+    comptime f: fn (*T, *const ChangeEvent) void,
     user_data: *T,
 ) void {
     self.button.removeChangeListener(T, f, user_data);
@@ -97,7 +98,7 @@ pub fn removeChangeListener(
 pub fn addActionListener(
     self: *ToggleButtonModel,
     comptime T: type,
-    comptime f: fn (*T, *const Event) void,
+    comptime f: fn (*T, *const ActionEvent) void,
     user_data: *T,
 ) !void {
     try self.button.addActionListener(T, f, user_data);
@@ -106,7 +107,7 @@ pub fn addActionListener(
 pub fn removeActionListener(
     self: *ToggleButtonModel,
     comptime T: type,
-    comptime f: fn (*T, *const Event) void,
+    comptime f: fn (*T, *const ActionEvent) void,
     user_data: *T,
 ) void {
     self.button.removeActionListener(T, f, user_data);
@@ -121,7 +122,7 @@ pub fn fireAction(self: *ToggleButtonModel) void {
 test "setSelected changes value and fires through button listeners" {
     var fired: u32 = 0;
     const Cb = struct {
-        fn run(counter: *u32, e: *const Event) void {
+        fn run(counter: *u32, e: *const ChangeEvent) void {
             _ = e;
             counter.* += 1;
         }

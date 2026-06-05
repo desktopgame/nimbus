@@ -17,7 +17,7 @@
 
 const std = @import("std");
 const nimbus = @import("nimbus");
-const Event = nimbus.ChangeListenerList.Event;
+const Event = nimbus.ActionEvent;
 
 const SAMPLE =
     \\The quick brown fox jumps over the lazy dog.

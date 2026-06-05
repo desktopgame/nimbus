@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # slider
@@ -117,14 +117,14 @@ Swing の `DefaultBoundedRangeModel.setRangeProperties` 相当。
 pub fn addChangeListener(
     self: *BoundedRangeModel,
     comptime T: type,
-    comptime f: fn (*T, *const Event) void,
+    comptime f: fn (*T, *const ChangeEvent) void,
     user_data: *T,
 ) !void;
 
 pub fn removeChangeListener(
     self: *BoundedRangeModel,
     comptime T: type,
-    comptime f: fn (*T, *const Event) void,
+    comptime f: fn (*T, *const ChangeEvent) void,
     user_data: *T,
 ) void;
 ```
@@ -214,7 +214,7 @@ try frame.window.add(&slider.component);
 値変化を監視する例。
 
 ```zig
-fn onValueChanged(ctx: *AppContext, _: *const Event) void {
+fn onValueChanged(ctx: *AppContext, _: *const ChangeEvent) void {
     const v = ctx.slider.getModel().getValue();
     std.debug.print("slider value = {d}\n", .{v});
 }

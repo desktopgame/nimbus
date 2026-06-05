@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # model
@@ -11,37 +11,52 @@ Swing の `BoundedRangeModel` / `ButtonModel` / `Document` 等と同じ位置付
 
 ## 型定義
 ```zig
-pub const Event = struct {
-    source: *anyopaque,   // 発火した Model。リスナー側で必要に応じキャストする
-    kind: Kind,
+// 状態が変わったときの通知（Swing の ChangeEvent 相当）。
+pub const ChangeEvent = struct { source: *anyopaque };
 
-    pub const Kind = enum { change, action };
-};
+// 確定的なアクション（ボタンのクリック、フィールドの submit / cancel 等）の
+// 通知（Swing の ActionEvent 相当）。
+pub const ActionEvent = struct { source: *anyopaque };
 
-pub const ListenerFn = *const fn (user_data: *anyopaque, event: *const Event) void;
+// イベント型 E を配送するリスナー管理プリミティブを返す総称関数。
+pub fn ListenerList(comptime E: type) type {
+    return struct {
+        const Self = @This();
 
-pub const Listener = struct {
-    fn_ptr:    ListenerFn,
-    user_data: *anyopaque,
-};
+        pub const Event = E;   // このリストが配送するイベント型
+        pub const ListenerFn = *const fn (user_data: *anyopaque, event: *const E) void;
 
-pub const ChangeListenerList = struct {
-    items:     std.ArrayList(Listener),
-    allocator: std.mem.Allocator,
+        pub const Listener = struct {
+            fn_ptr:    ListenerFn,
+            user_data: *anyopaque,
+        };
 
-    // ... メソッド
-};
+        items:     std.ArrayList(Listener),
+        allocator: std.mem.Allocator,
+
+        // ... メソッド
+    };
+}
+
+pub const ChangeListenerList = ListenerList(ChangeEvent);
+pub const ActionListenerList = ListenerList(ActionEvent);
 ```
 
-`Event` は発火時に全リスナーへ渡る通知。`source` は発火した Model
+`ChangeEvent` / `ActionEvent` は発火時に全リスナーへ渡る通知。`source` は発火した Model
 （Model は Component から独立し共有もされ得るので、source は widget ではなく Model。
-Swing の `ChangeEvent.getSource` と同じ）。`kind` は change と action を区別する。
-`awt.Event`（生の入力イベント）とは別物の高レベル通知で、リスナー呼び出し中のみ有効
-（ポインタを保持しないこと）。
+Swing の `EventObject.getSource` と同じ）。`awt.Event`（生の入力イベント）とは別物の高レベル通知で、
+リスナー呼び出し中のみ有効（ポインタを保持しないこと）。
 
-`ChangeListenerList` は Model が embed して使うリスナー管理プリミティブ。
+2 つは**別の型**であり、ハンドラのシグネチャがどちらを受け取るかを表す（Swing の
+`ChangeEvent` / `ActionEvent` 分割と同じ）。両者は同一レイアウト（`source` だけ）だが、
+型で意味（change か action か）を区別するのが設計の要点。`change` / `action` を見分けるための
+タグフィールドは持たない。
+
+`ListenerList(E)` は Model が embed して使うリスナー管理プリミティブで、change 用の
+`ChangeListenerList` と action 用の `ActionListenerList` の 2 つに具体化される。
 生の `add` / `remove` / `fire` に加え、`*anyopaque` キャストを消した型付きの
-`addTyped` / `removeTyped` を提供する。
+`addTyped` / `removeTyped` を提供する。以下のメソッド定義は具体化された型（例 `ChangeListenerList`）
+のものとして示す。`Event` はその型が配送するイベント型（`ChangeListenerList` なら `ChangeEvent`）。
 
 ## リスナーリストの生成
 ```zig
@@ -72,7 +87,7 @@ pub fn addTyped(
 
 `add` は生の `(fn_ptr, user_data)` を追加する（重複検査なし）。
 `addTyped` は型付きコールバック（`*T` を直接受け取りキャスト不要）を登録する**推奨経路**。
-`*anyopaque` → `*T` のキャストは `ChangeListenerList` 内の 1 か所（comptime サンク）だけに書かれる
+`*anyopaque` → `*T` のキャストは `ListenerList` 内の 1 か所（comptime サンク）だけに書かれる
 （`doc/typed_callbacks.md` 参照）。サンクは `(T, f)` ごとに同一の関数ポインタを生むので、
 `removeTyped` に同じ `(T, f, user_data)` を渡せば一致削除できる。
 
@@ -105,7 +120,9 @@ Model は自分を `source` にした `Event` を組み立てて渡す（下記�
 型付き玄関として `addTyped` に委譲する。
 
 ```zig
-const Event = ChangeListenerList.Event;
+const listener = @import("listener.zig");
+const ChangeListenerList = listener.ChangeListenerList;
+const ChangeEvent = listener.ChangeEvent;
 
 pub const BoundedRangeModel = struct {
     min:    i32,
@@ -115,7 +132,7 @@ pub const BoundedRangeModel = struct {
     change_listeners: ChangeListenerList,
 
     fn fireChange(self: *BoundedRangeModel) void {
-        self.change_listeners.fire(&.{ .source = self, .kind = .change });
+        self.change_listeners.fire(&.{ .source = self });
     }
 
     pub fn setValue(self: *BoundedRangeModel, v: i32) void {
@@ -125,14 +142,25 @@ pub const BoundedRangeModel = struct {
         self.fireChange();
     }
 
-    pub fn addChangeListener(self: *BoundedRangeModel, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) !void {
+    pub fn addChangeListener(self: *BoundedRangeModel, comptime T: type, comptime f: fn (*T, *const ChangeEvent) void, user_data: *T) !void {
         try self.change_listeners.addTyped(T, f, user_data);
     }
 
-    pub fn removeChangeListener(self: *BoundedRangeModel, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) void {
+    pub fn removeChangeListener(self: *BoundedRangeModel, comptime T: type, comptime f: fn (*T, *const ChangeEvent) void, user_data: *T) void {
         self.change_listeners.removeTyped(T, f, user_data);
     }
 };
+```
+
+change と action の両方を持つ Model（`ButtonModel`）は 2 本のリストを持ち、
+それぞれ `ChangeEvent` / `ActionEvent` を発火する。
+
+```zig
+state_listeners:  ChangeListenerList,   // fire(&.{ .source = self }) -> ChangeEvent
+action_listeners: ActionListenerList,   // fire(&.{ .source = self }) -> ActionEvent
+
+pub fn addChangeListener(self: *ButtonModel, comptime T: type, comptime f: fn (*T, *const ChangeEvent) void, user_data: *T) !void { ... }
+pub fn addActionListener(self: *ButtonModel, comptime T: type, comptime f: fn (*T, *const ActionEvent) void, user_data: *T) !void { ... }
 ```
 
 ウィジェット側で install / uninstall にリスナーを仕込むテンプレ。コールバックはキャスト無し・型付き。
@@ -148,7 +176,7 @@ fn uninstall(comp: *Component) void {
     slider.model.removeChangeListener(Component, onModelChange, comp);
 }
 
-fn onModelChange(comp: *Component, _: *const Event) void {
+fn onModelChange(comp: *Component, _: *const ChangeEvent) void {
     comp.repaint();   // propagate dirty -> repaint next frame
 }
 ```
@@ -156,7 +184,7 @@ fn onModelChange(comp: *Component, _: *const Event) void {
 アプリ側から直接登録する例（再描画とは別の用途、たとえば validation）。
 
 ```zig
-fn onSliderChanged(ctx: *MyAppContext, _: *const Event) void {
+fn onSliderChanged(ctx: *MyAppContext, _: *const ChangeEvent) void {
     ctx.recomputeTotal();
 }
 
@@ -164,7 +192,7 @@ try slider.model.addChangeListener(MyAppContext, onSliderChanged, &app_ctx);
 ```
 
 ## 機能要望
-* 専用イベント型への分化（`ChangeEvent` / `ActionEvent` を別型に。現状は `kind` 付きの汎用 `Event`）
 * バッチ通知（複数 setter 呼び出しを 1 通知にまとめる `Model.beginUpdate` / `endUpdate`）
 * PropertyChangeListener 相当（プロパティ単位の細かい通知）
 * Model 間の bind ヘルパ（Model A の変化を Model B に反映する標準パターン）
+* `ActionEvent` への情報追加（action command 文字列など。現状は `source` のみ）

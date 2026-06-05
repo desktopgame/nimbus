@@ -6,7 +6,8 @@
 
 const std = @import("std");
 const nimbus = @import("nimbus");
-const Event = nimbus.ChangeListenerList.Event;
+const ChangeEvent = nimbus.ChangeEvent;
+const ActionEvent = nimbus.ActionEvent;
 
 const State = struct {
     label:         *nimbus.Label,
@@ -24,12 +25,12 @@ fn refreshLabel(state: *State) void {
     state.label.setText(text) catch {};
 }
 
-fn onClick(state: *State, _: *const Event) void {
+fn onClick(state: *State, _: *const ActionEvent) void {
     state.button_clicks += 1;
     refreshLabel(state);
 }
 
-fn onSliderChange(state: *State, _: *const Event) void {
+fn onSliderChange(state: *State, _: *const ChangeEvent) void {
     refreshLabel(state);
 }
 

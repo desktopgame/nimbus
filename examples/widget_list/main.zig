@@ -22,7 +22,7 @@
 
 const std = @import("std");
 const nimbus = @import("nimbus");
-const Event = nimbus.ChangeListenerList.Event;
+const Event = nimbus.ActionEvent;
 
 const ROW_COUNT = 40;
 

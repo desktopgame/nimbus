@@ -303,27 +303,31 @@ preamble に手書きした関数（Image / icon・List / CellFactory 等）は 
 
 ## コールバック / イベントハンドラ（実装済み・案 C）
 リスナー登録のような「関数ポインタを渡す」API を、1 つの宣言で各レイヤーへ展開する。
-ネイティブ前提は整っている: Model のリスナーは `fn(user_data: *anyopaque, event: *const Event) void`
-に統一され、保存・dispatch 形が C_ABI 契約の形そのもの（`framework/doc/model.md` / `doc/typed_callbacks.md`）。
+ネイティブ前提は整っている: Model のリスナーは `fn(user_data: *anyopaque, event: *const E) void`
+に統一され（`E` は `ChangeEvent` か `ActionEvent`）、保存・dispatch 形が C_ABI 契約の形そのもの
+（`framework/doc/model.md` / `doc/typed_callbacks.md`）。意味別に 2 つのコールバック型を宣言する。
 
 スペック:
 ```
-callback nmChangeListener = ChangeListenerList.Event   # native の event 型
+callback nmChangeListener = ChangeEvent   # native の event 型（状態変化）
+callback nmActionListener = ActionEvent   # native の event 型（アクション）
 
-fn nmComboBoxOnChange = ComboBox.addChangeListener (&self, cb:nmChangeListener) -> void !err
+fn nmComboBoxOnChange  = ComboBox.addChangeListener (&self, cb:nmChangeListener) -> void !err
+fn nmButtonModelOnAction = ButtonModel.addActionListener (&self, cb:nmActionListener) -> void !err
 ```
-`cb:nmChangeListener` という **1 引数**が各レイヤーでこう展開される:
+`cb:nmChangeListener` という **1 引数**が各レイヤーでこう展開される（`nmActionListener` も同形）:
 
 | レイヤー | 形 |
 |---|---|
-| C ABI | `typedef struct {{ void (*fn)(void* userdata, const void* event); void* userdata; }} nmChangeListener;` の**ポインタ**を渡す。event は不透明 `const void*`（`nmEventKind`/`nmEventSource` で読む） |
+| C ABI | `typedef struct {{ void (*fn)(void* userdata, const void* event); void* userdata; }} nmChangeListener;` の**ポインタ**を渡す。event は不透明 `const void*`（`nmEventSource` で読む） |
 | Zig（生成） | 署名ごとに box (`extern struct`) と Zig 規約トランポリン `fn(*box, *const NativeEvent)` を生成。トランポリンは型付きリスナーそのものなので **typed `addXxxListener(T, f, ud)` にそのまま渡せる**（raw 登録不要）。`callconv(.c)` は box の `fn` フィールド型 1 か所だけ |
 | Zig シム | `self.addChangeListener(nmChangeListener, nm_trampoline_nmChangeListener, cb)` を呼ぶ（cb が user_data） |
 | Python / JS | **1 つの呼び出し可能オブジェクト**。box をバインディングが所有し、クロージャを userdata に詰め、`remove` 時に解放 |
 
-event を C 側へ変換せず**不透明ポインタのまま渡す**のが要点（native の `*const Event` をそのまま）。
-フィールドは preamble 手書きのアクセサ（`nmEventKind` / `nmEventSource`）で読む。Event は固定の
-framework 型（source ポインタ + enum）で codegen 向きのスカラ構造体でないため、これだけ手書き。
+event を C 側へ変換せず**不透明ポインタのまま渡す**のが要点（native の `*const ChangeEvent` /
+`*const ActionEvent` をそのまま）。`source` は preamble 手書きのアクセサ `nmEventSource` で読む
+（`ChangeEvent` / `ActionEvent` は同一レイアウトなので 1 本で両対応）。Event は固定の
+framework 型で codegen 向きのスカラ構造体でないため、これだけ手書き。
 
 IR ではこの引数を `{"type":"callback","callback":"nmChangeListener","role":"event_handler"}` と印し、
 `callbacks` 配列に出す（署名ごとに box + トランポリン + C 関数ポインタ型が 1 セット）。検証:
@@ -513,7 +517,7 @@ preamble は 4 ファイルに分かれる: `preamble.h`（C ヘッダ先頭＝i
 
 * ランタイム支援（last-error 退避とアクセサ）。
 * awt 層への単純なパススルー（`nmGetBackendVersion`）。
-* イベントの不透明アクセサ（`nmEventKind` / `nmEventSource`）。
+* イベントの不透明アクセサ（`nmEventSource`）。
 * **ブートストラップ（実装済み）**: `nmAppCreate` / `nmAppDestroy`。`Application.init` は
   allocator / io を要し C から渡せないため手書き。既定は libc allocator
   （`std.heap.c_allocator`）+ std の単一スレッド Io（`std.Io.Threaded.global_single_threaded`、

@@ -33,7 +33,7 @@ fn refreshLabel(state: *State) void {
     state.label.setText(display) catch {};
 }
 
-fn onFieldChange(state: *State, _: *const nimbus.ChangeListenerList.Event) void {
+fn onFieldChange(state: *State, _: *const nimbus.ChangeEvent) void {
     refreshLabel(state);
 }
 

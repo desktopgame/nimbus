@@ -56,16 +56,13 @@ export fn nmGetBackendVersion() [*:0]const u8 {
 
 // ── event accessors ──────────────────────────────────────────────────────
 // Listener callbacks receive the semantic event as an opaque `const void*`
-// (the native ChangeListenerList.Event passed straight through; see approach C
-// in doc/c_api_codegen.md). These read its fields without copying. Hand-written
-// because Event is a fixed framework type (source pointer + enum), not a
-// codegen-friendly scalar struct.
-export fn nmEventKind(event: *const framework.ChangeListenerList.Event) c_int {
-    return @intFromEnum(event.kind); // 0 = change, 1 = action
-}
-
-export fn nmEventSource(event: *const framework.ChangeListenerList.Event) ?*anyopaque {
-    return event.source; // the firing Model
+// (the native ChangeEvent / ActionEvent passed straight through; see approach C
+// in doc/c_api_codegen.md). `ChangeEvent` and `ActionEvent` share an identical
+// layout (a single `source` pointer), so one accessor serves both. Hand-written
+// because the event is a fixed framework type, not a codegen-friendly scalar.
+export fn nmEventSource(event: *const anyopaque) ?*anyopaque {
+    const ev: *const framework.ChangeEvent = @ptrCast(@alignCast(event));
+    return ev.source; // the firing Model
 }
 
 // ── bootstrap ────────────────────────────────────────────────────────────
@@ -389,7 +386,15 @@ const nmChangeListener = extern struct {
     fn_ptr: ?*const fn (?*anyopaque, ?*const anyopaque) callconv(.c) void,
     userdata: ?*anyopaque,
 };
-fn nm_trampoline_nmChangeListener(box: *nmChangeListener, e: *const framework.ChangeListenerList.Event) void {
+fn nm_trampoline_nmChangeListener(box: *nmChangeListener, e: *const framework.ChangeEvent) void {
+    if (box.fn_ptr) |f| f(box.userdata, e);
+}
+
+const nmActionListener = extern struct {
+    fn_ptr: ?*const fn (?*anyopaque, ?*const anyopaque) callconv(.c) void,
+    userdata: ?*anyopaque,
+};
+fn nm_trampoline_nmActionListener(box: *nmActionListener, e: *const framework.ActionEvent) void {
     if (box.fn_ptr) |f| f(box.userdata, e);
 }
 
@@ -904,28 +909,28 @@ export fn nmTextFieldSetBackground(self: *framework.TextField, c: nmColor) void 
     self.setBackground(.{ .r = c.r, .g = c.g, .b = c.b, .a = c.a });
 }
 
-export fn nmTextFieldOnSubmit(self: *framework.TextField, cb: *nmChangeListener) c_int {
-    self.addSubmitListener(nmChangeListener, nm_trampoline_nmChangeListener, cb) catch |e| {
+export fn nmTextFieldOnSubmit(self: *framework.TextField, cb: *nmActionListener) c_int {
+    self.addSubmitListener(nmActionListener, nm_trampoline_nmActionListener, cb) catch |e| {
         setLastError(e);
         return errorToCode(e);
     };
     return 0;
 }
 
-export fn nmTextFieldOffSubmit(self: *framework.TextField, cb: *nmChangeListener) void {
-    self.removeSubmitListener(nmChangeListener, nm_trampoline_nmChangeListener, cb);
+export fn nmTextFieldOffSubmit(self: *framework.TextField, cb: *nmActionListener) void {
+    self.removeSubmitListener(nmActionListener, nm_trampoline_nmActionListener, cb);
 }
 
-export fn nmTextFieldOnCancel(self: *framework.TextField, cb: *nmChangeListener) c_int {
-    self.addCancelListener(nmChangeListener, nm_trampoline_nmChangeListener, cb) catch |e| {
+export fn nmTextFieldOnCancel(self: *framework.TextField, cb: *nmActionListener) c_int {
+    self.addCancelListener(nmActionListener, nm_trampoline_nmActionListener, cb) catch |e| {
         setLastError(e);
         return errorToCode(e);
     };
     return 0;
 }
 
-export fn nmTextFieldOffCancel(self: *framework.TextField, cb: *nmChangeListener) void {
-    self.removeCancelListener(nmChangeListener, nm_trampoline_nmChangeListener, cb);
+export fn nmTextFieldOffCancel(self: *framework.TextField, cb: *nmActionListener) void {
+    self.removeCancelListener(nmActionListener, nm_trampoline_nmActionListener, cb);
 }
 
 export fn nmTextFieldOnChange(self: *framework.TextField, cb: *nmChangeListener) c_int {
@@ -1293,16 +1298,16 @@ export fn nmButtonModelOffChange(self: *framework.ButtonModel, cb: *nmChangeList
     self.removeChangeListener(nmChangeListener, nm_trampoline_nmChangeListener, cb);
 }
 
-export fn nmButtonModelOnAction(self: *framework.ButtonModel, cb: *nmChangeListener) c_int {
-    self.addActionListener(nmChangeListener, nm_trampoline_nmChangeListener, cb) catch |e| {
+export fn nmButtonModelOnAction(self: *framework.ButtonModel, cb: *nmActionListener) c_int {
+    self.addActionListener(nmActionListener, nm_trampoline_nmActionListener, cb) catch |e| {
         setLastError(e);
         return errorToCode(e);
     };
     return 0;
 }
 
-export fn nmButtonModelOffAction(self: *framework.ButtonModel, cb: *nmChangeListener) void {
-    self.removeActionListener(nmChangeListener, nm_trampoline_nmChangeListener, cb);
+export fn nmButtonModelOffAction(self: *framework.ButtonModel, cb: *nmActionListener) void {
+    self.removeActionListener(nmActionListener, nm_trampoline_nmActionListener, cb);
 }
 
 export fn nmToggleButtonModelIsSelected(self: *framework.ToggleButtonModel) bool {
@@ -1329,16 +1334,16 @@ export fn nmToggleButtonModelOffChange(self: *framework.ToggleButtonModel, cb: *
     self.removeChangeListener(nmChangeListener, nm_trampoline_nmChangeListener, cb);
 }
 
-export fn nmToggleButtonModelOnAction(self: *framework.ToggleButtonModel, cb: *nmChangeListener) c_int {
-    self.addActionListener(nmChangeListener, nm_trampoline_nmChangeListener, cb) catch |e| {
+export fn nmToggleButtonModelOnAction(self: *framework.ToggleButtonModel, cb: *nmActionListener) c_int {
+    self.addActionListener(nmActionListener, nm_trampoline_nmActionListener, cb) catch |e| {
         setLastError(e);
         return errorToCode(e);
     };
     return 0;
 }
 
-export fn nmToggleButtonModelOffAction(self: *framework.ToggleButtonModel, cb: *nmChangeListener) void {
-    self.removeActionListener(nmChangeListener, nm_trampoline_nmChangeListener, cb);
+export fn nmToggleButtonModelOffAction(self: *framework.ToggleButtonModel, cb: *nmActionListener) void {
+    self.removeActionListener(nmActionListener, nm_trampoline_nmActionListener, cb);
 }
 
 export fn nmBoundedRangeModelGetValue(self: *framework.BoundedRangeModel) i32 {

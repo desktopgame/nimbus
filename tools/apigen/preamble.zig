@@ -56,16 +56,13 @@ export fn nmGetBackendVersion() [*:0]const u8 {
 
 // ── event accessors ──────────────────────────────────────────────────────
 // Listener callbacks receive the semantic event as an opaque `const void*`
-// (the native ChangeListenerList.Event passed straight through; see approach C
-// in doc/c_api_codegen.md). These read its fields without copying. Hand-written
-// because Event is a fixed framework type (source pointer + enum), not a
-// codegen-friendly scalar struct.
-export fn nmEventKind(event: *const framework.ChangeListenerList.Event) c_int {
-    return @intFromEnum(event.kind); // 0 = change, 1 = action
-}
-
-export fn nmEventSource(event: *const framework.ChangeListenerList.Event) ?*anyopaque {
-    return event.source; // the firing Model
+// (the native ChangeEvent / ActionEvent passed straight through; see approach C
+// in doc/c_api_codegen.md). `ChangeEvent` and `ActionEvent` share an identical
+// layout (a single `source` pointer), so one accessor serves both. Hand-written
+// because the event is a fixed framework type, not a codegen-friendly scalar.
+export fn nmEventSource(event: *const anyopaque) ?*anyopaque {
+    const ev: *const framework.ChangeEvent = @ptrCast(@alignCast(event));
+    return ev.source; // the firing Model
 }
 
 // ── bootstrap ────────────────────────────────────────────────────────────

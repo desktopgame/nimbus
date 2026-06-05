@@ -8,7 +8,7 @@
 const std = @import("std");
 const awt = @import("awt");
 const Component = @import("Component.zig");
-const Event = @import("ChangeListenerList.zig").Event;
+const ChangeEvent = @import("listener.zig").ChangeEvent;
 const ButtonModel = @import("ButtonModel.zig");
 
 const Button = @This();
@@ -177,7 +177,7 @@ fn uninstall(self: *Component) void {
     button.model.removeChangeListener(Component, onModelChange, self);
 }
 
-fn onModelChange(comp: *Component, _: *const Event) void {
+fn onModelChange(comp: *Component, _: *const ChangeEvent) void {
     comp.repaint();
 }
 

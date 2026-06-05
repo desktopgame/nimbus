@@ -4,7 +4,7 @@
 const std = @import("std");
 const awt = @import("awt");
 const Component = @import("Component.zig");
-const Event = @import("ChangeListenerList.zig").Event;
+const ActionEvent = @import("listener.zig").ActionEvent;
 const ButtonModel = @import("ButtonModel.zig");
 const MenuItem = @import("MenuItem.zig");
 const Menu = @import("Menu.zig");
@@ -140,7 +140,7 @@ fn onOverlayDismiss(user_data: *anyopaque) void {
     for (self.items.items) |item| item.parent = null;
 }
 
-fn onItemAction(self: *PopupMenu, _: *const Event) void {
+fn onItemAction(self: *PopupMenu, _: *const ActionEvent) void {
     if (self.window) |w| w.overlays.dismissAll();
 }
 

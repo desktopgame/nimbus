@@ -10,8 +10,7 @@ const char* nmLastErrorMessage(void);
 const char* nmGetBackendVersion(void);
 
 /* ── event accessors (for the opaque `event` in listener callbacks) ── */
-/* kind: 0 = change, 1 = action */
-int nmEventKind(const void* event);
+/* Serves both nmChangeListener and nmActionListener events (identical layout). */
 void* nmEventSource(const void* event);
 
 /* ── bootstrap (needs allocator / io; nmAppRun is generated) ── */

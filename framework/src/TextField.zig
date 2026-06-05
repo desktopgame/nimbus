@@ -11,8 +11,11 @@ const std = @import("std");
 const awt = @import("awt");
 const Component = @import("Component.zig");
 const Application = @import("Application.zig");
-const ChangeListenerList = @import("ChangeListenerList.zig");
-const Event = ChangeListenerList.Event;
+const listener = @import("listener.zig");
+const ChangeListenerList = listener.ChangeListenerList;
+const ActionListenerList = listener.ActionListenerList;
+const ChangeEvent = listener.ChangeEvent;
+const ActionEvent = listener.ActionEvent;
 
 const TextField = @This();
 
@@ -65,11 +68,11 @@ preedit_target_start: usize,
 preedit_target_end:   usize,
 /// Fired (and the key consumed) when Enter is pressed — "submit this field".
 /// Used e.g. by a List cell editor to commit. See `textfield.md`.
-submit_listeners: ChangeListenerList,
+submit_listeners: ActionListenerList,
 /// Fired (and the key consumed) when Escape is pressed — "cancel". Used e.g.
 /// by a List cell editor to revert.
-cancel_listeners: ChangeListenerList,
-/// Fired (kind = .change) whenever the text content actually changes — edit
+cancel_listeners: ActionListenerList,
+/// Fired whenever the text content actually changes — edit
 /// keys, typing, cut/paste, or `setText`. NOT fired for caret movement,
 /// selection, focus, or IME preedit (uncommitted). Lets callers observe the
 /// field without polling (mirrors Swing's DocumentListener at widget level).
@@ -116,8 +119,8 @@ pub fn create(
         .preedit_text         = .empty,
         .preedit_target_start = 0,
         .preedit_target_end   = 0,
-        .submit_listeners = ChangeListenerList.init(allocator),
-        .cancel_listeners = ChangeListenerList.init(allocator),
+        .submit_listeners = ActionListenerList.init(allocator),
+        .cancel_listeners = ActionListenerList.init(allocator),
         .change_listeners = ChangeListenerList.init(allocator),
         .allocator      = allocator,
     };
@@ -138,7 +141,7 @@ pub fn setText(self: *TextField, new_text: []const u8) !void {
     self.caret_byte = self.text.items.len;
     self.mark_byte = self.text.items.len;
     self.applyMetrics();
-    self.change_listeners.fire(&.{ .source = self, .kind = .change });
+    self.change_listeners.fire(&.{ .source = self });
     self.component.repaint();
 }
 
@@ -162,30 +165,30 @@ pub fn setBackground(self: *TextField, c: awt.Graphics.Color) void {
 
 /// Listener fired when Enter is pressed (the field "submits"). The key is
 /// consumed so it does not bubble. Multiple listeners allowed.
-pub fn addSubmitListener(self: *TextField, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) !void {
+pub fn addSubmitListener(self: *TextField, comptime T: type, comptime f: fn (*T, *const ActionEvent) void, user_data: *T) !void {
     try self.submit_listeners.addTyped(T, f, user_data);
 }
 
-pub fn removeSubmitListener(self: *TextField, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) void {
+pub fn removeSubmitListener(self: *TextField, comptime T: type, comptime f: fn (*T, *const ActionEvent) void, user_data: *T) void {
     self.submit_listeners.removeTyped(T, f, user_data);
 }
 
 /// Listener fired when Escape is pressed (the field "cancels").
-pub fn addCancelListener(self: *TextField, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) !void {
+pub fn addCancelListener(self: *TextField, comptime T: type, comptime f: fn (*T, *const ActionEvent) void, user_data: *T) !void {
     try self.cancel_listeners.addTyped(T, f, user_data);
 }
 
-pub fn removeCancelListener(self: *TextField, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) void {
+pub fn removeCancelListener(self: *TextField, comptime T: type, comptime f: fn (*T, *const ActionEvent) void, user_data: *T) void {
     self.cancel_listeners.removeTyped(T, f, user_data);
 }
 
-/// Listener fired (kind = .change) whenever the text content changes. Lets a
+/// Listener fired whenever the text content changes. Lets a
 /// caller mirror / validate the field without polling. Multiple allowed.
-pub fn addChangeListener(self: *TextField, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) !void {
+pub fn addChangeListener(self: *TextField, comptime T: type, comptime f: fn (*T, *const ChangeEvent) void, user_data: *T) !void {
     try self.change_listeners.addTyped(T, f, user_data);
 }
 
-pub fn removeChangeListener(self: *TextField, comptime T: type, comptime f: fn (*T, *const Event) void, user_data: *T) void {
+pub fn removeChangeListener(self: *TextField, comptime T: type, comptime f: fn (*T, *const ChangeEvent) void, user_data: *T) void {
     self.change_listeners.removeTyped(T, f, user_data);
 }
 
@@ -526,11 +529,11 @@ fn handleKey(tf: *TextField, ev: *Component.Event, k: awt.Event.KeyEvent) void {
         .enter => {
             // Single-line: Enter submits. Fire listeners and consume so the
             // key does not bubble (a List cell editor commits here).
-            tf.submit_listeners.fire(&.{ .source = tf, .kind = .action });
+            tf.submit_listeners.fire(&.{ .source = tf });
             ev.consume();
         },
         .escape => {
-            tf.cancel_listeners.fire(&.{ .source = tf, .kind = .action });
+            tf.cancel_listeners.fire(&.{ .source = tf });
             ev.consume();
         },
         else => {},
@@ -553,7 +556,7 @@ fn handleChar(tf: *TextField, ev: *Component.Event, ch: awt.Event.CharEvent) voi
 /// text content was actually mutated (not for caret movement / selection),
 /// in which case change listeners fire before the repaint.
 fn afterEdit(tf: *TextField, ev: *Component.Event, changed: bool) void {
-    if (changed) tf.change_listeners.fire(&.{ .source = tf, .kind = .change });
+    if (changed) tf.change_listeners.fire(&.{ .source = tf });
     tf.caret_visible = true;
     tf.ensureCaretVisible();
     tf.component.repaint();
