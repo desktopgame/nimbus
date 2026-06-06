@@ -22,10 +22,10 @@ pub const OverlayEntry = struct {
     component:  *Component,                 // overlay の root (position は window-local)
     owner:      *anyopaque,                 // dismiss コールバックの owner (Menu / PopupMenu 等)
     on_dismiss: *const fn (*anyopaque) void,// dismiss 時に owner の状態を更新するため
-    policy:     Policy = .modal_popup,      // 入力モデル。既定はモーダル
+    policy:     OverlayPolicy = .modal_popup,      // 入力モデル。既定はモーダル
 };
 
-pub const Policy = enum {
+pub const OverlayPolicy = enum {
     modal_popup, // ヒットテストし、外クリック / ESC で dismiss (menu / combobox)
     passthrough, // 非インタラクティブ。 ヒットテスト / dismiss の対象外 (ghost / tooltip)
 };

@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # layout
@@ -86,7 +86,7 @@ LayoutManager がアロケート済みの内部状態（キャッシュなど）
 hint なしで子を追加する例（BoxLayout など）。
 
 ```zig
-container.setLayout(&BoxLayout.horizontal_singleton);
+container.setLayout(BoxLayout.horizontal());
 try container.add(&label_a.component);
 try container.add(&label_b.component);
 ```

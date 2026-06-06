@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # scrollpane
@@ -9,9 +9,9 @@ Swing の `JScrollPane` 相当。
 ## 型定義
 ```zig
 pub const ScrollPane = struct {
-    component:      Component,
+    container:      Container,        // 公開 Component は container.component (先頭フィールド必須)
     view:           *Component,       // コンテンツ (所有)
-    viewport:       Container,        // ビューを 1 個だけ抱える内部コンテナー (クリップ + オフセット用)
+    viewport:       *Container,       // ビューを 1 個だけ抱える内部コンテナー (クリップ + オフセット用)
     hbar:           *ScrollBar,       // 水平バー (所有)
     vbar:           *ScrollBar,       // 垂直バー (所有)
     h_policy:       Policy,

@@ -16,11 +16,6 @@ pub const Dialog = struct {
     result:     Result,                  // 閉じた時の結果。showModal の戻り値になる
     modal_done: bool,                    // close が立てる。showModal の入れ子ループを抜ける条件
     shown:      bool,                    // Application の windows リストに登録中か (二重 show / 二重 close 防止)
-    // 注意喚起の点滅 (flash) 用の状態
-    flash_timer:     ?Application.TimerId,
-    flash_remaining: u8,
-    flash_on:        bool,
-    base_bg:         awt.Graphics.Color, // 点滅前の背景色 (復元用)
     allocator:  std.mem.Allocator,
 };
 
@@ -41,9 +36,7 @@ pub const Result = enum(i32) {
 ## ダイアログの生成
 ```zig
 pub fn init(
-    allocator: std.mem.Allocator,
-    app_ptr: *anyopaque,
-    event_queue: *awt.EventQueue,
+    app: *Application,
     owner: *Window,
     title: []const u8,
     w: u32,

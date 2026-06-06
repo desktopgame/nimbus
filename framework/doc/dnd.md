@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # dnd
@@ -59,8 +59,6 @@ pub const Transfer = struct {
     source:   ?*Component = null,// アプリ内発はドラッグ元、 OS 発は null
 
     pub fn object(self: *const Transfer) *anyopaque;       // flavor == .object を要求
-    pub fn files (self: *const Transfer) []const []const u8;// flavor == .files を要求
-    pub fn text  (self: *const Transfer) []const u8;        // flavor == .text を要求
 };
 ```
 

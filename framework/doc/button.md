@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # button
@@ -67,7 +67,7 @@ pub fn deinit(self: *ButtonModel) void;
 
 両リスナーリストを解放する。
 
-## pressed / armed / rollover / enabled / selected の setter / getter
+## pressed / armed / rollover / enabled の setter / getter
 ```zig
 pub fn setPressed(self: *ButtonModel, v: bool) void;
 pub fn isPressed(self: *const ButtonModel) bool;
@@ -80,9 +80,6 @@ pub fn isRollover(self: *const ButtonModel) bool;
 
 pub fn setEnabled(self: *ButtonModel, v: bool) void;
 pub fn isEnabled(self: *const ButtonModel) bool;
-
-pub fn setSelected(self: *ButtonModel, v: bool) void;
-pub fn isSelected(self: *const ButtonModel) bool;
 ```
 
 setter は値が変化した時のみ `state_listeners.fire()` する。

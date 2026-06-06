@@ -19,7 +19,7 @@ pub const Label = struct {
         .install      = install,
         .uninstall    = uninstall,
         .paint        = paint,
-        .processEvent = noopEvent,
+        .processEvent = processEvent,
         .destroy      = destroy,
     };
 

@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 #  textfield
@@ -98,7 +98,7 @@ pub fn setBackground(self: *TextField, c: awt.Graphics.Color) void;
 ```zig
 pub fn addSubmitListener   (self: *TextField, comptime T: type, comptime f: fn (*T, *const ActionEvent) void, user_data: *T) !void;
 pub fn removeSubmitListener(self: *TextField, comptime T: type, comptime f: fn (*T, *const ActionEvent) void, user_data: *T) void;
-pub fn addCancelListener   (self: *TextField, comptime T: type, comptime f: fn (*T, *const ActionEvent) void, user_data: *T) void;
+pub fn addCancelListener   (self: *TextField, comptime T: type, comptime f: fn (*T, *const ActionEvent) void, user_data: *T) !void;
 pub fn removeCancelListener(self: *TextField, comptime T: type, comptime f: fn (*T, *const ActionEvent) void, user_data: *T) void;
 ```
 
@@ -106,8 +106,17 @@ pub fn removeCancelListener(self: *TextField, comptime T: type, comptime f: fn (
 単一行フィールドの「確定 / 取り消し」シグナルで、 たとえば `List` のセルエディタが commit / cancel を繋ぐのに使う (`list.md`「編集 (CellEditor)」)。
 リスナー登録が無くても発火呼び出し自体は走る (consume だけされる)。
 
+## ChangeListener
+```zig
+pub fn addChangeListener   (self: *TextField, comptime T: type, comptime f: fn (*T, *const ChangeEvent) void, user_data: *T) !void;
+pub fn removeChangeListener(self: *TextField, comptime T: type, comptime f: fn (*T, *const ChangeEvent) void, user_data: *T) void;
+```
+
+テキスト内容が変化したとき (`setText`・文字入力・Backspace 等の編集) に発火する。
+キャレット移動・選択範囲の変更・フォーカスの出入り・IME preedit の変化では発火しない (内容そのものが変わったときだけ)。
+内容をミラー / バリデーションしたい呼び出し側が、 polling せずに変更を受け取るために使う。
+
 ## 機能要望
-* `ChangeListener` (`addChangeListener` / `removeChangeListener`) — 内容変更時の通知。現状は呼び出し側が tick タイマー等で polling
 * `setColumns(n: u32)` — `'M'` ベースの幅算出を桁数で外から指定
 * `setPlaceholder(text)` — 空のときに薄く表示するヒント
 * Linux 用 IME バックエンドの実装 (現状は Windows + macOS のみ。Linux は `awt-c/src/ime_stub.c` で no-op)

@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # menu_separator
@@ -54,12 +54,15 @@ fn destroy(self: *Component, allocator: std.mem.Allocator) void;
 File メニューで「設定系」と「Quit」を分ける典型。
 
 ```zig
-const file = try Menu.create(allocator, "File");
-try file.add(&(try MenuItem.create(allocator, "New")).component);
-try file.add(&(try MenuItem.create(allocator, "Open")).component);
-try file.add(&(try MenuItem.create(allocator, "Save")).component);
+const font  = awt.Graphics.TextFont{ .face = app.default_font, .pixel_size = 14 };
+const black = awt.Graphics.Color.rgb(0.1, 0.1, 0.1);
+
+const file = try Menu.create(allocator, "File", font, black);
+try file.add(&(try MenuItem.create(allocator, "New", font, black)).component);
+try file.add(&(try MenuItem.create(allocator, "Open", font, black)).component);
+try file.add(&(try MenuItem.create(allocator, "Save", font, black)).component);
 try file.addSeparator();   // ← Menu.addSeparator は MenuSeparator.create + add の shorthand
-try file.add(&(try MenuItem.create(allocator, "Quit")).component);
+try file.add(&(try MenuItem.create(allocator, "Quit", font, black)).component);
 ```
 
 直接生成して add する場合（共有 separator を作る理由は通常無いが、API としては可能）。

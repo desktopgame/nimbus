@@ -17,7 +17,7 @@ pub const CheckBoxMenuItem = struct {
     text:       []const u8,
     font:       awt.Graphics.TextFont,
     color:      awt.Graphics.Color,
-    model:      *ButtonModel,         // selected = checked 状態として流用
+    model:      *ToggleButtonModel,   // selected = checked 状態
     owns_model: bool,
     allocator:  std.mem.Allocator,
 
@@ -31,7 +31,7 @@ pub const CheckBoxMenuItem = struct {
 };
 ```
 
-`ButtonModel.selected: bool` を checked 状態として使う（`model.md` の selected 用途）。
+`ToggleButtonModel.selected: bool` を checked 状態として使う（`toggle_button_model.md`）。
 通常の `MenuItem` と違って `icon` フィールドは持たない（icon slot をチェックマークが占有するため、追加アイコンを置く余地はない）。
 
 ## CheckBoxMenuItem の生成
@@ -56,7 +56,7 @@ vtable をセットして install まで実行する。
 ```zig
 pub fn createWithModel(
     allocator: std.mem.Allocator,
-    model: *ButtonModel,
+    model: *ToggleButtonModel,
     text: []const u8,
     font: awt.Graphics.TextFont,
     color: awt.Graphics.Color,
@@ -94,7 +94,7 @@ ActionListener は発火しない（プログラム由来の変更とユーザ�
 
 ## Model の取得
 ```zig
-pub fn getModel(self: CheckBoxMenuItem) *ButtonModel;
+pub fn getModel(self: CheckBoxMenuItem) *ToggleButtonModel;
 ```
 
 ActionListener の登録や enabled の制御に使う。
@@ -120,8 +120,8 @@ show_grid.setChecked(editor.show_grid);
 メニューと toolbar の両方に同じ「Show Grid」チェック（同期状態）。
 
 ```zig
-const grid_model = try allocator.create(ButtonModel);
-grid_model.* = ButtonModel.init(allocator);
+const grid_model = try allocator.create(ToggleButtonModel);
+grid_model.* = ToggleButtonModel.init(allocator);
 defer { grid_model.deinit(); allocator.destroy(grid_model); }
 
 const grid_menu = try CheckBoxMenuItem.createWithModel(allocator, grid_model, "Show Grid", font, black);

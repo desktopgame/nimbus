@@ -148,7 +148,7 @@ try insert.add(&(try MenuItem.create(allocator, "Image", font, black)).component
 try insert.add(&(try MenuItem.create(allocator, "Table", font, black)).component);
 
 try ctx_menu.add(&insert.component);  // Menu を submenu として
-try ctx_menu.add(&(try MenuItem.create(allocator, "Delete")).component);
+try ctx_menu.add(&(try MenuItem.create(allocator, "Delete", font, black)).component);
 ```
 
 ## 機能要望

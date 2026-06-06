@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # menu
@@ -146,7 +146,7 @@ popup Container は破棄せず再利用のため保持する（次回 show 時�
 * MenuBar.add(menu) / Menu.add(submenu_as_component) で menu の所有権が親に移る
 * 親の destroy で連鎖的に menu も destroy される
 * popup の Container は menu が所有（hide 後も再利用）
-* model は内部生成なら menu が所有、`createWithModel` で外部から渡されたなら借用
+* model は内部生成され menu が所有する（Menu は外部 model を受け取らない）
 
 ## レイアウト属性
 親が MenuBar の時：
@@ -163,26 +163,29 @@ popup Container は破棄せず再利用のため保持する（次回 show 時�
 基本的な File メニュー。
 
 ```zig
-const file = try Menu.create(allocator, "File");
-try file.add(&(try MenuItem.create(allocator, "New")).component);
-try file.add(&(try MenuItem.create(allocator, "Open")).component);
+const font  = awt.Graphics.TextFont{ .face = app.default_font, .pixel_size = 14 };
+const black = awt.Graphics.Color.rgb(0.1, 0.1, 0.1);
+
+const file = try Menu.create(allocator, "File", font, black);
+try file.add(&(try MenuItem.create(allocator, "New", font, black)).component);
+try file.add(&(try MenuItem.create(allocator, "Open", font, black)).component);
 try file.addSeparator();
-try file.add(&(try MenuItem.create(allocator, "Quit")).component);
+try file.add(&(try MenuItem.create(allocator, "Quit", font, black)).component);
 try menu_bar.add(file);
 ```
 
-サブメニューの例（Edit → Find → {Find, Find Next, Find Previous}）。
+サブメニューの例（Edit → Find → {Find, Find Next, Find Previous}）。font / black は上記と同じ。
 
 ```zig
-const edit = try Menu.create(allocator, "Edit");
-try edit.add(&(try MenuItem.create(allocator, "Undo")).component);
-try edit.add(&(try MenuItem.create(allocator, "Redo")).component);
+const edit = try Menu.create(allocator, "Edit", font, black);
+try edit.add(&(try MenuItem.create(allocator, "Undo", font, black)).component);
+try edit.add(&(try MenuItem.create(allocator, "Redo", font, black)).component);
 try edit.addSeparator();
 
-const find = try Menu.create(allocator, "Find");
-try find.add(&(try MenuItem.create(allocator, "Find...")).component);
-try find.add(&(try MenuItem.create(allocator, "Find Next")).component);
-try find.add(&(try MenuItem.create(allocator, "Find Previous")).component);
+const find = try Menu.create(allocator, "Find", font, black);
+try find.add(&(try MenuItem.create(allocator, "Find...", font, black)).component);
+try find.add(&(try MenuItem.create(allocator, "Find Next", font, black)).component);
+try find.add(&(try MenuItem.create(allocator, "Find Previous", font, black)).component);
 try edit.add(&find.component);   // submenu
 
 try menu_bar.add(edit);
@@ -191,7 +194,7 @@ try menu_bar.add(edit);
 disabled な Menu。
 
 ```zig
-const debug = try Menu.create(allocator, "Debug");
+const debug = try Menu.create(allocator, "Debug", font, black);
 debug.getModel().setEnabled(false);
 try menu_bar.add(debug);  // クリックしても開かない、グレー表示
 ```
