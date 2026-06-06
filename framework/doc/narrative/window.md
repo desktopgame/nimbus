@@ -1,5 +1,5 @@
 ---
-unsafe: true
+unsafe: false
 ---
 
 # window
@@ -123,6 +123,8 @@ menu_bar / overlay 上の左クリックではフォーカスは奪われない�
 Component から Window への直接依存を避けるため、Window は install 時に各ルートコンポーネント (container.component、menu_bar、overlay) に `FocusController` プロパティを put しておく。
 `Component.requestFocus` は親チェーンを遡ってルートで `FocusController` を見つけ、コールバック経由で `Window.requestFocusFor` を呼ぶ。
 DirtyNotify プロパティと同じ設計パターン。
+
+TODO: フォーカス関連は再考の余地あり
 
 ### v1 の制限
 * Tab / Shift+Tab によるフォーカス遷移は未実装 (機能要望)
