@@ -3,7 +3,7 @@
 //! batch of forced full re-layouts up front and prints the cost, and (2) forces
 //! a full re-layout *every frame* via a repeating timer so the window visibly
 //! stutters under layout load — the interactive way to feel the cost.
-//! Intended as the benchmark scene called for in `doc/optimize.md`.
+//! Intended as the benchmark scene called for in `doc/internal/optimize.md`.
 //!
 //! With no size cache (the current v1 design), each `doLayout` re-measures
 //! every subtree from scratch, so cost grows with depth × node count. The

@@ -67,7 +67,7 @@ snapshot scene の未カバー（現行 scene は box / border / toggle 系の�
 - `PopupMenu.show` の画面外クランプ（`PopupMenu.zig` / `Menu.zig`）
 - 純粋計算系: `Graphics.clip` の交差（`awt/src/Graphics.zig`）、`GlyphAtlas.alloc` のシェルフパッキング（`awt/src/GlyphAtlas.zig`）
 
-加えて `doc/test.md`:92-118 が予定する framework のレイアウトテスト基盤（`framework/tests/`）はレイアウト系（`border_layout_test` / `box_layout_test` / `snapshot_test`）が入って一部実現済み。上記の純ロジック系をどこに置くか（各 `src` の test ブロック or `framework/tests/`）も決める。
+加えて `doc/internal/test.md`:92-118 が予定する framework のレイアウトテスト基盤（`framework/tests/`）はレイアウト系（`border_layout_test` / `box_layout_test` / `snapshot_test`）が入って一部実現済み。上記の純ロジック系をどこに置くか（各 `src` の test ブロック or `framework/tests/`）も決める。
 
 ### なぜ（保留理由）
 TextField 着手を止めるほどの実害は無い（描画は snapshot で間接カバー、致命的なロジックバグは未報告）。一方で Window.dispatchInput / TextField 周りは focus / IME / blink timer の追加で状態空間が再構築されるため、いま固めても上書きされる。設計が安定した領域から順に足したい。
@@ -81,7 +81,7 @@ TextField 着手を止めるほどの実害は無い（描画は snapshot で間
 着手順（A/B）。純ロジックテストの置き場所（各 `src` test ブロック or `framework/tests/`）。`Window.dispatchInput` を今やるか TextField 後に回すか。
 
 ### 完了条件
-未カバー項目のうち着手対象を決め、テストを追加して緑。`doc/test.md` の予定との対応を更新。
+未カバー項目のうち着手対象を決め、テストを追加して緑。`doc/internal/test.md` の予定との対応を更新。
 
 ## #3 binding.md の `Component.getVTable()` 未実装の扱い
 - 状態: 未着手

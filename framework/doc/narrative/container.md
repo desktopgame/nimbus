@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # container
@@ -52,7 +52,7 @@ Container 固有の `install` / `uninstall` は基本 no-op。
 通常は `setLayout` で BoxLayout や BorderLayout を差して使う。
 
 LayoutManager は直接の子の bounds のみを設定し、孫以下への再帰は Container 側が担当する。
-詳細は `framework/doc/layout.md` と `{REPO_ROOT}/doc/layout-design.md` を参照。
+詳細は `framework/doc/layout.md` と `{REPO_ROOT}/doc/internal/layout-design.md` を参照。
 
 ## 列挙との関係
 Container は init で `self.component.container = self` をセットする。

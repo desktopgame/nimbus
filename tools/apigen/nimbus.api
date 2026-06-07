@@ -62,7 +62,7 @@
 # The generated shim calls the real Zig method, so any drift between this spec
 # and the actual signature is caught at compile time — never silently.
 #
-# Not yet supported (see doc/c_api_codegen.md「未対応」): struct / enum / int
+# Not yet supported (see doc/internal/c_api_codegen.md「未対応」): struct / enum / int
 # args, slice ([]const u8) returns, callbacks, and bootstrap constructors that
 # need an allocator / io (those are hand-written in tools/apigen/preamble.zig).
 
@@ -108,13 +108,13 @@ opaque LayoutManager
 
 # awt.Image (a GPU-texture-backed value type) boxed as a handle. Its methods
 # (load / destroy / width / height / getIcon / setIcon / app icon) are bespoke
-# and hand-written in preamble.zig (see doc/c_api_codegen.md「Image / icon」);
+# and hand-written in preamble.zig (see doc/internal/c_api_codegen.md「Image / icon」);
 # only the handle typedef + IR type entry are generated from this line.
 opaque Image
 # List (vertical single-selection, JavaFX VirtualFlow cells) + its ListModel.
 # The cell factory / model / index API is bespoke (void* items, usize indices,
 # an interface-returning-interface factory) and hand-written in preamble.zig
-# (see doc/c_api_codegen.md「List / CellFactory」). Only the handle typedefs,
+# (see doc/internal/c_api_codegen.md「List / CellFactory」). Only the handle typedefs,
 # the rowHeight / change-listener methods, and the Component upcast are generated.
 opaque List : Component
 opaque ListModel

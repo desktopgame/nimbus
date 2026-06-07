@@ -2,7 +2,7 @@
 テキスト関連（Label / TextField / TextArea / フォント / IME）で v1 から外した・後回しにした機能。
 書き方は [backlog.md](backlog.md) を参照。
 
-由来: v1 テキストスコープの決定記録 [plan.md](../plan.md) の「初版ではやらない／いずれ必要」項目を、
+由来: v1 テキストスコープの決定記録 [plan.md](../../plan.md) の「初版ではやらない／いずれ必要」項目を、
 実装で追える backlog に移したもの（`plan.md #N` は plan.md の機能番号）。v1 でやる決定の多くは既に実装済み
 （TextField / TextArea / キャレット点滅 / クリック位置決め / ドラッグ選択 / クリップボード / IME 確定 等）。
 

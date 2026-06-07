@@ -274,7 +274,7 @@ fn wrapWidth(self: *TextArea) f32 {
 /// `refreshMinSize`'s job. Called from both `refreshMinSize` (for the publish
 /// path) and `sizeQueryMinHeightForWidth` (for the SizeQuery pure query).
 /// O(n) in the text length (full rescan); incremental relayout is a future
-/// optimization (see `doc/optimize.md` / `textarea.md`).
+/// optimization (see `doc/internal/optimize.md` / `textarea.md`).
 fn reflowAt(self: *TextArea, inner_w: f32) struct { min_w: f32, min_h: f32 } {
     self.font.face.setPixelSize(self.font.pixel_size);
     const line_h = self.font.face.metrics().line_height;

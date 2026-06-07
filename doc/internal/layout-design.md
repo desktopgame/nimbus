@@ -1,6 +1,6 @@
 # layout-design
 レイアウトの設計方針について。
-[layout-requirements](doc/layout-requirements.md) から導かれた設計方針です。
+[layout-requirements](doc/internal/layout-requirements.md) から導かれた設計方針です。
 
 ## コンポーネントごとに保持する属性
 

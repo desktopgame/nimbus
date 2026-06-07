@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # component
@@ -46,7 +46,7 @@ Swing `JComponent.putClientProperty` と同じ位置付け。
 
 ## レイアウト属性
 LayoutManager が子の bounds を計算するための入力として、4 つの属性を持つ。
-意味と分配アルゴリズムの詳細は `{REPO_ROOT}/doc/layout-design.md` を参照。
+意味と分配アルゴリズムの詳細は `{REPO_ROOT}/doc/internal/layout-design.md` を参照。
 
 | フィールド | 型 | デフォルト | 意味 |
 |---|---|---|---|

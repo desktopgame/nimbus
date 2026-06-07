@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # model
@@ -88,7 +88,7 @@ pub fn addTyped(
 `add` は生の `(fn_ptr, user_data)` を追加する（重複検査なし）。
 `addTyped` は型付きコールバック（`*T` を直接受け取りキャスト不要）を登録する**推奨経路**。
 `*anyopaque` → `*T` のキャストは `ListenerList` 内の 1 か所（comptime サンク）だけに書かれる
-（`doc/typed_callbacks.md` 参照）。サンクは `(T, f)` ごとに同一の関数ポインタを生むので、
+（`doc/internal/typed_callbacks.md` 参照）。サンクは `(T, f)` ごとに同一の関数ポインタを生むので、
 `removeTyped` に同じ `(T, f, user_data)` を渡せば一致削除できる。
 
 ## リスナーの削除

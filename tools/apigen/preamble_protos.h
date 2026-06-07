@@ -17,7 +17,7 @@ void* nmEventSource(const void* event);
 nmApplication* nmAppCreate(void);
 void nmAppDestroy(nmApplication* self);
 
-/* ── images / icons (bespoke; see doc/c_api_codegen.md「Image / icon」) ──
+/* ── images / icons (bespoke; see doc/internal/c_api_codegen.md「Image / icon」) ──
  * An nmImage wraps a GPU texture (awt.Image). Two ownership classes:
  *   - owned   : nmAppLoadImage returns a heap-boxed Image; free it once with
  *               nmImageDestroy (deinits the texture + frees the box).
@@ -59,7 +59,7 @@ nmImage* nmAppIconNamed(nmApplication* self, const char* name);
 nmImage* nmButtonGetIcon(nmButton* self);
 void nmButtonSetIcon(nmButton* self, nmImage* icon);
 
-/* ── List cell protocol (bespoke; see doc/c_api_codegen.md「List / CellFactory」) ──
+/* ── List cell protocol (bespoke; see doc/internal/c_api_codegen.md「List / CellFactory」) ──
  * A List materializes real cell subtrees only for the visible range and
  * recycles them on scroll (JavaFX VirtualFlow). You supply a factory that
  * builds one cell; the List calls `update` to (re)bind a cell to a row and

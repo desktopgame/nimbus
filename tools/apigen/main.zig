@@ -9,7 +9,7 @@
 //! The .h / .zig outputs are a hand-written preamble (preamble.h / preamble.zig)
 //! followed by mechanically generated declarations. Run via `zig build apigen`.
 //!
-//! The grammar this parses is documented in nimbus.api and doc/c_api_codegen.md.
+//! The grammar this parses is documented in nimbus.api and doc/internal/c_api_codegen.md.
 //! This is an internal build tool; paths are fixed relative to the repo root
 //! (the build step runs it with the repo root as the working directory).
 
@@ -68,7 +68,7 @@ const Scalar = enum {
     }
 };
 
-/// Argument wire type. Extended per doc/c_api_codegen.md「未対応」.
+/// Argument wire type. Extended per doc/internal/c_api_codegen.md「未対応」.
 const ArgType = union(enum) {
     str,
     /// `*T` handle argument; payload is the Zig type name (e.g. "Component").

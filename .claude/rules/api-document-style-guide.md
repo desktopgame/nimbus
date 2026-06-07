@@ -118,7 +118,7 @@ narrative は自由フォーマットだが、見出しの命名は具体的に�
 ```
 
 ## サンプル
-spec の記述例。 `{REPO_ROOT}/doc/api-document-style-guide-example.md` を参照。
+spec の記述例。 `{REPO_ROOT}/doc/internal/api-document-style-guide-example.md` を参照。
 
 ## 用語
 ドキュメント中で以下は事前に定義なく使用できる。

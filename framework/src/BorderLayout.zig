@@ -85,7 +85,7 @@ fn setChildBounds(child: *Component, bounds: Component.Rect) void {
     // Container.doLayout owns the single recursion into children. We just set
     // bounds here; either `Component.setBounds` or `Container.setBounds` is
     // safe now (they are equivalent — both just write the rect). See
-    // `framework/doc/optimize.md`.
+    // `doc/internal/optimize.md`.
     child.setBounds(bounds);
 }
 

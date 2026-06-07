@@ -1,11 +1,11 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # layout
 レイアウトに関する型と仕組み。
 Container が子の bounds を計算するための差し替え可能なオブジェクト `LayoutManager` と、子を包む `LayoutElement` を定義する。
-設計方針の詳細は `{REPO_ROOT}/doc/layout-design.md` を参照。
+設計方針の詳細は `{REPO_ROOT}/doc/internal/layout-design.md` を参照。
 
 ## 型定義
 ```zig

@@ -371,7 +371,7 @@ fn markDirty(c: *Component, kind: DirtyKind) void {
     while (node) |cur| {
         // A layout change invalidates the memoized min/max size of every
         // container on the path to the root — those are exactly the subtrees
-        // whose measurement could have changed. See `doc/optimize.md`.
+        // whose measurement could have changed. See `doc/internal/optimize.md`.
         if (kind == .layout) {
             if (cur.container) |cont| cont.invalidateSizeCache();
         }

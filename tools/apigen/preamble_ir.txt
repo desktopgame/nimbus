@@ -15,7 +15,7 @@
 # generator special-cases: `bytes` (ptr+len byte buffer), `opaque_ptr` (void*
 # userdata / item), `cell_factory` (the nmCellFactory struct), `i64`/`usize`
 # (integers outside the generated scalar set), `enum`+`nmIcon` (the curated
-# hand-written icon enum). See doc/c_api_codegen.md「Image / icon」「List / CellFactory」.
+# hand-written icon enum). See doc/internal/c_api_codegen.md「Image / icon」「List / CellFactory」.
 
 @functions
     {

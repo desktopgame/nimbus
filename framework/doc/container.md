@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # container
@@ -146,7 +146,7 @@ pub fn setBounds(self: *Container, bounds: Rect) void;
 ```
 
 `component.setBounds(bounds)` への委譲のみ。 `doLayout()` は呼ばない (= `Component.setBounds` と意味的に等価)。
-過去は `doLayout()` を自動で走らせていたが、 これが LayoutManager から呼ばれた場合に 2^k の二重 layout を起こす footgun だったため取り除いた (`{REPO_ROOT}/doc/optimize.md` 参照)。
+過去は `doLayout()` を自動で走らせていたが、 これが LayoutManager から呼ばれた場合に 2^k の二重 layout を起こす footgun だったため取り除いた (`{REPO_ROOT}/doc/internal/optimize.md` 参照)。
 レイアウト起動の起点は `Window.redraw` が明示的に呼ぶ `root.doLayout()` のみ。 利用者は通常これを意識しない (setter が `markLayoutDirty` を立てる → 次フレームの redraw で自動)。
 
 ## レイアウトの実行

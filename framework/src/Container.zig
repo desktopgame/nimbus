@@ -21,7 +21,7 @@ allocator: std.mem.Allocator,
 /// `computeMinSize`/`computeMaxSize`, which walks the whole subtree). Null when
 /// stale. Invalidated by `Component.markDirty` on every container along the
 /// path from a changed node up to the root — i.e. exactly the containers whose
-/// subtree measurement could have changed. See `doc/optimize.md`.
+/// subtree measurement could have changed. See `doc/internal/optimize.md`.
 min_cache: ?Component.Size = null,
 max_cache: ?Component.Size = null,
 /// Child the pointer is currently over, tracked so we can synthesize a

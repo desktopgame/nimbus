@@ -65,7 +65,7 @@ pub fn ListenerList(comptime E: type) type {
         }
 
         /// The one place the `*anyopaque` -> `*T` cast is written (see
-        /// doc/typed_callbacks). Comptime-builds a thunk adapting a typed callback
+        /// doc/internal/typed_callbacks). Comptime-builds a thunk adapting a typed callback
         /// to the stored `ListenerFn`. The thunk has stable identity per (T, f), so
         /// `removeTyped` produces the same function pointer `addTyped` registered.
         fn thunk(comptime T: type, comptime f: fn (*T, *const E) void) ListenerFn {

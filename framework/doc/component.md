@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # component
@@ -323,4 +323,4 @@ try label.component.setVTable(&my_vt);
 
 ## 機能要望
 * `PropertyChangeListener` 相当 — setter からの変更通知。Swing PCE と同等
-* Component 単位の `dirty` フラグ — 現状は Frame 単位で持つ（`{REPO_ROOT}/doc/layout-design.md` 参照）
+* Component 単位の `dirty` フラグ — 現状は Frame 単位で持つ（`{REPO_ROOT}/doc/internal/layout-design.md` 参照）

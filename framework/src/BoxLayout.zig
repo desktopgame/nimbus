@@ -134,7 +134,7 @@ fn doLayout(self: *LayoutManager, container: *Container) void {
 
         // Container.doLayout owns the single recursion into children. We just
         // set bounds here; either setBounds variant is equivalent now (both
-        // just write the rect). See `framework/doc/optimize.md`.
+        // just write the rect). See `doc/internal/optimize.md`.
         child.setBounds(bounds);
         pos += main;
     }

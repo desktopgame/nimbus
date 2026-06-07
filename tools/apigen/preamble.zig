@@ -2,7 +2,7 @@
 // This block is prepended verbatim to the generated `framework/src/c_api.zig`
 // by tools/apigen. Glue that cannot be derived mechanically from the binding
 // spec (last-error storage, backend passthrough, future ctors that need an
-// allocator / io) lives here. See doc/c_api_codegen.md.
+// allocator / io) lives here. See doc/internal/c_api_codegen.md.
 const std = @import("std");
 const framework = @import("nimbus");
 const awt = framework.awt;
@@ -57,7 +57,7 @@ export fn nmGetBackendVersion() [*:0]const u8 {
 // ── event accessors ──────────────────────────────────────────────────────
 // Listener callbacks receive the semantic event as an opaque `const void*`
 // (the native ChangeEvent / ActionEvent passed straight through; see approach C
-// in doc/c_api_codegen.md). `ChangeEvent` and `ActionEvent` share an identical
+// in doc/internal/c_api_codegen.md). `ChangeEvent` and `ActionEvent` share an identical
 // layout (a single `source` pointer), so one accessor serves both. Hand-written
 // because the event is a fixed framework type, not a codegen-friendly scalar.
 export fn nmEventSource(event: *const anyopaque) ?*anyopaque {
@@ -70,7 +70,7 @@ export fn nmEventSource(event: *const anyopaque) ?*anyopaque {
 // across the C ABI, so the entry point is hand-written here (not generated).
 // Defaults: libc allocator + std's process-wide single-threaded Io (nimbus is
 // single-UI-thread, so single-threaded Io fits). `nmAppRun` IS generated
-// (`Application.run` is a plain `!void` method). See doc/c_api_codegen.md.
+// (`Application.run` is a plain `!void` method). See doc/internal/c_api_codegen.md.
 export fn nmAppCreate() ?*framework.Application {
     const io = std.Io.Threaded.global_single_threaded.io();
     return framework.Application.init(std.heap.c_allocator, io) catch |e| {
@@ -83,7 +83,7 @@ export fn nmAppDestroy(self: *framework.Application) void {
     self.deinit(); // also frees the Application itself (allocator.destroy(self))
 }
 
-// ── images / icons (bespoke; see doc/c_api_codegen.md「Image / icon」) ────────
+// ── images / icons (bespoke; see doc/internal/c_api_codegen.md「Image / icon」) ────────
 // awt.Image wraps a GPU texture. These are hand-written, not generated: getIcon
 // returns the ADDRESS of an optional field (not a method call), setIcon derefs
 // an optional handle, the loader boxes a by-value return, and the icon getters
@@ -211,7 +211,7 @@ export fn nmButtonSetIcon(self: *framework.Button, icon: ?*awt.Image) void {
     self.setIcon(if (icon) |p| p.* else null);
 }
 
-// ── List cell protocol (bespoke; see doc/c_api_codegen.md「List / CellFactory」) ──
+// ── List cell protocol (bespoke; see doc/internal/c_api_codegen.md「List / CellFactory」) ──
 // "An interface that returns an interface": the C nmCellFactory.create returns
 // an nmCell of C function pointers. These adapt that to the native
 // List.CellFactory / List.Cell (Zig fnptrs). The C factory pointer is borrowed

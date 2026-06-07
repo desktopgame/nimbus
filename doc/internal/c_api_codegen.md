@@ -305,7 +305,7 @@ preamble に手書きした関数（Image / icon・List / CellFactory 等）は 
 リスナー登録のような「関数ポインタを渡す」API を、1 つの宣言で各レイヤーへ展開する。
 ネイティブ前提は整っている: Model のリスナーは `fn(user_data: *anyopaque, event: *const E) void`
 に統一され（`E` は `ChangeEvent` か `ActionEvent`）、保存・dispatch 形が C_ABI 契約の形そのもの
-（`framework/doc/model.md` / `doc/typed_callbacks.md`）。意味別に 2 つのコールバック型を宣言する。
+（`framework/doc/model.md` / `doc/internal/typed_callbacks.md`）。意味別に 2 つのコールバック型を宣言する。
 
 スペック:
 ```
@@ -574,7 +574,7 @@ preamble は 4 ファイルに分かれる: `preamble.h`（C ヘッダ先頭＝i
 * 値（スカラ/enum/struct/str）戻り＋エラーの組み合わせ（out 引数かセンチネルか要決定。現状は失敗なしのみ）。
 * 名前マップ型 curated enum（`nmIcon` を生成に乗せ IR にも出す）— 現状は手書き preamble。上記「Image / icon」。
 * List のセル編集（`Cell.edit`）・`ScrollPane` ラップ — 上記「List / CellFactory」制約。
-* Timer（`setTimeout` の event 無し callback + `!TimerId` 値戻り）— bespoke。棚上げ（`doc/c_api_codegen_backlog.md` #6b）。
+* Timer（`setTimeout` の event 無し callback + `!TimerId` 値戻り）— bespoke。棚上げ（`doc/internal/c_api_codegen_backlog.md` #6b）。
 
 ## シンボル名の規約: 公開 ABI 名と awt-c 内部名を分ける
 かつて awt-c（`glfw_shim.c`）の C 関数が公開 ABI と同じ `nmGetBackendVersion` を名乗っており、

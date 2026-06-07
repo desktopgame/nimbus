@@ -86,7 +86,7 @@ libnimbus (.dll/.dylib)
 `snapshot` は `awt/tests/scenes.zig` で定義された `Scene` をテストランナーと共有しており、人間が視覚で結果を確認するためのツールでもある。
 
 ## tests
-`zig build test` で全テストが走る。詳細は `{REPO_ROOT}/doc/test.md` を参照。
+`zig build test` で全テストが走る。詳細は `{REPO_ROOT}/doc/internal/test.md` を参照。
 
 ビルド面での要点だけ書いておくと、テストは以下 3 種類のテストアーティファクトを束ねている。
 

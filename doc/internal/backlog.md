@@ -6,7 +6,7 @@
 「なぜ後回しにしたか」「再開時に何を決めればよいか」がその場で分かるようにする。
 
 ## 置き場所と粒度
-- バックログは領域ごとに分け、`doc/<領域>_backlog.md` に置く（例: `c_api_codegen_backlog.md`）。
+- バックログは領域ごとに分け、`doc/internal/<領域>_backlog.md` に置く（例: `c_api_codegen_backlog.md`）。
 - 1 ファイルに 1 領域。横断的な作業は関連する領域のバックログに相互リンクで残す。
 - 実例: [c_api_codegen_backlog.md](c_api_codegen_backlog.md)。
 

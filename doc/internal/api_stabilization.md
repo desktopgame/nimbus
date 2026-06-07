@@ -15,7 +15,7 @@
 ### 1. 型付きコールバック — (a) / 実装済み (2026-05-31)
 全コールバックの `@ptrCast(@alignCast(user_data))` 定型 + 型非安全（`widget_dialog` は同一 `*anyopaque` を 2 型に取り違えうる）。
 **裁定**: C_ABI 層は `void*` 死守、Zig ネイティブ層に comptime サンクの型付き玄関を被せる（保存形は `fn(*anyopaque)+*anyopaque` のまま → C_ABI codegen 無変更）。
-**実装済み**: `ChangeListenerList.addTyped`/`removeTyped` を導入し、全 Model / widget / examples が移行済み。詳細 `doc/typed_callbacks.md`。
+**実装済み**: `ChangeListenerList.addTyped`/`removeTyped` を導入し、全 Model / widget / examples が移行済み。詳細 `doc/internal/typed_callbacks.md`。
 
 ### 2. `add` の意味 / 引数形がバラバラ — accept（現状維持）
 `Container.add`（`*Component` メソッド）/ `BorderLayout.add`（静的関数 + region）/ `bar.add(menu)`（`*Menu` 直）。
@@ -35,7 +35,7 @@ leaf は `.component`（フィールド）、Container / List / ScrollPane は `
 
 ### 5. spacing / 固定サイズが冗長 — (b) / 便利層のみ
 `widget_textfield` は spacer 自作、`widget_scroll` は min==max。
-**裁定**: 穴ではなく**意図した設計**（少ないプリミティブで合成できている方が良い）。修正は**上の便利層のみ**（`setFixedSize` = min==max の糖衣、`padded` ヘルパ等）。**`preferredSize` / `Insets` をプリミティブとして足すのは却下**（Insets はコンテナ合成で代替、唯一の代償はツリー肥大 = 性能の話）。詳細 `doc/layout_helpers.md`。**冗長が痛くなってから足す**（先回りしない）。
+**裁定**: 穴ではなく**意図した設計**（少ないプリミティブで合成できている方が良い）。修正は**上の便利層のみ**（`setFixedSize` = min==max の糖衣、`padded` ヘルパ等）。**`preferredSize` / `Insets` をプリミティブとして足すのは却下**（Insets はコンテナ合成で代替、唯一の代償はツリー肥大 = 性能の話）。詳細 `doc/internal/layout_helpers.md`。**冗長が痛くなってから足す**（先回りしない）。
 
 ### 6. caller 所有の 2 段階破棄 — 実装済み (2026-06-04)（単一 `destroy()`）
 ButtonGroup / Dialog だけ `defer { x.deinit(); gpa.destroy(x); }` が要る。Frame は不要。
@@ -62,5 +62,5 @@ ButtonGroup / Dialog だけ `defer { x.deinit(); gpa.destroy(x); }` が要る。
 
 残り:
 * **SelectionModel の設計**（#3 本体、大きめ。別ドキュメント化の候補）。← 次の一手。List / ComboBox / 将来の Table / Tree の選択基盤。
-* layout helper（#5）は `doc/layout_helpers.md` に計画済み・据え置き（冗長が痛くなってから）。
+* layout helper（#5）は `doc/internal/layout_helpers.md` に計画済み・据え置き（冗長が痛くなってから）。
 * #2 accept、#4 park。

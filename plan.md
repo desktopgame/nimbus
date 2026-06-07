@@ -2,8 +2,8 @@
 
 v1 で提供するテキスト関連機能の**原案 vs 決定**を残す記録（なぜその v1 スコープにしたかの根拠）。
 v1 でやる決定の多くは既に実装済み（TextField / TextArea 等）。**「初版ではやらない／いずれ必要」項目は
-[doc/text_backlog.md](doc/text_backlog.md) で実装追跡する**（このファイルは根拠の記録、追跡は backlog 側）。
-長期的に確定した設計方針は `CLAUDE.md` / 各 `*/doc` に置く。バックログ運用規約は [doc/backlog.md](doc/backlog.md)。
+[doc/internal/text_backlog.md](doc/internal/text_backlog.md) で実装追跡する**（このファイルは根拠の記録、追跡は backlog 側）。
+長期的に確定した設計方針は `CLAUDE.md` / 各 `*/doc` に置く。バックログ運用規約は [doc/internal/backlog.md](doc/internal/backlog.md)。
 
 ## v1 テキスト機能スコープ
 

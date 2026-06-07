@@ -1,10 +1,10 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # box_layout
 水平または垂直に子を並べる `LayoutManager`。
-分配アルゴリズムは `{REPO_ROOT}/doc/layout-design.md`「子の分配アルゴリズム」の 1-pass clamp を採用する。
+分配アルゴリズムは `{REPO_ROOT}/doc/internal/layout-design.md`「子の分配アルゴリズム」の 1-pass clamp を採用する。
 Swing の `BoxLayout` / CSS flexbox の単純化版に相当する。
 hint は使わない（常に null）。
 
