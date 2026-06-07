@@ -163,6 +163,22 @@ test "horizontal: 3 fixed-size children pack from the left" {
 たとえば上の "horizontal: 3 fixed-size children pack from the left" は `framework/tests/fixtures/box_horizontal_pack.png` を見れば一目でわかる。
 数値だけでは「正しい配置とは何か」が分かりにくいので、レビュー時 / 設計時の補助として画像を併用する形。
 
+## `zig build test` の出力の読み方（`failed command` は失敗ではない）
+`zig build test` の出力に `failed command: ....zig-cache\o\<hash>\test.exe ... --listen=-` という行が出ることがあるが、**これはテスト失敗ではない**。合否の基準は**ビルド全体の終了コード**で、`0` なら全テスト pass。
+
+理由: Zig 0.16 のビルドランナーは、`--listen=-` で走らせた test.exe が **stderr に何か出力すると**、終了コード 0 でもこの診断行を出す（「stderr を出した exe」を晒しているだけの紛らわしいラベル）。nimbus で stderr を出すのは次のテスト群:
+
+* **apigen テスト**（`tools/apigen/main.zig`）— `test "parse rejects: ..."` がわざと不正な spec を食わせてパーサが弾くのを確認する負のテスト。過程で `apigen: parse error at line N: ...` を stderr に出すが、テスト自体は pass。
+* **GPU を使うテスト**（awt / framework の埋め込み単体テスト、スナップショットテスト）— dx12 の `[INFO] device created` / `[WARN] ID3D12CommandList::ClearRenderTargetView ...` を stderr に出す。`[WARN]` は無害な性能警告。
+
+疑わしいときは当該 test.exe を直接実行すれば確認できる（`All N tests passed.` + exit 0 が出る）:
+
+```
+.\.zig-cache\o\<hash>\test.exe
+```
+
+補足: スナップショット harness は awt を意図的に terminate せずリークさせる（`awt/tests/snapshot_test.zig` の冒頭コメント参照）が、それは**メモリリークであって終了コードは 0**。`failed command` の引き金は stderr 出力だけで、このリークは無関係。
+
 ## 機能要望
 * fuzz テストの導入（テキスト周りなど）
 * CI でのスナップショットテスト fixture diff の自動表示
