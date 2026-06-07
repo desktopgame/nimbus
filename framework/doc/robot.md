@@ -229,6 +229,113 @@ pub const Query = struct {
 座標ベースの `Robot.click` が下位プリミティブ、`Driver.clickOn` がその上の意味的ラッパー。
 AI は通常 `driver.clickOn(.{ .role = .button, .text = "Save" })` を使い、座標が必要なときだけ `robot.click` を使う。
 
+## 利用例
+robot は未実装（段階は「機能要望」）。以下は設計どおりに書いた場合のイメージ。
+ヘッドレス入口（`initHeadless`）やシナリオ読み込み（`Scenario.fromJsonl`）など未確定シグネチャは仮で、コメントで示す。
+
+### コードから直接 Robot / Driver で書くテスト
+`Robot`（プリミティブ）でイベントを注入し、`pump` で 1 ステップ進め、ハンドル（白箱）または `snapshotTree`（黒箱）で検証する。座標を知らなくても `Driver.clickOn` が role + text で名指しする。
+
+```zig
+const std = @import("std");
+const nimbus = @import("nimbus");
+
+test "Save ボタンを role+text で押すと action が飛ぶ" {
+    const gpa = std.testing.allocator;
+
+    // ヘッドレス = OS ウィンドウを開かず描画先をオフスクリーン RT に向ける入口。
+    // 具体シグネチャは application.md / window.md 側で確定（ここでは仮）。
+    var app = try nimbus.Application.initHeadless(gpa, io);
+    defer app.deinit();
+    const frame = try app.frame("t", 320, 240);
+
+    // 検証用に bool を立てるだけのボタン。
+    const Ctx = struct { saved: bool = false };
+    var ctx: Ctx = .{};
+    const save = try app.button("Save");
+    save.component.setBounds(.{ .x = 20, .y = 20, .width = 80, .height = 28 });
+    try save.getModel().addActionListener(Ctx, struct {
+        fn f(c: *Ctx, _: *const nimbus.ActionEvent) void { c.saved = true; }
+    }.f, &ctx);
+    try frame.window.add(&save.component);
+
+    // Robot = 意味を知らないプリミティブ / Driver = その上の薄い意味ラッパー。
+    var robot = nimbus.Robot.init(app, frame.window);
+    var driver = nimbus.Driver{ .robot = &robot };
+
+    try std.testing.expect(!ctx.saved);
+
+    // 座標を知らなくても role+text で名指し → 内部で矩形に解決して click を合成。
+    try driver.clickOn(.{ .role = .button, .text = "Save" });
+    robot.pump();   // 積んだ合成イベントを 1 ループ分だけ処理（waitEvents しない＝ブロックしない）
+
+    try std.testing.expect(ctx.saved);   // ホワイトボックス: ハンドルを直接見る
+}
+
+test "テキストを打つと TextField に反映される" {
+    const gpa = std.testing.allocator;
+    var app = try nimbus.Application.initHeadless(gpa, io);
+    defer app.deinit();
+    const frame = try app.frame("t", 320, 240);
+
+    const field = try app.textField("");
+    field.component.setBounds(.{ .x = 10, .y = 10, .width = 200, .height = 28 });
+    try frame.window.add(&field.component);
+
+    var robot = nimbus.Robot.init(app, frame.window);
+    var driver = nimbus.Driver{ .robot = &robot };
+
+    try driver.clickOn(.{ .role = .text_field });  // フォーカスを当てる
+    robot.typeText("hello");                        // .char 列を合成（IME 確定相当）
+    robot.pump();
+
+    // 黒箱検証: ハンドルを使わず構造化スナップショットで見る経路（記録再生 / AI 駆動と同じ）。
+    const snap = try robot.snapshotTree(gpa);
+    defer nimbus.Robot.freeTree(gpa, snap);
+    // snap を辿って role==.text_field のノードの .text が "hello" のはず。
+    // ハンドルがあるなら白箱で直接見てもよい:
+    try std.testing.expectEqualStrings("hello", field.getText());
+
+    // 時間依存(キャレット点滅 / ダブルクリック / tween)は仮想クロックで決定的に:
+    //   robot.advanceClock(600); robot.pump();   // 実時間 sleep を挟まない
+}
+```
+
+### シナリオ形式（JSON-lines）を再生する
+同じ手順をシリアライズしたのがシナリオ形式（`narrative/robot.md`「シナリオ形式とシナリオランナー」）。手書きでもレコーダー出力でもこの形。
+
+```
+{"window":[320,240]}
+{"act":"click","target":{"role":"button","text":"Save"}}
+{"pump":1}
+{"act":"type","text":"hello"}
+{"checkpoint":"typed","tree":[{"role":"text_field","text":"hello","rect":[10,10,200,28],"focused":true}]}
+```
+
+これを再生（バッチ）するのがシナリオランナーの再生モード `replay`。`target` 解決のため内部で `robot` を包む `Driver` を使う。
+
+```zig
+test "シナリオファイルを再生して checkpoint を照合" {
+    const gpa = std.testing.allocator;
+    var app = try nimbus.Application.initHeadless(gpa, io);
+    defer app.deinit();
+    const frame = try app.frame("t", 320, 240);
+    try buildUi(app, frame);   // 上と同じ UI をコードで組む（窓サイズも一致させる＝再生の事前条件）
+
+    var robot = nimbus.Robot.init(app, frame.window);
+
+    // jsonl を Scenario に読む（writeJsonl の逆。シグネチャは要確定）。
+    var scenario = try nimbus.Scenario.fromJsonl(gpa, io, "scenarios/typed.jsonl");
+    defer scenario.deinit();
+
+    var result = try nimbus.replay(&robot, scenario, gpa);   // ランナーのバッチモード
+    defer result.deinit();
+    try std.testing.expect(result.passed);   // 不一致なら result.failures に差分
+}
+```
+
+対話（stdin REPL）モードや実アプリ内ライブ・サーバーも同じ語彙・同じ `Driver` / `Robot` を叩くだけで、入口（transport）が違うだけ（`narrative/robot.md`「シナリオ形式とシナリオランナー」「機能要望」参照）。
+
 ## 機能要望
 段階的に組む想定。下にいくほど後段。
 
