@@ -63,6 +63,36 @@ pub const SizeQuery = struct {
     minHeightForWidth: *const fn (self: *const Component, w: f32) f32,
 };
 
+/// Accessibility / automation role: a stable, semantic widget kind the
+/// Robot/Driver layer uses to address and snapshot widgets by meaning rather
+/// than by coordinates or pixels. Distinct from `name`, which is debug-only and
+/// not meant for lookup. Each widget sets its own role in `create`; default
+/// `.none`. Plain data (no function pointer), so it lives as a field rather than
+/// in `VTable` or a capability struct. See `framework/doc/robot.md`.
+pub const Role = enum {
+    none,
+    button, toggle_button, checkbox, radio_button,
+    label, slider, combobox, text_field, scroll_bar,
+    menu, menu_item, menu_bar, panel, window,
+};
+
+/// Opt-in accessibility facet: accessors the Robot/Driver layer reads to expose
+/// a widget semantically. Held as an optional field (does not grow `VTable`),
+/// mirroring `DragSource` / `SizeQuery`. Null = the widget has no accessible
+/// name (e.g. Filler / Separator); `role` still applies as a plain field.
+///
+/// `name` returns the widget's accessible name (a Button's label, etc.). The
+/// type-erased `*const Component` cannot reach the concrete widget's text via
+/// comptime reflection, so the widget supplies this accessor — `@fieldParentPtr`
+/// back to the concrete type and return its text, or null if it has none.
+///
+/// A detailed-`dump` accessor is planned here in a later stage; it is omitted
+/// for now to keep the minimal a11y slice free of a Component -> Robot
+/// dependency. See `framework/doc/robot.md` / `narrative/robot.md`.
+pub const A11y = struct {
+    name: *const fn (self: *const Component) ?[]const u8,
+};
+
 pub const VTable = struct {
     /// One-time setup after the component is placed in its container (or for
     /// the root, immediately after construction). May fail if it allocates
@@ -110,6 +140,12 @@ drop_target: ?dnd.DropTarget,
 /// on the chosen width (wrapping TextArea, future wrapping Label, ...).
 /// Null = `min_size.height` is the only thing layouts need. See `SizeQuery`.
 size_query: ?SizeQuery,
+/// Accessibility / automation role (opt-in semantic kind). Set by each widget
+/// in `create`; default `.none`. See `Role`.
+role:       Role,
+/// Accessibility facet (opt-in; null = no accessible name). Set by widgets that
+/// expose a name. See `A11y`.
+a11y:       ?A11y,
 parent:     ?*Component,
 container:  ?*Container,
 /// True if this component can receive keyboard focus. Default false:
@@ -135,6 +171,8 @@ pub fn init(allocator: std.mem.Allocator, vtable: *const VTable) Component {
         .drag_source = null,
         .drop_target = null,
         .size_query  = null,
+        .role       = .none,
+        .a11y       = null,
         .parent     = null,
         .container  = null,
         .focusable  = false,

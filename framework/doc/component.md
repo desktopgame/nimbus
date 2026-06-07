@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # component
@@ -32,6 +32,8 @@ pub const Component = struct {
     drag_source: ?dnd.DragSource,               // DnD のソース側 opt-in (`dnd.md`)
     drop_target: ?dnd.DropTarget,               // DnD のターゲット側 opt-in (`dnd.md`)
     size_query:  ?SizeQuery,                    // 幅依存の高さを返すための opt-in (後述「SizeQuery」)
+    role:        Role,                          // a11y / 自動化のための種別 (後述「Role」)。既定 .none
+    a11y:        ?A11y,                          // アクセシブル名アクセサの opt-in (後述「A11y」)。既定 null
     parent:     ?*Component,
     container:  ?*Container,                    // Container embed のみ self を指す
     focusable:  bool,                           // キーボードフォーカスを受け取れるか (デフォルト false)
@@ -55,6 +57,33 @@ pub const SizeQuery = struct {
 `*const Component` を受け取る純粋クエリ。同じ widget 状態と同じ `w` に対して同じ結果を返し、観測可能な状態 (`min_size` 等) を変更しない。内部 cache (折り返し結果の memoization 等) の更新は `@constCast` 経由で許される。
 
 `w` は親レイアウトが当該ウィジェットに与えようとしている外側の幅 (padding / border 込み)。`null` のとき呼び出し側は `min_size.height` をそのまま使う。
+
+### Role
+a11y / 自動化のための「ウィジェット種別」。Robot / Driver レイヤーが座標やピクセルでなく**意味**でウィジェットを名指し・観測するために使う (`robot.md` 参照)。デバッグ用の `name` (ルックアップ非想定) とは別系統。
+
+```zig
+pub const Role = enum {
+    none,
+    button, toggle_button, checkbox, radio_button,
+    label, slider, combobox, text_field, scroll_bar,
+    menu, menu_item, menu_bar, panel, window,
+};
+```
+
+各ウィジェットが `create` 内で自分の `role` をセットする (Button なら `.button`)。既定は `.none`。関数ポインタを持たない素のデータなので、`VTable` でも能力構造体でもなく単なるフィールドとして持つ。
+
+### A11y
+アクセシブル名を Robot / Driver に見せるための opt-in 能力構造体。`DragSource` / `SizeQuery` と同じく `Component` のオプショナルフィールドとして持ち、`VTable` を増やさない。`null` はアクセシブル名を持たないウィジェット (Filler / Separator 等。`role` は素のフィールドなので別途有効)。
+
+```zig
+pub const A11y = struct {
+    name: *const fn (self: *const Component) ?[]const u8,
+};
+```
+
+`name` はウィジェットのアクセシブル名 (Button のラベル等) を返すアクセサ。型消去された `*const Component` からは comptime リフレクションで実体のテキストに届かないため、ウィジェット側がこのアクセサを与える (`@fieldParentPtr` で実体に戻してテキストを返す)。テキストを持たなければ `null` を返す。
+
+詳細ダンプ用の `dump` アクセサは後段で `A11y` に追加予定 (現状は最小投入のため省略。`narrative/robot.md`「a11y ファセット」参照)。
 
 `Event` の型定義は `awt/doc/event.md` を参照。
 `processEvent` は mutable `*Event` を受け取り、消費は `event.consume()` で表現する（戻り値ではなくフィールドで管理する）。
