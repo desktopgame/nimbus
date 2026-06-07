@@ -242,3 +242,63 @@ test "headless robot: click reaches the button; tree exposes its role" {
     defer Robot.freeTree(gpa, tree);
     try std.testing.expect(treeHasRole(tree, .button));
 }
+
+test "headless robot: button rollover / press / release+action / un-hover" {
+    const gpa = std.testing.allocator;
+    const ActionEvent = @import("listener.zig").ActionEvent;
+
+    const app = Application.initHeadless(gpa, std.testing.io) catch return error.SkipZigTest;
+    defer app.deinit();
+
+    const frame = try app.frameHeadless("t", 200, 120);
+    frame.window.container.setLayout(null); // manual placement so bounds stick
+
+    const Ctx = struct { actions: u32 = 0 };
+    var ctx: Ctx = .{};
+    const btn = try app.button("Go");
+    btn.component.setBounds(.{ .x = 10, .y = 10, .width = 80, .height = 30 });
+    const model = btn.getModel();
+    try model.addActionListener(Ctx, struct {
+        fn f(c: *Ctx, _: *const ActionEvent) void {
+            c.actions += 1;
+        }
+    }.f, &ctx);
+    try frame.window.add(&btn.component);
+
+    var robot = Robot.init(app, &frame.window);
+    robot.pump();
+
+    // Idle to start.
+    try std.testing.expect(!model.isRollover());
+    try std.testing.expect(!model.isPressed());
+    try std.testing.expect(!model.isArmed());
+
+    // Hover onto the button (50,25 is inside [10,10,80,30]) → rollover, nothing else.
+    robot.moveMouse(50, 25);
+    robot.pump();
+    try std.testing.expect(model.isRollover());
+    try std.testing.expect(!model.isPressed());
+    try std.testing.expect(!model.isArmed());
+    try std.testing.expectEqual(@as(u32, 0), ctx.actions);
+
+    // Press at the cursor → pressed + armed, no action yet.
+    robot.mouseDown(.left);
+    robot.pump();
+    try std.testing.expect(model.isPressed());
+    try std.testing.expect(model.isArmed());
+    try std.testing.expectEqual(@as(u32, 0), ctx.actions);
+
+    // Release inside → un-press, un-arm, ActionEvent fires exactly once.
+    robot.mouseUp(.left);
+    robot.pump();
+    try std.testing.expect(!model.isPressed());
+    try std.testing.expect(!model.isArmed());
+    try std.testing.expectEqual(@as(u32, 1), ctx.actions);
+    try std.testing.expect(model.isRollover()); // cursor still over the button
+
+    // Move off the button → rollover clears (Container.updateHover notifies it).
+    robot.moveMouse(150, 100);
+    robot.pump();
+    try std.testing.expect(!model.isRollover());
+    try std.testing.expectEqual(@as(u32, 1), ctx.actions); // no extra action
+}
