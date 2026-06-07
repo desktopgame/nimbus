@@ -296,6 +296,21 @@ nmDevice* nmCreateDevice(void) {
             D3D12_MESSAGE_SEVERITY_CORRUPTION, want_break);
         ID3D12InfoQueue_SetBreakOnSeverity(dev->info_queue,
             D3D12_MESSAGE_SEVERITY_ERROR, want_break);
+
+        /* Silence the benign clear-value mismatch warning. Offscreen render
+         * targets are cleared with varying colors (window background, snapshot
+         * scenes) that can't all match a single optimized clear value, so the
+         * debug layer warns on every clear. The clear works correctly; this is
+         * a pure perf hint we don't act on, so suppress it to keep test /
+         * headless output readable. */
+        D3D12_MESSAGE_ID deny_ids[] = {
+            D3D12_MESSAGE_ID_CLEARRENDERTARGETVIEW_MISMATCHINGCLEARVALUE,
+        };
+        D3D12_INFO_QUEUE_FILTER filter;
+        memset(&filter, 0, sizeof(filter));
+        filter.DenyList.NumIDs = (UINT)(sizeof(deny_ids) / sizeof(deny_ids[0]));
+        filter.DenyList.pIDList = deny_ids;
+        ID3D12InfoQueue_AddStorageFilterEntries(dev->info_queue, &filter);
     }
 #endif
 
