@@ -35,6 +35,7 @@ pub fn init(allocator: std.mem.Allocator) Panel {
     // Override the inner Container's vtable so paint hits Panel.paint
     // (which draws bg + border + children) instead of Container.paint.
     p.container.component.vtable = &vtable;
+    p.container.component.role = .panel;
     // Default layout: BorderLayout. Users override via `panel.container.setLayout`.
     p.container.layout = BorderLayout.get();
     return p;

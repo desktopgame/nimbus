@@ -93,6 +93,7 @@ pub fn create(allocator: std.mem.Allocator, view: *Component) !*ScrollPane {
     }
     // Wire the embedded container to behave as the ScrollPane component.
     sp.container.component.vtable = &vtable;
+    sp.container.component.role = .scroll_pane;
     sp.container.component.container = &sp.container;
     sp.container.layout = &sp.layout.base;
 

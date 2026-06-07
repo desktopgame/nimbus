@@ -77,6 +77,7 @@ fn createInternal(
         .owns_model = owns_model,
         .allocator = allocator,
     };
+    item.component.role = .menu_item;
     item.applyMetrics();
     try MenuItem.vtable.install(&item.component);
     return item;

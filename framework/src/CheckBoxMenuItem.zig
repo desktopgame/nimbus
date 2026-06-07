@@ -71,6 +71,7 @@ fn createInternal(
         .owns_model = owns_model,
         .allocator = allocator,
     };
+    item.component.role = .checkbox_menu_item;
     item.applyMetrics();
     try CheckBoxMenuItem.vtable.install(&item.component);
     return item;

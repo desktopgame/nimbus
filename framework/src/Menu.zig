@@ -89,6 +89,7 @@ pub fn create(
         .window     = null,
         .allocator  = allocator,
     };
+    menu.component.role = .menu;
     menu.applyMetrics();
     try Menu.vtable.install(&menu.component);
     return menu;

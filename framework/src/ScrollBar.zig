@@ -86,6 +86,7 @@ fn createInternal(
         .drag_grab       = 0,
         .allocator       = allocator,
     };
+    sb.component.role = .scroll_bar;
     sb.applyDefaultLayoutAttrs();
     try ScrollBar.vtable.install(&sb.component);
     return sb;

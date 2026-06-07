@@ -86,6 +86,7 @@ fn createInternal(
         .icon_size = null,
         .allocator = allocator,
     };
+    b.component.role = .button;
     b.applyMetrics();
     try Button.vtable.install(&b.component);
     return b;

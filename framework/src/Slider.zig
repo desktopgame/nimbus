@@ -72,6 +72,7 @@ fn createInternal(
         .orientation = orientation,
         .allocator = allocator,
     };
+    s.component.role = .slider;
     s.applyDefaultLayoutAttrs();
     try Slider.vtable.install(&s.component);
     return s;

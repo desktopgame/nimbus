@@ -107,6 +107,7 @@ pub fn create(
         .change_listeners = ChangeListenerList.init(allocator),
         .allocator = allocator,
     };
+    cb.component.role = .combobox;
     cb.applyMetrics();
     try ComboBox.vtable.install(&cb.component);
     return cb;

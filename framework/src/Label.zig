@@ -33,6 +33,7 @@ pub fn init(
         .color     = color,
         .allocator = allocator,
     };
+    l.component.role = .label;
     l.component.min_size = textMinSize(font, l.text);
     return l;
 }

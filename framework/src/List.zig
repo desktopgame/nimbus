@@ -233,6 +233,7 @@ fn createInternal(allocator: std.mem.Allocator, model: *ListModel, owns_model: b
         .change_listeners = ChangeListenerList.init(allocator),
         .allocator = allocator,
     };
+    list.component.role = .list;
     errdefer list.change_listeners.deinit();
     errdefer list.pool.deinit(allocator);
 

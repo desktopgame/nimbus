@@ -124,6 +124,7 @@ pub fn create(
         .change_listeners = ChangeListenerList.init(allocator),
         .allocator      = allocator,
     };
+    tf.component.role = .text_field;
     tf.applyMetrics();
     try TextField.vtable.install(&tf.component);
     return tf;

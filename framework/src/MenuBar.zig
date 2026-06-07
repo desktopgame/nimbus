@@ -45,6 +45,7 @@ pub fn create(
         .allocator = allocator,
     };
     // Min height ≒ font ascent + padding. Computed lazily once a menu is added.
+    bar.component.role = .menu_bar;
     const m = font.measureString("Mg");
     bar.component.min_size = .{ .width = 0, .height = m.height + 8 };
     bar.component.max_size = .{ .width = std.math.inf(f32), .height = bar.component.min_size.height };

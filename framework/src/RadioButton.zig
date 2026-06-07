@@ -86,6 +86,7 @@ fn createInternal(
         .color = color,
         .allocator = allocator,
     };
+    rb.component.role = .radio_button;
     rb.applyMetrics();
     try RadioButton.vtable.install(&rb.component);
     return rb;

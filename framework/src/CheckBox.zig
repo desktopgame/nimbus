@@ -90,6 +90,7 @@ fn createInternal(
         .color = color,
         .allocator = allocator,
     };
+    cb.component.role = .checkbox;
     cb.applyMetrics();
     try CheckBox.vtable.install(&cb.component);
     return cb;

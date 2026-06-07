@@ -65,8 +65,10 @@ a11y / 自動化のための「ウィジェット種別」。Robot / Driver レ�
 pub const Role = enum {
     none,
     button, toggle_button, checkbox, radio_button,
-    label, slider, combobox, text_field, scroll_bar,
-    menu, menu_item, menu_bar, panel, window,
+    label, slider, combobox, text_field, text_area,
+    list, scroll_bar, scroll_pane, panel,
+    menu, menu_item, checkbox_menu_item, menu_bar, popup_menu, separator,
+    window,
 };
 ```
 

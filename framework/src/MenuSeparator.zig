@@ -27,6 +27,7 @@ pub fn create(allocator: std.mem.Allocator) !*MenuSeparator {
         .component = Component.init(allocator, &vtable),
         .allocator = allocator,
     };
+    s.component.role = .separator;
     const h = LINE_THICKNESS + PADDING_Y * 2;
     s.component.min_size = .{ .width = 0, .height = h };
     s.component.max_size = .{ .width = std.math.inf(f32), .height = h };

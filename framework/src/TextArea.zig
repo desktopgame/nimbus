@@ -132,6 +132,7 @@ pub fn create(
         .preedit_target_end   = 0,
         .allocator      = allocator,
     };
+    ta.component.role = .text_area;
     ta.refreshMinSize();
     try TextArea.vtable.install(&ta.component);
     return ta;

@@ -41,6 +41,7 @@ pub fn create(allocator: std.mem.Allocator) !*PopupMenu {
         .window     = null,
         .allocator  = allocator,
     };
+    pm.popup_root.role = .popup_menu;
     return pm;
 }
 
