@@ -3,9 +3,9 @@ unsafe: true
 ---
 
 # robot
-AI / 自動テストが nimbus アプリのインタラクションを再現・観測するためのドライバ。
-合成イベントの注入・イベントループの単一ステップ駆動・仮想時間・コンポーネントツリーの構造化スナップショットを提供する。
-Swing の `java.awt.Robot` に相当するが、OS レベルではなく framework レベルで動き、ヘッドレス・決定的・意味的（role + text 指定）である点が異なる。
+AI / 自動テストが nimbus アプリのインタラクションを再現・観測するための駆動レイヤー。
+2 層に分かれる: **`Robot`**（意味を知らないプリミティブ。合成イベントの注入 / イベントループの単一ステップ駆動 / 仮想時間 / 構造化スナップショット）と、**`Driver`**（その上の薄い意味ラッパー。role + text でウィジェットを名指しする `find` / `clickOn`）。
+Swing の `java.awt.Robot` に相当するが、OS レベルではなく framework レベルで動き、ヘッドレス・決定的・意味的（role + text 指定）である点が異なる。意味レイヤーは座標プリミティブへ解決して委譲するだけで、新しい機構は足さない。
 
 ## 型定義
 ```zig
@@ -28,7 +28,7 @@ curated な `tree` ビューのノード:
 pub const NodeSnapshot = struct {
     role:      Component.Role,    // ウィジェット種別（後述「Component の a11y ファセット」）
     name:      ?[]const u8,       // Component.name（デバッグ名。未設定なら null）
-    text:      ?[]const u8,       // accessibleText()（ボタンのラベル等。未設定なら null）
+    text:      ?[]const u8,       // a11y 名（後述「a11y ファセット」。未設定なら null）
     rect:      Component.Rect,    // ウィンドウローカルの絶対矩形
     focusable: bool,
     focused:   bool,              // この Component が Window の focus_owner か
@@ -188,7 +188,7 @@ pub fn freeDump(allocator: std.mem.Allocator, root: DumpNode) void;
 「なぜそうなっているか」を診断するための深いビュー。
 curated `tree` が role / text / rect の最小集合なのに対し、これは内部状態（`min_size` / `grow_x` / モデルの選択インデックス / caret 位置等）のうちウィジェットが診断に有用と判断したものを出す。
 
-各ノードのフィールド収集は Component の `dump` VTable フック（後述）が行う。
+各ノードのフィールド収集は Component の opt-in 能力構造体 `a11y.dump` フック（`narrative/robot.md`「a11y ファセット」参照。段階としては後回し）が行う。
 返り値は `allocator` で確保される。呼び出し側が `freeDump` で解放する。
 
 ## ピクセルスナップショットの取得
@@ -203,33 +203,40 @@ pub fn snapshotPng(self: *Robot, allocator: std.mem.Allocator, io: std.Io, path:
 ### 事前条件
 `window` がヘッドレスモードであること。実ウィンドウ（Swapchain）に対しては未サポート（UB）。
 
-## 意味的クエリ
+## 意味レイヤー（Driver）
+`find` / `clickOn` は `Robot` ではなく、その上の薄いラッパー `Driver` に置く。
+`Driver` は `*Robot` を持つだけの便利クラスで、role + text を矩形に解決して `Robot` のプリミティブへ委譲する（新しい機構は持たない）。
+
 ```zig
-pub fn find(self: *Robot, q: Query) QueryError!*Component;
-pub fn clickOn(self: *Robot, q: Query) QueryError!void;
+pub const Driver = struct {
+    robot: *Robot,                // 借用。act は robot へ委譲、解決は robot.snapshotTree を読む
+
+    pub fn find   (self: *Driver, q: Query) QueryError!*Component;
+    pub fn clickOn(self: *Driver, q: Query) QueryError!void;
+};
 
 pub const Query = struct {
     role: ?Component.Role = null,
-    text: ?[]const u8 = null,     // accessibleText() との完全一致
+    text: ?[]const u8 = null,     // a11y 名（後述「a11y ファセット」）との完全一致
     name: ?[]const u8 = null,     // Component.name との完全一致
 };
 ```
 
-`find` は条件 `q`（role / text / name の AND）に一致する Component をツリーから探して返す。
+`find` は条件 `q`（role / text / name の AND）に一致する Component を、`robot.snapshotTree`（curated）の走査で探して返す。
 一致が 0 件なら `error.NotFound`、2 件以上なら `error.Ambiguous`。
-`clickOn` は `find` の結果矩形の中心へ `click` を合成する（座標計算を呼び出し側にさせない）。
+`clickOn` は `find` の結果矩形の中心へ `robot.click` を合成する（座標計算を呼び出し側にさせない）。
 
-座標ベースの `click` が下位プリミティブ、`clickOn` がその上の意味的ラッパー。
-AI は通常 `clickOn(.{ .role = .button, .text = "Save" })` を使い、座標が必要なときだけ `click` を使う。
+座標ベースの `Robot.click` が下位プリミティブ、`Driver.clickOn` がその上の意味的ラッパー。
+AI は通常 `driver.clickOn(.{ .role = .button, .text = "Save" })` を使い、座標が必要なときだけ `robot.click` を使う。
 
 ## 機能要望
 段階的に組む想定。下にいくほど後段。
 
 * **段階 1**: 合成イベント注入（`postEvent` ラッパー）+ 座標ベース `click` / `keyDown` / `typeText`。既存 API でほぼ実現でき、実ウィンドウに対しても動く
 * **段階 2**: ヘッドレスサーフェス + `pump` + 仮想クロック。決定的な `inject → pump → snapshot` ループが成立する
-* **段階 3**: Component の a11y ファセット（`role` / `accessibleText`）+ `snapshotTree`（curated）+ 意味的クエリ（`find` / `clickOn`）
-* **段階 3.5**: `dump` フック（ウィジェット毎にフィールド選別）+ 詳細ダンプ（`dumpTree` / `dumpNode`）。curated ツリーの上に深掘りビューを足す
-* **段階 4**: アウトプロセス JSON ドライバ + MCP サーバー化
+* **段階 3**: `Component.role`（フィールド）+ a11y 名（`A11y` 能力構造体）+ `snapshotTree`（curated）+ 意味レイヤー `Driver`（`find` / `clickOn`）
+* **段階 3.5**: `A11y.dump` フック（ウィジェット毎にフィールド選別）+ 詳細ダンプ（`dumpTree` / `dumpNode`）。curated ツリーの上に深掘りビューを足す
+* **段階 4**: シナリオ形式 + シナリオランナー（再生 / 対話 stdin REPL）+ MCP サーバー化
 * **段階 5**: 入力レコーダー（`Window.input_observer` + `Recorder`）+ シナリオ再生（`replay`）。記録は実ウィンドウ、再生はヘッドレス。意味的解決とチェックポイントは段階 3 のファセットを前提とする
 * ライブ・サーバー（検討の上、当面見送り）: フラグで起動した実アプリ内に別スレッドでローカル HTTP サーバーを立て、実行中の GUI を操作・内省する API を晒す（MCP がそれを叩く）。用途は「AI が実アプリを操作するエージェント」「開発時の GUI REPL」「再現しないバグの現地調査」で、**決定的テストとは別物**（実時間・実イベントなので回帰テストには使えない）。既存の `EventQueue`（`postEvent` / `invokeAndWait`）にほぼタダ乗りでき、意味的レイヤー（a11y ファセット / snapshot / クエリ）はヘッドレスと共通なので、必要になれば薄く後付けできる。当面はヘッドレス（決定的検証）に集中する
 * Zig テストコードの codegen: シナリオから `snapshot_test.zig` 隣に置ける Zig テスト関数を生成（v1 は JSON-lines のみ）

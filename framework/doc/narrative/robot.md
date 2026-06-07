@@ -3,7 +3,7 @@ unsafe: true
 ---
 
 # robot
-Robot ドライバの意図・依存・前提・a11y ファセット・スナップショットモード・ヘッドレス/仮想クロック・JSON ドライバ・レコーダー・再生・寿命・制約。
+Robot / Driver の意図・依存・前提・a11y ファセット・スナップショットモード・ヘッドレス/仮想クロック・シナリオ形式とランナー・レコーダー・再生・寿命・制約。
 
 ## やりたいこと
 表示のチェックは awt の `RenderTarget` で済んでいる（Scene → オフスクリーン → PNG）。
@@ -16,9 +16,11 @@ Robot は次の 2 チャネルを提供する。
 
 この 2 チャネルを `pump`（イベントループの単一ステップ駆動）と仮想クロックで挟み、`inject → pump → snapshot → 検証` を決定的に繰り返す。
 
+操作と観測のプリミティブは意味を知らない `Robot` に集約し（act / drive / observe）、role + text で名指しする意味ラッパー `Driver` をその上に薄く重ねる（`Driver` は `*Robot` を持つだけで、解決して `Robot` のプリミティブへ委譲する。robot.md「意味レイヤー」）。「driver（駆動するもの）」と呼ぶのはこの `Driver` だけ。
+
 さらに、人間が実ウィンドウでアプリを操作した入力列を記録し、再生可能なテストシナリオに変換する**レコーダー**を提供する（後述「入力の記録」）。記録は実ウィンドウ、再生はヘッドレス。
 
-最終的な利用形態は**アウトプロセス JSON ドライバ**（後述「JSON ドライバ」）だが、その土台となる Zig API も同時に公開する。
+最終的な利用形態は、操作と観測を JSON-lines の**シナリオ形式**で記述し、**シナリオランナー**が `Driver` / `Robot` に流して実行する形（後述「シナリオ形式とシナリオランナー」）。その土台となる Zig API（`Robot` / `Driver`）も同時に公開する。
 
 ## 依存関係
 `framework` 層に属する。
@@ -52,29 +54,19 @@ pub const Role = enum {
 各ウィジェットは `create` 内で自身の `role` をセットする（Button なら `.button` 等）。
 デフォルトは `.none`。
 
-アクセシブル名（ボタンのラベル等）は Component には保持せず、VTable 経由でウィジェットから引く。
-テキストは各ウィジェット構造体（`Button.text` 等）が持つため、Component に重複保持しないのが自然。
-`Component.VTable` に 2 エントリを追加する（既存 5 エントリ → 7 エントリ）。
+アクセシブル名（ボタンのラベル等）と詳細ダンプは、`Component.VTable` を増やさず **opt-in の能力構造体**として持たせる。`drag_source` / `drop_target` / `size_query` と同じパターンで、`component.md`「VTable の関数はできるだけ増やすな」と整合する（全 widget に常時乗るのは VTable だけ、という方針）。テキストは各ウィジェット構造体（`Button.text` 等）が持つため、Component に重複保持しない。
 
 ```zig
-pub const VTable = struct {
-    install:        *const fn (*Component) anyerror!void,
-    uninstall:      *const fn (*Component) void,
-    paint:          *const fn (*Component, *awt.Graphics) void,
-    processEvent:   *const fn (*Component, *awt.Event) void,
-    destroy:        *const fn (*Component, std.mem.Allocator) void,
-    accessibleText: ?*const fn (*Component) ?[]const u8,            // ★ 追加。テキストを持たないなら null
-    dump:           ?*const fn (*Component, *Robot.DumpSink) void,  // ★ 追加。詳細ダンプ
+pub const A11y = struct {
+    name: *const fn (*const Component) ?[]const u8,                 // アクセシブル名。テキストを持たないなら null
+    dump: ?*const fn (*Component, *Robot.DumpSink) void = null,     // 詳細ダンプ（後段の段階。最小投入では null）
 };
+// Component に追加: a11y: ?A11y = null
 ```
 
-`accessibleText` は curated ツリーと意味的クエリ用の軽いアクセサ。
-text を引くためだけに詳細ダンプを走らせたくないので、curated 側専用に独立させる（dump とは別エントリ）。
-テキストを持たないウィジェット（Filler / Separator 等）は null のままでよい。
+robot の**最小投入分は `role`（前述のフィールド）+ `A11y.name` だけ**。`name` は curated ツリーと意味的クエリ（`Driver.find` / `clickOn`）が使う軽いアクセサで、型消去された `*const Component` から comptime リフレクションでウィジェット実体に届かないため、具体型を知るこのアクセサ経由で引く（`@fieldParentPtr` で実体に戻して text を返す）。名前を持たないウィジェット（Filler / Separator 等）は `a11y = null` のままでよい。
 
-`dump` は詳細ビュー用のフック。
-型消去された `*Component` からは Zig の comptime リフレクションでウィジェット実体のフィールドに届かないため、具体型を知るこのフックが必要になる。
-フック内で `@fieldParentPtr` で実体に戻し、**診断に有用なフィールドを選んで** `sink.field(...)` で明示的に並べる。
+`A11y.dump` は詳細ビュー用のフックで、**段階として後回し**（最小投入は `role` + `name` のみ。詳細は後述「詳細ダンプのフィールド選別」と robot.md「機能要望」段階 3.5）。フック内では `name` と同じく `@fieldParentPtr` で実体に戻し、**診断に有用なフィールドを選んで** `sink.field(...)` で明示的に並べる。
 
 ```zig
 fn dump(self: *Component, sink: *Robot.DumpSink) void {
@@ -85,10 +77,12 @@ fn dump(self: *Component, sink: *Robot.DumpSink) void {
 }
 ```
 
-ダンプを持たないウィジェットは null のままでよい（その場合 `DumpNode.fields` は空）。
 旧案にあった `accessibleState`（押下 / 選択を別途返す）は廃止する。`pressed` / `selected` 等は `dump` が `field` で出すため。
 
+**本物のアクセシビリティとの関係**: ここで入れる `role` + `name` は、将来スクリーンリーダー対応をやるときにも最初に必要となる同じ核なので捨てにならない。その段では `A11y` に state / value / actions 等のアクセサを **additive に足す**だけで済む。OS の支援技術ブリッジ（UI Automation / NSAccessibility / AT-SPI）や通知・関係性は本 doc のスコープ外（後述「制約」）。
+
 ## 詳細ダンプのフィールド選別
+（詳細ダンプ＝`A11y.dump` は最小投入には含めず、段階として後回し。以下はその設計。）
 `dump` フックが出すフィールドは、機械的な全件走査ではなく**各ウィジェットが明示的に選別**する（allowlist 方式）。
 `DumpSink.field` はフィールド名と値を 1 つ受け取り、型に応じて `Value` に変換して `DumpNode.fields` に積む。
 
@@ -127,7 +121,7 @@ pub fn field(self: *DumpSink, name: []const u8, value: anytype) void;
 
 通常は `tree` でアサートし、状態が想定と食い違ったノードだけ `dumpNode` で深掘りする、という流れを想定する。
 `dump` は curated を置き換えるものではなく補完するもの。
-意味的クエリ（`find` / `clickOn`）は軽い `tree` 側（`accessibleText`）を使う。
+意味的クエリ（`Driver.find` / `clickOn`）は軽い `tree` 側（`A11y.name`）を使う。
 
 ## ヘッドレスサーフェス
 `Window` は現状 `awt.Window`（GLFW）+ `awt.Swapchain` に固く結びついており、生成すると実 OS ウィンドウが開く。
@@ -152,12 +146,13 @@ pub fn field(self: *DumpSink, name: []const u8, value: anytype) void;
 `fireDueTimers` の `now` 比較、ダブルクリック / 長押し / caret 点滅の経過時間判定はすべてこの時間源を経由させる。
 これにより実時間 sleep を一切挟まずに時間依存挙動を検証できる。
 
-## JSON ドライバ
-最終的な利用形態。
-Robot の Zig API をラップしたヘッドレス実行ファイルを用意し、stdin で JSON-lines コマンドを受け、stdout で観測結果（JSON）を返す。
-AI エージェントが再ビルドなしにターン毎に対話駆動でき、MCP サーバー化も自然。
+## シナリオ形式とシナリオランナー
+robot の最終的な利用形態は、操作と観測を **JSON-lines のシナリオ形式**で記述し、それを**シナリオランナー**が `Driver` / `Robot` に流して実行する形。
+「driver（実際にアプリを駆動するもの）」は in-proc の `Driver` / `Robot` であって、この JSON 層ではない。JSON 層は **シナリオの記述形式**と、それを解釈する薄いランナーに分かれる。
 
-1 行 1 コマンド。コマンド → 即応答の同期プロトコル。
+### シナリオ形式（記述言語）
+1 行 1 ステップの JSON-lines。語彙は次の通り。
+人間 / AI が手で書く、レコーダーが記録して吐く（後述「入力の記録」）、どちらも同じ形式を共有する。
 
 | コマンド | 意味 | 主なフィールド |
 |---|---|---|
@@ -166,15 +161,22 @@ AI エージェントが再ビルドなしにターン毎に対話駆動でき�
 | `advance` | 仮想クロックを進める | `ms` |
 | `snapshot` | 観測を返す | `what`（tree / dump / pixels）, `target`（dump 対象の限定。省略時は全体） |
 | `query` | 意味的クエリの結果を返す | `role`, `text`, `name` |
-| `quit` | ドライバを終了する | — |
+| `checkpoint` | 期待状態（curated tree）を埋め込む | `label`, `tree` |
+| `quit` | ランナーを終了する（対話モード） | — |
 
-`act` の `target` は意味的指定（`{"role":"button","text":"Save"}`）で、座標の代わりに使える。
-ドライバ内部で `clickOn` 等に解決する。
+`act` の `target` は意味的指定（`{"role":"button","text":"Save"}`）で、座標の代わりに使える（ランナー内部で `Driver.clickOn` 等に解決する）。
 `snapshot` の `tree` は curated ビュー、`dump` は詳細ビュー（`target` で 1 ノードに絞れる）。
+座標 / ピクセルは初版から使えるが、`target` による意味的指定は `role` + a11y 名が入って初めて機能する。
 
-応答は `{"ok":true}` か、観測コマンドはペイロード（`tree` / `dump` / 画像パス）、失敗時は `{"error":"NotFound"}` 等。
+### シナリオランナー（2 モード）
+同じシナリオ形式・同じインタプリタを、入口だけ変えて 2 モードで使う。違いは「**次のステップを誰が決めるか**」だけで、どちらもランナー（シナリオ語彙 → `Driver` / `Robot` 呼び出し）を共有するので実行経路を二重実装しない。
 
-利用イメージ:
+* **再生（バッチ）** — シナリオ全体（ファイル）を順に実行し、`checkpoint` を照合する。順序は事前固定（記録 or 手書き）。決定的ヘッドレスでの回帰テスト用（後述「シナリオの再生」= `replay`）。
+* **対話（stdin REPL）** — 1 行ずつ stdin で受け、即 stdout で応答する同期プロトコル。AI が直前の観測を見て次の 1 手を決める閉ループ。再ビルドなしにターン毎に駆動でき、MCP サーバー化も自然。
+
+応答（対話モード）は `{"ok":true}` か、観測コマンドはペイロード（`tree` / `dump` / 画像パス）、失敗時は `{"error":"NotFound"}` 等。
+
+対話モードの利用イメージ:
 
 ```
 > {"act":"click","target":{"role":"button","text":"Save"}}
@@ -186,8 +188,6 @@ AI エージェントが再ビルドなしにターン毎に対話駆動でき�
 > {"snapshot":"dump","target":{"role":"button","text":"Save"}}
 < {"dump":{"type_name":"Button","fields":[{"name":"armed","value":true},{"name":"pressed","value":true}],"children":[]}}
 ```
-
-座標 / ピクセルは初版から使えるが、`target` による意味的指定は Component の a11y ファセットが入って初めて機能する。
 
 ## 入力の記録（レコーダー）
 人間が実ウィンドウでアプリを操作した入力列を記録し、再生可能なテストシナリオに変換する。
@@ -294,10 +294,10 @@ pub const ReplayResult = struct {
 };
 ```
 
-`Scenario` のステップを順に Robot 操作へ写して再生する。
+シナリオランナーの**再生モード**（前述「シナリオ形式とシナリオランナー」）。`Scenario` のステップを順に Robot / Driver 操作へ写して再生する。`target` 解決のため内部で `robot` を包む `Driver` を使う。
 
 * `wait` → `advanceClock(ms)` の後 `pump`。再生クロックは仮想なので、人間の長い手休めもほぼ即座に消化される（実時間 sleep は挟まない）
-* `act` → `clickOn` / `moveMouse` / `keyDown`+`keyUp` / `typeText` / `scroll` の後 `pump`
+* `act` → `Driver.clickOn`（`click` の `target` 解決）/ `robot.moveMouse` / `keyDown`+`keyUp` / `typeText` / `scroll` の後 `pump`
 * `checkpoint` → `snapshotTree` を取り、`expected` と構造比較。差分があれば `failures` に積む
 
 ### 事前条件
@@ -305,8 +305,8 @@ pub const ReplayResult = struct {
 チェックポイントの `rect` 比較がサイズに依存するため、サイズが違うと座標差で偽の不一致が出る。
 
 ### シナリオ形式
-JSON-lines。1 行 1 ステップで、JSON ドライバのコマンド列と同じ語彙を使う。
-したがって「記録 = この形式で書き出す」「再生 = ドライバに食わせる」がそのまま成り立ち、再生経路を二重に実装しなくてよい。
+JSON-lines。1 行 1 ステップで、前述「シナリオ形式とシナリオランナー」と同じ語彙を使う。
+したがって「記録 = この形式で書き出す」「再生 = ランナーに食わせる」がそのまま成り立ち、再生経路を二重に実装しなくてよい。
 
 ```
 {"window":[800,600]}
@@ -330,10 +330,11 @@ JSON-lines。1 行 1 ステップで、JSON ドライバのコマンド列と同
 * **決定性が最優先**: 実時間・実 OS イベントに依存しないことを設計の主目的とする。これがフレーキーなテストとの分かれ目。詳細ダンプも生ポインタ / 関数ポインタ / アドレスを `field` に出さない（実行毎に変わり比較不能になる。「詳細ダンプのフィールド選別」参照）
 * **実入力との同一経路**: 合成イベントは独自の short-cut を作らず、必ず `postEvent` → `dispatchInput` を通す。Robot のためだけの分岐をディスパッチャに増やさない
 * **記録は実ウィンドウ / 再生はヘッドレス**: レコーダーは実ウィンドウに装着して人間の操作を採るが、再生は決定的なヘッドレス + 仮想クロックで行う。両者をイベント間のクロック差分が橋渡しする
-* **スコープ外（v1）**: OS レベルのイベント注入（実ウィンドウへの本物のクリック）、複数プロセス分散、スクリーンリーダー API 連携。いずれも本 doc の意味的ファセット / JSON プロトコルを土台に後付けできる形にしておく
+* **2 層構造と命名**: 意味を知らないプリミティブ `Robot`（act / drive / observe）と、その上の意味ラッパー `Driver`（`find` / `clickOn`）に分ける。`Driver` は `*Robot` を持つだけ。「driver（駆動するもの）」と呼ぶのは `Driver` だけで、JSON 層は driver ではなく**シナリオ形式 + シナリオランナー**（前述）
+* **スコープ外（v1）**: OS レベルのイベント注入（実ウィンドウへの本物のクリック）、複数プロセス分散、本物のアクセシビリティ（スクリーンリーダー / OS の支援技術ブリッジ）。いずれも本 doc の意味的ファセット（`role` + `name`）/ シナリオ形式を土台に後付けできる形にしておく
 
 ## 関連 doc
-* `component.md` — Component / VTable。a11y ファセット（`role` / `accessibleText`）と詳細ダンプ用 `dump` フックの追加先
+* `component.md` — Component。`role` フィールドと a11y 能力構造体（`A11y { name, dump }`）の追加先（VTable は増やさない）
 * `application.md` — イベントループ / タイマー。pump と仮想クロックの追加先
 * `window.md` — dispatchInput / 描画。ヘッドレスサーフェスと `input_observer`（レコーダー装着点）の追加先
 * `awt/doc/event.md` — 合成する `awt.Event` の型
