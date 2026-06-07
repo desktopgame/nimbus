@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # application
@@ -28,6 +28,9 @@ const WindowEntry = struct {
     window:  *Window,
     outer:   *anyopaque,                                          // Frame / Dialog 等の外側ウィジェット
     destroy: *const fn (*anyopaque, std.mem.Allocator) void,      // outer の解放関数
+    dialog:  ?*Dialog = null,                                     // 非 null なら Dialog (close を destroy でなく Dialog.close に振る)
+    synced_pos:  awt.Window.Point,                               // OS と最後に同期した位置 (ループ末尾で diff)
+    synced_size: awt.Window.Size,                                // OS と最後に同期したサイズ
 };
 ```
 

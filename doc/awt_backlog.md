@@ -102,3 +102,55 @@ A（ログ追加）か B（doc を無診断 return に修正）か。
 
 ### 完了条件
 選んだ方針で実装 or doc を更新し、`event_queue.md`:90-93 と実装が一致。
+
+## #6 エラー名の正規化と公開境界での名前付きエラーセット導入
+- 状態: 未着手
+- 優先度: 低
+- 影響範囲: awt の error リテラル全般（`Device` / `Swapchain` / `Pipeline` / `VertexRing` / `UniformBuffer` / `GlyphAtlas` / `RootSignature` / `RenderTarget` / `Font` / `root.zig`）、公開境界としては framework の `Application` / `Window` も。最終的に C ABI 変換層（`c_api.zig` の `errorToCode`）
+- 更新日: 2026-06-07
+- 依存: なし（ただし C ABI 本格実装と一緒にやると手戻りが少ない）
+
+### 何
+旧 `doc/audit-2026-05-23.md` §2 から移送。現状 framework / awt とも名前付き `error{...}` セットは 0 件で、全て inferred `!T`。C ABI 変換（NULL 返し + `last_error_code`）でタグ集合を確定させるには、少なくとも公開境界の戻り値を名前付きエラーセットへ昇格させたい。あわせて以下の命名の揺れを揃える:
+- `awt/src/root.zig` の `error.AwtInitFailed` が唯一の非対称（`Init` + `Failed` 二重）。他は単一動詞 + `Failed`（`DeviceCreateFailed` 等）。→ `AwtInitializeFailed` か `AwtCreateFailed` に寄せる。
+- 容量超過系が 3 流派: `VertexRingFull` / `UniformBufferFull` / `GlyphTooLargeForAtlas` / `TooManyBindings`。→ `XxxOverflow` 等で統一を検討。
+- `RenderTarget.zig` の `error.ReadbackFailed` はサブジェクト無冠（`RenderTargetReadbackFailed` が筋）。
+
+### なぜ（保留理由）
+公開 ABI に出るタグ名なので、決めたら固定したい＝後戻りコストが高い。C ABI の本格実装（`c_api.zig` の `errorToCode` switch）と同時に確定させた方が、タグの網羅と命名を一度に詰められて手戻りが少ない。それまでは意図的に保留。
+
+### 候補アプローチ
+- 案A: `framework/src/error.zig`（または awt 側）を新設し、タグ⇔コードの対応表を一元管理。公開境界の関数戻り値を名前付きセットへ昇格。
+- 案B: 当面 inferred のまま、C ABI 化のタイミングで `errorToCode` の `else => 99` に頼る（命名揺れだけ先に直す）。
+- 判断軸: ABI 安定性を早く取るなら A、C ABI 着手まで動かさないなら B。
+
+### 決めること
+名前付きエラーセットを今導入するか（A/B）。命名統一（`AwtInitFailed` / 容量系 / `ReadbackFailed`）をどう揃えるか。
+
+### 完了条件
+命名を統一し、（採用するなら）公開境界に名前付きエラーセットを導入。`c_api.zig` の `errorToCode` が網羅するタグ集合と一致する状態。
+
+## #7 awt の Zig wrapper に対応する doc が無い
+- 状態: 未着手
+- 優先度: 低
+- 影響範囲: `awt/doc/`（新規 doc）、対象は `awt/src/` の `Device` / `CommandBuffer` / `Swapchain` / `Window` / `Buffer` / `Pipeline` / `RootSignature` / `Shader` / `Texture` / `UniformBuffer` / `VertexRing` / `QuadIndexBuffer` / `GlyphAtlas`
+- 更新日: 2026-06-07
+- 依存: なし
+
+### 何
+旧 `doc/audit-2026-05-23.md` (a) から移送。awt の公開 API を持つ Zig wrapper 群に対応する `awt/doc/*.md` が無い。awt-c 側（`awt-c/doc/*.md`）はほぼ揃っているので「awt-c のラッパーで自明」という前提で省略してきたと思われるが、`Pipeline` / `Buffer` / `UniformBuffer` 等は Zig 側で `Usage` / `IndexFormat` / `BlendMode` / `StencilState` といった独自型を提供しており、awt-c の doc だけでは利用者が型を把握できない。
+
+### なぜ（保留理由）
+全 wrapper に doc を起こすのは量があり、かつ「どこまでが自明な薄ラッパーで doc 不要か」の線引き自体が作者判断。実需（利用者が awt を直接触る場面）が薄いうちは保留。
+
+### 候補アプローチ
+- 案A: Zig 側独自型を持つもの（`Pipeline` / `Buffer` / `UniformBuffer` / `Texture` 等）だけ先に doc を起こし、純粋な薄ラッパーは「awt-c の同名 doc 参照」で済ませる。
+- 案B: 全 wrapper に doc を用意して網羅性を取る。
+- 判断軸: point-of-need を取るなら A（独自型があるものだけ）、網羅性を取るなら B。
+- 推奨: 案A。CLAUDE.md の point-of-need 方針と整合。
+
+### 決めること
+A（独自型のあるものだけ）か B（全部）か。線引きの基準。
+
+### 完了条件
+選んだ範囲で `awt/doc/*.md` を用意し、Zig 側独自型（`Usage` / `IndexFormat` / `BlendMode` / `StencilState` 等）が doc から辿れる状態。
