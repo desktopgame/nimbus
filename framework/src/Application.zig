@@ -68,6 +68,12 @@ const Timer = struct {
     user_data: *anyopaque,
 };
 
+/// Time source selector. `real` reads the monotonic `awt.time()` (GLFW clock);
+/// `virtual` reads `virtual_now`, advanced only by `advanceClock` — used by the
+/// headless / Robot path to drive time-dependent behavior deterministically
+/// without real sleeps. See `framework/doc/robot.md`「仮想クロック」.
+pub const ClockMode = enum { real, virtual };
+
 allocator:    std.mem.Allocator,
 device:       awt.Device,
 context:      awt.Graphics.Context,
@@ -80,6 +86,10 @@ windows:      std.ArrayList(WindowEntry),
 modal_stack:  std.ArrayList(*Window),
 timers:       std.ArrayList(Timer),
 next_timer_id: TimerId,
+/// Time source. Real mode (default) follows `awt.time()`; virtual mode is set
+/// by the headless factory so `advanceClock` drives time deterministically.
+clock_mode:   ClockMode,
+virtual_now:  f64,
 /// Lazily-decoded GPU images for built-in lucide icons. Slot is null until
 /// the first `icon(.foo)` call decodes the PNG and uploads the texture.
 /// All slots are freed in `deinit`.
@@ -112,6 +122,8 @@ pub fn init(allocator: std.mem.Allocator, io: std.Io) !*Application {
     app.modal_stack = .empty;
     app.timers = .empty;
     app.next_timer_id = 1;
+    app.clock_mode = .real;
+    app.virtual_now = 0;
     app.icon_cache = @splat(null);
 
     app.device = try awt.Device.init();
@@ -160,6 +172,18 @@ pub fn init(allocator: std.mem.Allocator, io: std.Io) !*Application {
     return app;
 }
 
+/// Headless variant of `init` for the Robot / deterministic-test path: same
+/// setup as `init`, but the clock runs in virtual mode (`advanceClock`-driven).
+/// Create windows with `frameHeadless`; drive the loop with `Robot.pump` rather
+/// than `run` (which would block on OS events that never come). See
+/// `framework/doc/robot.md`.
+pub fn initHeadless(allocator: std.mem.Allocator, io: std.Io) !*Application {
+    const app = try Application.init(allocator, io);
+    app.clock_mode = .virtual;
+    app.virtual_now = 0;
+    return app;
+}
+
 pub fn deinit(self: *Application) void {
     for (self.windows.items) |entry| {
         entry.destroy(entry.outer, self.allocator);
@@ -193,6 +217,25 @@ pub fn deinit(self: *Application) void {
 
 pub fn getEventQueue(self: *Application) *awt.EventQueue {
     return self.event_queue;
+}
+
+/// Current time in seconds for time-dependent logic (timers, double-click,
+/// caret blink). Real mode returns the monotonic `awt.time()`; virtual mode
+/// returns the internal counter advanced by `advanceClock`.
+pub fn now(self: *const Application) f64 {
+    return switch (self.clock_mode) {
+        .real => awt.time(),
+        .virtual => self.virtual_now,
+    };
+}
+
+/// Advance the virtual clock by `ms` milliseconds. No-op in real mode (the
+/// clock follows `awt.time()` there). Due timers do not fire until the loop is
+/// stepped — call `tickOnce` (or `Robot.pump`) afterward.
+pub fn advanceClock(self: *Application, ms: u32) void {
+    if (self.clock_mode == .virtual) {
+        self.virtual_now += @as(f64, @floatFromInt(ms)) / 1000.0;
+    }
 }
 
 /// Run the main event loop. Returns when all windows have been closed.
@@ -241,16 +284,17 @@ pub fn tickOnce(self: *Application) void {
 fn syncWindowGeometry(self: *Application) void {
     for (self.windows.items) |*entry| {
         const w = entry.window;
+        if (w.headless) continue; // headless windows have no OS geometry to sync
         const want_pos = w.getPos();
         if (want_pos.x != entry.synced_pos.x or want_pos.y != entry.synced_pos.y) {
-            w.awt_window.setPos(want_pos.x, want_pos.y);
+            w.awt_window.?.setPos(want_pos.x, want_pos.y);
             entry.synced_pos = want_pos;
         }
         const want_size = w.getSize();
         if (want_size.width != entry.synced_size.width or
             want_size.height != entry.synced_size.height)
         {
-            w.awt_window.setSize(want_size.width, want_size.height);
+            w.awt_window.?.setSize(want_size.width, want_size.height);
             entry.synced_size = want_size;
         }
     }
@@ -363,7 +407,7 @@ pub fn flashActiveModal(self: *Application) void {
     // modal behavior. Note this is a window-frame effect: if the dialog is
     // positioned entirely off the owner there is no in-content feedback —
     // same as Swing/NetBeans.
-    top.awt_window.requestAttention();
+    if (top.awt_window) |*aw| aw.requestAttention();
 }
 
 /// Recompute per-window input blocking from the modal stack: only the top
@@ -427,7 +471,7 @@ fn addTimer(
     const delay_s: f64 = @as(f64, @floatFromInt(delay_ms)) / 1000.0;
     try self.timers.append(self.allocator, .{
         .id        = id,
-        .due_time  = awt.time() + delay_s,
+        .due_time  = self.now() + delay_s,
         .period_ms = period_ms,
         .cb        = cb,
         .user_data = user_data,
@@ -446,15 +490,15 @@ pub fn earliestDueIn(self: *Application) ?f64 {
     for (self.timers.items[1..]) |t| {
         if (t.due_time < soonest) soonest = t.due_time;
     }
-    return soonest - awt.time();
+    return soonest - self.now();
 }
 
 fn fireDueTimers(self: *Application) void {
-    const now = awt.time();
+    const now_s = self.now();
     var i: usize = 0;
     while (i < self.timers.items.len) {
         var t = self.timers.items[i];
-        if (t.due_time <= now) {
+        if (t.due_time <= now_s) {
             // Snapshot the timer before firing; the callback may call
             // `clearTimer` on its own id, which would invalidate `i`.
             t.cb(t.user_data);
@@ -466,7 +510,7 @@ fn fireDueTimers(self: *Application) void {
                 } else {
                     const period_s: f64 = @as(f64, @floatFromInt(self.timers.items[idx].period_ms)) / 1000.0;
                     // Advance by period (no skip-catch-up; missed ticks coalesce).
-                    self.timers.items[idx].due_time = now + period_s;
+                    self.timers.items[idx].due_time = now_s + period_s;
                     i = idx + 1;
                     continue;
                 }
@@ -512,6 +556,37 @@ pub fn frame(self: *Application, title: []const u8, w: u32, h: u32) !*Frame {
         .outer   = @ptrCast(f),
         .destroy = dtor,
         // Model == OS at creation: seed synced from the window's initial geometry.
+        .synced_pos  = f.window.getPos(),
+        .synced_size = f.window.getSize(),
+    });
+
+    return f;
+}
+
+/// Headless variant of `frame`: the window opens no OS window and renders
+/// offscreen (for the Robot / deterministic tests). Otherwise identical — it is
+/// registered in the window list and laid out / painted via `tickOnce` /
+/// `Robot.pump`.
+pub fn frameHeadless(self: *Application, title: []const u8, w: u32, h: u32) !*Frame {
+    const f = try self.allocator.create(Frame);
+    errdefer self.allocator.destroy(f);
+    f.* = try Frame.initHeadless(self.allocator, @ptrCast(self), self.event_queue, title, w, h, &self.device, &self.context);
+    errdefer f.deinit();
+
+    try Window.vtable.install(&f.window.container.component);
+
+    const dtor = struct {
+        fn destroy(p: *anyopaque, a: std.mem.Allocator) void {
+            const frm: *Frame = @ptrCast(@alignCast(p));
+            frm.deinit();
+            a.destroy(frm);
+        }
+    }.destroy;
+
+    try self.windows.append(self.allocator, .{
+        .window  = &f.window,
+        .outer   = @ptrCast(f),
+        .destroy = dtor,
         .synced_pos  = f.window.getPos(),
         .synced_size = f.window.getSize(),
     });

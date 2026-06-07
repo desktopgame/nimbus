@@ -52,7 +52,7 @@ pub fn init(
     // The OS window is created visible; hide it until shown. A Dialog is not
     // destroyed on close (caller-owned), so show/close toggle visibility
     // rather than create/destroy the OS window.
-    window.awt_window.setVisible(false);
+    window.awt_window.?.setVisible(false);
     return .{
         .window     = window,
         .app        = app,
@@ -96,7 +96,7 @@ pub fn showModal(self: *Dialog) Result {
     self.modal_done = false;
     // Clear a stale OS close flag so a dialog previously closed via its X
     // button can be re-shown.
-    self.window.awt_window.setShouldClose(false);
+    self.window.awt_window.?.setShouldClose(false);
 
     self.app.registerDialog(self) catch return .none;
     self.shown = true;
@@ -104,12 +104,12 @@ pub fn showModal(self: *Dialog) Result {
     // blocking rather than failing the whole call.
     self.app.pushModal(&self.window) catch {};
     self.centerOnOwner();
-    self.window.awt_window.setVisible(true);
+    self.window.awt_window.?.setVisible(true);
     // GLFW has no OS-level modality. `input_blocked` already drops widget
     // input on the owner; floating + focus additionally keep the dialog above
     // the owner so it cannot be raised over / hidden behind it.
-    self.window.awt_window.setFloating(true);
-    self.window.awt_window.focus();
+    self.window.awt_window.?.setFloating(true);
+    self.window.awt_window.?.focus();
     self.window.repaint();
 
     // Nested timer-aware event loop: wakes on the soonest pending timer so
@@ -134,11 +134,11 @@ pub fn show(self: *Dialog) !void {
     if (self.shown) return;
     self.modal = false;
     self.result = .none;
-    self.window.awt_window.setShouldClose(false);
+    self.window.awt_window.?.setShouldClose(false);
     try self.app.registerDialog(self);
     self.shown = true;
     self.centerOnOwner();
-    self.window.awt_window.setVisible(true);
+    self.window.awt_window.?.setVisible(true);
     self.window.repaint();
 }
 
@@ -148,8 +148,8 @@ pub fn show(self: *Dialog) !void {
 pub fn close(self: *Dialog, result: Result) void {
     if (!self.shown) return;
     self.result = result;
-    self.window.awt_window.setFloating(false);
-    self.window.awt_window.setVisible(false);
+    self.window.awt_window.?.setFloating(false);
+    self.window.awt_window.?.setVisible(false);
     self.app.unregisterWindow(&self.window);
     self.shown = false;
     // Break the modal loop in `showModal` (no-op for a modeless dialog).
@@ -175,10 +175,10 @@ pub fn isShown(self: Dialog) bool {
 
 /// Position the dialog centered over its owner (OS screen coordinates).
 fn centerOnOwner(self: *Dialog) void {
-    const op = self.owner.awt_window.pos();
-    const os = self.owner.awt_window.size();
-    const ds = self.window.awt_window.size();
+    const op = self.owner.awt_window.?.pos();
+    const os = self.owner.awt_window.?.size();
+    const ds = self.window.awt_window.?.size();
     const x = op.x + @divTrunc(os.width - ds.width, 2);
     const y = op.y + @divTrunc(os.height - ds.height, 2);
-    self.window.awt_window.setPos(x, y);
+    self.window.awt_window.?.setPos(x, y);
 }

@@ -198,7 +198,7 @@ pub fn show(self: *Menu, w: *Window, anchor: Component.Point) !void {
     popup_h += 2;  // border
 
     // Clamp to window (v1: simple reposition).
-    const win_size = w.awt_window.size();
+    const win_size = w.getSize();
     const win_w: f32 = @floatFromInt(win_size.width);
     const win_h: f32 = @floatFromInt(win_size.height);
     var x = anchor.x;

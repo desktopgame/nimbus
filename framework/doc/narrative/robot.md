@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # robot
@@ -30,7 +30,7 @@ GLFW（awt-c）には直接依存しない（ヘッドレスモードでは OS �
 
 ## 前提となる 3 つのケイパビリティ
 Robot は単独では成立せず、framework 側に次の 3 つが要る。
-いずれも本 doc で設計し、未実装分は「機能要望」に段階を記す。
+**3 つとも実装済み (2026-06-07)**: ①は `Window.initHeadless` + `Application.frameHeadless`、②は `Robot.pump`（= `Application.tickOnce`）、③は framework 層の `Application.now` / `advanceClock`（`clock_mode = .virtual`）。設計は以下に残す。
 
 1. **ヘッドレスサーフェス** — `Window` を Swapchain ではなくオフスクリーン `RenderTarget` に向ける。OS ウィンドウを開かず、ピクセル取得は readback で行う（後述「ヘッドレスサーフェス」）
 2. **決定的 pump** — `Application.run()` の OS ブロッキングループに対し、ブロックせず 1 反復だけ進める `pump` を用意する（後述「pump」）

@@ -576,7 +576,7 @@ fn pushCaretToIme(self: *TextField) void {
     const caret_y = origin.y + PADDING_Y;
     self.font.face.setPixelSize(self.font.pixel_size);
     const line_h = self.font.face.metrics().line_height;
-    w.awt_window.setCompositionCursorPos(
+    if (w.awt_window) |*aw| aw.setCompositionCursorPos(
         @intFromFloat(caret_x),
         @intFromFloat(caret_y),
         @intFromFloat(line_h),
@@ -646,12 +646,13 @@ fn copyToClipboard(self: *TextField) void {
     defer self.allocator.free(tmp);
     @memcpy(tmp[0..slice.len], slice);
     // Reach the parent Window via parent chain to scope the clipboard call.
-    if (self.parentWindow()) |w| w.awt_window.setClipboardString(tmp);
+    if (self.parentWindow()) |w| if (w.awt_window) |*aw| aw.setClipboardString(tmp);
 }
 
 fn pasteFromClipboard(self: *TextField) !void {
     const w = self.parentWindow() orelse return;
-    const got = w.awt_window.getClipboardString() orelse return;
+    if (w.awt_window == null) return; // headless: no clipboard
+    const got = w.awt_window.?.getClipboardString() orelse return;
     if (self.hasSelection()) try self.deleteSelection();
     try self.text.insertSlice(self.allocator, self.caret_byte, got);
     self.caret_byte += got.len;

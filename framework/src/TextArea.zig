@@ -835,12 +835,13 @@ fn copyToClipboard(self: *TextArea) void {
     const tmp = self.allocator.allocSentinel(u8, end - start, 0) catch return;
     defer self.allocator.free(tmp);
     self.text.copyRange(tmp[0 .. end - start], start, end);
-    if (self.parentWindow()) |w| w.awt_window.setClipboardString(tmp);
+    if (self.parentWindow()) |w| if (w.awt_window) |*aw| aw.setClipboardString(tmp);
 }
 
 fn pasteFromClipboard(self: *TextArea) !void {
     const w = self.parentWindow() orelse return;
-    const got = w.awt_window.getClipboardString() orelse return;
+    if (w.awt_window == null) return; // headless: no clipboard
+    const got = w.awt_window.?.getClipboardString() orelse return;
     if (self.hasSelection()) self.deleteSelection();
     const n = try self.insertStripCR(self.caret, got);
     self.caret += n;
@@ -863,7 +864,7 @@ fn pushCaretToIme(self: *TextArea) void {
     const w = self.parentWindow() orelse return;
     const origin = self.component.absoluteOriginInWindow();
     const cg = self.caretGeom();
-    w.awt_window.setCompositionCursorPos(
+    if (w.awt_window) |*aw| aw.setCompositionCursorPos(
         @intFromFloat(origin.x + cg.x),
         @intFromFloat(origin.y + cg.y),
         @intFromFloat(cg.line_h),

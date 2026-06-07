@@ -230,8 +230,9 @@ pub const Query = struct {
 AI は通常 `driver.clickOn(.{ .role = .button, .text = "Save" })` を使い、座標が必要なときだけ `robot.click` を使う。
 
 ## 利用例
-robot は未実装（段階は「機能要望」）。以下は設計どおりに書いた場合のイメージ。
-ヘッドレス入口（`initHeadless`）やシナリオ読み込み（`Scenario.fromJsonl`）など未確定シグネチャは仮で、コメントで示す。
+Robot プリミティブ層と前提3ケイパビリティは実装済み（2026-06-07、「機能要望」の実装状況参照）。
+`Application.initHeadless` / `frameHeadless`、`Robot.init` / `click` / `keyDown` / `typeText` / `pump` / `advanceClock` / `snapshotTree` / `snapshotPixels` は実コード。
+一方、`Driver.find` / `clickOn`（A 例の意味的名指し）と `Scenario.fromJsonl` / `replay`（B-2）は**未実装**で、それらの行は設計イメージ（コメントで明示）。座標ベースの `robot.click(x, y, .left)` は今すぐ動く。
 
 ### コードから直接 Robot / Driver で書くテスト
 `Robot`（プリミティブ）でイベントを注入し、`pump` で 1 ステップ進め、ハンドル（白箱）または `snapshotTree`（黒箱）で検証する。座標を知らなくても `Driver.clickOn` が role + text で名指しする。
@@ -339,9 +340,11 @@ test "シナリオファイルを再生して checkpoint を照合" {
 ## 機能要望
 段階的に組む想定。下にいくほど後段。
 
-* **段階 1**: 合成イベント注入（`postEvent` ラッパー）+ 座標ベース `click` / `keyDown` / `typeText`。既存 API でほぼ実現でき、実ウィンドウに対しても動く
-* **段階 2**: ヘッドレスサーフェス + `pump` + 仮想クロック。決定的な `inject → pump → snapshot` ループが成立する
-* **段階 3**: `Component.role`（フィールド）+ a11y 名（`A11y` 能力構造体）+ `snapshotTree`（curated）+ 意味レイヤー `Driver`（`find` / `clickOn`）
+**実装状況 (2026-06-07)**: Robot プリミティブ層（act / `pump` / 仮想クロック / `snapshotTree` / `snapshotPixels`）と前提3ケイパビリティ（ヘッドレス / pump / 仮想クロック）は実装済み（`framework/src/Robot.zig`、`Application.initHeadless`/`frameHeadless`/`now`/`advanceClock`、`Window.initHeadless`/`postInput`）。`Driver`（意味レイヤー）・`dump`・シナリオランナーは未実装。
+
+* **段階 1**: ✅ 実装済み (2026-06-07)。合成イベント注入（`Window.postInput`）+ 座標ベース `Robot.click` / `keyDown` / `typeText`。実ウィンドウに対しても動く
+* **段階 2**: ✅ 実装済み (2026-06-07)。ヘッドレスサーフェス + `pump`（= `Application.tickOnce`）+ 仮想クロック（framework 層、`Application.now`/`advanceClock`）。決定的な `inject → pump → snapshot` ループが成立する
+* **段階 3**: 部分実装。`Component.role`（フィールド・全ウィジェット設定済み）+ `snapshotTree`（curated; role/rect/focus）は実装済み。**未**: a11y 名（`A11y.name` の各ウィジェット配線）と意味レイヤー `Driver`（`find` / `clickOn`）
 * **段階 3.5**: `A11y.dump` フック（ウィジェット毎にフィールド選別）+ 詳細ダンプ（`dumpTree` / `dumpNode`）。curated ツリーの上に深掘りビューを足す
 * **段階 4**: シナリオ形式 + シナリオランナー（再生 / 対話 stdin REPL）+ MCP サーバー化
 * **段階 5**: 入力レコーダー（`Window.input_observer` + `Recorder`）+ シナリオ再生（`replay`）。記録は実ウィンドウ、再生はヘッドレス。意味的解決とチェックポイントは段階 3 のファセットを前提とする

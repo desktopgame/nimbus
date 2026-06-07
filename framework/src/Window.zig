@@ -25,8 +25,14 @@ pub const OverlayEntry = OverlayManager.OverlayEntry;
 pub const OverlayPolicy = OverlayManager.OverlayPolicy;
 
 container:    Container,
-awt_window:   awt.Window,
-swapchain:    awt.Swapchain,
+/// OS window. Null in headless mode (no OS window opened; rendered to
+/// `render_target` instead). See `framework/doc/robot.md`「ヘッドレスサーフェス」.
+awt_window:   ?awt.Window,
+/// Swapchain presenting to `awt_window`. Null in headless mode.
+swapchain:    ?awt.Swapchain,
+/// Offscreen render target. Non-null only in headless mode; `redraw` binds it
+/// instead of the swapchain and `snapshotPixels` reads it back.
+render_target: ?awt.RenderTarget,
 context:      *awt.Graphics.Context,
 device:       *awt.Device,
 app:          *anyopaque,                 // *Application (avoid circular import)
@@ -59,6 +65,11 @@ cursor_x:     f32,
 cursor_y:     f32,
 paint_dirty:  bool,
 layout_dirty: bool,
+/// True for headless windows (no `awt_window`/`swapchain`; renders offscreen,
+/// input injected synthetically). See `initHeadless`.
+headless:     bool,
+/// Close request for headless windows (no OS `shouldClose` flag to poll).
+headless_close: bool,
 /// True only while `redraw` is executing. Used by the dirty notify callbacks
 /// to suppress `awt.postEmptyEvent()` when `markLayoutDirty` / `repaint` is
 /// triggered from inside the layout cascade itself (e.g. `setBounds` called
@@ -135,6 +146,7 @@ pub fn init(
         .container     = Container.init(allocator),
         .awt_window    = aw,
         .swapchain     = sc,
+        .render_target = null,
         .context       = context,
         .device        = device,
         .app           = app_ptr,
@@ -151,6 +163,8 @@ pub fn init(
         .cursor_y      = 0,
         .paint_dirty   = true,
         .layout_dirty  = true,
+        .headless      = false,
+        .headless_close = false,
         .in_redraw     = false,
         .mouse_capture    = null,
         .focus_owner      = null,
@@ -174,13 +188,80 @@ pub fn init(
     return win;
 }
 
+/// Headless variant of `init`: opens no OS window and renders to an offscreen
+/// `RenderTarget` of `w`x`h`. Used by the Robot / deterministic-test path —
+/// input is injected synthetically (no OS callbacks) and `snapshotPixels` reads
+/// back the RT. See `framework/doc/robot.md`「ヘッドレスサーフェス」.
+pub fn initHeadless(
+    allocator: std.mem.Allocator,
+    app_ptr: *anyopaque,
+    event_queue: *awt.EventQueue,
+    title: []const u8,
+    w: u32,
+    h: u32,
+    device: *awt.Device,
+    context: *awt.Graphics.Context,
+) !Window {
+    const title_dup = try allocator.dupeZ(u8, title);
+    errdefer allocator.free(title_dup);
+
+    const iw: i32 = @intCast(w);
+    const ih: i32 = @intCast(h);
+
+    var rt = try awt.RenderTarget.create(device.*, iw, ih);
+    errdefer rt.deinit();
+
+    var win = Window{
+        .container     = Container.init(allocator),
+        .awt_window    = null,
+        .swapchain     = null,
+        .render_target = rt,
+        .context       = context,
+        .device        = device,
+        .app           = app_ptr,
+        .event_queue   = event_queue,
+        .menu_bar      = null,
+        .overlays      = OverlayManager.init(allocator),
+        .title         = title_dup,
+        .background    = awt.Graphics.Color.rgb(0.94, 0.94, 0.94),
+        .fb_w          = iw,
+        .fb_h          = ih,
+        .win_pos       = .{ .x = 0, .y = 0 },
+        .win_size      = .{ .width = iw, .height = ih },
+        .cursor_x      = 0,
+        .cursor_y      = 0,
+        .paint_dirty   = true,
+        .layout_dirty  = true,
+        .headless      = true,
+        .headless_close = false,
+        .in_redraw     = false,
+        .mouse_capture    = null,
+        .focus_owner      = null,
+        .input_blocked    = false,
+        .drag_armed       = null,
+        .drag_start       = .{ .x = 0, .y = 0 },
+        .dragging         = false,
+        .drag_source_c    = null,
+        .drag_transfer    = undefined,
+        .drag_target      = null,
+        .drag_accepted    = false,
+        .allocator        = allocator,
+        .dirty_notify     = undefined,
+        .focus_controller = undefined,
+    };
+    win.container.component.vtable = &vtable;
+    win.container.layout = BorderLayout.get();
+    return win;
+}
+
 pub fn deinit(self: *Window) void {
     // Overlays are not owned (Menu/PopupMenu owners hold them) — just drop the list.
     // menu_bar is owned by Frame, not Window — do not destroy.
     self.overlays.deinit();
     self.container.deinit();      // drops children + container component
-    self.swapchain.deinit();
-    self.awt_window.deinit();
+    if (self.swapchain) |*sc| sc.deinit();
+    if (self.awt_window) |*aw| aw.deinit();
+    if (self.render_target) |*rt| rt.deinit();
     self.allocator.free(self.title);
 }
 
@@ -200,7 +281,7 @@ pub fn addWithHint(
 pub fn setTitle(self: *Window, title: []const u8) !void {
     const new_title = try self.allocator.dupeZ(u8, title);
     errdefer self.allocator.free(new_title);
-    self.awt_window.setTitle(new_title);
+    if (self.awt_window) |*aw| aw.setTitle(new_title);
     self.allocator.free(self.title);
     self.title = new_title;
 }
@@ -259,13 +340,16 @@ pub fn repaintRect(self: *Window, r: Component.Rect) void {
 }
 
 pub fn shouldClose(self: Window) bool {
-    return self.awt_window.shouldClose();
+    return if (self.awt_window) |aw| aw.shouldClose() else self.headless_close;
 }
 
 pub fn dispose(self: *Window) void {
     // Raise the OS close flag; Application's loop tail will see
-    // `shouldClose()` and run the normal close-collection path.
-    self.awt_window.setShouldClose(true);
+    // `shouldClose()` and run the normal close-collection path. Headless
+    // windows have no OS flag — set the framework-side close request.
+    if (self.awt_window) |*aw| aw.setShouldClose(true) else {
+        self.headless_close = true;
+    }
 }
 
 /// Render one frame and clear paint_dirty. Called by Application.run().
@@ -278,7 +362,7 @@ pub fn redraw(self: *Window) void {
     defer self.in_redraw = false;
 
     if (self.layout_dirty) {
-        const win_size = self.awt_window.size();
+        const win_size = self.win_size;
         const win_w: f32 = @floatFromInt(win_size.width);
         const win_h: f32 = @floatFromInt(win_size.height);
         const bar_h: f32 = if (self.menu_bar) |bar| bar.min_size.height else 0;
@@ -305,11 +389,12 @@ pub fn redraw(self: *Window) void {
     self.context.vertex_ring.reset();
 
     cb.begin();
-    cb.bindRenderTarget(self.swapchain.getTarget());
+    const target = self.render_target orelse self.swapchain.?.getTarget();
+    cb.bindRenderTarget(target);
     cb.clearColor(self.background.r, self.background.g, self.background.b, self.background.a);
     cb.clearStencil(0);
 
-    const win_size = self.awt_window.size();
+    const win_size = self.win_size;
     var g = awt.Graphics.init(
         cb,
         self.context,
@@ -331,7 +416,9 @@ pub fn redraw(self: *Window) void {
 
     cb.end();
     cb.submit(self.device.*);
-    self.swapchain.present();
+    // Real windows sync via swapchain present; headless has none, so wait for
+    // the GPU before the next frame / readback / teardown touches the RT.
+    if (self.swapchain) |*sc| sc.present() else self.device.waitIdle();
 
     self.paint_dirty = false;
 }
@@ -429,16 +516,19 @@ fn install(self: *Component) !void {
     // overlays and uses to mark the window dirty.
     win.overlays.wire(&win.dirty_notify, &win.focus_controller);
 
-    // Wire OS-level input callbacks into our dispatcher.
-    win.awt_window.setResizeCallback(onResize, @ptrCast(win));
-    win.awt_window.setRefreshCallback(onRefresh, @ptrCast(win));
-    win.awt_window.setMoveCallback(onWindowPos, @ptrCast(win));
-    win.awt_window.setMouseButtonCallback(onMouseButton, @ptrCast(win));
-    win.awt_window.setCursorPosCallback(onCursorPos, @ptrCast(win));
-    win.awt_window.setScrollCallback(onScroll, @ptrCast(win));
-    win.awt_window.setKeyCallback(onKey, @ptrCast(win));
-    win.awt_window.setCharCallback(onChar, @ptrCast(win));
-    win.awt_window.setCompositionCallback(onComposition, @ptrCast(win));
+    // Wire OS-level input callbacks into our dispatcher. Headless windows have
+    // no OS window — input arrives only via synthetic `postInput` injection.
+    if (win.awt_window) |*aw| {
+        aw.setResizeCallback(onResize, @ptrCast(win));
+        aw.setRefreshCallback(onRefresh, @ptrCast(win));
+        aw.setMoveCallback(onWindowPos, @ptrCast(win));
+        aw.setMouseButtonCallback(onMouseButton, @ptrCast(win));
+        aw.setCursorPosCallback(onCursorPos, @ptrCast(win));
+        aw.setScrollCallback(onScroll, @ptrCast(win));
+        aw.setKeyCallback(onKey, @ptrCast(win));
+        aw.setCharCallback(onChar, @ptrCast(win));
+        aw.setCompositionCallback(onComposition, @ptrCast(win));
+    }
 }
 
 fn focusControllerCallback(user_data: *anyopaque, c: ?*Component) void {
@@ -671,6 +761,14 @@ fn dispatchInputThunk(target: *anyopaque, ev: *awt.Event) void {
     win.dispatchInput(ev);
 }
 
+/// Inject a synthetic input event: enqueue it on the Application event queue
+/// targeting this window's dispatcher, exactly like an OS input callback would.
+/// Dispatch happens on the next `EventQueue.drain` (i.e. the next `tickOnce` /
+/// `Robot.pump`). Used by the Robot. `postEvent` is thread-safe.
+pub fn postInput(self: *Window, ev: awt.Event) !void {
+    try self.event_queue.postEvent(ev, @ptrCast(self), dispatchInputThunk);
+}
+
 /// True for events that count as the user deliberately trying to interact
 /// with a window (mouse button press, key press) — used to decide whether
 /// poking a modal-blocked window should flash the modal. Excludes passive
@@ -857,7 +955,7 @@ fn onResize(
     user_data: ?*anyopaque,
 ) callconv(.c) void {
     const win: *Window = @ptrCast(@alignCast(user_data.?));
-    win.swapchain.resize(@intCast(fb_w), @intCast(fb_h)) catch |err|
+    win.swapchain.?.resize(@intCast(fb_w), @intCast(fb_h)) catch |err|
         log.warn("window", "swapchain.resize ({d}x{d}) failed: {s}", .{ fb_w, fb_h, @errorName(err) });
     win.fb_w = @intCast(fb_w);
     win.fb_h = @intCast(fb_h);
@@ -865,7 +963,7 @@ fn onResize(
     // already synced with the OS, so Application's loop-tail diff does not
     // push this size back (which would fight a live user resize). See
     // `application.md`「OS との同期」.
-    win.win_size = win.awt_window.size();
+    win.win_size = win.awt_window.?.size();
     const app: *Application = @ptrCast(@alignCast(win.app));
     app.noteOsGeometry(win);
     win.layout_dirty = true;
@@ -934,7 +1032,7 @@ fn onCursorPos(
     // GLFW delivers cursor positions in framebuffer pixels on DPI-aware
     // platforms. Widgets and bounds are in logical points, so divide by
     // content scale at the boundary.
-    const scale: f64 = @floatCast(win.awt_window.contentScale());
+    const scale: f64 = @floatCast(win.awt_window.?.contentScale());
     const inv: f64 = if (scale > 0) 1.0 / scale else 1.0;
     win.cursor_x = @floatCast(x * inv);
     win.cursor_y = @floatCast(y * inv);

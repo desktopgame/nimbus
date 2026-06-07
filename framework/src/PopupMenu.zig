@@ -93,7 +93,7 @@ pub fn show(self: *PopupMenu, w: *Window, x: f32, y: f32) !void {
     popup_w = @max(popup_w, 80);
     popup_h += 2;  // border
 
-    const win_size = w.awt_window.size();
+    const win_size = w.getSize();
     const win_w: f32 = @floatFromInt(win_size.width);
     const win_h: f32 = @floatFromInt(win_size.height);
     var px = x;

@@ -26,6 +26,23 @@ pub fn init(
     };
 }
 
+/// Headless variant of `init`: the wrapped Window opens no OS window and
+/// renders offscreen. See `Window.initHeadless`.
+pub fn initHeadless(
+    allocator: std.mem.Allocator,
+    app_ptr: *anyopaque,
+    event_queue: *awt.EventQueue,
+    title: []const u8,
+    w: u32,
+    h: u32,
+    device: *awt.Device,
+    context: *awt.Graphics.Context,
+) !Frame {
+    return .{
+        .window = try Window.initHeadless(allocator, app_ptr, event_queue, title, w, h, device, context),
+    };
+}
+
 pub fn deinit(self: *Frame) void {
     // Tear down menu bar before window so its overlay state is consistent.
     if (self.menu_bar) |bar| {
