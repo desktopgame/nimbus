@@ -154,3 +154,26 @@ A（独自型のあるものだけ）か B（全部）か。線引きの基準�
 
 ### 完了条件
 選んだ範囲で `awt/doc/*.md` を用意し、Zig 側独自型（`Usage` / `IndexFormat` / `BlendMode` / `StencilState` 等）が doc から辿れる状態。
+
+## #8 修飾キーに super（Cmd / Win / Meta）を追加
+- 状態: 未着手
+- 優先度: 高
+- 影響範囲: awt-c の修飾ビット（`nmModifierShift` / `Ctrl` / `Alt` 系の enum に `nmModifierSuper` 追加、glfw コールバックのビット変換）、awt の `Event.Modifiers`（`src/Event.zig`：`super: bool` フィールド + `fromBits` のマッピング）、`awt/doc/event.md`
+- 更新日: 2026-06-09
+- 依存: なし（framework のキーストローク/ニーモニックの Mac 対応がこれに依存する側）
+
+### 何
+現状 `awt.Event.Modifiers` は `shift` / `ctrl` / `alt` の 3 つのみ。macOS のアクセラレータは Cmd（= super）を使うため、Cmd 修飾を表すビットが無いと Mac でメニューアクセラレータ／ニーモニックの照合ができない。
+awt-c の修飾ビット enum に super を足し、`Event.Modifiers` に `super: bool` を追加して `fromBits` で拾えるようにする。
+
+framework 側のキーストローク設計では抽象「コマンド修飾キー」（`KeyStroke.Mods.command`）を Win/Linux は ctrl ビット、macOS は super ビットに解決して raw modifiers と突き合わせる。その「macOS は super」の照合先がこの項目で初めて存在するようになる。CLAUDE.md「プラットフォーム」方針（Windows / Mac をまずサポート）に沿い、Mac 対応は必須。
+
+### なぜ（保留理由）
+framework のキーストローク/ニーモニック実装を進めるために awt の小改修を切り出しただけで、保留ではない（別タスク化）。Win/Linux 単独なら ctrl で動くため、Mac の実機検証と一緒に入れるのが自然。
+
+### 決めること
+- フィールド名を `super` にするか `meta` / `cmd` にするか（`super` は Zig の予約語ではないが一般語と紛れる懸念。Windows キーも同じビットに乗せるかは要確認）。
+- Windows キー（左 super）と Mac Cmd を 1 ビットに束ねるか、プラットフォームで意味を分けるか。
+
+### 完了条件
+`Event.Modifiers` が super を表現でき、`event.md` と実装が一致。framework の `KeyStroke.Mods.command` が macOS で super、Win/Linux で ctrl に解決して照合できる状態。

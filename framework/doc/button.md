@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # button
@@ -311,9 +311,10 @@ btn.setIconSize(.{ .width = 16, .height = 16 });
 ```
 
 ## 機能要望
-* キーボード操作（Space / Enter で押下）
-* ニーモニック（Alt+x ショートカット）
+* `doClick()` — 計画中。press + fireAction + release を模す共通起動口（マウス / Space / Enter / ニーモニック全部の入口）。設計は `narrative/keybinding.md`
+* キーボード操作（focusable 化 + Space / Enter で押下、フォーカスリング描画）— 計画中。設計は `narrative/keybinding.md`
+* ニーモニック（`setMnemonic(ch)` で Alt+ch を root に登録 → `doClick` + ラベル下線）— 計画中。下線は v1 常時表示。設計は `narrative/keybinding.md`
 * トグルボタン（`selected` フラグを活用、ButtonGroup と組合せて排他選択）
-* デフォルトボタンの装飾（Enter で発火する強調表示）
+* デフォルトボタンの装飾（Enter で発火する強調表示。`Window.setDefaultButton` と連動）
 * アクセシビリティ用の追加属性（aria-label 相当）
 * tint カラー指定（モノクロ SVG 風アイコンを色付けして表示）

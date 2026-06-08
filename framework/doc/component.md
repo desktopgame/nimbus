@@ -355,3 +355,4 @@ try label.component.setVTable(&my_vt);
 ## 機能要望
 * `PropertyChangeListener` 相当 — setter からの変更通知。Swing PCE と同等
 * Component 単位の `dirty` フラグ — 現状は Frame 単位で持つ（`{REPO_ROOT}/doc/internal/layout-design.md` 参照）
+* `key_bindings: ?*KeyBindings` capability + `bindKey` / `unbindKey` — 計画中。キーストローク/ニーモニックを `DragSource` 等と同じ opt-in フィールドとして持つ（`VTable` は増やさない）。設計は `narrative/keybinding.md`

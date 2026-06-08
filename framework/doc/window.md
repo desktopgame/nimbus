@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # window
@@ -189,6 +189,8 @@ window.dispose();
 ```
 
 ## 機能要望
+* `focusNext` / `focusPrev`（Tab / Shift+Tab のフォーカストラバーサル）+ open 時の初期フォーカス — 計画中。順序は子の追加順 DFS、端で wrap。設計は `narrative/keybinding.md`
+* `setDefaultButton` と root `key_bindings` 経由のグローバルキー配送（メニューアクセラレータ / 既定ボタン / Dialog キャンセル）— 計画中。`dispatchInput` の `.key` を「遡り 1 本 + グローバルは root に登録」へ一般化。設計は `narrative/keybinding.md`
 * WindowListener 相当（close 確認、minimize 通知等）
 * 複数モニタ対応（モニタ選択、移動時の DPI 変化対応）
 * アニメーション駆動（`requestAnimationFrame` 相当の連続再描画）
