@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # graphics
@@ -119,6 +119,8 @@ pub fn drawImageScaled(self: *Graphics, image: awt.Image, x: f32, y: f32, w: f32
 | `setTransform` (rotate / translate / scale) | アニメ時に必要だが当面不要 |
 | `setAntiAlias` | 暗黙対応 (rect は AA 不要、滑らか形状は常時 1px AA) のため明示 API なし |
 | `save` / `restore` | `clip` で値返しすることで不要 |
-| `drawImage` の subimage (UV 部分指定) | 元画像の全領域 (UV 0..1) を貼るのみ。scale は `drawImageScaled` で対応 |
+| `drawImageRegion` (src 部分指定) | 計画中。万能プリミティブとして src 矩形 → dst を描く。`programs.Image` 1 本に乗る。設計は `narrative/graphics.md` |
+| `drawImageTinted` / `drawImageNineSlice` / `drawImageTiled` | 計画中。すべて `drawImageRegion` への畳み込みで実装し、バックエンド契約を増やさない。設計は `narrative/graphics.md` |
+| `drawImageScaled` の Rect 化 | 計画中。`(image, x, y, w, h)` → `(image, dst: Rect)` に寄せて draw 系を一貫させる |
 | 複数行 `drawString` (`\n` の自動レイアウト) | テキストレイアウトは別レイヤーで対応予定 |
-| グラデーション塗り | 当面 image / テクスチャで代用 |
+| グラデーション塗り | `Image.linearGradient` で画像として生成し `drawImageScaled` で描く方針。設計は `narrative/image.md` |

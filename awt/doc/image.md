@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # image
@@ -48,6 +48,7 @@ pub fn deinit(self: *Image) void;
 `Image` が保持する GPU テクスチャを解放する。
 
 ## 機能要望
+* `Image.linearGradient` / `Image.solid` (CPU 側で手続き的にピクセル生成するファクトリ)。L&F のグラデ下地・単色塗りを画像経路で出すため。設計は `narrative/image.md`。
 * `Image.fromFile` (パスから直接読み込み、内部で fs アクセス)。
 * リサイズ / 部分切り出し用の API。
 * mipmap 生成 (現状は単一レベルのみ)。
