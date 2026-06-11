@@ -793,21 +793,33 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
                 if (k.code == .escape and k.action == .press) self.cancelDrag();
                 return;
             }
-            // Modal overlay gets first shot. ESC closes it; Tab is treated
-            // like an outside click — dismiss (cancel), then move focus on.
+            // Modal overlay gets first shot. ESC closes one level (staged:
+            // submenu before parent popup); Tab is treated like an outside
+            // click — dismiss everything (cancel), then move focus on; an
+            // accelerator chord closes the popup and performs the action
+            // (the user's intent is the action, not the menu).
             if (self.overlays.topModalIndex()) |ti| {
                 const top = self.overlays.entries.items[ti];
                 top.component.vtable.processEvent(top.component, ev);
                 if (ev.isConsumed()) return;
                 if (k.action == .press or k.action == .repeat) {
                     if (k.code == .escape and k.action == .press) {
-                        self.overlays.dismissAll();
+                        self.overlays.dismissTop();
                         return;
                     }
                     if (k.code == .tab) {
                         self.overlays.dismissAll();
                         if (k.modifiers.shift) self.focusPrev() else self.focusNext();
                         return;
+                    }
+                    if (k.modifiers.ctrl or k.modifiers.meta) {
+                        if (self.findAcceleratorTarget(k)) |mi| {
+                            // Close first, then fire: a handler that opens a
+                            // dialog must not leave the menu hanging behind it.
+                            self.overlays.dismissAll();
+                            mi.doClick();
+                            return;
+                        }
                     }
                 }
                 return; // modal: don't propagate
@@ -846,11 +858,10 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
 
             // Stage 4: accelerator scan over the menu tree (no registration —
             // see `narrative/keybinding.md`「root 登録と走査の線引き」).
-            if (self.menu_bar) |bar| {
-                if (acceleratorScan(bar, k)) {
-                    ev.consume();
-                    return;
-                }
+            if (self.findAcceleratorTarget(k)) |mi| {
+                mi.doClick();
+                ev.consume();
+                return;
             }
 
             // Stage 5: mnemonic scan (Alt+letter only).
@@ -942,33 +953,33 @@ fn findFocusableInSubtree(c: *Component, x: f32, y: f32) ?*Component {
 // traps, negligible cost on the key-press cold path. See
 // `narrative/keybinding.md`「root 登録と走査の線引き」.
 
-/// Stage 4: walk the menu tree under `bar_c` looking for an enabled MenuItem
-/// whose accelerator matches the key event; activate the first hit.
-fn acceleratorScan(bar_c: *Component, k: awt.Event.KeyEvent) bool {
-    if (bar_c.vtable != &MenuBar.vtable) return false;
+/// Walk the menu tree looking for an enabled MenuItem whose accelerator
+/// matches the key event. Find-only (no side effects): the caller decides
+/// what to do around the activation — stage 4 just fires; the open-menu path
+/// dismisses the popup first.
+fn findAcceleratorTarget(self: *Window, k: awt.Event.KeyEvent) ?*MenuItem {
+    const bar_c = self.menu_bar orelse return null;
+    if (bar_c.vtable != &MenuBar.vtable) return null;
     const bar: *MenuBar = @fieldParentPtr("component", bar_c);
     for (bar.menus.items) |menu| {
-        if (scanMenuAccelerators(menu, k)) return true;
+        if (findMenuAccelerator(menu, k)) |mi| return mi;
     }
-    return false;
+    return null;
 }
 
-fn scanMenuAccelerators(menu: *Menu, k: awt.Event.KeyEvent) bool {
+fn findMenuAccelerator(menu: *Menu, k: awt.Event.KeyEvent) ?*MenuItem {
     for (menu.items.items) |item| {
         if (item.vtable == &Menu.vtable) {
             const sub: *Menu = @fieldParentPtr("component", item);
-            if (scanMenuAccelerators(sub, k)) return true;
+            if (findMenuAccelerator(sub, k)) |mi| return mi;
         } else if (item.vtable == &MenuItem.vtable) {
             const mi: *MenuItem = @fieldParentPtr("component", item);
             if (mi.accelerator) |acc| {
-                if (mi.model.enabled and acc.satisfies(k.code, k.modifiers)) {
-                    mi.doClick();
-                    return true;
-                }
+                if (mi.model.enabled and acc.satisfies(k.code, k.modifiers)) return mi;
             }
         }
     }
-    return false;
+    return null;
 }
 
 /// Stage 5: Alt+letter. Menu-bar menus first (Alt+F opening the File menu is
@@ -983,6 +994,9 @@ fn mnemonicScan(self: *Window, k: awt.Event.KeyEvent) bool {
                 if (menu.component.mnemonic == ch) {
                     menu.doClick();
                     bar.open_menu = if (menu.open) menu else null;
+                    // Keyboard-opened menus start with the first item
+                    // highlighted (mouse-opened ones don't) — Windows style.
+                    if (menu.open) menu.highlightFirst();
                     return true;
                 }
             }

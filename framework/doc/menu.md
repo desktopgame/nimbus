@@ -158,6 +158,25 @@ popup を Window の overlays 層から外す。
 popup Container は破棄せず再利用のため保持する（次回 show 時に再表示）。
 親が MenuBar の場合、MenuBar 側の `open` も連動して `null` に戻す（callback 経由）。
 
+## キーボード操作
+開いた popup (= top のモーダルオーバーレイ) はキーを最初に受け、以下を処理する。
+ハイライトは `ButtonModel.rollover` を共用する (キーボードとマウスで状態は 1 つ、
+後から動かした入力が勝つ)。separator はスキップ、disabled 行は**止まるが起動しない**
+(ガードは `doClick` 側)。
+
+| キー | 動作 |
+|---|---|
+| `↓` / `↑` (press / repeat) | ハイライトを次 / 前の行へ。端で wrap |
+| `Enter` | ハイライト行を起動 (サブメニューなら展開して先頭をハイライト) |
+| `→` | ハイライト中のサブメニューを展開して先頭をハイライト |
+| `←` | サブメニューなら 1 段戻る (最上段の popup では no-op) |
+| `Esc` | 1 段だけ閉じる (Window の `overlays.dismissTop`。最上段なら popup 全体が閉じる) |
+| 修飾なし文字 | メニューローカルニーモニック (`menu_item.md`「ニーモニックの設定」) |
+| 修飾付き和音 | popup を**全部閉じてから**アクセラレータを遂行 (Window 側。`narrative/keybinding.md`) |
+
+ニーモニック (Alt+文字) でキーボードから開いた popup は先頭行がハイライトされた状態で
+開く。マウスクリックで開いた場合はハイライトなし (Windows 流)。
+
 ## ライフサイクル
 * MenuBar.add(menu) / Menu.add(submenu_as_component) で menu の所有権が親に移る
 * 親の destroy で連鎖的に menu も destroy される
@@ -217,5 +236,6 @@ try menu_bar.add(debug);  // クリックしても開かない、グレー表示
 
 ## 機能要望
 * sub-menu hover 展開の遅延（200ms 程度）
-* キーボードナビゲーション（矢印キーで item 移動、Enter で発火）
+* メニューバー上の `←` / `→` で隣のメニューへ切り替え（popup 最上段での ← / → は現状 no-op）
+* Alt 単独タップでメニューバーへフォーカス（Alt-reveal と同時期。`narrative/keybinding.md`）
 * Menu の最小幅を指定する API（popup の見た目を整える）

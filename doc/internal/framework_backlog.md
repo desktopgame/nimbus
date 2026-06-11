@@ -207,11 +207,17 @@ TextField / TextArea 双方がそれを使う。編集系の単体テストが�
 和音キーは黙って飲み込まれ、矢印 / Enter は何もしない。
 
 ## #6a メニュー開放中のアクセラレータ発火 (閉じて遂行)
-- 状態: 未着手
+- 状態: 完了
 - 優先度: 高
 - 影響範囲: `Window.dispatchInput` のモーダルオーバーレイ分岐 (`.key`)、`framework/tests/focus_test.zig`、`narrative/keybinding.md` の配送節
 - 更新日: 2026-06-11
 - 依存: なし (#6b と独立。ただし同じ箇所を触るので同時実装が楽)
+
+### 結果 (2026-06-11)
+実装・検証済み。アクセラレータ走査を find (副作用なし) / fire に分離し、モーダル分岐では
+「`dismissAll` → `doClick`」(作者決定: 閉じる→発火の順)。非一致の和音は従来どおり飲み込む。
+回帰テスト: focus_test「accelerator while menu open: closes the menu, then fires」。
+確定仕様は `menu.md`「キーボード操作」と `narrative/keybinding.md`「確定済みの方針」に記載。
 
 ### 何
 メニュー開放中に未消費の和音キー (修飾付き) が来たら、非伝播で捨てる代わりに
@@ -232,11 +238,21 @@ widget_keyboard で Alt+F → Ctrl/Cmd+S が Save を発火しメニューが閉
 focus_test に回帰テストを追加。narrative の配送節に挙動を追記。
 
 ## #6b メニュー内キーボードナビゲーション (矢印 / Enter / ESC 段階クローズ)
-- 状態: 未着手
+- 状態: 完了
 - 優先度: 高
 - 影響範囲: `Menu.zig` (popupProcessEvent + ハイライト状態 + paint)、`OverlayManager` (ESC 段階クローズ用 API)、`Window.dispatchInput` の ESC 処理、`menu.md` / `narrative/keybinding.md`、テスト
 - 更新日: 2026-06-11
 - 依存: なし
+
+### 結果 (2026-06-11)
+実装・検証済み。作者決定: 案A (rollover 共用)、disabled は止まって Enter 無効、端で wrap、
+`OverlayManager.dismissTop` 新設 (ESC は 1 押下 1 段、外クリック / Tab は dismissAll のまま)。
+追加で確定した挙動: `←` はサブメニューを 1 段戻る (最上段 popup では no-op)、`→` / Enter で
+開いたサブメニューは先頭ハイライト、ニーモニックで開いた popup も先頭ハイライト
+(マウスで開いたら無し)。hover / mnemonic / → / Enter のサブメニュー展開は `openSubmenu` に統一。
+回帰テスト: focus_test「menu keyboard navigation」「submenu: right opens / left closes / ESC staged」。
+仕様は `menu.md`「キーボード操作」へ記載し、機能要望から削除。メニューバー上の ←/→ 切替と
+Alt 単独タップは menu.md 機能要望に残置。
 
 ### 何
 menu.md 機能要望の「キーボードナビゲーション」を実装する:

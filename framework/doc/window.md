@@ -151,7 +151,7 @@ bar の `parent` は内部で `null` にセットされ、Window の dirty 伝�
 通常は利用者が直接呼ばず `Frame.setMenuBar` 経由で呼ばれる。
 
 ## オーバーレイ
-オーバーレイの登録 / 解除 / dismiss は `OverlayManager` のメソッドで、`window.overlays.add(component, owner, on_dismiss)` / `.addPassthrough(component)` / `.remove(owner)` / `.dismissAll()` と呼ぶ。型・契約・入力ポリシーは `overlay.md`。`Window` 側はこれらを直接持たず、描画（`overlays.paintAll`）とイベント dispatch（`overlays.topModalIndex` / `.entries` を読む、外クリック / ESC で `.dismissAll`）から参照する。
+オーバーレイの登録 / 解除 / dismiss は `OverlayManager` のメソッドで、`window.overlays.add(component, owner, on_dismiss)` / `.addPassthrough(component)` / `.remove(owner)` / `.dismissAll()` / `.dismissTop()` と呼ぶ。型・契約・入力ポリシーは `overlay.md`。`Window` 側はこれらを直接持たず、描画（`overlays.paintAll`）とイベント dispatch から参照する — 外クリック / Tab / アクセラレータ和音は `.dismissAll`、ESC は `.dismissTop`（段階クローズ）。
 
 ## フォーカスオーナーの設定
 ```zig

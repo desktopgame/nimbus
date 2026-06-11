@@ -355,3 +355,10 @@ Label の `labelFor` (ラベルのニーモニックで別フィールドにフ�
 - `doClick()` は `model.enabled == false` なら no-op (マウス / Space / Enter / ニーモニック共通のガード)。
 - 束縛の発火は press と repeat の両方 (区別しない。Swing / Win32 と同じ「リピートポリシーを持たない」)。
   per-binding の repeat 抑制フラグは実需待ち、release バインドは後回し。
+- メニュー開放中のアクセラレータ和音は「popup を全部閉じてから遂行」(backlog framework#6a。
+  Tab 案B と同じ「明確な別意図のキーは transient UI を閉じて遂行」原理。現行 Windows / macOS と同挙動)。
+  オーバーレイ中の ESC は `dismissTop` による段階クローズ (1 押下 1 段。外クリック / Tab は引き続き全閉)。
+- メニュー内キーボードナビゲーション実装済み (backlog framework#6b 案A: ハイライトは
+  `ButtonModel.rollover` 共用で真実 1 つ・後から動かした入力が勝つ、disabled 行は止まるが
+  起動しない、端で wrap、`←` で 1 段戻る、キーボードで開いた popup は先頭ハイライト)。
+  仕様は `menu.md`「キーボード操作」。

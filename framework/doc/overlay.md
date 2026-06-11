@@ -61,7 +61,14 @@ pub fn remove(self: *OverlayManager, owner: *anyopaque) void;
 pub fn dismissAll(self: *OverlayManager) void;
 ```
 
-登録されている `modal_popup` をすべて top から解除し、各 `on_dismiss(owner)` を呼ぶ。外クリック / ESC のとき Window 内部で呼ばれる。cascade したメニュー（File → Find → submenu）が一発で全部閉じる。`passthrough` エントリ（ドラッグゴースト）は残す。
+登録されている `modal_popup` をすべて top から解除し、各 `on_dismiss(owner)` を呼ぶ。外クリック / オーバーレイ中の Tab・和音キーのとき Window 内部で呼ばれる。cascade したメニュー（File → Find → submenu）が一発で全部閉じる。`passthrough` エントリ（ドラッグゴースト）は残す。
+
+## 最上段オーバーレイの dismiss
+```zig
+pub fn dismissTop(self: *OverlayManager) void;
+```
+
+最上段の `modal_popup` だけを 1 段解除し、その `on_dismiss(owner)` を呼ぶ。ESC の段階クローズ（サブメニュー → 親 popup の順に 1 押下 1 段）のために Window 内部で呼ばれる。モーダルオーバーレイが無ければ no-op。`passthrough` エントリは対象外。
 
 ## passthrough オーバーレイの登録
 ```zig

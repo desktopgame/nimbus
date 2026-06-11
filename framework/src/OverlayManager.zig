@@ -135,6 +135,17 @@ pub fn dismissAll(self: *OverlayManager) void {
     self.markDirty();
 }
 
+/// Dismiss only the topmost `modal_popup` overlay (one level), calling its
+/// on_dismiss. Used by ESC's staged close: a submenu closes before its parent
+/// popup, one keypress per level. No-op when no modal overlay is open.
+/// `passthrough` entries are untouched.
+pub fn dismissTop(self: *OverlayManager) void {
+    const i = self.topModalIndex() orelse return;
+    const e = self.entries.orderedRemove(i);
+    e.on_dismiss(e.owner);
+    self.markDirty();
+}
+
 /// Index of the topmost `modal_popup` overlay, or null if none is open.
 /// `passthrough` entries do not make the window modal.
 pub fn topModalIndex(self: *const OverlayManager) ?usize {

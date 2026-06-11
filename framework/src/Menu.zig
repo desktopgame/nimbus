@@ -296,6 +296,88 @@ fn modelOf(c: *Component) ?*ButtonModel {
     return null;
 }
 
+// ── keyboard navigation (popup-local) ────────────────────────────────────
+// Highlight reuses ButtonModel.rollover (案A in framework_backlog #6b): one
+// truth for "this row is hot", keyboard and mouse sharing it — the most
+// recent input wins. Disabled rows are navigable (highlight stops on them;
+// activation is what doClick guards). Separators have no model and are skipped.
+
+/// Button model of a navigable popup row: MenuItem / CheckBoxMenuItem /
+/// submenu Menu. Null for separators (not navigable).
+fn navModel(c: *Component) ?*ButtonModel {
+    if (c.vtable == &Menu.vtable) {
+        const sub: *Menu = @fieldParentPtr("component", c);
+        return sub.model;
+    }
+    return modelOf(c);
+}
+
+/// Index of the highlighted row (the one whose model has rollover), or null.
+fn highlightedIndex(self: *Menu) ?usize {
+    for (self.items.items, 0..) |item, i| {
+        if (navModel(item)) |m| {
+            if (m.rollover) return i;
+        }
+    }
+    return null;
+}
+
+/// Highlight exactly row `idx`, clearing every other row.
+fn setHighlight(self: *Menu, idx: usize) void {
+    for (self.items.items, 0..) |item, i| {
+        if (navModel(item)) |m| m.setRollover(i == idx);
+    }
+}
+
+/// Highlight the first navigable row. Called when a popup is opened from the
+/// keyboard (mnemonic / → / Enter on a submenu); mouse-opened popups start
+/// with no highlight (Windows style).
+pub fn highlightFirst(self: *Menu) void {
+    for (self.items.items, 0..) |item, i| {
+        if (navModel(item) != null) {
+            self.setHighlight(i);
+            return;
+        }
+    }
+}
+
+/// Move the highlight by `dir` rows, skipping separators, wrapping at the
+/// ends. With no current highlight, ↓ lands on the first row and ↑ on the last.
+fn moveHighlight(self: *Menu, dir: i32) void {
+    const items = self.items.items;
+    const n = items.len;
+    if (n == 0) return;
+    var idx: usize = self.highlightedIndex() orelse (if (dir > 0) n - 1 else 0);
+    var probes: usize = 0;
+    while (probes < n) : (probes += 1) {
+        idx = if (dir > 0) (idx + 1) % n else (idx + n - 1) % n;
+        if (navModel(items[idx]) != null) {
+            self.setHighlight(idx);
+            return;
+        }
+    }
+}
+
+/// Open submenu `sub` beside this popup. Shared geometry for every entry
+/// point: hover, menu-local mnemonic, → and Enter.
+fn openSubmenu(self: *Menu, sub: *Menu) void {
+    if (sub.open) return;
+    const w = self.window orelse return;
+    const ox = self.popup_root.position.x + self.popup_root.size.width;
+    const oy = self.popup_root.position.y + sub.component.position.y;
+    sub.show(w, .{ .x = ox, .y = oy }) catch |err|
+        log.warn("menu", "show (submenu) failed: {s}", .{@errorName(err)});
+    self.open_child = sub;
+}
+
+/// Activate the highlighted row (Enter): leaves click (doClick carries the
+/// disabled guard — a disabled row stays highlighted but does nothing),
+/// submenus open with their first row highlighted.
+fn activateHighlighted(self: *Menu) void {
+    const idx = self.highlightedIndex() orelse return;
+    self.activateItem(self.items.items[idx]);
+}
+
 // ── vtable: label / row ──────────────────────────────────────────────────
 
 fn install(self: *Component) !void {
@@ -482,18 +564,9 @@ fn popupProcessEvent(self: *Component, ev: *Component.Event) void {
                 for (menu.items.items) |item| {
                     item.vtable.processEvent(item, ev);
                 }
-                // Open submenu for newly-hovered Menu.
-                if (hovered_menu) |sub| {
-                    if (!sub.open) {
-                        if (menu.window) |w| {
-                            const ox = self.position.x + self.size.width;
-                            const oy = self.position.y + sub.component.position.y;
-                            sub.show(w, .{ .x = ox, .y = oy }) catch |err|
-                                log.warn("menu", "show (submenu hover) failed: {s}", .{@errorName(err)});
-                            menu.open_child = sub;
-                        }
-                    }
-                }
+                // Open submenu for newly-hovered Menu (no highlight inside:
+                // the mouse path starts cold, unlike keyboard entry).
+                if (hovered_menu) |sub| menu.openSubmenu(sub);
                 return;
             }
             // press / release: hit-test top-down.
@@ -508,19 +581,60 @@ fn popupProcessEvent(self: *Component, ev: *Component.Event) void {
             }
         },
         .key => |k| {
-            // Menu-local mnemonics: while this popup is open it is the top
-            // modal overlay and receives keys first. A *plain* letter (no
-            // modifiers — Windows convention inside an open menu) activates
-            // the first item whose mnemonic matches. Window-wide Alt+letter
-            // mnemonics never apply to MenuItems (see narrative/keybinding.md).
-            if (k.action == .press and
+            // This popup is the top modal overlay and receives keys first.
+            // Keyboard navigation per `menu.md`「キーボード操作」; ESC is NOT
+            // handled here — it falls through to Window's staged dismissTop.
+            const pressed = k.action == .press;
+            const press_or_repeat = pressed or k.action == .repeat;
+            if (press_or_repeat and k.code == .arrow_down) {
+                menu.moveHighlight(1);
+                ev.consume();
+                return;
+            }
+            if (press_or_repeat and k.code == .arrow_up) {
+                menu.moveHighlight(-1);
+                ev.consume();
+                return;
+            }
+            if (press_or_repeat and k.code == .arrow_right) {
+                // Meaningful only on a highlighted submenu; eaten either way
+                // (arrows never leak out of an open menu).
+                if (menu.highlightedIndex()) |idx| {
+                    const item = menu.items.items[idx];
+                    if (item.vtable == &Menu.vtable) {
+                        const sub: *Menu = @fieldParentPtr("component", item);
+                        menu.openSubmenu(sub);
+                        if (sub.open) sub.highlightFirst();
+                    }
+                }
+                ev.consume();
+                return;
+            }
+            if (pressed and k.code == .arrow_left) {
+                // One level back: a submenu closes itself (keys then route to
+                // the parent popup, the new top overlay). A top-level popup
+                // stays — menubar ←/→ switching is future work.
+                if (menu.mode == .item) menu.hide();
+                ev.consume();
+                return;
+            }
+            if (pressed and k.code == .enter) {
+                menu.activateHighlighted();
+                ev.consume();
+                return;
+            }
+            // Menu-local mnemonics: a *plain* letter (no modifiers — Windows
+            // convention inside an open menu) activates the first item whose
+            // mnemonic matches. Window-wide Alt+letter mnemonics never apply
+            // to MenuItems (see narrative/keybinding.md).
+            if (pressed and
                 !k.modifiers.ctrl and !k.modifiers.alt and !k.modifiers.meta)
             {
                 if (keybinding.letterOf(k.code)) |ch| {
                     for (menu.items.items) |item| {
                         if (item.mnemonic) |m2| {
                             if (m2 == ch) {
-                                activateItemByMnemonic(menu, item);
+                                activateItem(menu, item);
                                 ev.consume();
                                 return;
                             }
@@ -533,9 +647,10 @@ fn popupProcessEvent(self: *Component, ev: *Component.Event) void {
     }
 }
 
-/// Activate `item` from a menu-local mnemonic match: leaf items click,
-/// submenus open beside this popup (same geometry as hover-open).
-fn activateItemByMnemonic(menu: *Menu, item: *Component) void {
+/// Activate `item` (menu-local mnemonic match or Enter on the highlight):
+/// leaf items click, submenus open beside this popup with their first row
+/// highlighted (keyboard flow continues into the submenu).
+fn activateItem(menu: *Menu, item: *Component) void {
     const CheckBoxMenuItem = @import("CheckBoxMenuItem.zig");
     if (item.vtable == &MenuItem.vtable) {
         const mi: *MenuItem = @fieldParentPtr("component", item);
@@ -545,14 +660,7 @@ fn activateItemByMnemonic(menu: *Menu, item: *Component) void {
         cmi.doClick();
     } else if (item.vtable == &Menu.vtable) {
         const sub: *Menu = @fieldParentPtr("component", item);
-        if (!sub.open) {
-            if (menu.window) |w| {
-                const ox = menu.popup_root.position.x + menu.popup_root.size.width;
-                const oy = menu.popup_root.position.y + sub.component.position.y;
-                sub.show(w, .{ .x = ox, .y = oy }) catch |err|
-                    log.warn("menu", "show (mnemonic submenu) failed: {s}", .{@errorName(err)});
-                menu.open_child = sub;
-            }
-        }
+        menu.openSubmenu(sub);
+        if (sub.open) sub.highlightFirst();
     }
 }

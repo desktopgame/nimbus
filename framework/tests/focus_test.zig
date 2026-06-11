@@ -242,6 +242,159 @@ test "overlay + Tab: dropdown dismisses (cancel) and focus moves on" {
     try std.testing.expectEqual(@as(usize, 0), combo.getSelectedIndex()); // cancel, not commit
 }
 
+test "accelerator while menu open: closes the menu, then fires (#6a)" {
+    const app = try newApp();
+    defer app.deinit();
+    const frame = try app.frameHeadless("t", 400, 200);
+    const bar = try app.menuBar();
+    const file_menu = try app.menu("File");
+    file_menu.setMnemonic('F');
+    const save_item = try app.menuItem("Save");
+    save_item.setAccelerator(nimbus.KeyStroke.cmd(.s));
+    try file_menu.add(&save_item.component);
+    try bar.add(file_menu);
+    try frame.setMenuBar(bar);
+
+    var counter = Counter{};
+    try save_item.getModel().addActionListener(Counter, Counter.onAction, &counter);
+
+    var robot = nimbus.Robot.init(app, &frame.window);
+    robot.pump();
+
+    robot.keyDown(.f, .{ .alt = true }); // open via mnemonic
+    robot.pump();
+    try std.testing.expect(file_menu.open);
+
+    var chord = command_mods;
+    robot.keyDown(.s, chord);
+    robot.pump();
+    try std.testing.expect(!file_menu.open); // closed first...
+    try std.testing.expectEqual(@as(u32, 1), counter.count); // ...then fired
+
+    // Non-matching chord is still swallowed (menu untouched, nothing fires).
+    robot.keyDown(.f, .{ .alt = true });
+    robot.pump();
+    try std.testing.expect(file_menu.open);
+    chord.shift = true;
+    robot.keyDown(.x, chord);
+    robot.pump();
+    try std.testing.expect(file_menu.open);
+    try std.testing.expectEqual(@as(u32, 1), counter.count);
+}
+
+test "menu keyboard navigation: arrows, wrap, disabled stop, Enter (#6b)" {
+    const app = try newApp();
+    defer app.deinit();
+    const frame = try app.frameHeadless("t", 400, 200);
+    const bar = try app.menuBar();
+    const file_menu = try app.menu("File");
+    file_menu.setMnemonic('F');
+    const item_a = try app.menuItem("Alpha");
+    const item_b = try app.menuItem("Beta");
+    item_b.getModel().setEnabled(false);
+    const item_c = try app.menuItem("Gamma");
+    try file_menu.add(&item_a.component);
+    try file_menu.add(&item_b.component);
+    try file_menu.addSeparator();
+    try file_menu.add(&item_c.component);
+    try bar.add(file_menu);
+    try frame.setMenuBar(bar);
+
+    var count_a = Counter{};
+    var count_b = Counter{};
+    var count_c = Counter{};
+    try item_a.getModel().addActionListener(Counter, Counter.onAction, &count_a);
+    try item_b.getModel().addActionListener(Counter, Counter.onAction, &count_b);
+    try item_c.getModel().addActionListener(Counter, Counter.onAction, &count_c);
+
+    var robot = nimbus.Robot.init(app, &frame.window);
+    robot.pump();
+
+    // Keyboard-opened menu highlights the first row.
+    robot.keyDown(.f, .{ .alt = true });
+    robot.pump();
+    try std.testing.expect(file_menu.open);
+    try std.testing.expect(item_a.getModel().rollover);
+
+    // Down: highlight stops on the disabled row...
+    robot.keyDown(.arrow_down, .{});
+    robot.pump();
+    try std.testing.expect(item_b.getModel().rollover);
+
+    // ...where Enter does nothing and the menu stays open.
+    robot.keyDown(.enter, .{});
+    robot.pump();
+    try std.testing.expectEqual(@as(u32, 0), count_b.count);
+    try std.testing.expect(file_menu.open);
+
+    // Down skips the separator onto Gamma; another Down wraps to Alpha.
+    robot.keyDown(.arrow_down, .{});
+    robot.pump();
+    try std.testing.expect(item_c.getModel().rollover);
+    robot.keyDown(.arrow_down, .{});
+    robot.pump();
+    try std.testing.expect(item_a.getModel().rollover);
+
+    // Up wraps backwards (Alpha -> Gamma, skipping the separator).
+    robot.keyDown(.arrow_up, .{});
+    robot.pump();
+    try std.testing.expect(item_c.getModel().rollover);
+
+    // Enter fires the highlighted enabled row and the menu auto-dismisses.
+    robot.keyDown(.enter, .{});
+    robot.pump();
+    try std.testing.expectEqual(@as(u32, 1), count_c.count);
+    try std.testing.expect(!file_menu.open);
+    try std.testing.expectEqual(@as(u32, 0), count_a.count);
+}
+
+test "submenu: right opens highlighted, left closes one level, ESC is staged (#6b)" {
+    const app = try newApp();
+    defer app.deinit();
+    const frame = try app.frameHeadless("t", 400, 200);
+    const bar = try app.menuBar();
+    const file_menu = try app.menu("File");
+    file_menu.setMnemonic('F');
+    const sub = try app.menu("More");
+    const sub_item = try app.menuItem("Deep");
+    try sub.add(&sub_item.component);
+    try file_menu.add(&sub.component);
+    try bar.add(file_menu);
+    try frame.setMenuBar(bar);
+
+    var robot = nimbus.Robot.init(app, &frame.window);
+    robot.pump();
+
+    robot.keyDown(.f, .{ .alt = true });
+    robot.pump();
+    try std.testing.expect(file_menu.open);
+    try std.testing.expect(sub.getModel().rollover); // first (only) row highlighted
+
+    // Right opens the submenu with its first row highlighted.
+    robot.keyDown(.arrow_right, .{});
+    robot.pump();
+    try std.testing.expect(sub.open);
+    try std.testing.expect(sub_item.getModel().rollover);
+
+    // Left closes only the submenu; the parent popup remains.
+    robot.keyDown(.arrow_left, .{});
+    robot.pump();
+    try std.testing.expect(!sub.open);
+    try std.testing.expect(file_menu.open);
+
+    // Re-open, then ESC twice: staged close, one level per press.
+    robot.keyDown(.arrow_right, .{});
+    robot.pump();
+    try std.testing.expect(sub.open);
+    robot.keyDown(.escape, .{});
+    robot.pump();
+    try std.testing.expect(!sub.open);
+    try std.testing.expect(file_menu.open);
+    robot.keyDown(.escape, .{});
+    robot.pump();
+    try std.testing.expect(!file_menu.open);
+}
+
 test "tab moves focus into view inside a ScrollPane (scrollIntoView)" {
     const app = try newApp();
     defer app.deinit();

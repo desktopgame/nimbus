@@ -6,11 +6,19 @@
 //!                         The disabled button is skipped.
 //!   - Space / Enter       activate the focused button / checkbox / radio.
 //!   - Arrow keys          adjust the focused slider.
-//!   - Alt+F               open the File menu (menu mnemonic). While it is
-//!                         open, plain S / O / Q activate items
-//!                         (menu-local mnemonics, no Alt needed).
-//!   - Ctrl+S / Ctrl+O     fire Save / Open while the menu is CLOSED
-//!                         (accelerators; Cmd+S / Cmd+O on macOS).
+//!   - Alt+F               open the File menu (menu mnemonic) with its first
+//!                         item highlighted. While it is open:
+//!                           Up/Down  move the highlight (wraps; separators
+//!                                    skipped; disabled items stop the
+//!                                    highlight but Enter does nothing)
+//!                           Enter    activate the highlighted item
+//!                           Right    open the highlighted submenu
+//!                           Left     close one submenu level
+//!                           Esc      close ONE level per press
+//!                           S / O / Q  menu-local mnemonics (no Alt needed)
+//!   - Ctrl+S / Ctrl+O     fire Save / Open (accelerators; Cmd on macOS) —
+//!                         with the menu CLOSED, and also while it is OPEN
+//!                         (the popup closes first, then the action runs).
 //!   - Alt+A / Alt+R       activate the Apply / Reset buttons from anywhere
 //!                         (button mnemonics — note the underlined letters).
 //!   - Enter               fires the OK default button when the focused
@@ -55,6 +63,14 @@ fn onOpen(s: *State, _: *const ActionEvent) void {
 
 fn onQuit(s: *State, _: *const ActionEvent) void {
     s.frame.window.dispose();
+}
+
+fn onRecentA(s: *State, _: *const ActionEvent) void {
+    setStatus(s, "Recent > alpha.txt — submenu reached by → / Enter / hover", .{});
+}
+
+fn onRecentB(s: *State, _: *const ActionEvent) void {
+    setStatus(s, "Recent > beta.txt — submenu reached by → / Enter / hover", .{});
 }
 
 // ── form actions ─────────────────────────────────────────────────────────
@@ -123,8 +139,21 @@ pub fn main(init: std.process.Init) !void {
     const quit_item = try app.menuItem("Quit");
     quit_item.setMnemonic('Q');
 
+    // Submenu to try Right / Left / staged Esc on.
+    const recent_menu = try app.menu("Recent");
+    const recent_a = try app.menuItem("alpha.txt");
+    const recent_b = try app.menuItem("beta.txt");
+    try recent_menu.add(&recent_a.component);
+    try recent_menu.add(&recent_b.component);
+
+    // A disabled item: the highlight stops on it, Enter does nothing.
+    const broken_item = try app.menuItem("Unavailable");
+    broken_item.getModel().setEnabled(false);
+
     try file_menu.add(&save_item.component);
     try file_menu.add(&open_item.component);
+    try file_menu.add(&recent_menu.component);
+    try file_menu.add(&broken_item.component);
     try file_menu.addSeparator();
     try file_menu.add(&quit_item.component);
     try bar.add(file_menu);
@@ -196,6 +225,8 @@ pub fn main(init: std.process.Init) !void {
     try save_item.getModel().addActionListener(State, onSave, &state);
     try open_item.getModel().addActionListener(State, onOpen, &state);
     try quit_item.getModel().addActionListener(State, onQuit, &state);
+    try recent_a.getModel().addActionListener(State, onRecentA, &state);
+    try recent_b.getModel().addActionListener(State, onRecentB, &state);
     try apply.getModel().addActionListener(State, onApply, &state);
     try reset.getModel().addActionListener(State, onReset, &state);
     try ok.getModel().addActionListener(State, onOk, &state);
