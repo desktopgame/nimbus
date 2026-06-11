@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # checkbox
@@ -75,8 +75,17 @@ pub fn getModel(self: CheckBox) *ToggleButtonModel;
 
 `addChangeListener` / `addActionListener` / `setEnabled` 等を直接呼ぶときの入口。
 
-## 機能要望
-* フォーカスリング描画 (現状は rollover のみで keyboard focus が見えない)
+## プログラム的な起動
+```zig
+pub fn doClick(self: *CheckBox) void;
+```
+
+トグル + `fireAction`。Space (フォーカス時) が共有する単一の入口。
+`enabled == false` のときは no-op。
+
+## フォーカスとキー操作
+CheckBox は focusable (Tab トラバーサルの対象)。disabled の間は `FocusQuery` により
+Tab がスキップする。フォーカス中は Space で `doClick`、フォーカスリング (枠線) を描画する。
 * keyboard 操作の充実 (例: `Enter` でも toggle、 矢印キーでの「次の checkbox へ移動」)
 * mnemonic (アクセラレータ文字) 対応 — `_` プレフィックスで下線つきの文字を作って Alt+<char> で toggle
 * アイコン付きチェックボックス

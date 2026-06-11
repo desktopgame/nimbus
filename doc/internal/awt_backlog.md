@@ -156,11 +156,20 @@ A（独自型のあるものだけ）か B（全部）か。線引きの基準�
 選んだ範囲で `awt/doc/*.md` を用意し、Zig 側独自型（`Usage` / `IndexFormat` / `BlendMode` / `StencilState` 等）が doc から辿れる状態。
 
 ## #8 修飾キーに super（Cmd / Win / Meta）を追加
-- 状態: 未着手
+- 状態: 完了
 - 優先度: 高
 - 影響範囲: awt-c の修飾ビット（`nmModifierShift` / `Ctrl` / `Alt` 系の enum に `nmModifierSuper` 追加、glfw コールバックのビット変換）、awt の `Event.Modifiers`（`src/Event.zig`：`super: bool` フィールド + `fromBits` のマッピング）、`awt/doc/event.md`
-- 更新日: 2026-06-09
+- 更新日: 2026-06-11
 - 依存: なし（framework のキーストローク/ニーモニックの Mac 対応がこれに依存する側）
+
+### 結果（2026-06-11、キーバインディング実装時の調査で判明）
+起票時の前提が実態と違った: `awt.Event.Modifiers` には既に `meta: bool` があり、
+`glfw_shim.c` が `GLFW_MOD_SUPER → nmModifierMeta` をマッピング済み（Cmd / Win キーは
+最初から拾えていた）。新規実装は不要で、「決めること」は既存実装が答えていた —
+フィールド名は `meta`、Win キーと Mac Cmd は GLFW に倣い 1 ビットに束ねる。
+framework 側 `keybinding.KeyStroke.satisfies` は `command` を macOS で `meta`、
+Win/Linux で `ctrl` に解決して照合する（実装済み・単体テストあり）。
+残件は Mac 実機での動作検証のみ（Metal バックエンド検証時に合わせて行う）。
 
 ### 何
 現状 `awt.Event.Modifiers` は `shift` / `ctrl` / `alt` の 3 つのみ。macOS のアクセラレータは Cmd（= super）を使うため、Cmd 修飾を表すビットが無いと Mac でメニューアクセラレータ／ニーモニックの照合ができない。

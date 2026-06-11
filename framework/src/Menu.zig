@@ -11,6 +11,7 @@ const Container = @import("Container.zig");
 const ButtonModel = @import("ButtonModel.zig");
 const MenuItem = @import("MenuItem.zig");
 const Window = @import("Window.zig");
+const keybinding = @import("keybinding.zig");
 const log = @import("log.zig");
 
 const Menu = @This();
@@ -38,6 +39,9 @@ mode:       Mode,
 open:       bool,
 open_child: ?*Menu,
 window:     ?*Window,
+/// Byte index into `text` of the mnemonic character (underline paint),
+/// or null. Matching uses `component.mnemonic` (Window's mnemonic scan).
+mnemonic_index: ?usize,
 allocator:  std.mem.Allocator,
 
 pub const vtable = Component.VTable{
@@ -87,6 +91,7 @@ pub fn create(
         .open       = false,
         .open_child = null,
         .window     = null,
+        .mnemonic_index = null,
         .allocator  = allocator,
     };
     menu.component.role = .menu;
@@ -179,6 +184,31 @@ pub fn setIcon(self: *Menu, icon: ?awt.Image) void {
 
 pub fn getModel(self: Menu) *ButtonModel {
     return self.model;
+}
+
+/// Programmatic activation. For a bar menu this toggles the popup (the
+/// mnemonic / Alt+letter entry point); item-mode menus open on hover only,
+/// so this is a no-op for them. No-op while disabled.
+pub fn doClick(self: *Menu) void {
+    if (!self.model.enabled) return;
+    if (self.mode != .bar) return;
+    if (self.open) {
+        self.hide();
+        return;
+    }
+    const w = self.window orelse return;
+    const origin = self.component.absoluteOriginInWindow();
+    self.show(w, .{ .x = origin.x, .y = origin.y + self.component.size.height }) catch |err|
+        log.warn("menu", "show (doClick) failed: {s}", .{@errorName(err)});
+}
+
+/// Assign the mnemonic character (`Alt+ch` opens this bar menu; the matching
+/// letter in the label is underlined). Stores only — resolution happens in
+/// the Window's mnemonic scan stage.
+pub fn setMnemonic(self: *Menu, ch: u8) void {
+    self.component.mnemonic = std.ascii.toLower(ch);
+    self.mnemonic_index = std.ascii.indexOfIgnoreCase(self.text, &[1]u8{ch});
+    self.component.repaint();
 }
 
 // ── popup open/close ─────────────────────────────────────────────────────
@@ -314,17 +344,29 @@ fn paint(self: *Component, g: *awt.Graphics) void {
             const tx = (sz.width - m.width) / 2;
             const ty = (sz.height - m.height) / 2;
             g.drawString(menu.text, tx, ty);
+            drawMnemonicUnderline(menu, g, tx, ty, m.height);
         },
         .item => {
             const tx = ROW_PADDING_X + MenuItem.ICON_SLOT_WIDTH;
             const ty = (sz.height - m.height) / 2;
             g.drawString(menu.text, tx, ty);
+            drawMnemonicUnderline(menu, g, tx, ty, m.height);
             // Submenu arrow on right.
             const ax = sz.width - ARROW_SLOT_W - ROW_PADDING_X / 2;
             const ay = (sz.height - 8) / 2;
             drawArrow(g, ax, ay, text_color);
         },
     }
+}
+
+/// Underline the mnemonic letter (always shown in v1; Alt-reveal deferred).
+/// Uses the color currently set on `g` (= the label's text color).
+fn drawMnemonicUnderline(menu: *Menu, g: *awt.Graphics, tx: f32, ty: f32, text_h: f32) void {
+    const mi = menu.mnemonic_index orelse return;
+    if (mi >= menu.text.len) return;
+    const prefix_w = menu.font.measureString(menu.text[0..mi]).width;
+    const ch_w = menu.font.measureString(menu.text[mi .. mi + 1]).width;
+    g.fillRect(.{ .x = tx + prefix_w, .y = ty + text_h - 1, .width = ch_w, .height = 1 });
 }
 
 /// A simple right-pointing triangle approximated as 4 horizontal lines.
@@ -465,8 +507,52 @@ fn popupProcessEvent(self: *Component, ev: *Component.Event) void {
                 }
             }
         },
-        .key, .char, .focus, .composition => {
-            // No keyboard nav / text input in v1.
+        .key => |k| {
+            // Menu-local mnemonics: while this popup is open it is the top
+            // modal overlay and receives keys first. A *plain* letter (no
+            // modifiers — Windows convention inside an open menu) activates
+            // the first item whose mnemonic matches. Window-wide Alt+letter
+            // mnemonics never apply to MenuItems (see narrative/keybinding.md).
+            if (k.action == .press and
+                !k.modifiers.ctrl and !k.modifiers.alt and !k.modifiers.meta)
+            {
+                if (keybinding.letterOf(k.code)) |ch| {
+                    for (menu.items.items) |item| {
+                        if (item.mnemonic) |m2| {
+                            if (m2 == ch) {
+                                activateItemByMnemonic(menu, item);
+                                ev.consume();
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
         },
+        .char, .focus, .composition => {},
+    }
+}
+
+/// Activate `item` from a menu-local mnemonic match: leaf items click,
+/// submenus open beside this popup (same geometry as hover-open).
+fn activateItemByMnemonic(menu: *Menu, item: *Component) void {
+    const CheckBoxMenuItem = @import("CheckBoxMenuItem.zig");
+    if (item.vtable == &MenuItem.vtable) {
+        const mi: *MenuItem = @fieldParentPtr("component", item);
+        mi.doClick();
+    } else if (item.vtable == &CheckBoxMenuItem.vtable) {
+        const cmi: *CheckBoxMenuItem = @fieldParentPtr("component", item);
+        cmi.doClick();
+    } else if (item.vtable == &Menu.vtable) {
+        const sub: *Menu = @fieldParentPtr("component", item);
+        if (!sub.open) {
+            if (menu.window) |w| {
+                const ox = menu.popup_root.position.x + menu.popup_root.size.width;
+                const oy = menu.popup_root.position.y + sub.component.position.y;
+                sub.show(w, .{ .x = ox, .y = oy }) catch |err|
+                    log.warn("menu", "show (mnemonic submenu) failed: {s}", .{@errorName(err)});
+                menu.open_child = sub;
+            }
+        }
     }
 }

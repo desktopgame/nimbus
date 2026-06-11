@@ -110,6 +110,15 @@ pub fn getModel(self: CheckBoxMenuItem) *ToggleButtonModel {
     return self.model;
 }
 
+/// Programmatic activation: toggle + fire (the owning Menu's auto-dismiss
+/// listener closes the popup). Entry point for menu-local mnemonics.
+/// No-op while disabled.
+pub fn doClick(self: *CheckBoxMenuItem) void {
+    if (!self.model.button.enabled) return;
+    self.model.setSelected(!self.model.isSelected());
+    self.model.fireAction();
+}
+
 // ── vtable impl ──────────────────────────────────────────────────────────
 
 fn install(self: *Component) !void {

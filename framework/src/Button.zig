@@ -18,6 +18,7 @@ const PADDING_Y: f32 = 8;
 const CORNER_RADIUS: f32 = 6;
 const ICON_TEXT_GAP: f32 = 6;
 const FLAT_PADDING: f32 = 4;
+const FOCUS_RING_COLOR = awt.Graphics.Color.rgb(0.25, 0.45, 0.85);
 
 component:  Component,
 model:      *ButtonModel,
@@ -27,6 +28,12 @@ font:       awt.Graphics.TextFont,
 color:      awt.Graphics.Color,
 icon:       ?awt.Image,
 icon_size:  ?Component.Size,           // null = natural size; non-null = scaled
+/// True while this button is the window's focus owner (tracked via
+/// FocusEvent); drives the focus-ring paint.
+focused:    bool,
+/// Byte index into `text` of the mnemonic character (underline paint),
+/// or null. Matching itself uses `component.mnemonic`.
+mnemonic_index: ?usize,
 allocator:  std.mem.Allocator,
 
 pub const vtable = Component.VTable{
@@ -84,9 +91,13 @@ fn createInternal(
         .color = color,
         .icon = null,
         .icon_size = null,
+        .focused = false,
+        .mnemonic_index = null,
         .allocator = allocator,
     };
     b.component.role = .button;
+    b.component.setFocusable(true);
+    b.component.focus_query = .{ .isEligible = focusEligible };
     b.applyMetrics();
     try Button.vtable.install(&b.component);
     return b;
@@ -133,6 +144,10 @@ pub fn setText(self: *Button, text: []const u8) !void {
     const new_text = try self.allocator.dupe(u8, text);
     self.allocator.free(self.text);
     self.text = new_text;
+    // Re-locate the mnemonic underline in the new label.
+    if (self.component.mnemonic) |m| {
+        self.mnemonic_index = std.ascii.indexOfIgnoreCase(new_text, &[1]u8{m});
+    }
     self.applyMetrics();
     self.component.markLayoutDirty();
 }
@@ -166,6 +181,33 @@ pub fn setIconSize(self: *Button, size: ?Component.Size) void {
 
 pub fn getModel(self: Button) *ButtonModel { return self.model; }
 
+/// Programmatic activation: the single entry point shared by Space/Enter,
+/// mnemonics and the default-button binding (mouse keeps its own
+/// press/armed gesture). No-op while disabled — this is the one guard that
+/// covers every activation path.
+pub fn doClick(self: *Button) void {
+    if (!self.model.enabled) return;
+    self.model.setArmed(true);
+    self.model.setPressed(true);
+    self.model.setPressed(false);
+    self.model.setArmed(false);
+    self.model.fireAction();
+}
+
+/// Assign the mnemonic character (`Alt+ch` activates this button window-wide;
+/// the matching letter in the label is underlined). ASCII letter / digit.
+/// Stores only — resolution happens in the Window's mnemonic scan stage.
+pub fn setMnemonic(self: *Button, ch: u8) void {
+    self.component.mnemonic = std.ascii.toLower(ch);
+    self.mnemonic_index = std.ascii.indexOfIgnoreCase(self.text, &[1]u8{ch});
+    self.component.repaint();
+}
+
+fn focusEligible(c: *const Component) bool {
+    const b: *const Button = @fieldParentPtr("component", c);
+    return b.model.enabled;
+}
+
 // ── vtable impl ──────────────────────────────────────────────────────────
 
 fn install(self: *Component) !void {
@@ -175,6 +217,8 @@ fn install(self: *Component) !void {
 
 fn uninstall(self: *Component) void {
     const button: *Button = @fieldParentPtr("component", self);
+    // Focus goes to null when its owner is torn down (keybinding.md).
+    if (button.focused) self.releaseFocus();
     button.model.removeChangeListener(Component, onModelChange, self);
 }
 
@@ -216,6 +260,13 @@ fn paint(self: *Component, g: *awt.Graphics) void {
         g.fillRoundRect(.{ .x = 0, .y = 0, .width = sz.width, .height = sz.height }, CORNER_RADIUS);
     }
 
+    // Focus ring (keyboard focus indicator).
+    if (button.focused) {
+        g.setColor(FOCUS_RING_COLOR);
+        const ring = Component.Rect{ .x = 1, .y = 1, .width = sz.width - 2, .height = sz.height - 2 };
+        if (flat) g.drawRect(ring) else g.drawRoundRect(ring, CORNER_RADIUS);
+    }
+
     // Content layout.
     const icon_sz = button.iconDrawSize();
     const text_m = if (has_text) button.font.measureString(button.text)
@@ -242,6 +293,19 @@ fn paint(self: *Component, g: *awt.Graphics) void {
         g.setFont(button.font);
         g.setColor(text_color);
         g.drawString(button.text, x, ty);
+        // Mnemonic underline (always shown in v1; Alt-reveal is deferred).
+        if (button.mnemonic_index) |mi| {
+            if (mi < button.text.len) {
+                const prefix_w = button.font.measureString(button.text[0..mi]).width;
+                const ch_w = button.font.measureString(button.text[mi .. mi + 1]).width;
+                g.fillRect(.{
+                    .x = x + prefix_w,
+                    .y = ty + text_m.height - 1,
+                    .width = ch_w,
+                    .height = 1,
+                });
+            }
+        }
     }
 }
 
@@ -285,7 +349,19 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
                 .scroll => {},
             }
         },
-        .key, .char, .focus, .composition => {},
+        .key => |k| {
+            // Space / Enter activate the focused button (raw `.key` only ever
+            // arrives here while this button is the focus owner). Press only —
+            // auto-repeat firing a button is not a thing on any platform.
+            if (k.action == .press and (k.code == .space or k.code == .enter)) {
+                button.doClick();
+                ev.consume();
+            }
+        },
+        .focus => |f| {
+            button.focused = f.gained;
+        },
+        .char, .composition => {},
     }
 }
 

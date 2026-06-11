@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # menu_item
@@ -94,6 +94,34 @@ pub fn getModel(self: MenuItem) *ButtonModel;
 ```
 
 利用者が `addActionListener` を直接呼ぶ場面で使う。
+
+## プログラム的な起動
+```zig
+pub fn doClick(self: *MenuItem) void;
+```
+
+項目を起動する (`fireAction`。親 Menu の auto-dismiss リスナーが開いていれば閉じる)。
+アクセラレータとメニューローカルニーモニックが共有する単一の入口。
+`model.enabled == false` のときは no-op。
+
+## アクセラレータの設定
+```zig
+pub fn setAccelerator(self: *MenuItem, stroke: ?keybinding.KeyStroke) void;
+```
+
+ウィンドウ全体で効くキー和音 (`KeyStroke.cmd(.s)` 等) を割り当てる。`null` で解除。
+**保存のみ**で登録は行わない — 配送の最終段がメニューツリーを走査して照合するため、
+メニューバーへの attach 順と無関係にいつ呼んでもよい。メニューが閉じていても発火する。
+v1 ではアクセラレータ文字列の描画は行わない。
+
+## ニーモニックの設定
+```zig
+pub fn setMnemonic(self: *MenuItem, ch: u8) void;
+```
+
+**メニューローカル**のニーモニック: 親メニューが開いている間だけ、修飾なしの
+文字キー `ch` でこの項目を起動できる (Alt は不要。ウィンドウ全体の Alt+文字 走査の
+対象にはならない)。ラベル中の該当文字に下線を引く。
 
 ## レイアウト属性
 * `min_size`: icon_slot_width + テキスト寸法 + accel_slot_width + padding

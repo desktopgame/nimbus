@@ -37,6 +37,9 @@ pub const Component = struct {
     parent:     ?*Component,
     container:  ?*Container,                    // Container embed のみ self を指す
     focusable:  bool,                           // キーボードフォーカスを受け取れるか (デフォルト false)
+    focus_query: ?FocusQuery,                   // 動的フォーカス適格性の opt-in (後述「FocusQuery」)。既定 null
+    key_bindings: ?*keybinding.KeyBindings,     // bindKey が遅延生成。deinit で解放 (`keybinding.md`)
+    mnemonic:   ?u8,                            // ニーモニック文字 (小文字 ASCII)。走査が照合に使う。既定 null
     name:       ?[]const u8,                    // Java AWT 互換
     properties: ?std.StringHashMap(Property),   // Swing putClientProperty 互換
     allocator:  std.mem.Allocator,
@@ -86,6 +89,20 @@ pub const A11y = struct {
 `name` はウィジェットのアクセシブル名 (Button のラベル等) を返すアクセサ。型消去された `*const Component` からは comptime リフレクションで実体のテキストに届かないため、ウィジェット側がこのアクセサを与える (`@fieldParentPtr` で実体に戻してテキストを返す)。テキストを持たなければ `null` を返す。
 
 詳細ダンプ用の `dump` アクセサは後段で `A11y` に追加予定 (現状は最小投入のため省略。`narrative/robot.md`「a11y ファセット」参照)。
+
+### FocusQuery
+動的フォーカス適格性の opt-in 能力構造体 (`A11y` / `SizeQuery` と同型)。
+静的な `focusable` が「この種のウィジェットはフォーカスを取れるか」を表すのに対し、
+こちらは「**いま**取れるか」(典型的にはモデルの `enabled`) に答える。
+型消去された `Component` からモデルへ届かないため、ウィジェット側がアクセサを与える。
+`null` = `focusable` であれば常に適格。Tab トラバーサルとクリック時の自動フォーカスが
+`isFocusEligible` 経由で参照する。
+
+```zig
+pub const FocusQuery = struct {
+    isEligible: *const fn (self: *const Component) bool,
+};
+```
 
 `Event` の型定義は `awt/doc/event.md` を参照。
 `processEvent` は mutable `*Event` を受け取り、消費は `event.consume()` で表現する（戻り値ではなくフィールドで管理する）。
@@ -291,6 +308,56 @@ pub fn requestFocus(self: *Component) void;
 
 `focusable == false` のコンポーネントに呼んでもフォーカス遷移は発生する（仕様）。
 利用者側で必要なら呼び出し前に `isFocusable()` をチェックする。
+
+## フォーカス適格性の判定
+```zig
+pub fn isFocusEligible(self: *const Component) bool;
+```
+
+「いまフォーカスを取れるか」を返す: `focusable` が true、かつ `focus_query` が null
+または `isEligible()` が true。Tab トラバーサルとクリック時の自動フォーカスが使う
+唯一の述語 (disabled なウィジェットに Tab が止まらないのはこれによる)。
+
+## キー束縛の追加
+```zig
+pub fn bindKey(self: *Component, stroke: keybinding.KeyStroke, handler: keybinding.Handler) !void;
+```
+
+このコンポーネントに `stroke` を束縛する (`key_bindings` を初回に遅延生成)。
+束縛は、このコンポーネントがフォーカスオーナーの祖先チェーン上にあるとき
+(または root のときウィンドウ全体の束縛として) キー配送に参加する。
+同じ `stroke` への再 bind は置き換え。詳細は [keybinding.md](keybinding.md)。
+
+## キー束縛の削除
+```zig
+pub fn unbindKey(self: *Component, stroke: keybinding.KeyStroke) void;
+```
+
+`stroke` の束縛を削除する。未束縛なら no-op。
+
+## フォーカスの解放
+```zig
+pub fn releaseFocus(self: *Component) void;
+```
+
+ウィンドウのフォーカスを null に戻す。フォーカスオーナーであるウィジェット自身が
+破棄される際に `uninstall` から呼ぶ（「フォーカス喪失時の行き先は null」の実装）。
+親チェーンが `FocusController` 付き root に届かない場合は no-op。
+
+### 事前条件
+* 呼び出し側 (ウィジェット) が自分の focused フラグで「自分がオーナーである」ことを
+  確認してから呼ぶこと。無条件に呼ぶと他者のフォーカスを奪って null にする。
+
+## スクロールインの要求
+```zig
+pub fn scrollIntoView(self: *Component) void;
+```
+
+最寄りの ScrollPane (祖先の `ScrollController`) に、このコンポーネントが視界に入る
+よう依頼する。bounds を view ローカル座標へ変換しながら遡る。
+自分自身が scrolled view (List / TextArea 等、viewport 直下) の場合は no-op —
+そうした view は自分のスクロールを自分で管理する。ネストした ScrollPane は最寄りの
+1 段のみ。ScrollPane 配下にいなければ no-op。
 
 ## VTable の差し替え
 ```zig

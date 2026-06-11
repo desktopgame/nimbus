@@ -114,6 +114,22 @@ pub fn getModel(self: Menu) *ButtonModel;
 enabled / disabled を切り替えたいときに使う。
 disabled の Menu はクリックしても popup が開かない。
 
+## プログラム的な起動
+```zig
+pub fn doClick(self: *Menu) void;
+```
+
+bar モードの Menu の popup をトグルする (ニーモニック `Alt+文字` の入口)。
+item モード (サブメニュー) では no-op (hover で開く)。`enabled == false` のときも no-op。
+
+## ニーモニックの設定
+```zig
+pub fn setMnemonic(self: *Menu, ch: u8) void;
+```
+
+`Alt+ch` でこのメニューバー直下の Menu をウィンドウのどこからでも開けるようにする
+(登録ではなく、配送時の走査が照合する)。ラベル中の該当文字に下線を引く (v1 常時表示)。
+
 ## popup の表示
 ```zig
 pub fn show(self: *Menu, window: *Window, anchor: Component.Point) !void;

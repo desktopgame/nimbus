@@ -1,0 +1,273 @@
+//! Keyboard / focus integration tests (keybinding.md): Tab traversal,
+//! Space/Enter activation, mnemonics, accelerators, default button, and the
+//! deleted fan-out. Driven headlessly via Application.initHeadless + Robot —
+//! synthetic input takes the exact OS-input path (postInput -> EventQueue ->
+//! Window.dispatchInput). GPU device required (skips when unavailable).
+
+const std = @import("std");
+const builtin = @import("builtin");
+const nimbus = @import("nimbus");
+const awt = nimbus.awt;
+
+/// The raw modifier state that satisfies a `command` stroke on this OS.
+const command_mods: awt.Event.Modifiers =
+    if (builtin.os.tag == .macos) .{ .meta = true } else .{ .ctrl = true };
+
+const Counter = struct {
+    count: u32 = 0,
+    fn onAction(self: *@This(), _: *const nimbus.ActionEvent) void {
+        self.count += 1;
+    }
+};
+
+fn newApp() !*nimbus.Application {
+    return nimbus.Application.initHeadless(std.testing.allocator, std.testing.io) catch
+        return error.SkipZigTest;
+}
+
+test "tab traversal: initial focus, order, wrap, shift+tab" {
+    const app = try newApp();
+    defer app.deinit();
+    const frame = try app.frameHeadless("t", 400, 200);
+    const row = try app.container();
+    row.setLayout(nimbus.BoxLayout.horizontal());
+    const b1 = try app.button("One");
+    const b2 = try app.button("Two");
+    const b3 = try app.button("Three");
+    try row.add(&b1.component);
+    try row.add(&b2.component);
+    try row.add(&b3.component);
+    try nimbus.BorderLayout.add(&frame.window.container, .center, &row.component);
+
+    var robot = nimbus.Robot.init(app, &frame.window);
+    robot.pump(); // first frame: layout + initial focus
+
+    // Initial focus lands on the first focusable in traversal order.
+    try std.testing.expect(frame.window.focus_owner == &b1.component);
+
+    robot.keyDown(.tab, .{});
+    robot.pump();
+    try std.testing.expect(frame.window.focus_owner == &b2.component);
+
+    robot.keyDown(.tab, .{});
+    robot.pump();
+    try std.testing.expect(frame.window.focus_owner == &b3.component);
+
+    // Wrap at the end.
+    robot.keyDown(.tab, .{});
+    robot.pump();
+    try std.testing.expect(frame.window.focus_owner == &b1.component);
+
+    // Shift+Tab is the exact reverse (wraps backwards).
+    robot.keyDown(.tab, .{ .shift = true });
+    robot.pump();
+    try std.testing.expect(frame.window.focus_owner == &b3.component);
+}
+
+test "tab traversal skips disabled widgets (FocusQuery)" {
+    const app = try newApp();
+    defer app.deinit();
+    const frame = try app.frameHeadless("t", 400, 200);
+    const row = try app.container();
+    row.setLayout(nimbus.BoxLayout.horizontal());
+    const b1 = try app.button("One");
+    const b2 = try app.button("Two");
+    const b3 = try app.button("Three");
+    b2.getModel().setEnabled(false);
+    try row.add(&b1.component);
+    try row.add(&b2.component);
+    try row.add(&b3.component);
+    try nimbus.BorderLayout.add(&frame.window.container, .center, &row.component);
+
+    var robot = nimbus.Robot.init(app, &frame.window);
+    robot.pump();
+    try std.testing.expect(frame.window.focus_owner == &b1.component);
+
+    robot.keyDown(.tab, .{});
+    robot.pump();
+    try std.testing.expect(frame.window.focus_owner == &b3.component); // b2 skipped
+}
+
+test "space / enter activate the focused button; doClick guards disabled" {
+    const app = try newApp();
+    defer app.deinit();
+    const frame = try app.frameHeadless("t", 400, 200);
+    const b1 = try app.button("Go");
+    try nimbus.BorderLayout.add(&frame.window.container, .center, &b1.component);
+
+    var counter = Counter{};
+    try b1.getModel().addActionListener(Counter, Counter.onAction, &counter);
+
+    var robot = nimbus.Robot.init(app, &frame.window);
+    robot.pump(); // initial focus -> b1
+
+    robot.keyDown(.space, .{});
+    robot.pump();
+    try std.testing.expectEqual(@as(u32, 1), counter.count);
+
+    robot.keyDown(.enter, .{});
+    robot.pump();
+    try std.testing.expectEqual(@as(u32, 2), counter.count);
+
+    // Disabled: every activation entry point is guarded in doClick.
+    b1.getModel().setEnabled(false);
+    b1.doClick();
+    try std.testing.expectEqual(@as(u32, 2), counter.count);
+}
+
+test "no focus owner: keys do not reach widgets (fan-out is gone)" {
+    const app = try newApp();
+    defer app.deinit();
+    const frame = try app.frameHeadless("t", 400, 200);
+    const cb = try app.checkBox("Opt");
+    try nimbus.BorderLayout.add(&frame.window.container, .center, &cb.component);
+
+    var robot = nimbus.Robot.init(app, &frame.window);
+    robot.pump();
+    frame.window.requestFocusFor(null); // clear the initial focus
+
+    robot.keyDown(.space, .{});
+    robot.pump();
+    // Under the old fan-out, the unfocused checkbox would have toggled.
+    try std.testing.expect(!cb.isSelected());
+}
+
+test "mnemonic: Alt+letter activates a button window-wide" {
+    const app = try newApp();
+    defer app.deinit();
+    const frame = try app.frameHeadless("t", 400, 200);
+    const row = try app.container();
+    row.setLayout(nimbus.BoxLayout.horizontal());
+    const other = try app.textField("");
+    other.component.setMinSize(.{ .width = 100, .height = 24 });
+    const save = try app.button("Save");
+    save.setMnemonic('S');
+    try row.add(&other.component);
+    try row.add(&save.component);
+    try nimbus.BorderLayout.add(&frame.window.container, .center, &row.component);
+
+    var counter = Counter{};
+    try save.getModel().addActionListener(Counter, Counter.onAction, &counter);
+
+    var robot = nimbus.Robot.init(app, &frame.window);
+    robot.pump();
+    // Focus sits on the text field; the mnemonic must still fire (window-wide).
+    frame.window.requestFocusFor(&other.component);
+
+    robot.keyDown(.s, .{ .alt = true });
+    robot.pump();
+    try std.testing.expectEqual(@as(u32, 1), counter.count);
+}
+
+test "accelerator: command stroke fires a menu item while the menu is closed" {
+    const app = try newApp();
+    defer app.deinit();
+    const frame = try app.frameHeadless("t", 400, 200);
+    const bar = try app.menuBar();
+    const file_menu = try app.menu("File");
+    const save_item = try app.menuItem("Save");
+    save_item.setAccelerator(nimbus.KeyStroke.cmd(.s));
+    try file_menu.add(&save_item.component);
+    try bar.add(file_menu);
+    try frame.setMenuBar(bar);
+
+    var counter = Counter{};
+    try save_item.getModel().addActionListener(Counter, Counter.onAction, &counter);
+
+    var robot = nimbus.Robot.init(app, &frame.window);
+    robot.pump();
+
+    robot.keyDown(.s, command_mods);
+    robot.pump();
+    try std.testing.expectEqual(@as(u32, 1), counter.count);
+
+    // Disabled item must not fire.
+    save_item.getModel().setEnabled(false);
+    robot.keyDown(.s, command_mods);
+    robot.pump();
+    try std.testing.expectEqual(@as(u32, 1), counter.count);
+}
+
+test "default button: Enter fires it when nothing focused consumes Enter" {
+    const app = try newApp();
+    defer app.deinit();
+    const frame = try app.frameHeadless("t", 400, 200);
+    const row = try app.container();
+    row.setLayout(nimbus.BoxLayout.horizontal());
+    const field = try app.textField("");
+    field.component.setMinSize(.{ .width = 100, .height = 24 });
+    const ok = try app.button("OK");
+    try row.add(&field.component);
+    try row.add(&ok.component);
+    try nimbus.BorderLayout.add(&frame.window.container, .center, &row.component);
+    try frame.window.setDefaultButton(ok);
+
+    var counter = Counter{};
+    try ok.getModel().addActionListener(Counter, Counter.onAction, &counter);
+
+    var robot = nimbus.Robot.init(app, &frame.window);
+    robot.pump();
+    frame.window.requestFocusFor(null);
+
+    robot.keyDown(.enter, .{});
+    robot.pump();
+    try std.testing.expectEqual(@as(u32, 1), counter.count);
+}
+
+test "overlay + Tab: dropdown dismisses (cancel) and focus moves on" {
+    const app = try newApp();
+    defer app.deinit();
+    const frame = try app.frameHeadless("t", 400, 200);
+    const row = try app.container();
+    row.setLayout(nimbus.BoxLayout.horizontal());
+    const combo = try app.comboBox(&.{ "a", "b", "c" });
+    const btn = try app.button("Next");
+    try row.add(&combo.component);
+    try row.add(&btn.component);
+    try nimbus.BorderLayout.add(&frame.window.container, .center, &row.component);
+
+    var robot = nimbus.Robot.init(app, &frame.window);
+    robot.pump(); // initial focus -> combo (first focusable)
+    try std.testing.expect(frame.window.focus_owner == &combo.component);
+
+    // Open the dropdown from the keyboard, then Tab away.
+    robot.keyDown(.space, .{});
+    robot.pump();
+    try std.testing.expect(combo.open);
+
+    robot.keyDown(.tab, .{});
+    robot.pump();
+    try std.testing.expect(!combo.open); // dismissed like an outside click
+    try std.testing.expect(frame.window.focus_owner == &btn.component);
+    try std.testing.expectEqual(@as(usize, 0), combo.getSelectedIndex()); // cancel, not commit
+}
+
+test "tab moves focus into view inside a ScrollPane (scrollIntoView)" {
+    const app = try newApp();
+    defer app.deinit();
+    const frame = try app.frameHeadless("t", 300, 120);
+    const column = try app.container();
+    column.setLayout(nimbus.BoxLayout.vertical());
+    var buttons: [8]*nimbus.Button = undefined;
+    for (&buttons, 0..) |*slot, i| {
+        var name_buf: [16]u8 = undefined;
+        const name = std.fmt.bufPrint(&name_buf, "B{d}", .{i}) catch unreachable;
+        slot.* = try app.button(name);
+        try column.add(&slot.*.component);
+    }
+    const sp = try app.scrollPane(&column.component);
+    try nimbus.BorderLayout.add(&frame.window.container, .center, &sp.container.component);
+
+    var robot = nimbus.Robot.init(app, &frame.window);
+    robot.pump(); // initial focus -> buttons[0], scroll at 0
+    try std.testing.expectEqual(@as(f32, 0), sp.getScrollY());
+
+    // Tab to the last button; it lies below the 120px viewport, so the
+    // traversal's scrollIntoView must scroll down.
+    for (0..buttons.len - 1) |_| {
+        robot.keyDown(.tab, .{});
+        robot.pump();
+    }
+    try std.testing.expect(frame.window.focus_owner == &buttons[buttons.len - 1].component);
+    try std.testing.expect(sp.getScrollY() > 0);
+}

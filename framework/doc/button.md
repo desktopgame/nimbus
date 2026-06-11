@@ -202,6 +202,34 @@ pub fn getModel(self: Button) *ButtonModel;
 
 利用者が `addActionListener` を直接呼ぶ場合などに使う。
 
+## プログラム的な起動
+```zig
+pub fn doClick(self: *Button) void;
+```
+
+ボタンを起動する (armed/pressed の遷移を経て `fireAction`)。
+Space / Enter (フォーカス時)・ニーモニック・既定ボタンが共有する単一の入口。
+`model.enabled == false` のときは no-op (全入口共通のガード)。
+
+## ニーモニックの設定
+```zig
+pub fn setMnemonic(self: *Button, ch: u8) void;
+```
+
+`Alt+ch` でこのボタンをウィンドウのどこからでも起動できるようにする
+(登録ではなく、配送時の走査が `component.mnemonic` を照合する)。
+ラベル中の該当文字 (大文字小文字無視で最初の一致) に下線を引く。v1 は常時表示。
+重複時は走査順 (ツリーの DFS 順) で先勝ち。
+
+### 事前条件
+* `ch` は ASCII の英字または数字であること。
+
+## フォーカスとキー操作
+Button は focusable (Tab トラバーサルの対象)。disabled の間は
+`FocusQuery` により Tab がスキップする。フォーカス中:
+* Space / Enter (press) → `doClick`
+* フォーカスリング (角丸枠線) を描画する
+
 ## アイコンの取得 / 設定
 ```zig
 pub fn getIcon(self: Button) ?awt.Image;

@@ -5,6 +5,7 @@ const awt = @import("awt");
 const Component = @import("Component.zig");
 const ChangeEvent = @import("listener.zig").ChangeEvent;
 const ButtonModel = @import("ButtonModel.zig");
+const keybinding = @import("keybinding.zig");
 
 const MenuItem = @This();
 
@@ -20,6 +21,14 @@ font:       awt.Graphics.TextFont,
 color:      awt.Graphics.Color,
 model:      *ButtonModel,
 owns_model: bool,
+/// Window-wide accelerator (e.g. Cmd/Ctrl+S). Stored only — the Window's
+/// accelerator scan stage walks the menu tree and matches at dispatch time;
+/// nothing is registered anywhere. Fires even while the menu is closed.
+accelerator: ?keybinding.KeyStroke,
+/// Byte index into `text` of the mnemonic character (underline paint).
+/// Matching uses `component.mnemonic` — menu-local only (plain letter while
+/// the parent menu is open), never the window-wide Alt+letter scan.
+mnemonic_index: ?usize,
 allocator:  std.mem.Allocator,
 
 pub const vtable = Component.VTable{
@@ -75,6 +84,8 @@ fn createInternal(
         .color = color,
         .model = model,
         .owns_model = owns_model,
+        .accelerator = null,
+        .mnemonic_index = null,
         .allocator = allocator,
     };
     item.component.role = .menu_item;
@@ -115,6 +126,29 @@ pub fn setIcon(self: *MenuItem, icon: ?awt.Image) void {
 
 pub fn getModel(self: MenuItem) *ButtonModel {
     return self.model;
+}
+
+/// Programmatic activation: fire the action (the owning Menu's auto-dismiss
+/// listener closes the popup if one is open). The single entry point shared
+/// by accelerators and menu-local mnemonics. No-op while disabled.
+pub fn doClick(self: *MenuItem) void {
+    if (!self.model.enabled) return;
+    self.model.fireAction();
+}
+
+/// Window-wide accelerator (`KeyStroke.cmd(.s)` etc.). Pass null to clear.
+/// Stores only; matched by the Window's accelerator scan at dispatch time,
+/// so call order vs. menu attachment does not matter.
+pub fn setAccelerator(self: *MenuItem, stroke: ?keybinding.KeyStroke) void {
+    self.accelerator = stroke;
+}
+
+/// Menu-local mnemonic: while the parent menu is open, the plain letter
+/// `ch` activates this item (no Alt). The matching label letter is underlined.
+pub fn setMnemonic(self: *MenuItem, ch: u8) void {
+    self.component.mnemonic = std.ascii.toLower(ch);
+    self.mnemonic_index = std.ascii.indexOfIgnoreCase(self.text, &[1]u8{ch});
+    self.component.repaint();
 }
 
 // ── vtable impl ──────────────────────────────────────────────────────────
@@ -168,6 +202,20 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     const tx = PADDING_X + ICON_SLOT_WIDTH;
     const ty = (sz.height - m.height) / 2;
     g.drawString(item.text, tx, ty);
+
+    // Mnemonic underline (always shown in v1; Alt-reveal deferred).
+    if (item.mnemonic_index) |mi| {
+        if (mi < item.text.len) {
+            const prefix_w = item.font.measureString(item.text[0..mi]).width;
+            const ch_w = item.font.measureString(item.text[mi .. mi + 1]).width;
+            g.fillRect(.{
+                .x = tx + prefix_w,
+                .y = ty + m.height - 1,
+                .width = ch_w,
+                .height = 1,
+            });
+        }
+    }
 }
 
 fn processEvent(self: *Component, ev: *Component.Event) void {

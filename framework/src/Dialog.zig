@@ -12,6 +12,8 @@ const std = @import("std");
 const awt = @import("awt");
 const Window = @import("Window.zig");
 const Application = @import("Application.zig");
+const keybinding = @import("keybinding.zig");
+const log = @import("log.zig");
 
 const Dialog = @This();
 
@@ -91,6 +93,7 @@ pub fn destroy(self: *Dialog) void {
 /// On return the dialog is hidden but still alive (read widget state / reuse).
 pub fn showModal(self: *Dialog) Result {
     if (self.shown) return self.result;
+    self.bindEscape();
     self.modal = true;
     self.result = .none;
     self.modal_done = false;
@@ -132,6 +135,7 @@ pub fn showModal(self: *Dialog) Result {
 /// and manages lifetime; query `getResult` / observe `close` to react.
 pub fn show(self: *Dialog) !void {
     if (self.shown) return;
+    self.bindEscape();
     self.modal = false;
     self.result = .none;
     self.window.awt_window.?.setShouldClose(false);
@@ -155,6 +159,23 @@ pub fn close(self: *Dialog, result: Result) void {
     // Break the modal loop in `showModal` (no-op for a modeless dialog).
     self.modal_done = true;
     awt.postEmptyEvent();
+}
+
+/// Esc -> close(.cancel), bound on this dialog's root container (the
+/// window-wide terminal stage of the key dispatch — a focused widget that
+/// consumes Esc, e.g. a ComboBox closing its popup, still wins). Bound at
+/// show time, not in `init`: `init` returns the Dialog by value, so the
+/// handler's ctx pointer is only stable once the caller-owned address exists.
+/// Rebinding on every show is harmless (bind replaces same-stroke entries).
+fn bindEscape(self: *Dialog) void {
+    self.window.container.component.bindKey(
+        keybinding.KeyStroke.of(.escape),
+        keybinding.Handler.typed(Dialog, escCancel, self),
+    ) catch |err| log.warn("dialog", "esc binding failed: {s}", .{@errorName(err)});
+}
+
+fn escCancel(self: *Dialog) void {
+    self.close(.cancel);
 }
 
 // ── queries ─────────────────────────────────────────────────────────────

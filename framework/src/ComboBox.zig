@@ -229,6 +229,7 @@ fn onOverlayDismiss(user_data: *anyopaque) void {
 
 fn install(self: *Component) !void {
     self.setFocusable(true);
+    self.focus_query = .{ .isEligible = focusEligible };
 
     // Cache the Window so `show` does not have to walk every time.
     var node: ?*Component = self;
@@ -244,7 +245,14 @@ fn install(self: *Component) !void {
 
 fn uninstall(self: *Component) void {
     const cb: *ComboBox = @fieldParentPtr("component", self);
+    // Focus goes to null when its owner is torn down (keybinding.md).
+    if (cb.has_focus) self.releaseFocus();
     if (cb.open) cb.hide();
+}
+
+fn focusEligible(c: *const Component) bool {
+    const cb: *const ComboBox = @fieldParentPtr("component", c);
+    return cb.enabled;
 }
 
 fn paint(self: *Component, g: *awt.Graphics) void {

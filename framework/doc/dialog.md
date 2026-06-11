@@ -105,6 +105,10 @@ OS ウィンドウを非表示にし、windows リストから外す（破棄は
 ダイアログ内の "OK" / "Cancel" ボタンのハンドラから呼ぶのが典型。
 既に閉じている（`shown == false`）なら no-op。
 
+`Esc` キーは `close(.cancel)` に束縛されている（`showModal` / `show` 時にダイアログの
+root へ bind）。フォーカス中のウィジェットが Esc を自分で消費する場合
+（ComboBox が自分の popup を閉じる等）はそちらが勝ち、次の Esc でダイアログが閉じる。
+
 ## 結果の取得
 ```zig
 pub fn getResult(self: Dialog) Result;

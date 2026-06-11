@@ -1,11 +1,18 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # keybinding
 キーボード操作 — フォーカストラバーサル・キーストローク・ニーモニック — の設計ノート。
 3 つは「キー入力 → 対象を決める → 動かす」という 1 本の連鎖で、フォーカスが背骨になる。
-**まだ未実装**であり、実装時に確定したシグネチャを各 spec (`component.md` / `window.md` / `button.md` ほか) の `## 関数定義` へ昇格させる。
+**実装済み** (2026-06-11)。確定したシグネチャは各 spec へ昇格済み:
+`keybinding.md` (モジュール本体) / `component.md` (FocusQuery / bindKey / releaseFocus / scrollIntoView) /
+`window.md` (focusNext / focusPrev / setDefaultButton / 初期フォーカス) /
+`button.md` `checkbox.md` `radio_button.md` (doClick / フォーカスとキー操作) /
+`menu.md` `menu_item.md` `checkbox_menu_item.md` (doClick / setMnemonic / setAccelerator) /
+`slider.md` (キー操作) / `dialog.md` (Esc)。
+検証は `framework/tests/focus_test.zig` (トラバーサル / 走査 / fan-out 削除の回帰)。
+本ファイルは設計判断の記録として残る。
 
 ## 3 つの関係
 ```
@@ -40,7 +47,10 @@ pub const Mods = packed struct {
 アクセラレータをプラットフォーム中立に書くための抽象。`command` を照合時に解決する (Win/Linux は ctrl ビット、macOS は super ビット)。
 リテラルな Ctrl (macOS の emacs 風バインド等) は v1 では持たない (ウィジェット内部 InputMap の領分として後回し)。
 
-macOS の Cmd 照合には `awt.Event.Modifiers` に `super` ビットが必要だが現状未対応。awt バックログ `awt_backlog.md` #8 で対応する (Mac 対応は必須)。
+macOS の Cmd は `awt.Event.Modifiers.meta` として配線済み (`glfw_shim.c` が
+`GLFW_MOD_SUPER → nmModifierMeta` をマッピング。awt#8 は調査の結果、既存実装で完了)。
+`satisfies` は `command` を macOS で `meta`、Win/Linux で `ctrl` に解決する。
+残件は Mac 実機での動作検証のみ。
 
 ### KeyStroke — キー和音
 ```zig

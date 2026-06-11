@@ -241,13 +241,12 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
             if (m.action == .move) container.updateHover(hovered, m.x, m.y);
         },
         .key, .char => {
-            // Key / text-input events: fan out to all children. Focus-aware
-            // routing (B-2: focus_owner) bypasses this path when set; this
-            // fan-out is the fallback when no component has focus.
-            for (container.children.items) |elem| {
-                elem.component.vtable.processEvent(elem.component, ev);
-                if (ev.isConsumed()) return;
-            }
+            // No fan-out: raw key / text-input events reach a widget only as
+            // the window's focus owner, dispatched directly by
+            // `Window.dispatchInput`. Containers never forward them. (The old
+            // broadcast-to-all-children fallback was deleted with the
+            // keybinding redesign — see `narrative/keybinding.md`「削除予定:
+            // フォーカス不在時の fan-out」.)
         },
         .focus, .composition => {
             // Focus events are delivered directly to the gaining/losing

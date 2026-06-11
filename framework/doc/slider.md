@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # slider
@@ -191,6 +191,12 @@ pub fn getModel(self: Slider) *BoundedRangeModel;
 ```
 
 利用者が `addChangeListener` を直接呼びたい場合などに使う。
+
+## フォーカスとキー操作
+Slider は focusable (Tab トラバーサルの対象)。フォーカス中:
+* `→` / `↑` (press / repeat) → 値を +1
+* `←` / `↓` (press / repeat) → 値を -1 (クランプは model 側)
+* フォーカスリング (枠線) を描画する
 
 ## レイアウト属性
 * `min_size`: ツマミ + 数 px の余白が収まる最小寸法（方向に応じて）

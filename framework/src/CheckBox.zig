@@ -26,6 +26,7 @@ const BOX_BORDER        = awt.Graphics.Color.rgb(0.50, 0.50, 0.50);
 const BOX_BORDER_HOVER  = awt.Graphics.Color.rgb(0.30, 0.55, 0.95);
 const CHECK_COLOR       = awt.Graphics.Color.rgb(1.0, 1.0, 1.0);
 const TEXT_DISABLED     = awt.Graphics.Color.rgb(0.55, 0.55, 0.55);
+const FOCUS_RING_COLOR  = awt.Graphics.Color.rgb(0.25, 0.45, 0.85);
 
 component:  Component,
 model:      *ToggleButtonModel,
@@ -33,6 +34,9 @@ owns_model: bool,
 text:       []const u8,
 font:       awt.Graphics.TextFont,
 color:      awt.Graphics.Color,
+/// True while this checkbox is the window's focus owner (FocusEvent-driven);
+/// drives the focus-ring paint.
+focused:    bool,
 allocator:  std.mem.Allocator,
 
 pub const vtable = Component.VTable{
@@ -88,9 +92,11 @@ fn createInternal(
         .text = text_dup,
         .font = font,
         .color = color,
+        .focused = false,
         .allocator = allocator,
     };
     cb.component.role = .checkbox;
+    cb.component.focus_query = .{ .isEligible = focusEligible };
     cb.applyMetrics();
     try CheckBox.vtable.install(&cb.component);
     return cb;
@@ -122,6 +128,19 @@ pub fn getModel(self: CheckBox) *ToggleButtonModel {
     return self.model;
 }
 
+/// Programmatic activation: toggle + fire, the path shared by Space and any
+/// future mnemonic. No-op while disabled (the one guard for all entry points).
+pub fn doClick(self: *CheckBox) void {
+    if (!self.model.button.enabled) return;
+    self.model.setSelected(!self.model.isSelected());
+    self.model.fireAction();
+}
+
+fn focusEligible(c: *const Component) bool {
+    const cb: *const CheckBox = @fieldParentPtr("component", c);
+    return cb.model.button.enabled;
+}
+
 // ── layout ───────────────────────────────────────────────────────────────
 
 fn applyMetrics(self: *CheckBox) void {
@@ -145,6 +164,8 @@ fn install(self: *Component) !void {
 
 fn uninstall(self: *Component) void {
     const cb: *CheckBox = @fieldParentPtr("component", self);
+    // Focus goes to null when its owner is torn down (keybinding.md).
+    if (cb.focused) self.releaseFocus();
     cb.model.removeChangeListener(Component, onModelChange, self);
 }
 
@@ -187,9 +208,11 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     g.setColor(text_color);
     g.drawString(cb.text, text_x, text_y);
 
-    // (Focus ring deferred — would need to subscribe to FocusEvent like
-    // TextField does to track has_focus, which is out of scope for v1.
-    // Rollover already gives a hover affordance.)
+    // Focus ring (keyboard focus indicator).
+    if (cb.focused) {
+        g.setColor(FOCUS_RING_COLOR);
+        g.drawRect(.{ .x = 1, .y = 1, .width = sz.width - 2, .height = sz.height - 2 });
+    }
 }
 
 /// Open border (4 strips) so the colored fill underneath shows through
@@ -269,12 +292,14 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
         .key => |k| {
             // Space toggles when focused (Swing JCheckBox / Win32 / GTK all do this).
             if (k.action == .press and k.code == .space) {
-                cb.model.setSelected(!cb.model.isSelected());
-                cb.model.fireAction();
+                cb.doClick();
                 ev.consume();
             }
         },
-        .char, .focus, .composition => {},
+        .focus => |f| {
+            cb.focused = f.gained;
+        },
+        .char, .composition => {},
     }
 }
 

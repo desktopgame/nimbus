@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # radio_button
@@ -68,6 +68,18 @@ pub fn getModel(self: RadioButton) *ToggleButtonModel;
 ```
 
 ButtonGroup に登録するときや、 ActionListener を仕込むときの入口。
+
+## プログラム的な起動
+```zig
+pub fn doClick(self: *RadioButton) void;
+```
+
+選択 (冪等。グループが前の選択を落とす) + `fireAction`。Space (フォーカス時) が
+共有する単一の入口。`enabled == false` のときは no-op。
+
+## フォーカスとキー操作
+RadioButton は focusable (Tab トラバーサルの対象)。disabled の間は `FocusQuery` により
+Tab がスキップする。フォーカス中は Space で `doClick`、フォーカスリング (枠線) を描画する。
 
 ## 機能要望
 * 矢印キーでのグループ内ナビゲーション (上下キーで前 / 次の radio へ移動 + 自動 selection)

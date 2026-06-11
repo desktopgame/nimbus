@@ -23,6 +23,9 @@ owns_model:  bool,
 orientation: Orientation,
 allocator:   std.mem.Allocator,
 dragging:    bool = false,
+/// True while this slider is the window's focus owner (FocusEvent-driven);
+/// drives the focus-ring paint.
+focused:     bool = false,
 
 pub const vtable = Component.VTable{
     .install      = install,
@@ -73,6 +76,7 @@ fn createInternal(
         .allocator = allocator,
     };
     s.component.role = .slider;
+    s.component.setFocusable(true);
     s.applyDefaultLayoutAttrs();
     try Slider.vtable.install(&s.component);
     return s;
@@ -149,6 +153,8 @@ fn install(self: *Component) !void {
 
 fn uninstall(self: *Component) void {
     const slider: *Slider = @fieldParentPtr("component", self);
+    // Focus goes to null when its owner is torn down (keybinding.md).
+    if (slider.focused) self.releaseFocus();
     slider.model.removeChangeListener(Component, onModelChange, self);
 }
 
@@ -206,6 +212,12 @@ fn paint(self: *Component, g: *awt.Graphics) void {
             });
         },
     }
+
+    // Focus ring (keyboard focus indicator).
+    if (slider.focused) {
+        g.setColor(awt.Graphics.Color.rgb(0.25, 0.45, 0.85));
+        g.drawRect(.{ .x = 1, .y = 1, .width = sz.width - 2, .height = sz.height - 2 });
+    }
 }
 
 fn processEvent(self: *Component, ev: *Component.Event) void {
@@ -241,7 +253,25 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
                 .scroll => {},
             }
         },
-        .key, .char, .focus, .composition => {},
+        .key => |k| {
+            // Arrow keys nudge the value by 1 (repeat-friendly, like every
+            // native slider). Right/Up increase, Left/Down decrease.
+            if (k.action == .press or k.action == .repeat) {
+                const delta: i32 = switch (k.code) {
+                    .arrow_right, .arrow_up => 1,
+                    .arrow_left, .arrow_down => -1,
+                    else => 0,
+                };
+                if (delta != 0) {
+                    slider.model.setValue(slider.model.value + delta);
+                    ev.consume();
+                }
+            }
+        },
+        .focus => |f| {
+            slider.focused = f.gained;
+        },
+        .char, .composition => {},
     }
 }
 

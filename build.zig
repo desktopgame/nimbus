@@ -242,10 +242,11 @@ pub fn build(b: *std.Build) void {
     }
 
     // framework integration tests under framework/tests/ — split per
-    // layout-manager so failures point at a single subject.
+    // subject so failures point at a single one.
     inline for (.{
         "framework/tests/box_layout_test.zig",
         "framework/tests/border_layout_test.zig",
+        "framework/tests/focus_test.zig",
     }) |path| {
         const m = b.createModule(.{
             .root_source_file = b.path(path),

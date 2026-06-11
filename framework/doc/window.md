@@ -167,6 +167,37 @@ pub fn requestFocusFor(self: *Window, c: ?*Component) void;
 
 通常は利用者が直接呼ばず、widget が `Component.requestFocus()` を呼ぶことで間接的に呼ばれる。
 
+## フォーカストラバーサル
+```zig
+pub fn focusNext(self: *Window) void;   // Tab
+pub fn focusPrev(self: *Window) void;   // Shift+Tab
+```
+
+フォーカスを次 / 前の focusable へ移す。順序はコンテナ子の追加順の preorder DFS
+(`Component.isFocusEligible` でフィルタ)、端で wrap する。移動先が ScrollPane の
+視界外にあれば `scrollIntoView` で視界内へスクロールさせる。
+通常は利用者が直接呼ばず、Tab / Shift+Tab の配送から呼ばれる。
+
+BoxLayout は追加順＝視覚順なので Tab 順は常に見た目と一致する。BorderLayout は
+配置が region ヒントで決まり追加順が配置に影響しないため、Tab 順を読み順にしたい
+場合は add を読み順に呼ぶ (規約)。
+
+初期フォーカス: 最初のフレーム描画時、フォーカスが無ければ先頭の focusable に
+フォーカスが移る (one-shot。利用者が空クリックで解除した後に再主張はしない)。
+
+## 既定ボタンの設定
+```zig
+pub fn setDefaultButton(self: *Window, btn: ?*Button) !void;
+```
+
+ウィンドウ全体の Enter を `btn.doClick()` に束縛する (root の `key_bindings` へ登録)。
+フォーカス中のウィジェットが Enter を自分で消費する場合 (フォーカスされた Button 等)
+はそちらが勝つ。`null` で解除。
+
+### 事前条件
+* root 登録束縛は `btn` を参照するが所有しない。ウィンドウ破棄より前に `btn` だけを
+  ツリーから外す場合は、先に `setDefaultButton(null)` を呼ぶこと (怠ると dangling)。
+
 ## 利用例
 利用者は通常 `Frame` 経由で Window を間接利用する（`frame.md` 参照）。
 Window の API を直接叩く典型ケースは以下。
@@ -189,8 +220,7 @@ window.dispose();
 ```
 
 ## 機能要望
-* `focusNext` / `focusPrev`（Tab / Shift+Tab のフォーカストラバーサル）+ open 時の初期フォーカス — 計画中。順序は子の追加順 DFS、端で wrap。設計は `narrative/keybinding.md`
-* `setDefaultButton` と root `key_bindings` 経由のグローバルキー配送（メニューアクセラレータ / 既定ボタン / Dialog キャンセル）— 計画中。`dispatchInput` の `.key` を「遡り 1 本 + グローバルは root に登録」へ一般化。設計は `narrative/keybinding.md`
+* 明示タブオーダー (Order 値)。実需待ち — 後付けの形は `narrative/keybinding.md`「後付け余地」
 * WindowListener 相当（close 確認、minimize 通知等）
 * 複数モニタ対応（モニタ選択、移動時の DPI 変化対応）
 * アニメーション駆動（`requestAnimationFrame` 相当の連続再描画）

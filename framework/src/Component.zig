@@ -3,6 +3,7 @@
 const std = @import("std");
 const awt = @import("awt");
 const dnd = @import("dnd.zig");
+const keybinding = @import("keybinding.zig");
 
 const Component = @This();
 
@@ -95,6 +96,16 @@ pub const A11y = struct {
     name: *const fn (self: *const Component) ?[]const u8,
 };
 
+/// Opt-in dynamic focus eligibility (held as an optional field, mirroring
+/// `A11y` / `SizeQuery`). The static `focusable` flag says "this kind of
+/// widget can take focus"; this capability answers "can it take focus *right
+/// now*" — typically by reading the model's `enabled`, which the type-erased
+/// Component cannot reach itself. Null = always eligible when `focusable`.
+/// Consulted by focus traversal and click auto-focus via `isFocusEligible`.
+pub const FocusQuery = struct {
+    isEligible: *const fn (self: *const Component) bool,
+};
+
 pub const VTable = struct {
     /// One-time setup after the component is placed in its container (or for
     /// the root, immediately after construction). May fail if it allocates
@@ -150,10 +161,21 @@ role:       Role,
 a11y:       ?A11y,
 parent:     ?*Component,
 container:  ?*Container,
-/// True if this component can receive keyboard focus. Default false:
-/// Button / Label / Slider don't take focus in v1 (mouse only). Widgets
-/// that consume text input (TextField, TextArea) set this to true.
+/// True if this component can receive keyboard focus. Default false (Label,
+/// Panel, separators...); interactive widgets (Button, CheckBox, Slider,
+/// TextField, List, ...) set this to true so Tab traversal and click
+/// auto-focus reach them. Dynamic eligibility (enabled state) layers on top
+/// via `focus_query`. See `framework/doc/keybinding.md`.
 focusable:  bool,
+/// Opt-in dynamic focus eligibility. See `FocusQuery`.
+focus_query: ?FocusQuery,
+/// Lazily-created keystroke bindings (`bindKey`); null until first bind.
+/// Owned by this component, freed in `deinit`.
+key_bindings: ?*keybinding.KeyBindings,
+/// Mnemonic character (lowercase ASCII), or null. Set by widgets'
+/// `setMnemonic`; matched by the Window's mnemonic scan stage (Alt+letter).
+/// Not a registration — just data the scan reads. See `narrative/keybinding.md`.
+mnemonic:   ?u8,
 name:       ?[]const u8,
 properties: ?std.StringHashMap(Property),
 allocator:  std.mem.Allocator,
@@ -178,6 +200,9 @@ pub fn init(allocator: std.mem.Allocator, vtable: *const VTable) Component {
         .parent     = null,
         .container  = null,
         .focusable  = false,
+        .focus_query = null,
+        .key_bindings = null,
+        .mnemonic   = null,
         .name       = null,
         .properties = null,
         .allocator  = allocator,
@@ -200,6 +225,11 @@ pub fn deinit(self: *Component) void {
     if (self.name) |n| {
         self.allocator.free(n);
         self.name = null;
+    }
+    if (self.key_bindings) |kb| {
+        kb.deinit();
+        self.allocator.destroy(kb);
+        self.key_bindings = null;
     }
 }
 
@@ -317,6 +347,75 @@ pub fn isFocusable(self: *const Component) bool {
 
 pub fn setFocusable(self: *Component, v: bool) void {
     self.focusable = v;
+}
+
+/// True when this component can take focus *right now*: statically
+/// `focusable` and dynamically eligible per `focus_query` (e.g. not
+/// disabled). The single predicate used by Tab traversal and click
+/// auto-focus.
+pub fn isFocusEligible(self: *const Component) bool {
+    if (!self.focusable) return false;
+    if (self.focus_query) |q| return q.isEligible(self);
+    return true;
+}
+
+/// Bind `stroke` on this component (lazily creating its `KeyBindings`).
+/// The binding participates in key dispatch when this component is on the
+/// focus owner's ancestor chain — or is the root, for window-wide bindings
+/// (see `framework/doc/keybinding.md`).
+pub fn bindKey(self: *Component, stroke: keybinding.KeyStroke, handler: keybinding.Handler) !void {
+    if (self.key_bindings == null) {
+        const kb = try self.allocator.create(keybinding.KeyBindings);
+        kb.* = keybinding.KeyBindings.init(self.allocator);
+        self.key_bindings = kb;
+    }
+    try self.key_bindings.?.bind(stroke, handler);
+}
+
+/// Remove the binding for `stroke`. No-op when absent.
+pub fn unbindKey(self: *Component, stroke: keybinding.KeyStroke) void {
+    if (self.key_bindings) |kb| kb.unbind(stroke);
+}
+
+/// Clear window focus. Called by a widget's `uninstall` when it knows (via
+/// its own focused flag) that it is the current focus owner and is being torn
+/// down — implements "focus goes to null when the owner disappears". No-op
+/// when the parent chain no longer reaches a `FocusController` root.
+pub fn releaseFocus(self: *Component) void {
+    var node: ?*Component = self;
+    while (node) |cur| {
+        if (cur.parent == null) {
+            if (cur.getTyped(FocusController)) |fc| {
+                fc.request_focus_for(fc.user_data, null);
+            }
+            return;
+        }
+        node = cur.parent;
+    }
+}
+
+/// Ask the nearest enclosing ScrollPane (if any) to scroll so this component
+/// is visible. Translates this component's bounds into the scrolled view's
+/// local coordinates while walking up. When this component *is* the scrolled
+/// view itself (List, TextArea), this is a no-op — such views manage their
+/// own scrolling. Nearest controller only (no chaining through nested
+/// ScrollPanes in v1).
+pub fn scrollIntoView(self: *Component) void {
+    var rect = self.getBounds(); // relative to self.parent
+    var node = self.parent orelse return;
+    // Parent holds the controller -> self is the scrolled view; leave it alone.
+    if (node.getTyped(ScrollController) != null) return;
+    while (true) {
+        const parent = node.parent orelse return;
+        if (parent.getTyped(ScrollController)) |sc| {
+            // `node` is the scrolled view and `rect` is in its coordinates.
+            sc.scroll_rect_to_visible(sc.user_data, rect);
+            return;
+        }
+        rect.x += node.position.x;
+        rect.y += node.position.y;
+        node = parent;
+    }
 }
 
 /// Ask the owning Window to make this component the focus owner.

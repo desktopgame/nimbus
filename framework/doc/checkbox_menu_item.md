@@ -99,6 +99,14 @@ pub fn getModel(self: CheckBoxMenuItem) *ToggleButtonModel;
 
 ActionListener の登録や enabled の制御に使う。
 
+## プログラム的な起動
+```zig
+pub fn doClick(self: *CheckBoxMenuItem) void;
+```
+
+トグル + `fireAction` (親 Menu の auto-dismiss リスナーが開いていれば閉じる)。
+メニューローカルニーモニックの入口。`enabled == false` のときは no-op。
+
 ## レイアウト属性
 `MenuItem` と同じ。
 

@@ -11,6 +11,11 @@ const OverlayManager = @import("OverlayManager.zig");
 const Container = @import("Container.zig");
 const BorderLayout = @import("BorderLayout.zig");
 const Application = @import("Application.zig");
+const keybinding = @import("keybinding.zig");
+const MenuBar = @import("MenuBar.zig");
+const Menu = @import("Menu.zig");
+const MenuItem = @import("MenuItem.zig");
+const Button = @import("Button.zig");
 const log = @import("log.zig");
 
 const Window = @This();
@@ -82,10 +87,14 @@ in_redraw:    bool,
 /// widget calls `ev.requestCapture(&self.component)` from a `.press`
 /// handler; cleared on the matching `.release`.
 mouse_capture: ?*Component,
-/// Keyboard-focus owner. When non-null, `.key` and `.char` events are
-/// delivered only to this component (instead of fan-out via container).
-/// Cleared automatically if the owning component is detached.
+/// Keyboard-focus owner. `.key` and `.char` events are delivered only to
+/// this component (raw key events never reach anyone else — see
+/// `narrative/keybinding.md`「processEvent に .key が届く範囲」).
+/// Cleared (set to null) when the owning component is torn down.
 focus_owner:  ?*Component,
+/// One-shot guard for the initial-focus rule: on the first frame, focus
+/// moves to the first focusable in traversal order (see `redraw`).
+initial_focus_done: bool,
 /// When true, `dispatchInput` drops all user input for this window. Set by
 /// Application while a modal Dialog is active on a *different* window (the
 /// modal one stays false). This is how nimbus implements per-window modality
@@ -168,6 +177,7 @@ pub fn init(
         .in_redraw     = false,
         .mouse_capture    = null,
         .focus_owner      = null,
+        .initial_focus_done = false,
         .input_blocked    = false,
         .drag_armed       = null,
         .drag_start       = .{ .x = 0, .y = 0 },
@@ -237,6 +247,7 @@ pub fn initHeadless(
         .in_redraw     = false,
         .mouse_capture    = null,
         .focus_owner      = null,
+        .initial_focus_done = false,
         .input_blocked    = false,
         .drag_armed       = null,
         .drag_start       = .{ .x = 0, .y = 0 },
@@ -382,6 +393,20 @@ pub fn redraw(self: *Window) void {
         self.layout_dirty = false;
     }
 
+    // Initial focus: on the first frame, the first focusable in traversal
+    // order takes focus (standard dialog behavior). One-shot — once the user
+    // clears focus by clicking empty space, we don't re-assert it.
+    if (!self.initial_focus_done) {
+        self.initial_focus_done = true;
+        if (self.focus_owner == null) {
+            var list: std.ArrayList(*Component) = .empty;
+            defer list.deinit(self.allocator);
+            if (collectFocusables(&self.container.component, &list, self.allocator)) {
+                if (list.items.len > 0) self.requestFocusFor(list.items[0]);
+            } else |_| {}
+        }
+    }
+
     const cb = awt.CommandBuffer.acquire(self.device.*) catch return;
     defer cb.release();
 
@@ -468,6 +493,68 @@ pub fn requestFocusFor(self: *Window, c: ?*Component) void {
         n.vtable.processEvent(n, &ev);
         n.repaint();
     }
+}
+
+/// Move focus to the next focusable in traversal order (Tab). Wraps at the
+/// end; no-op when the window has no focusable. See `framework/doc/keybinding.md`.
+pub fn focusNext(self: *Window) void {
+    self.stepFocus(true);
+}
+
+/// Move focus to the previous focusable (Shift+Tab). Exact reverse of
+/// `focusNext`, wrapping at the start.
+pub fn focusPrev(self: *Window) void {
+    self.stepFocus(false);
+}
+
+/// The single focusable enumeration shared by focusNext / focusPrev and the
+/// initial-focus rule: preorder DFS over the container tree in child add
+/// order, filtered by `isFocusEligible`. Keep it the only DFS — a future
+/// explicit tab-order value plugs in here and nowhere else (see
+/// `narrative/keybinding.md`「列挙の一本化」).
+fn collectFocusables(
+    c: *Component,
+    list: *std.ArrayList(*Component),
+    allocator: std.mem.Allocator,
+) !void {
+    if (c.isFocusEligible()) try list.append(allocator, c);
+    if (c.container) |cont| {
+        for (cont.children.items) |elem| {
+            try collectFocusables(elem.component, list, allocator);
+        }
+    }
+}
+
+fn stepFocus(self: *Window, forward: bool) void {
+    var list: std.ArrayList(*Component) = .empty;
+    defer list.deinit(self.allocator);
+    collectFocusables(&self.container.component, &list, self.allocator) catch return;
+    const n = list.items.len;
+    if (n == 0) return;
+
+    // Current owner's position in the cycle. An owner living outside the
+    // container tree (List cell editor) is not in the list — treat as "no
+    // position" and restart from an end.
+    var idx: ?usize = null;
+    if (self.focus_owner) |fo| {
+        for (list.items, 0..) |c, i| {
+            if (c == fo) {
+                idx = i;
+                break;
+            }
+        }
+    }
+    const target_idx: usize = if (idx) |i|
+        (if (forward) (i + 1) % n else (i + n - 1) % n)
+    else
+        (if (forward) 0 else n - 1);
+
+    const target = list.items[target_idx];
+    self.requestFocusFor(target);
+    // Keep the newly-focused widget visible inside an enclosing ScrollPane.
+    // Only here (Tab-driven moves): click focus is visible by definition and
+    // programmatic requestFocus must not fight caller-controlled scrolling.
+    target.scrollIntoView();
 }
 
 // ── dirty notify wiring ──────────────────────────────────────────────────
@@ -698,36 +785,80 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
                 }
             }
         },
-        .key => {
+        .key => |k| {
+            // Fixed pre-stages (structural "ancestor must win" behaviors —
+            // see `narrative/keybinding.md`「却下案: キャプチャ段」):
             // ESC cancels an active drag; all keys are swallowed while dragging.
             if (self.dragging) {
-                const k = ev.payload.key;
                 if (k.code == .escape and k.action == .press) self.cancelDrag();
                 return;
             }
-            // Overlays first (e.g., ESC closes top overlay).
+            // Modal overlay gets first shot. ESC closes it; Tab is treated
+            // like an outside click — dismiss (cancel), then move focus on.
             if (self.overlays.topModalIndex()) |ti| {
                 const top = self.overlays.entries.items[ti];
                 top.component.vtable.processEvent(top.component, ev);
                 if (ev.isConsumed()) return;
-                if (ev.payload.key.code == .escape and ev.payload.key.action == .press) {
-                    self.overlays.dismissAll();
-                    return;
+                if (k.action == .press or k.action == .repeat) {
+                    if (k.code == .escape and k.action == .press) {
+                        self.overlays.dismissAll();
+                        return;
+                    }
+                    if (k.code == .tab) {
+                        self.overlays.dismissAll();
+                        if (k.modifiers.shift) self.focusPrev() else self.focusNext();
+                        return;
+                    }
                 }
-                return;  // modal: don't propagate
+                return; // modal: don't propagate
             }
-            // Focused widget gets first shot.
+
+            // Stage 1: the focus owner — the only component that receives the
+            // raw `.key` through processEvent.
             if (self.focus_owner) |fo| {
                 fo.vtable.processEvent(fo, ev);
                 if (ev.isConsumed()) return;
             }
-            if (self.menu_bar) |bar| {
-                bar.vtable.processEvent(bar, ev);
-                if (ev.isConsumed()) return;
+
+            if (k.action != .press and k.action != .repeat) return;
+
+            // Tab traversal, after the focus owner declined (leaves room for
+            // a future TextArea that consumes Tab as a character).
+            if (k.code == .tab) {
+                if (k.modifiers.shift) self.focusPrev() else self.focusNext();
+                ev.consume();
+                return;
             }
-            // Fan-out fallback when no focus owner consumed the key.
-            if (self.focus_owner == null) {
-                self.container.component.vtable.processEvent(&self.container.component, ev);
+
+            // Stages 2-3: key_bindings on the focus owner's ancestors, ending
+            // at the root (window-wide bindings: default button, dialog ESC).
+            // No focus owner -> the walk starts (and ends) at the root.
+            var node: ?*Component = if (self.focus_owner) |fo| fo.parent else &self.container.component;
+            while (node) |cur| : (node = cur.parent) {
+                if (cur.key_bindings) |kb| {
+                    if (kb.lookup(k.code, k.modifiers)) |h| {
+                        h.invoke(h.ctx);
+                        ev.consume();
+                        return;
+                    }
+                }
+            }
+
+            // Stage 4: accelerator scan over the menu tree (no registration —
+            // see `narrative/keybinding.md`「root 登録と走査の線引き」).
+            if (self.menu_bar) |bar| {
+                if (acceleratorScan(bar, k)) {
+                    ev.consume();
+                    return;
+                }
+            }
+
+            // Stage 5: mnemonic scan (Alt+letter only).
+            if (k.modifiers.alt and !k.modifiers.ctrl and !k.modifiers.meta) {
+                if (self.mnemonicScan(k)) {
+                    ev.consume();
+                    return;
+                }
             }
         },
         .char => {
@@ -800,7 +931,108 @@ fn findFocusableInSubtree(c: *Component, x: f32, y: f32) ?*Component {
             if (findFocusableInSubtree(child, x, y)) |hit| return hit;
         }
     }
-    return if (c.focusable) c else null;
+    // Eligibility, not just the static flag: clicking a disabled widget must
+    // not move focus onto it.
+    return if (c.isFocusEligible()) c else null;
+}
+
+// ── keystroke scan stages (accelerator / mnemonic) ──────────────────────
+// Component-attached key semantics are resolved by walking the live tree at
+// dispatch time instead of registering at the root — no ordering or lifetime
+// traps, negligible cost on the key-press cold path. See
+// `narrative/keybinding.md`「root 登録と走査の線引き」.
+
+/// Stage 4: walk the menu tree under `bar_c` looking for an enabled MenuItem
+/// whose accelerator matches the key event; activate the first hit.
+fn acceleratorScan(bar_c: *Component, k: awt.Event.KeyEvent) bool {
+    if (bar_c.vtable != &MenuBar.vtable) return false;
+    const bar: *MenuBar = @fieldParentPtr("component", bar_c);
+    for (bar.menus.items) |menu| {
+        if (scanMenuAccelerators(menu, k)) return true;
+    }
+    return false;
+}
+
+fn scanMenuAccelerators(menu: *Menu, k: awt.Event.KeyEvent) bool {
+    for (menu.items.items) |item| {
+        if (item.vtable == &Menu.vtable) {
+            const sub: *Menu = @fieldParentPtr("component", item);
+            if (scanMenuAccelerators(sub, k)) return true;
+        } else if (item.vtable == &MenuItem.vtable) {
+            const mi: *MenuItem = @fieldParentPtr("component", item);
+            if (mi.accelerator) |acc| {
+                if (mi.model.enabled and acc.satisfies(k.code, k.modifiers)) {
+                    mi.doClick();
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+/// Stage 5: Alt+letter. Menu-bar menus first (Alt+F opening the File menu is
+/// the canonical use), then the component tree in DFS order, first match
+/// wins. Disabled targets don't fire — `doClick` carries that guard.
+fn mnemonicScan(self: *Window, k: awt.Event.KeyEvent) bool {
+    const ch = keybinding.letterOf(k.code) orelse return false;
+    if (self.menu_bar) |bar_c| {
+        if (bar_c.vtable == &MenuBar.vtable) {
+            const bar: *MenuBar = @fieldParentPtr("component", bar_c);
+            for (bar.menus.items) |menu| {
+                if (menu.component.mnemonic == ch) {
+                    menu.doClick();
+                    bar.open_menu = if (menu.open) menu else null;
+                    return true;
+                }
+            }
+        }
+    }
+    return mnemonicScanTree(&self.container.component, ch);
+}
+
+fn mnemonicScanTree(c: *Component, ch: u8) bool {
+    if (c.mnemonic) |m| {
+        if (m == ch) {
+            activateByMnemonic(c);
+            return true;
+        }
+    }
+    if (c.container) |cont| {
+        for (cont.children.items) |elem| {
+            if (mnemonicScanTree(elem.component, ch)) return true;
+        }
+    }
+    return false;
+}
+
+/// Mnemonic targets are widgets exposing `setMnemonic` (Button / Menu /
+/// MenuItem in v1; MenuItem mnemonics are menu-local and never reach this
+/// scan). Dispatch by vtable identity — the type-erased Component cannot
+/// carry a doClick function pointer without growing VTable.
+fn activateByMnemonic(c: *Component) void {
+    if (c.vtable == &Button.vtable) {
+        const b: *Button = @fieldParentPtr("component", c);
+        b.doClick();
+    }
+}
+
+/// Window-wide Enter -> `btn.doClick()`, registered on the root container's
+/// key_bindings (the focus chain's terminal stage, so a focused widget that
+/// eats Enter — a Button, a future multiline editor — still wins). Pass null
+/// to remove.
+///
+/// Lifetime contract: a root-registered binding references `btn` without
+/// owning it. If `btn` is removed from the live window before the window
+/// itself is torn down, call `setDefaultButton(null)` first — otherwise the
+/// stale binding dangles.
+pub fn setDefaultButton(self: *Window, btn: ?*Button) !void {
+    const root = &self.container.component;
+    if (btn) |b| {
+        try root.bindKey(keybinding.KeyStroke.of(.enter), keybinding.Handler.typed(Button, Button.doClick, b));
+    } else {
+        root.unbindKey(keybinding.KeyStroke.of(.enter));
+    }
 }
 
 fn destroy(self: *Component, allocator: std.mem.Allocator) void {

@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # textfield
@@ -16,7 +16,8 @@ CLAUDE.md「文字コード」「書記素クラスタ」の方針に従って�
 * 標準編集ショートカット: `Backspace` / `Delete` / `Home` / `End` / 矢印 / `Shift+矢印` / `Ctrl+A,C,X,V`
 
 単一行なので改行は挿入せず、 `Enter` は submit、 `Escape` は cancel のシグナルとして使う (「submit / cancel リスナー」参照)。
-`Tab` / `Shift+Tab` によるフォーカス遷移は未実装 (`window.md`「フォーカス」参照)。
+`Tab` / `Shift+Tab` によるフォーカス遷移は Window のトラバーサルが処理する
+(TextField は Tab を消費しないので素通しする。`window.md`「フォーカストラバーサル」参照)。
 
 ## キー入力の状態遷移
 `key.action == .press` または `.repeat` のときのみ反応する。

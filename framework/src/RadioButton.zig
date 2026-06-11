@@ -23,6 +23,7 @@ const CIRCLE_BORDER_HOV  = awt.Graphics.Color.rgb(0.30, 0.55, 0.95);
 const DOT_COLOR          = awt.Graphics.Color.rgb(0.30, 0.55, 0.95);
 const DOT_COLOR_DISABLED = awt.Graphics.Color.rgb(0.55, 0.55, 0.55);
 const TEXT_DISABLED      = awt.Graphics.Color.rgb(0.55, 0.55, 0.55);
+const FOCUS_RING_COLOR   = awt.Graphics.Color.rgb(0.25, 0.45, 0.85);
 
 component:  Component,
 model:      *ToggleButtonModel,
@@ -30,6 +31,9 @@ owns_model: bool,
 text:       []const u8,
 font:       awt.Graphics.TextFont,
 color:      awt.Graphics.Color,
+/// True while this radio is the window's focus owner (FocusEvent-driven);
+/// drives the focus-ring paint.
+focused:    bool,
 allocator:  std.mem.Allocator,
 
 pub const vtable = Component.VTable{
@@ -84,9 +88,11 @@ fn createInternal(
         .text = text_dup,
         .font = font,
         .color = color,
+        .focused = false,
         .allocator = allocator,
     };
     rb.component.role = .radio_button;
+    rb.component.focus_query = .{ .isEligible = focusEligible };
     rb.applyMetrics();
     try RadioButton.vtable.install(&rb.component);
     return rb;
@@ -118,6 +124,20 @@ pub fn getModel(self: RadioButton) *ToggleButtonModel {
     return self.model;
 }
 
+/// Programmatic activation: select (idempotent — the ButtonGroup turns the
+/// previous one off) + fire. Shared by Space and any future mnemonic.
+/// No-op while disabled.
+pub fn doClick(self: *RadioButton) void {
+    if (!self.model.button.enabled) return;
+    if (!self.model.isSelected()) self.model.setSelected(true);
+    self.model.fireAction();
+}
+
+fn focusEligible(c: *const Component) bool {
+    const rb: *const RadioButton = @fieldParentPtr("component", c);
+    return rb.model.button.enabled;
+}
+
 // ── layout ───────────────────────────────────────────────────────────────
 
 fn applyMetrics(self: *RadioButton) void {
@@ -141,6 +161,8 @@ fn install(self: *Component) !void {
 
 fn uninstall(self: *Component) void {
     const rb: *RadioButton = @fieldParentPtr("component", self);
+    // Focus goes to null when its owner is torn down (keybinding.md).
+    if (rb.focused) self.releaseFocus();
     rb.model.removeChangeListener(Component, onModelChange, self);
 }
 
@@ -189,6 +211,12 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     g.setFont(rb.font);
     g.setColor(text_color);
     g.drawString(rb.text, text_x, text_y);
+
+    // Focus ring (keyboard focus indicator).
+    if (rb.focused) {
+        g.setColor(FOCUS_RING_COLOR);
+        g.drawRect(.{ .x = 1, .y = 1, .width = sz.width - 2, .height = sz.height - 2 });
+    }
 }
 
 fn processEvent(self: *Component, ev: *Component.Event) void {
@@ -236,12 +264,14 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
         },
         .key => |k| {
             if (k.action == .press and k.code == .space) {
-                if (!rb.model.isSelected()) rb.model.setSelected(true);
-                rb.model.fireAction();
+                rb.doClick();
                 ev.consume();
             }
         },
-        .char, .focus, .composition => {},
+        .focus => |f| {
+            rb.focused = f.gained;
+        },
+        .char, .composition => {},
     }
 }
 

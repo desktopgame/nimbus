@@ -519,6 +519,8 @@ fn install(self: *Component) !void {
 
 fn uninstall(self: *Component) void {
     const list: *List = @fieldParentPtr("component", self);
+    // Focus goes to null when its owner is torn down (keybinding.md).
+    if (list.has_focus) self.releaseFocus();
     list.model.removeChangeListener(List, onModelChange, list);
 }
 
