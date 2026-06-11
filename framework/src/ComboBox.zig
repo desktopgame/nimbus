@@ -29,15 +29,9 @@ const CHEVRON_W: f32      = 16;
 const ITEM_PADDING_Y: f32 = 4;
 const BORDER_WIDTH: f32   = 1;
 
-const FIELD_BG          = awt.Graphics.Color.rgb(1.0, 1.0, 1.0);
-const FIELD_BG_DISABLED = awt.Graphics.Color.rgb(0.93, 0.93, 0.93);
-const BORDER_COLOR      = awt.Graphics.Color.rgb(0.55, 0.55, 0.55);
-const FOCUS_BORDER      = awt.Graphics.Color.rgb(0.30, 0.55, 0.95);
-const CHEVRON_COLOR     = awt.Graphics.Color.rgb(0.30, 0.30, 0.30);
-const POPUP_BG          = awt.Graphics.Color.rgb(1.0, 1.0, 1.0);
-const POPUP_BORDER      = awt.Graphics.Color.rgb(0.55, 0.55, 0.55);
-const ITEM_HOVER_BG     = awt.Graphics.Color.rgb(0.30, 0.55, 0.95);
-const ITEM_HOVER_FG     = awt.Graphics.Color.rgb(1.0, 1.0, 1.0);
+// Colors come from `component.theme`: field/popup bg = surface_input
+// (surface_disabled when disabled), frame = border (accent when focused),
+// chevron = text, hovered item = accent bg + text_on_accent fg.
 
 component:        Component,
 /// Standalone Component used as the popup root. Lives inside ComboBox
@@ -257,13 +251,14 @@ fn focusEligible(c: *const Component) bool {
 
 fn paint(self: *Component, g: *awt.Graphics) void {
     const cb: *ComboBox = @fieldParentPtr("component", self);
+    const t = self.theme;
     const sz = self.size;
-    const bg = if (cb.enabled) FIELD_BG else FIELD_BG_DISABLED;
+    const bg = if (cb.enabled) t.surface_input else t.surface_disabled;
     g.setColor(bg);
     g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = sz.height });
 
     // Border (focus tinted).
-    const border = if (cb.has_focus) FOCUS_BORDER else BORDER_COLOR;
+    const border = if (cb.has_focus) t.accent else t.border;
     drawBorder(g, 0, 0, sz.width, sz.height, border);
 
     // Selected item text (left side, vertically centered).
@@ -276,7 +271,7 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     }
 
     // Chevron in the right slot.
-    drawChevron(g, sz.width - CHEVRON_W, 0, CHEVRON_W, sz.height);
+    drawChevron(g, sz.width - CHEVRON_W, 0, CHEVRON_W, sz.height, t.text);
 }
 
 fn drawBorder(g: *awt.Graphics, x: f32, y: f32, w: f32, h: f32, color: awt.Graphics.Color) void {
@@ -290,8 +285,8 @@ fn drawBorder(g: *awt.Graphics, x: f32, y: f32, w: f32, h: f32, color: awt.Graph
 /// Down-pointing chevron rendered as a stack of horizontal strips. No
 /// triangle primitive in awt, so we approximate with shrinking-width
 /// rectangles centered in the chevron slot.
-fn drawChevron(g: *awt.Graphics, x: f32, y: f32, w: f32, h: f32) void {
-    g.setColor(CHEVRON_COLOR);
+fn drawChevron(g: *awt.Graphics, x: f32, y: f32, w: f32, h: f32, color: awt.Graphics.Color) void {
+    g.setColor(color);
     const center_x = x + w / 2;
     const triangle_h: f32 = 5;
     const triangle_w: f32 = 8;
@@ -404,8 +399,10 @@ fn popupPaint(self: *Component, g: *awt.Graphics) void {
     const cb: *ComboBox = @fieldParentPtr("popup_root", self);
     const sz = self.size;
     const item_h = cb.itemHeight();
+    // The popup root never goes through a factory — read the owner's theme.
+    const t = cb.component.theme;
 
-    g.setColor(POPUP_BG);
+    g.setColor(t.surface_input);
     g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = sz.height });
 
     // Items.
@@ -414,15 +411,15 @@ fn popupPaint(self: *Component, g: *awt.Graphics) void {
         const y_top: f32 = @as(f32, @floatFromInt(idx)) * item_h;
         const is_hover = cb.hovered_index == idx;
         if (is_hover) {
-            g.setColor(ITEM_HOVER_BG);
+            g.setColor(t.accent);
             g.fillRect(.{ .x = 0, .y = y_top, .width = sz.width, .height = item_h });
         }
-        g.setColor(if (is_hover) ITEM_HOVER_FG else cb.color);
+        g.setColor(if (is_hover) t.text_on_accent else cb.color);
         g.drawString(s, PADDING_X, y_top + ITEM_PADDING_Y);
     }
 
     // Outer border.
-    g.setColor(POPUP_BORDER);
+    g.setColor(t.border);
     g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = 1 });
     g.fillRect(.{ .x = 0, .y = sz.height - 1, .width = sz.width, .height = 1 });
     g.fillRect(.{ .x = 0, .y = 0, .width = 1, .height = sz.height });

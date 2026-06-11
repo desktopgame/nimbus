@@ -19,9 +19,8 @@ pub const Orientation = enum { horizontal, vertical };
 pub const THICKNESS: f32 = 14;
 const MIN_THUMB: f32 = 20;
 
-const TRACK_COLOR = awt.Graphics.Color.rgb(0.88, 0.88, 0.90);
-const THUMB_COLOR = awt.Graphics.Color.rgb(0.62, 0.62, 0.66);
-const THUMB_HOVER = awt.Graphics.Color.rgb(0.48, 0.48, 0.52);
+// Colors come from `component.theme`: scrollbar_track / scrollbar_thumb /
+// scrollbar_thumb_hover (see `framework/doc/theme.md`).
 
 component:       Component,
 model:           *BoundedRangeModel,
@@ -222,13 +221,14 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     // Hidden / collapsed bar (e.g. content fits, so this axis needs no bar).
     if (sz.width <= 0 or sz.height <= 0) return;
 
-    g.setColor(TRACK_COLOR);
+    const t = self.theme;
+    g.setColor(t.scrollbar_track);
     g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = sz.height });
 
     const len = sb.thumbLen();
     const start = sb.thumbStart();
     const inset: f32 = 2;
-    const thumb_color = if (sb.dragging or sb.rollover) THUMB_HOVER else THUMB_COLOR;
+    const thumb_color = if (sb.dragging or sb.rollover) t.scrollbar_thumb_hover else t.scrollbar_thumb;
     g.setColor(thumb_color);
     switch (sb.orientation) {
         .horizontal => g.fillRoundRect(

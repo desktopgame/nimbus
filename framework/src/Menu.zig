@@ -23,8 +23,8 @@ const ROW_PADDING_X: f32 = 8;
 const ROW_PADDING_Y: f32 = 6;
 const ARROW_SLOT_W: f32 = 16;
 
-const POPUP_BORDER_COLOR = awt.Graphics.Color.rgb(0.55, 0.55, 0.60);
-const POPUP_BG_COLOR = awt.Graphics.Color.rgb(1, 1, 1);
+// Popup colors come from `component.theme`: surface_input (background) and
+// border (frame). See `framework/doc/theme.md`.
 
 component:  Component,
 popup_root: Component,
@@ -159,6 +159,9 @@ pub fn add(self: *Menu, child: *Component) !void {
 pub fn addSeparator(self: *Menu) !void {
     const MenuSeparator = @import("MenuSeparator.zig");
     const sep = try MenuSeparator.create(self.allocator);
+    // Created internally (no Application factory in between): inherit this
+    // menu's theme so a custom theme reaches the separator too.
+    sep.component.theme = self.component.theme;
     try self.add(&sep.component);
 }
 
@@ -398,23 +401,24 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     const menu: *Menu = @fieldParentPtr("component", self);
     const sz = self.size;
 
-    // Background: bar mode = blue when open, light when hover.
-    // Item mode = blue when armed/rollover.
+    // Background: bar mode = accent when open, soft tint when hover.
+    // Item mode = accent when armed/rollover.
+    const t = self.theme;
     const enabled = menu.model.enabled;
     const highlight = enabled and (menu.open or menu.model.rollover or menu.model.armed);
     if (highlight) {
         const c = if (menu.open or (menu.model.armed and menu.model.pressed))
-            awt.Graphics.Color.rgb(0.30, 0.55, 0.95)
+            t.accent
         else
-            awt.Graphics.Color.rgb(0.90, 0.93, 0.99);
+            t.accent_soft;
         g.setColor(c);
         g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = sz.height });
     }
 
     const text_color = blk: {
-        if (!enabled) break :blk awt.Graphics.Color.rgb(0.55, 0.55, 0.55);
+        if (!enabled) break :blk t.text_disabled;
         if (menu.open or (menu.model.armed and menu.model.pressed))
-            break :blk awt.Graphics.Color.rgb(1, 1, 1);
+            break :blk t.text_on_accent;
         break :blk menu.color;
     };
     g.setFont(menu.font);
@@ -523,9 +527,11 @@ fn popupDestroyNoop(_: *Component, _: std.mem.Allocator) void {}
 fn popupPaint(self: *Component, g: *awt.Graphics) void {
     const menu: *Menu = @fieldParentPtr("popup_root", self);
     const sz = self.size;
+    // The popup root never goes through a factory — read the owning Menu's theme.
+    const t = menu.component.theme;
 
     // Background.
-    g.setColor(POPUP_BG_COLOR);
+    g.setColor(t.surface_input);
     g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = sz.height });
 
     // Items.
@@ -533,7 +539,7 @@ fn popupPaint(self: *Component, g: *awt.Graphics) void {
 
     // Border (1px) drawn last so item hover backgrounds don't overlap the
     // left/right edges.
-    g.setColor(POPUP_BORDER_COLOR);
+    g.setColor(t.border);
     g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = 1 });
     g.fillRect(.{ .x = 0, .y = sz.height - 1, .width = sz.width, .height = 1 });
     g.fillRect(.{ .x = 0, .y = 0, .width = 1, .height = sz.height });

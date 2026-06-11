@@ -28,11 +28,15 @@ const DEFAULT_ROWS: f32 = 6;
 const BLINK_PERIOD_MS: u32 = 500;
 const BORDER_WIDTH: f32 = 1;
 
-const SELECTION_BG      = awt.Graphics.Color.rgba(0.30, 0.55, 0.95, 0.40);
-const BORDER_COLOR      = awt.Graphics.Color.rgb(0.55, 0.55, 0.55);
-const FOCUS_BORDER      = awt.Graphics.Color.rgb(0.30, 0.55, 0.95);
-const PREEDIT_UNDERLINE = awt.Graphics.Color.rgb(0.40, 0.40, 0.40);
-const PREEDIT_TARGET    = awt.Graphics.Color.rgb(0.20, 0.20, 0.20);
+// Colors come from `component.theme`: frame = border (accent when focused),
+// preedit underlines = ime_preedit_underline / ime_preedit_target. The
+// selection highlight is derived from accent (see `selectionColor`) so it
+// tracks accent automatically. See `framework/doc/theme.md`.
+
+/// Selection highlight: the theme accent at 40% alpha (derived, not a token).
+fn selectionColor(t: *const @import("theme.zig").Theme) awt.Graphics.Color {
+    return awt.Graphics.Color.rgba(t.accent.r, t.accent.g, t.accent.b, 0.40);
+}
 
 /// One on-screen line. `start`/`end` are logical byte offsets; `end` excludes a
 /// trailing '\n'. For wrapped segments `end` is the soft-break point and equals
@@ -536,7 +540,7 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     g.setColor(ta.background);
     g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = sz.height });
 
-    g.setColor(if (ta.has_focus) FOCUS_BORDER else BORDER_COLOR);
+    g.setColor(if (ta.has_focus) self.theme.accent else self.theme.border);
     g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = BORDER_WIDTH });
     g.fillRect(.{ .x = 0, .y = sz.height - BORDER_WIDTH, .width = sz.width, .height = BORDER_WIDTH });
     g.fillRect(.{ .x = 0, .y = 0, .width = BORDER_WIDTH, .height = sz.height });
@@ -581,7 +585,7 @@ fn paint(self: *Component, g: *awt.Graphics) void {
             if (b > a) {
                 const x0 = PADDING_X + ta.measureRange(ln.start, a);
                 const x1 = PADDING_X + ta.measureRange(ln.start, b);
-                g.setColor(SELECTION_BG);
+                g.setColor(selectionColor(self.theme));
                 g.fillRect(.{ .x = x0, .y = y, .width = x1 - x0, .height = line_h });
             }
         }
@@ -604,7 +608,7 @@ fn paint(self: *Component, g: *awt.Graphics) void {
 
         const pre_w = ta.measureSlice(ta.preedit_text.items);
         const underline_y = cg.y + cg.line_h - 1;
-        g.setColor(PREEDIT_UNDERLINE);
+        g.setColor(self.theme.ime_preedit_underline);
         g.fillRect(.{ .x = cg.x, .y = underline_y, .width = pre_w, .height = 1 });
 
         if (ta.preedit_target_end > ta.preedit_target_start and
@@ -612,7 +616,7 @@ fn paint(self: *Component, g: *awt.Graphics) void {
         {
             const t0 = ta.measureSlice(ta.preedit_text.items[0..ta.preedit_target_start]);
             const t1 = ta.measureSlice(ta.preedit_text.items[0..ta.preedit_target_end]);
-            g.setColor(PREEDIT_TARGET);
+            g.setColor(self.theme.ime_preedit_target);
             g.fillRect(.{ .x = cg.x + t0, .y = underline_y - 1, .width = t1 - t0, .height = 2 });
         }
     }

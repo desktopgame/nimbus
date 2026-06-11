@@ -40,6 +40,7 @@ pub const Component = struct {
     focus_query: ?FocusQuery,                   // 動的フォーカス適格性の opt-in (後述「FocusQuery」)。既定 null
     key_bindings: ?*keybinding.KeyBindings,     // bindKey が遅延生成。deinit で解放 (`keybinding.md`)
     mnemonic:   ?u8,                            // ニーモニック文字 (小文字 ASCII)。走査が照合に使う。既定 null
+    theme:      *const Theme,                   // 既定 LAF の色カタログ。既定 &Theme.default、ファクトリが注入 (`theme.md`)
     name:       ?[]const u8,                    // Java AWT 互換
     properties: ?std.StringHashMap(Property),   // Swing putClientProperty 互換
     allocator:  std.mem.Allocator,

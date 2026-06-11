@@ -13,8 +13,8 @@ const log = @import("log.zig");
 
 const PopupMenu = @This();
 
-const POPUP_BORDER_COLOR = awt.Graphics.Color.rgb(0.55, 0.55, 0.60);
-const POPUP_BG_COLOR = awt.Graphics.Color.rgb(1, 1, 1);
+// Colors come from `popup_root.theme`: surface_input (background) and
+// border (frame). See `framework/doc/theme.md`.
 
 popup_root: Component,
 items:      std.ArrayList(*Component),
@@ -68,6 +68,9 @@ pub fn add(self: *PopupMenu, item: *Component) !void {
 pub fn addSeparator(self: *PopupMenu) !void {
     const MenuSeparator = @import("MenuSeparator.zig");
     const sep = try MenuSeparator.create(self.allocator);
+    // Created internally (no Application factory in between): inherit this
+    // popup's theme so a custom theme reaches the separator too.
+    sep.component.theme = self.popup_root.theme;
     try self.add(&sep.component);
 }
 
@@ -167,14 +170,15 @@ fn popupDestroyNoop(_: *Component, _: std.mem.Allocator) void {}
 fn popupPaint(self: *Component, g: *awt.Graphics) void {
     const pm: *PopupMenu = @fieldParentPtr("popup_root", self);
     const sz = self.size;
+    const t = self.theme;
 
-    g.setColor(POPUP_BG_COLOR);
+    g.setColor(t.surface_input);
     g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = sz.height });
 
     for (pm.items.items) |item| item.paintAt(g);
 
     // Border drawn last so item hover backgrounds don't overlap the edges.
-    g.setColor(POPUP_BORDER_COLOR);
+    g.setColor(t.border);
     g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = 1 });
     g.fillRect(.{ .x = 0, .y = sz.height - 1, .width = sz.width, .height = 1 });
     g.fillRect(.{ .x = 0, .y = 0, .width = 1, .height = sz.height });

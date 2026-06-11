@@ -137,6 +137,7 @@ fn onModelChange(comp: *Component, _: *const ChangeEvent) void {
 
 fn paint(self: *Component, g: *awt.Graphics) void {
     const item: *CheckBoxMenuItem = @fieldParentPtr("component", self);
+    const t = self.theme;
     const sz = self.size;
     const btn = &item.model.button;
 
@@ -144,10 +145,10 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     const armed_pressed = btn.armed and btn.pressed;
     if (btn.enabled) {
         if (armed_pressed) {
-            g.setColor(awt.Graphics.Color.rgb(0.30, 0.55, 0.95));
+            g.setColor(t.accent);
             g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = sz.height });
         } else if (btn.rollover) {
-            g.setColor(awt.Graphics.Color.rgb(0.90, 0.93, 0.99));
+            g.setColor(t.accent_soft);
             g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = sz.height });
         }
     }
@@ -155,19 +156,19 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     // Checkmark in icon slot.
     if (item.model.isSelected()) {
         const check_color = if (armed_pressed)
-            awt.Graphics.Color.rgb(1, 1, 1)
+            t.text_on_accent
         else if (!btn.enabled)
-            awt.Graphics.Color.rgb(0.55, 0.55, 0.55)
+            t.text_disabled
         else
-            awt.Graphics.Color.rgb(0.20, 0.50, 0.90);
+            t.accent;
         drawCheckmark(g, MenuItem.PADDING_X, sz.height, check_color);
     }
 
     // Label.
     const m = item.font.measureString(item.text);
     const text_color = blk: {
-        if (!btn.enabled) break :blk awt.Graphics.Color.rgb(0.55, 0.55, 0.55);
-        if (armed_pressed) break :blk awt.Graphics.Color.rgb(1, 1, 1);
+        if (!btn.enabled) break :blk t.text_disabled;
+        if (armed_pressed) break :blk t.text_on_accent;
         break :blk item.color;
     };
     g.setFont(item.font);

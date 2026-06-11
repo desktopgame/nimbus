@@ -4,6 +4,7 @@ const std = @import("std");
 const awt = @import("awt");
 const dnd = @import("dnd.zig");
 const keybinding = @import("keybinding.zig");
+const Theme = @import("theme.zig").Theme;
 
 const Component = @This();
 
@@ -176,6 +177,11 @@ key_bindings: ?*keybinding.KeyBindings,
 /// `setMnemonic`; matched by the Window's mnemonic scan stage (Alt+letter).
 /// Not a registration — just data the scan reads. See `narrative/keybinding.md`.
 mnemonic:   ?u8,
+/// Color catalog the default look consults at paint time. Application
+/// factories inject `&app.theme`; components created outside a factory keep
+/// the built-in default. Always valid (never null) — whether a custom-paint
+/// LAF reads it is its own business. See `framework/doc/theme.md`.
+theme:      *const Theme,
 name:       ?[]const u8,
 properties: ?std.StringHashMap(Property),
 allocator:  std.mem.Allocator,
@@ -203,6 +209,7 @@ pub fn init(allocator: std.mem.Allocator, vtable: *const VTable) Component {
         .focus_query = null,
         .key_bindings = null,
         .mnemonic   = null,
+        .theme      = &Theme.default,
         .name       = null,
         .properties = null,
         .allocator  = allocator,

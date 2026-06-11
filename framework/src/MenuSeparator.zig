@@ -39,7 +39,7 @@ fn uninstall(_: *Component) void {}
 
 fn paint(self: *Component, g: *awt.Graphics) void {
     const w = self.size.width;
-    g.setColor(awt.Graphics.Color.rgb(0.75, 0.75, 0.78));
+    g.setColor(self.theme.separator);
     g.fillRect(.{
         .x = 0,
         .y = PADDING_Y,

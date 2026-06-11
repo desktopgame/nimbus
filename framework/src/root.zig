@@ -7,6 +7,7 @@ pub const Container = @import("Container.zig");
 pub const keybinding = @import("keybinding.zig");
 pub const KeyStroke = keybinding.KeyStroke;
 pub const KeyHandler = keybinding.Handler;
+pub const Theme = @import("theme.zig").Theme;
 pub const Label = @import("Label.zig");
 pub const LayoutManager = @import("LayoutManager.zig");
 pub const listener = @import("listener.zig");

@@ -16,14 +16,9 @@ const CIRCLE_GAP: f32  = 6;
 const PADDING_X: f32   = 4;
 const PADDING_Y: f32   = 4;
 
-const CIRCLE_BG_NORMAL   = awt.Graphics.Color.rgb(1.00, 1.00, 1.00);
-const CIRCLE_BG_DISABLED = awt.Graphics.Color.rgb(0.93, 0.93, 0.93);
-const CIRCLE_BORDER      = awt.Graphics.Color.rgb(0.50, 0.50, 0.50);
-const CIRCLE_BORDER_HOV  = awt.Graphics.Color.rgb(0.30, 0.55, 0.95);
-const DOT_COLOR          = awt.Graphics.Color.rgb(0.30, 0.55, 0.95);
-const DOT_COLOR_DISABLED = awt.Graphics.Color.rgb(0.55, 0.55, 0.55);
-const TEXT_DISABLED      = awt.Graphics.Color.rgb(0.55, 0.55, 0.55);
-const FOCUS_RING_COLOR   = awt.Graphics.Color.rgb(0.25, 0.45, 0.85);
+// Colors come from `component.theme` (see `framework/doc/theme.md`):
+// circle bg = surface_input / surface_disabled, frame = indicator_border
+// (accent on hover), inner dot = accent (text_disabled when disabled).
 
 component:  Component,
 model:      *ToggleButtonModel,
@@ -172,6 +167,7 @@ fn onModelChange(comp: *Component, _: *const ChangeEvent) void {
 
 fn paint(self: *Component, g: *awt.Graphics) void {
     const rb: *RadioButton = @fieldParentPtr("component", self);
+    const t = self.theme;
     const sz = self.size;
     const btn = &rb.model.button;
     const selected = rb.model.isSelected();
@@ -181,19 +177,19 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     const circle_y = (sz.height - CIRCLE_SIZE) / 2;
 
     // Background fill (round shape via fillCircle on the bounding rect).
-    const bg = if (!enabled) CIRCLE_BG_DISABLED else CIRCLE_BG_NORMAL;
+    const bg = if (!enabled) t.surface_disabled else t.surface_input;
     g.setColor(bg);
     g.fillCircle(.{ .x = circle_x, .y = circle_y, .width = CIRCLE_SIZE, .height = CIRCLE_SIZE });
 
     // Border (drawCircle).
-    const border = if (btn.rollover and enabled) CIRCLE_BORDER_HOV else CIRCLE_BORDER;
+    const border = if (btn.rollover and enabled) t.accent else t.indicator_border;
     g.setColor(border);
     g.drawCircle(.{ .x = circle_x, .y = circle_y, .width = CIRCLE_SIZE, .height = CIRCLE_SIZE });
 
     // Inner dot when selected.
     if (selected) {
         const dot_inset: f32 = 4;
-        const dot_color = if (enabled) DOT_COLOR else DOT_COLOR_DISABLED;
+        const dot_color = if (enabled) t.accent else t.text_disabled;
         g.setColor(dot_color);
         g.fillCircle(.{
             .x = circle_x + dot_inset,
@@ -204,7 +200,7 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     }
 
     // Label.
-    const text_color = if (enabled) rb.color else TEXT_DISABLED;
+    const text_color = if (enabled) rb.color else t.text_disabled;
     const m = rb.font.measureString(rb.text);
     const text_x = circle_x + CIRCLE_SIZE + CIRCLE_GAP;
     const text_y = (sz.height - m.height) / 2;
@@ -214,7 +210,7 @@ fn paint(self: *Component, g: *awt.Graphics) void {
 
     // Focus ring (keyboard focus indicator).
     if (rb.focused) {
-        g.setColor(FOCUS_RING_COLOR);
+        g.setColor(t.focus_ring);
         g.drawRect(.{ .x = 1, .y = 1, .width = sz.width - 2, .height = sz.height - 2 });
     }
 }

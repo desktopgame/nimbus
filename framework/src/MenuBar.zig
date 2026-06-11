@@ -9,8 +9,8 @@ const log = @import("log.zig");
 
 const MenuBar = @This();
 
-const BG_COLOR = awt.Graphics.Color.rgb(0.94, 0.94, 0.96);
-const BORDER_COLOR = awt.Graphics.Color.rgb(0.78, 0.78, 0.82);
+// Colors come from `component.theme`: surface_window (background) and
+// border_soft (bottom border). See `framework/doc/theme.md`.
 
 component:  Component,
 menus:      std.ArrayList(*Menu),
@@ -98,11 +98,11 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     bar.relayout();
 
     // Background.
-    g.setColor(BG_COLOR);
+    g.setColor(self.theme.surface_window);
     g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = sz.height });
 
     // Bottom border.
-    g.setColor(BORDER_COLOR);
+    g.setColor(self.theme.border_soft);
     g.fillRect(.{ .x = 0, .y = sz.height - 1, .width = sz.width, .height = 1 });
 
     // Menu labels.

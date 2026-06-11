@@ -169,15 +169,16 @@ fn onModelChange(comp: *Component, _: *const ChangeEvent) void {
 
 fn paint(self: *Component, g: *awt.Graphics) void {
     const item: *MenuItem = @fieldParentPtr("component", self);
+    const t = self.theme;
     const sz = self.size;
 
     // Background by state.
     if (item.model.enabled) {
         if (item.model.armed and item.model.pressed) {
-            g.setColor(awt.Graphics.Color.rgb(0.30, 0.55, 0.95));
+            g.setColor(t.accent);
             g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = sz.height });
         } else if (item.model.rollover) {
-            g.setColor(awt.Graphics.Color.rgb(0.90, 0.93, 0.99));
+            g.setColor(t.accent_soft);
             g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = sz.height });
         }
     }
@@ -193,8 +194,8 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     // Label.
     const m = item.font.measureString(item.text);
     const text_color = blk: {
-        if (!item.model.enabled) break :blk awt.Graphics.Color.rgb(0.55, 0.55, 0.55);
-        if (item.model.armed and item.model.pressed) break :blk awt.Graphics.Color.rgb(1, 1, 1);
+        if (!item.model.enabled) break :blk t.text_disabled;
+        if (item.model.armed and item.model.pressed) break :blk t.text_on_accent;
         break :blk item.color;
     };
     g.setFont(item.font);

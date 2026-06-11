@@ -23,8 +23,8 @@ const BUFFER_ROWS: usize = 2;
 /// Two presses on the same row within this window count as a double-click.
 const DOUBLE_CLICK_S: f64 = 0.4;
 
-const LIST_BG = awt.Graphics.Color.rgb(1.0, 1.0, 1.0);
-const SEL_BG  = awt.Graphics.Color.rgb(0.80, 0.87, 0.98);
+// Colors come from `component.theme`: surface_input (background) and
+// selection_bg (selected row). See `framework/doc/theme.md`.
 
 // ── public cell protocol ───────────────────────────────────────────────────
 
@@ -544,12 +544,12 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     const list: *List = @fieldParentPtr("component", self);
     list.reconcile();
 
-    g.setColor(LIST_BG);
+    g.setColor(self.theme.surface_input);
     g.fillRect(.{ .x = 0, .y = 0, .width = self.size.width, .height = self.size.height });
 
     // Selection background behind the cell content.
     if (list.selected) |r| {
-        g.setColor(SEL_BG);
+        g.setColor(self.theme.selection_bg);
         g.fillRect(.{
             .x = 0,
             .y = @as(f32, @floatFromInt(r)) * list.row_height,

@@ -1,13 +1,11 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # theme
 既定ルックアンドフィールが描画時に参照する色のカタログ (`theme.zig`)。
 public な固定 struct であり、自前 LAF (vtable 差し替え) からも参照できる。
 設計の経緯・却下案は [narrative/theme.md](narrative/theme.md) を参照。
-
-**注記: 本ドキュメントは実装に先行する設計版である（実装時にこの注記を外す）。**
 
 ## 型定義
 ```zig

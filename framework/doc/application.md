@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # application
@@ -42,6 +42,16 @@ pub fn init(allocator: std.mem.Allocator, io: std.Io) !*Application;
 awt の初期化（GLFW）、Device の生成、Graphics.Context（programs / rings / atlas）の構築、デフォルトフォントの読み込み、EventQueue の生成までを一括で行う。
 デフォルトフォントは framework に同梱された Noto Sans JP（`framework/src/noto/`、`nimbus.noto.noto_sans_jp_regular` でも参照可）を `@embedFile` で焼き込んで使う。利用者がフォントバイトを渡す必要は無い。
 失敗時は途中まで確保したリソースを全部解放する（強い例外保証）。
+テーマはビルトイン既定（`Theme.default`）で動作する。
+
+## アプリケーションの初期化（テーマ付き）
+```zig
+pub fn initWithTheme(allocator: std.mem.Allocator, io: std.Io, theme: Theme) !*Application;
+```
+
+`init` と同じ初期化を行い、`theme` を**値でコピーして**保持する。以後のファクトリが生成する
+全ウィジェットはこのコピー（`&app.theme`）を参照する。テーマは起動時固定（実行中の変更手段は
+提供しない）。詳細は `theme.md`。
 
 ## アプリケーションの後片付け
 ```zig

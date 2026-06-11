@@ -164,11 +164,11 @@ fn onModelChange(comp: *Component, _: *const ChangeEvent) void {
 
 fn paint(self: *Component, g: *awt.Graphics) void {
     const slider: *Slider = @fieldParentPtr("component", self);
+    const t = self.theme;
     const sz = self.size;
 
     // Track (centered).
-    const track_color = awt.Graphics.Color.rgb(0.7, 0.7, 0.75);
-    g.setColor(track_color);
+    g.setColor(t.slider_track);
     switch (slider.orientation) {
         .horizontal => {
             const cy = sz.height / 2 - TRACK_THICKNESS / 2;
@@ -188,8 +188,7 @@ fn paint(self: *Component, g: *awt.Graphics) void {
 
     // Thumb (circle centered on value position).
     const pos = slider.valueToPos();
-    const thumb_color = awt.Graphics.Color.rgb(0.30, 0.55, 0.95);
-    g.setColor(thumb_color);
+    g.setColor(t.accent);
     switch (slider.orientation) {
         .horizontal => {
             const cx = pos;
@@ -215,7 +214,7 @@ fn paint(self: *Component, g: *awt.Graphics) void {
 
     // Focus ring (keyboard focus indicator).
     if (slider.focused) {
-        g.setColor(awt.Graphics.Color.rgb(0.25, 0.45, 0.85));
+        g.setColor(t.focus_ring);
         g.drawRect(.{ .x = 1, .y = 1, .width = sz.width - 2, .height = sz.height - 2 });
     }
 }

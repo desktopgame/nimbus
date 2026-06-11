@@ -26,13 +26,15 @@ const DEFAULT_COLUMNS: f32 = 20;
 const BLINK_PERIOD_MS: u32 = 500;
 const BORDER_WIDTH: f32 = 1;
 
-const SELECTION_BG       = awt.Graphics.Color.rgba(0.30, 0.55, 0.95, 0.40);
-const BORDER_COLOR       = awt.Graphics.Color.rgb(0.55, 0.55, 0.55);
-const FOCUS_BORDER       = awt.Graphics.Color.rgb(0.30, 0.55, 0.95);
-/// Thin underline under the whole preedit (= "I am still composing").
-const PREEDIT_UNDERLINE  = awt.Graphics.Color.rgb(0.40, 0.40, 0.40);
-/// Thick underline under the target clause (= "this is what I'm converting").
-const PREEDIT_TARGET     = awt.Graphics.Color.rgb(0.20, 0.20, 0.20);
+// Colors come from `component.theme`: frame = border (accent when focused),
+// preedit underlines = ime_preedit_underline / ime_preedit_target. The
+// selection highlight is derived from accent (see `selectionColor`) so it
+// tracks accent automatically. See `framework/doc/theme.md`.
+
+/// Selection highlight: the theme accent at 40% alpha (derived, not a token).
+fn selectionColor(t: *const @import("theme.zig").Theme) awt.Graphics.Color {
+    return awt.Graphics.Color.rgba(t.accent.r, t.accent.g, t.accent.b, 0.40);
+}
 
 component:      Component,
 app:            *Application,
@@ -270,7 +272,7 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     // Border (1px). Blue when focused for keyboard-focus feedback,
     // mid-grey otherwise. Drawn as four edge strips so we don't need a
     // stroke primitive.
-    g.setColor(if (tf.has_focus) FOCUS_BORDER else BORDER_COLOR);
+    g.setColor(if (tf.has_focus) self.theme.accent else self.theme.border);
     g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = BORDER_WIDTH });
     g.fillRect(.{ .x = 0, .y = sz.height - BORDER_WIDTH, .width = sz.width, .height = BORDER_WIDTH });
     g.fillRect(.{ .x = 0, .y = 0, .width = BORDER_WIDTH, .height = sz.height });
@@ -297,7 +299,7 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     if (sel_end > sel_start) {
         const x0 = tf.glyphXAtByte(sel_start) - sx;
         const x1 = tf.glyphXAtByte(sel_end) - sx;
-        cg.setColor(SELECTION_BG);
+        cg.setColor(selectionColor(self.theme));
         cg.fillRect(.{
             .x = x0,
             .y = PADDING_Y,
@@ -324,7 +326,7 @@ fn paint(self: *Component, g: *awt.Graphics) void {
 
         const pre_w = tf.measureUtf8(tf.preedit_text.items);
         const underline_y = sz.height - PADDING_Y;
-        cg.setColor(PREEDIT_UNDERLINE);
+        cg.setColor(self.theme.ime_preedit_underline);
         cg.fillRect(.{ .x = caret_x, .y = underline_y - 1, .width = pre_w, .height = 1 });
 
         if (tf.preedit_target_end > tf.preedit_target_start and
@@ -332,7 +334,7 @@ fn paint(self: *Component, g: *awt.Graphics) void {
         {
             const t0 = tf.measureUtf8(tf.preedit_text.items[0..tf.preedit_target_start]);
             const t1 = tf.measureUtf8(tf.preedit_text.items[0..tf.preedit_target_end]);
-            cg.setColor(PREEDIT_TARGET);
+            cg.setColor(self.theme.ime_preedit_target);
             cg.fillRect(.{
                 .x = caret_x + t0,
                 .y = underline_y - 2,

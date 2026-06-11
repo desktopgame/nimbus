@@ -110,7 +110,7 @@ A（doc から削除）か B（実装）か。バインディング着手時に�
 A なら `binding.md` の `getVTable()` 記述を削除。B なら `Component.getVTable()` を実装し doc と一致。
 
 ## #4 既定 LAF のスタイルを public な Theme テーブルから引く
-- 状態: 設計確定（doc 起草済み: `theme.md` / `narrative/theme.md`。作者レビュー後に実装着手）
+- 状態: 完了
 - 優先度: 中
 - 影響範囲: framework の全ウィジェットの paint（`Button.zig` / `CheckBox.zig` / `Slider.zig` / `Menu.zig` / `TextField.zig` ほか約 20 種）、`Theme` 型の新設と公開、`Application` への theme 保持
 - 更新日: 2026-06-11
@@ -225,6 +225,21 @@ rgba 系・グラデーション等 `Color.rgb` 以外のコンストラクタ�
 ### 決めること（実装着手前の残り）
 - なし（命名はドラフト正本で進め、増減は実装中の snapshot 確認で調整）。
 - 切り替え単位: アプリ全体のみ（ウィンドウ単位テーマは実需待ち）— 確定済み。
+
+### 結果（2026-06-11 実装完了）
+`theme.zig`（ドラフトどおり 26 フィールド + `Theme.default`）、`Component.theme`、
+`Application.initWithTheme` + 全ファクトリの DI（composite は再帰注入。`Menu.addSeparator` /
+`PopupMenu.addSeparator` の内部生成セパレータは親の theme を継承）。全ウィジェット paint から
+色リテラルが消滅。テキスト選択ハイライトはトークンではなく accent 40% アルファの**導出**
+（`selectionColor`、accent に自動追従）。テスト 92/92 緑（`theme_test.zig` 新設: DI / 再帰注入 /
+直接 create の既定 / 値コピー契約）。
+snapshot 差分は予告どおり統一判断 2 件のみ（fixtures 再生成済み、差分画像は
+`tmp/snapshot_failures/` に保存。作者が却下する場合は該当箇所を専用トークンに分離して再生成）:
+- `menu_bar_closed` — メニューバー背景 `0.94,0.94,0.96` → `surface_window (0.94³)`（最大差分 5/255）
+- `toggle_combobox_closed` — chevron `0.30³` → `text (0.10³)`（最大差分 51/255）
+残りの統一判断 4 件（黒テキスト→text、popup 枠→border、disabled 文字→text_disabled、
+チェック色→accent）は既存 scene に現れず差分ゼロ。ダークテーマの実機での見た目確認は未実施
+（例: widget_keyboard を `initWithTheme` に変えて起動すれば確認できる）。
 
 ### 完了条件
 `Theme` 型が public（root.zig から export、spec `theme.md` 新設: 型定義・既定値・引き方の契約）。

@@ -18,7 +18,6 @@ const PADDING_Y: f32 = 8;
 const CORNER_RADIUS: f32 = 6;
 const ICON_TEXT_GAP: f32 = 6;
 const FLAT_PADDING: f32 = 4;
-const FOCUS_RING_COLOR = awt.Graphics.Color.rgb(0.25, 0.45, 0.85);
 
 component:  Component,
 model:      *ButtonModel,
@@ -228,6 +227,7 @@ fn onModelChange(comp: *Component, _: *const ChangeEvent) void {
 
 fn paint(self: *Component, g: *awt.Graphics) void {
     const button: *Button = @fieldParentPtr("component", self);
+    const t = self.theme;
     const sz = self.size;
 
     const has_text = button.text.len > 0;
@@ -239,22 +239,22 @@ fn paint(self: *Component, g: *awt.Graphics) void {
         // Flat: bg only on hover / armed. No border.
         if (button.model.enabled) {
             if (armed_pressed) {
-                g.setColor(awt.Graphics.Color.rgb(0.78, 0.82, 0.92));
+                g.setColor(t.button_flat_armed);
                 g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = sz.height });
             } else if (button.model.rollover) {
-                g.setColor(awt.Graphics.Color.rgb(0.88, 0.88, 0.92));
+                g.setColor(t.button_flat_hover);
                 g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = sz.height });
             }
         }
     } else {
         // Standard rounded-rect background.
-        var bg = awt.Graphics.Color.rgb(0.85, 0.85, 0.90);
+        var bg = t.button_bg;
         if (!button.model.enabled) {
-            bg = awt.Graphics.Color.rgb(0.75, 0.75, 0.78);
+            bg = t.button_bg_disabled;
         } else if (armed_pressed) {
-            bg = awt.Graphics.Color.rgb(0.55, 0.65, 0.85);
+            bg = t.button_bg_armed;
         } else if (button.model.rollover) {
-            bg = awt.Graphics.Color.rgb(0.92, 0.92, 0.97);
+            bg = t.button_bg_hover;
         }
         g.setColor(bg);
         g.fillRoundRect(.{ .x = 0, .y = 0, .width = sz.width, .height = sz.height }, CORNER_RADIUS);
@@ -262,7 +262,7 @@ fn paint(self: *Component, g: *awt.Graphics) void {
 
     // Focus ring (keyboard focus indicator).
     if (button.focused) {
-        g.setColor(FOCUS_RING_COLOR);
+        g.setColor(t.focus_ring);
         const ring = Component.Rect{ .x = 1, .y = 1, .width = sz.width - 2, .height = sz.height - 2 };
         if (flat) g.drawRect(ring) else g.drawRoundRect(ring, CORNER_RADIUS);
     }
@@ -289,7 +289,7 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     if (has_text) {
         const ty = (sz.height - text_m.height) / 2;
         const text_color = if (button.model.enabled) button.color
-                          else awt.Graphics.Color.rgb(0.5, 0.5, 0.5);
+                          else t.text_disabled;
         g.setFont(button.font);
         g.setColor(text_color);
         g.drawString(button.text, x, ty);

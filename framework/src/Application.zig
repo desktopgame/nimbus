@@ -26,6 +26,7 @@ const PopupMenu = @import("PopupMenu.zig");
 const MenuSeparator = @import("MenuSeparator.zig");
 const TextField = @import("TextField.zig");
 const TextArea = @import("TextArea.zig");
+const Theme = @import("theme.zig").Theme;
 const noto = @import("noto/fonts.zig");
 const lucide = @import("lucide/icons.zig");
 
@@ -94,6 +95,10 @@ virtual_now:  f64,
 /// the first `icon(.foo)` call decodes the PNG and uploads the texture.
 /// All slots are freed in `deinit`.
 icon_cache:   [lucide.Icon.count]?awt.Image,
+/// Color catalog for the default look. Fixed at startup (`initWithTheme`);
+/// every factory-created component points at this copy (`&app.theme`).
+/// See `framework/doc/theme.md`.
+theme:        Theme,
 
 // Owned program / buffer objects (Graphics.Context holds pointers to these).
 _color_program: awt.programs.Color,
@@ -125,6 +130,7 @@ pub fn init(allocator: std.mem.Allocator, io: std.Io) !*Application {
     app.clock_mode = .real;
     app.virtual_now = 0;
     app.icon_cache = @splat(null);
+    app.theme = Theme.default;
 
     app.device = try awt.Device.init();
     errdefer app.device.deinit();
@@ -181,6 +187,16 @@ pub fn initHeadless(allocator: std.mem.Allocator, io: std.Io) !*Application {
     const app = try Application.init(allocator, io);
     app.clock_mode = .virtual;
     app.virtual_now = 0;
+    return app;
+}
+
+/// `init` with a theme: `theme` is copied by value into the Application (the
+/// argument's lifetime does not matter afterwards) and every factory-created
+/// component will consult this copy. The theme is fixed for the app's
+/// lifetime — there is no runtime switching (see `framework/doc/theme.md`).
+pub fn initWithTheme(allocator: std.mem.Allocator, io: std.Io, theme: Theme) !*Application {
+    const app = try Application.init(allocator, io);
+    app.theme = theme;
     return app;
 }
 
@@ -542,6 +558,8 @@ pub fn frame(self: *Application, title: []const u8, w: u32, h: u32) !*Frame {
 
     // The Window vtable's install() does container linkup + OS callback wiring.
     try Window.vtable.install(&f.window.container.component);
+    f.window.container.component.theme = &self.theme;
+    f.window.background = self.theme.surface_window;
 
     const dtor = struct {
         fn destroy(p: *anyopaque, a: std.mem.Allocator) void {
@@ -574,6 +592,8 @@ pub fn frameHeadless(self: *Application, title: []const u8, w: u32, h: u32) !*Fr
     errdefer f.deinit();
 
     try Window.vtable.install(&f.window.container.component);
+    f.window.container.component.theme = &self.theme;
+    f.window.background = self.theme.surface_window;
 
     const dtor = struct {
         fn destroy(p: *anyopaque, a: std.mem.Allocator) void {
@@ -607,51 +627,76 @@ pub fn dialog(self: *Application, owner: *Window, title: []const u8, w: u32, h: 
 
     // Wire DirtyNotify / FocusController properties (same as Frame).
     try Window.vtable.install(&d.window.container.component);
+    d.window.container.component.theme = &self.theme;
+    d.window.background = self.theme.surface_window;
     return d;
 }
 
+/// Inject this Application's theme into `c` and every descendant reachable
+/// through the container tree (covers composites like ScrollPane whose
+/// internal parts already exist at creation). Factory-side DI — see
+/// `framework/doc/theme.md`.
+fn applyTheme(self: *Application, c: *Component) void {
+    c.theme = &self.theme;
+    if (c.container) |cont| {
+        for (cont.children.items) |elem| self.applyTheme(elem.component);
+    }
+}
+
 pub fn label(self: *Application, text: []const u8) !*Label {
-    return try Label.create(
+    const l = try Label.create(
         self.allocator,
         text,
         .{ .face = self.default_font, .pixel_size = 14 },
-        awt.Graphics.Color.rgb(0, 0, 0),
+        self.theme.text,
     );
+    self.applyTheme(&l.component);
+    return l;
 }
 
 pub fn container(self: *Application) !*Container {
-    return try Container.create(self.allocator);
+    const c = try Container.create(self.allocator);
+    self.applyTheme(&c.component);
+    return c;
 }
 
 pub fn panel(self: *Application) !*Panel {
-    return try Panel.create(self.allocator);
+    const p = try Panel.create(self.allocator);
+    self.applyTheme(&p.container.component);
+    return p;
 }
 
 pub fn button(self: *Application, text: []const u8) !*Button {
-    return try Button.create(
+    const b = try Button.create(
         self.allocator,
         text,
         .{ .face = self.default_font, .pixel_size = 14 },
-        awt.Graphics.Color.rgb(0, 0, 0),
+        self.theme.text,
     );
+    self.applyTheme(&b.component);
+    return b;
 }
 
 pub fn checkBox(self: *Application, text: []const u8) !*CheckBox {
-    return try CheckBox.create(
+    const cb = try CheckBox.create(
         self.allocator,
         text,
         .{ .face = self.default_font, .pixel_size = 14 },
-        awt.Graphics.Color.rgb(0, 0, 0),
+        self.theme.text,
     );
+    self.applyTheme(&cb.component);
+    return cb;
 }
 
 pub fn radioButton(self: *Application, text: []const u8) !*RadioButton {
-    return try RadioButton.create(
+    const rb = try RadioButton.create(
         self.allocator,
         text,
         .{ .face = self.default_font, .pixel_size = 14 },
-        awt.Graphics.Color.rgb(0, 0, 0),
+        self.theme.text,
     );
+    self.applyTheme(&rb.component);
+    return rb;
 }
 
 /// Mutually-exclusive grouping for radio buttons. The group is allocated
@@ -666,12 +711,14 @@ pub fn buttonGroup(self: *Application) !*ButtonGroup {
 /// Read-only drop-down. `items` is borrowed only for the duration of
 /// the call — ComboBox copies every string internally.
 pub fn comboBox(self: *Application, items: []const []const u8) !*ComboBox {
-    return try ComboBox.create(
+    const cb = try ComboBox.create(
         self.allocator,
         items,
         .{ .face = self.default_font, .pixel_size = 14 },
-        awt.Graphics.Color.rgb(0, 0, 0),
+        self.theme.text,
     );
+    self.applyTheme(&cb.component);
+    return cb;
 }
 
 /// Vertical single-selection list. `factory` produces the real cell instances
@@ -679,13 +726,17 @@ pub fn comboBox(self: *Application, items: []const []const u8) !*ComboBox {
 /// caller keeps it alive for the List's lifetime. The List creates and owns an
 /// empty ListModel — add items to `list.model`.
 pub fn list(self: *Application, factory: List.CellFactory) !*List {
-    return try List.create(self.allocator, factory);
+    const l = try List.create(self.allocator, factory);
+    self.applyTheme(&l.component);
+    return l;
 }
 
 /// Like `list`, but the List borrows a caller-supplied (typically shared)
 /// ListModel instead of creating its own.
 pub fn listWithModel(self: *Application, model: *List.ListModel, factory: List.CellFactory) !*List {
-    return try List.createWithModel(self.allocator, model, factory);
+    const l = try List.createWithModel(self.allocator, model, factory);
+    self.applyTheme(&l.component);
+    return l;
 }
 
 pub fn slider(
@@ -695,7 +746,9 @@ pub fn slider(
     value: i32,
     max: i32,
 ) !*Slider {
-    return try Slider.create(self.allocator, orientation, min, value, max);
+    const s = try Slider.create(self.allocator, orientation, min, value, max);
+    self.applyTheme(&s.component);
+    return s;
 }
 
 pub fn scrollBar(
@@ -705,12 +758,18 @@ pub fn scrollBar(
     value: i32,
     max: i32,
 ) !*ScrollBar {
-    return try ScrollBar.create(self.allocator, orientation, min, value, max);
+    const sb = try ScrollBar.create(self.allocator, orientation, min, value, max);
+    self.applyTheme(&sb.component);
+    return sb;
 }
 
 /// Wrap `view` in a scroll pane. `view` ownership transfers to the pane.
 pub fn scrollPane(self: *Application, view: *Component) !*ScrollPane {
-    return try ScrollPane.create(self.allocator, view);
+    const sp = try ScrollPane.create(self.allocator, view);
+    // Recursive: also reaches the internal viewport / bars (and re-stamps the
+    // already-themed view harmlessly).
+    self.applyTheme(&sp.container.component);
+    return sp;
 }
 
 /// Get a built-in lucide icon as a GPU `awt.Image`, decoding + uploading on
@@ -736,7 +795,7 @@ pub fn filler(self: *Application) !*Panel {
 /// place it via `BorderLayout.add(window.container, .north, &tb.container.component)`.
 pub fn toolBar(self: *Application) !*Panel {
     const p = try self.panel();
-    p.setBackground(awt.Graphics.Color.rgb(0.94, 0.94, 0.96));
+    p.setBackground(self.theme.surface_window);
     p.container.setLayout(@import("BoxLayout.zig").horizontal());
     p.container.component.min_size = .{ .width = 0, .height = 32 };
     p.container.component.max_size = .{ .width = std.math.inf(f32), .height = 32 };
@@ -749,51 +808,67 @@ fn menuFont(self: *Application) awt.Graphics.TextFont {
     return .{ .face = self.default_font, .pixel_size = 14 };
 }
 
-const menu_color = awt.Graphics.Color.rgb(0.1, 0.1, 0.1);
-
 pub fn menu(self: *Application, text: []const u8) !*Menu {
-    return try Menu.create(self.allocator, text, self.menuFont(), menu_color);
+    const m = try Menu.create(self.allocator, text, self.menuFont(), self.theme.text);
+    self.applyTheme(&m.component);
+    return m;
 }
 
 pub fn menuItem(self: *Application, text: []const u8) !*MenuItem {
-    return try MenuItem.create(self.allocator, text, self.menuFont(), menu_color);
+    const mi = try MenuItem.create(self.allocator, text, self.menuFont(), self.theme.text);
+    self.applyTheme(&mi.component);
+    return mi;
 }
 
 pub fn checkBoxMenuItem(self: *Application, text: []const u8) !*CheckBoxMenuItem {
-    return try CheckBoxMenuItem.create(self.allocator, text, self.menuFont(), menu_color);
+    const cmi = try CheckBoxMenuItem.create(self.allocator, text, self.menuFont(), self.theme.text);
+    self.applyTheme(&cmi.component);
+    return cmi;
 }
 
 pub fn menuBar(self: *Application) !*MenuBar {
-    return try MenuBar.create(self.allocator, self.menuFont(), menu_color);
+    const bar = try MenuBar.create(self.allocator, self.menuFont(), self.theme.text);
+    self.applyTheme(&bar.component);
+    return bar;
 }
 
 pub fn popupMenu(self: *Application) !*PopupMenu {
-    return try PopupMenu.create(self.allocator);
+    const pm = try PopupMenu.create(self.allocator);
+    self.applyTheme(&pm.popup_root);
+    return pm;
 }
 
 pub fn menuSeparator(self: *Application) !*MenuSeparator {
-    return try MenuSeparator.create(self.allocator);
+    const sep = try MenuSeparator.create(self.allocator);
+    self.applyTheme(&sep.component);
+    return sep;
 }
 
 /// Single-line text input. Uses default font (14px) and black text on a
 /// white background. `initial_text` is copied into the widget's internal
 /// UTF-8 buffer; pass `""` for an empty field.
 pub fn textField(self: *Application, initial_text: []const u8) !*TextField {
-    return try TextField.create(
+    const tf = try TextField.create(
         self.allocator,
         self,
         .{ .face = self.default_font, .pixel_size = 14 },
-        awt.Graphics.Color.rgb(0, 0, 0),
+        self.theme.text,
         initial_text,
     );
+    tf.background = self.theme.surface_input;
+    self.applyTheme(&tf.component);
+    return tf;
 }
 
 pub fn textArea(self: *Application, initial_text: []const u8) !*TextArea {
-    return try TextArea.create(
+    const ta = try TextArea.create(
         self.allocator,
         self,
         .{ .face = self.default_font, .pixel_size = 14 },
-        awt.Graphics.Color.rgb(0, 0, 0),
+        self.theme.text,
         initial_text,
     );
+    ta.background = self.theme.surface_input;
+    self.applyTheme(&ta.component);
+    return ta;
 }

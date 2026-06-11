@@ -19,14 +19,9 @@ const PADDING_X: f32  = 4;
 const PADDING_Y: f32  = 4;
 const FOCUS_RING: f32 = 1;
 
-const BOX_BG_NORMAL     = awt.Graphics.Color.rgb(1.00, 1.00, 1.00);
-const BOX_BG_DISABLED   = awt.Graphics.Color.rgb(0.93, 0.93, 0.93);
-const BOX_BG_CHECKED    = awt.Graphics.Color.rgb(0.30, 0.55, 0.95);
-const BOX_BORDER        = awt.Graphics.Color.rgb(0.50, 0.50, 0.50);
-const BOX_BORDER_HOVER  = awt.Graphics.Color.rgb(0.30, 0.55, 0.95);
-const CHECK_COLOR       = awt.Graphics.Color.rgb(1.0, 1.0, 1.0);
-const TEXT_DISABLED     = awt.Graphics.Color.rgb(0.55, 0.55, 0.55);
-const FOCUS_RING_COLOR  = awt.Graphics.Color.rgb(0.25, 0.45, 0.85);
+// Colors come from `component.theme` (see `framework/doc/theme.md`):
+// box bg = surface_input / surface_disabled / accent (checked), box border =
+// indicator_border (accent on hover), check glyph = text_on_accent.
 
 component:  Component,
 model:      *ToggleButtonModel,
@@ -175,6 +170,7 @@ fn onModelChange(comp: *Component, _: *const ChangeEvent) void {
 
 fn paint(self: *Component, g: *awt.Graphics) void {
     const cb: *CheckBox = @fieldParentPtr("component", self);
+    const t = self.theme;
     const sz = self.size;
     const btn = &cb.model.button;
     const selected = cb.model.isSelected();
@@ -184,23 +180,23 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     const box_x = PADDING_X;
     const box_y = (sz.height - BOX_SIZE) / 2;
     const bg = if (!enabled)
-        BOX_BG_DISABLED
+        t.surface_disabled
     else if (selected)
-        BOX_BG_CHECKED
+        t.accent
     else
-        BOX_BG_NORMAL;
-    const border = if (btn.rollover and enabled) BOX_BORDER_HOVER else BOX_BORDER;
+        t.surface_input;
+    const border = if (btn.rollover and enabled) t.accent else t.indicator_border;
 
     g.setColor(bg);
     g.fillRect(.{ .x = box_x, .y = box_y, .width = BOX_SIZE, .height = BOX_SIZE });
     drawBoxBorder(g, box_x, box_y, BOX_SIZE, BOX_SIZE, border);
 
     if (selected) {
-        drawCheck(g, box_x, box_y, BOX_SIZE);
+        drawCheck(g, box_x, box_y, BOX_SIZE, t.text_on_accent);
     }
 
     // Label.
-    const text_color = if (enabled) cb.color else TEXT_DISABLED;
+    const text_color = if (enabled) cb.color else t.text_disabled;
     const m = cb.font.measureString(cb.text);
     const text_x = box_x + BOX_SIZE + BOX_GAP;
     const text_y = (sz.height - m.height) / 2;
@@ -210,7 +206,7 @@ fn paint(self: *Component, g: *awt.Graphics) void {
 
     // Focus ring (keyboard focus indicator).
     if (cb.focused) {
-        g.setColor(FOCUS_RING_COLOR);
+        g.setColor(t.focus_ring);
         g.drawRect(.{ .x = 1, .y = 1, .width = sz.width - 2, .height = sz.height - 2 });
     }
 }
@@ -225,11 +221,11 @@ fn drawBoxBorder(g: *awt.Graphics, x: f32, y: f32, w: f32, h: f32, color: awt.Gr
     g.fillRect(.{ .x = x + w - 1, .y = y, .width = 1, .height = h });
 }
 
-/// Stylized check mark in white, rendered as two diagonal strokes built
+/// Stylized check mark, rendered as two diagonal strokes built
 /// from short rectangles (no line primitive in awt — same trick as
 /// CheckBoxMenuItem.drawCheckmark, sized to fit a 16-px box).
-fn drawCheck(g: *awt.Graphics, box_x: f32, box_y: f32, box_size: f32) void {
-    g.setColor(CHECK_COLOR);
+fn drawCheck(g: *awt.Graphics, box_x: f32, box_y: f32, box_size: f32, color: awt.Graphics.Color) void {
+    g.setColor(color);
     const inset: f32 = 3;
     const cx = box_x + inset;
     const cy = box_y + inset;
