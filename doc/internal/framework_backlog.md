@@ -164,12 +164,67 @@ public な `Theme` テーブルから引くようにする。テーマ値の差�
   サブツリー単位の別テーマも `theme` が public フィールドである以上、利用者が自分で
   差し替えれば機構ゼロで可能（フレームワークはカスケード規則を持たない）。
 
+### Theme ドラフト（2026-06-11 起案、作者了承済み・非確定）
+直書き色の全棚卸し（約 28 種）に基づくハイブリッド命名。フィールドの増減程度の変更は
+あり得る前提だが、基本設計（固定 struct / 役割別トークン基本 + 畳めない箇所のみ
+ウィジェット別）はこれで確定。実装時はこのドラフトを正本として置換を行う。
+
+棚卸しで判明した重要事実（命名が単なる値の重複排除でない理由）:
+- 同じ RGB が別の意味で使われている: `(1,1,1)` = 入力欄背景 **かつ** アクセント上の白文字、
+  `(0.55³)` = disabled テキスト **かつ** 入力欄ボーダー。ダークテーマで挙動が分かれるため
+  値が同じでも別トークンに分離する。
+- 意図的に accent から外れた色がある: Button の押下背景 `(0.55, 0.65, 0.85)` は
+  メニューの `(0.30, 0.55, 0.95)` より意図的に淡い → ウィジェット別フィールドが正当。
+
+```zig
+pub const Theme = struct {
+    // ── 役割トークン（複数ウィジェット横断。テーマ作者が主に触る面）──
+    accent:           Color = rgb(0.30, 0.55, 0.95), // 選択・チェック・focus border・slider thumb 等 ×12
+    accent_soft:      Color = rgb(0.90, 0.93, 0.99), // メニュー hover 背景 ×3
+    selection_bg:     Color = rgb(0.80, 0.87, 0.98), // List 選択行
+    focus_ring:       Color = rgb(0.25, 0.45, 0.85), // フォーカスリング ×5
+    text:             Color = rgb(0.10, 0.10, 0.10), // 通常テキスト
+    text_disabled:    Color = rgb(0.55, 0.55, 0.55),
+    text_on_accent:   Color = rgb(1.00, 1.00, 1.00), // 選択中メニュー文字・チェックマーク
+    surface_window:   Color = rgb(0.94, 0.94, 0.94), // ウィンドウ / メニューバー / Panel 背景
+    surface_input:    Color = rgb(1.00, 1.00, 1.00), // TextField / List / popup / ComboBox 背景
+    surface_disabled: Color = rgb(0.93, 0.93, 0.93),
+    border:           Color = rgb(0.55, 0.55, 0.55), // 入力欄・popup の枠（text_disabled と同値だが別トークン）
+    border_soft:      Color = rgb(0.78, 0.78, 0.82), // メニューバー下線等
+    separator:        Color = rgb(0.75, 0.75, 0.78),
+    indicator_border: Color = rgb(0.50, 0.50, 0.50), // CheckBox 四角 / RadioButton 円の枠
+
+    // ── ウィジェット別（役割に畳むと意味が変わる面）──
+    button_bg:            Color = rgb(0.85, 0.85, 0.90),
+    button_bg_hover:      Color = rgb(0.92, 0.92, 0.97),
+    button_bg_armed:      Color = rgb(0.55, 0.65, 0.85), // 意図的に accent より淡い
+    button_bg_disabled:   Color = rgb(0.75, 0.75, 0.78),
+    button_flat_hover:    Color = rgb(0.88, 0.88, 0.92),
+    button_flat_armed:    Color = rgb(0.78, 0.82, 0.92),
+    scrollbar_track:      Color = rgb(0.88, 0.88, 0.90),
+    scrollbar_thumb:      Color = rgb(0.62, 0.62, 0.66),
+    scrollbar_thumb_hover: Color = rgb(0.48, 0.48, 0.52),
+    slider_track:         Color = rgb(0.70, 0.70, 0.75),
+    ime_preedit_underline: Color = rgb(0.40, 0.40, 0.40), // TextField / TextArea 共有
+    ime_preedit_target:    Color = rgb(0.20, 0.20, 0.20),
+};
+```
+
+実装時に snapshot 差分が出る統一判断（差分画像を見て個別に承認 / 却下する）:
+- 黒テキスト 2 種（`0,0,0` と `0.1³`）→ `text` へ統一
+- ウィンドウ系背景 2 種（`0.94³` と `0.94,0.94,0.96`）→ `surface_window` へ統一
+- ComboBox chevron `0.30³` → `text` へ寄せ
+- popup 枠 `0.55,0.55,0.60` → `border` へ寄せ
+- Button disabled 文字 `0.5³` → `text_disabled (0.55³)` へ寄せ
+- CheckBoxMenuItem チェック色 `0.20,0.50,0.90` → `accent` へ寄せ
+
+メトリクス（角丸・パディング等）は v1 では Theme に**含めない**（色のみ）。
+実需が出たら additive にフィールドを足す（テーマ起動時固定なので min_size 焼き込みとも矛盾しない)。
+rgba 系・グラデーション等 `Color.rgb` 以外のコンストラクタ経由の色は実装時の置換で拾う。
+
 ### 決めること（実装着手前の残り）
-- 値の命名: 役割別トークン（`surface` / `accent` / `text` / `text_disabled` / `border` …）を
-  基本に必要箇所のみウィジェット別、のハイブリッドか（現状の直書き色は accent 系 /
-  surface 数段階 / text 2 種 / border 2 種に大半が畳める見込み）、ウィジェット別の全列挙か。
-  **作者が検討中 — 着手前にここだけ確定させる。**
-- 切り替え単位: アプリ全体のみ（ウィンドウ単位テーマは実需待ち）。
+- なし（命名はドラフト正本で進め、増減は実装中の snapshot 確認で調整）。
+- 切り替え単位: アプリ全体のみ（ウィンドウ単位テーマは実需待ち）— 確定済み。
 
 ### 完了条件
 `Theme` 型が public（root.zig から export、spec `theme.md` 新設: 型定義・既定値・引き方の契約）。
