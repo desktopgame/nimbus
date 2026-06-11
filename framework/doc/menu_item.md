@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # menu_item
@@ -167,7 +167,6 @@ try context_menu.add(&save_in_ctx.component);
 
 ## 機能要望
 * アクセラレータの表示（`Ctrl+S` 等を右側 slot に描画）
-* ニーモニック（テキスト内に下線、`Alt+x` で発火）
 * tooltip
 * テキスト + アイコン以外のカスタム描画（vtable.paint オーバライド経由で既に可能だが、専用 API が欲しい）
 * HTML レンダリング（Swing が対応している、優先度低）

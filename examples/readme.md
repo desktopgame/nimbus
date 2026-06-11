@@ -51,6 +51,9 @@ frameworkのDnD基盤を使用して、`List` の行をドラッグして同じ 
 ## widget_layoutcost
 frameworkのAPIを使用して、向きが階層ごとに交互に変わる BoxLayout コンテナーを深く・多子にネストする（デフォルト ~3万ノード）。起動時に強制再レイアウトを多数回実行してコスト（1回あたりの所要時間）を計測・表示し、さらに**毎フレーム**ツリー全体を再レイアウトし続けるのでウィンドウが目に見えてカクつく。レイアウトエンジンのベンチマーク／体感用シーン（`doc/internal/optimize.md` 参照）。描画が律速にならないよう葉の塗りは間引いている。引数で `depth fanout iters` を指定可能（例: より重くするなら `zig build run-widget_layoutcost -- 10 3 10`、軽くして比較するなら `-- 6 3 200`）。
 
+## widget_keyboard
+frameworkのキーボード操作を一通り試すフォーム。Tab / Shift+Tab のフォーカス巡回（disabled ボタンはスキップ、端で wrap）、Space / Enter / 矢印キーでの操作、ニーモニック（Alt+F でメニューを開く、開いたメニュー内は素の S/O/Q、Alt+A / Alt+R でボタン起動。下線表示つき）、アクセラレータ（メニューが閉じていても Ctrl/Cmd+S・Ctrl/Cmd+O が効く）、既定ボタン（Enter で OK。ただしフォーカス中の TextField は Enter を submit として消費する＝フォーカスが勝つ実例）、ドロップダウン展開中の Tab（外クリック同様に閉じて次へ移動）をデモする。`framework/doc/narrative/keybinding.md` の検証シーン。
+
 ## cnimbus_editor
 nimbus の C ABI（`include/nimbus.h` + `libnimbus`）だけを使い、**C 言語**でエディタ風の画面を組むサンプル（Zig を一切使わない）。メニューバー（File / Edit）、上部のツールバー（north）、スクロールペインに入れたテキストエリア（center）を BorderLayout で配置する。将来の Python / JS バインディングが C ABI をどう叩くかの実証も兼ねる。
 

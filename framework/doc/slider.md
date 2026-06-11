@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # slider
@@ -247,7 +247,6 @@ model.setValue(75);
 ```
 
 ## 機能要望
-* 矢印キーで増減（KeyEvent サポート）
 * 目盛り / ラベル表示（major / minor tick）
 * スナップ（指定値に吸着）
 * `setInverted(bool)` で方向反転（min 側を右 / 上に）
