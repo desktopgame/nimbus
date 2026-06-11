@@ -180,6 +180,31 @@ pub fn focusNext(self: *Window) void;   // Tab
 pub fn focusPrev(self: *Window) void;   // Shift+Tab
 ```
 focusable を DFS で列挙し、`focus_owner` の次 / 前へ移す。端で wrap する。
+- **BorderLayout と追加順の規約**: BoxLayout は追加順＝視覚順なので常に一致する。BorderLayout は
+  配置が region ヒントで決まり**追加順は配置に影響しない**ので、タブオーダーを読み順 (north → west →
+  center → east → south 等) にしたければ add をその順に呼べばよい。幾何ソートは持たない。
+  この規約は利用者向け doc (spec 昇格時) に明記する。
+- **スキップ条件 = 静的 `focusable` + 動的 `FocusQuery`**: トラバーサルが止まるのは
+  「`focusable == true` かつ (`focus_query == null` または `isEligible()` が true)」のウィジェットだけ。
+  disabled なボタンに Tab が止まらないようにするための動的判定で、enabled がモデル側
+  (`ButtonModel` 等) にあり Component 層から見えない問題を opt-in capability で埋める
+  (`A11y` / `SizeQuery` と同型のフィールド方式、VTable は増やさない)。
+```zig
+pub const FocusQuery = struct {
+    isEligible: *const fn (self: *const Component) bool,
+};
+// Component への追加 (既定 null = focusable であれば常に適格)
+focus_query: ?FocusQuery = null,
+```
+  モデルを持つウィジェットが `install` で設定し、`@fieldParentPtr` で自分へ戻って `model.enabled` を返す。
+  不採用: Component に `enabled: bool` を複製してモデル変化時に同期する案 (同期忘れの余地があり、
+  真実が 2 か所になる)。
+- **フォーカス喪失時の行き先は null**: フォーカス中のウィジェットが削除 / 無効化されたら
+  `focus_owner = null` に戻すだけ。Swing 的な「次の候補へ自動移動」はしない (次の Tab で
+  先頭から再スタートすれば十分)。
+- **列挙の一本化 (実装制約)**: focusable の DFS 列挙は 1 つの関数に集約し、`focusNext` /
+  `focusPrev` / 初期フォーカスのすべてがそれを共有する。将来の Order 値 (「後付け余地」参照) の
+  差し込み点をこの 1 か所に保つため。DFS を複数箇所に複製しない。
 - **Tab の扱い**: まず `focus_owner.processEvent` に渡す (将来 TextArea が Tab を文字として食う余地を残す)。食わなければ Window が `focusNext` / `focusPrev`。これは現状の「focus_owner 先取り → fallback」構造にそのまま乗る。
 - **初期フォーカス**: ウィンドウ open 時に最初の focusable へ。
 - **Space / Enter 起動**: フォーカス中ウィジェット自身の `processEvent` で処理する (widget-local)。Button は Space で起動。共通の起動口として **各ボタン系に `doClick()` を新設**する (press + fireAction + release を模す。マウス / Space / Enter / ニーモニックすべての入口)。
@@ -202,6 +227,19 @@ Label の `labelFor` (ラベルのニーモニックで別フィールドにフ�
 - **Action / Command**: `Handler.invoke` の先を Command モデル (`enabled` / `label` / `icon` / `on_invoke` + リスナー) にする。メニュー項目・ツールバーボタン・アクセラレータが 1 つの Command を指し、`enabled = false` で一斉グレーアウトが無料で付く。既存の Model パターンに乗る。今は不要。
 - **ActionMap**: 「名前 → Action」の片割れ。InputMap (名前経由) を入れるときだけ意味を持つ。フレームワーク全体にも特定ウィジェット内にも入れられる。
 - **InputMap で TextArea を再実装**: TextArea の `processEvent` 内部だけの話。配送から見れば相変わらず「食う/食わない」を返すだけなので、いつでもローカルに差し替えられる。テキスト編集キーを利用者がリバインドできるようにしたいときにやる。Swing の InputMap の親チェーン (共通ベース編集キーマップ) も、1 つのウィジェットが「食うか決める内部処理」に閉じるので別途入れられる。
+- **明示タブオーダー (Order 値)**: HTML `tabindex` / WinForms `TabIndex` 相当の上書き値。入れるなら
+  **コンテナ内ローカル**のソートキーにする — 兄弟間で `(order, 追加index)` の安定ソート、既定 `order = 0`
+  (= 未設定なら純粋な追加順のまま)。グローバル番号 (HTML の正の tabindex) は「1 個挟むだけで全部
+  振り直し」の罠があるので採らない。**v1 では実装しない**: BoxLayout は追加順＝視覚順で常に一致し、
+  BorderLayout は追加順が配置に影響しないので add の並べ替えで常に直せる = 実需となるケースが無い。
+  唯一の衝突は「追加順が z オーダー (描画順 / ヒットテスト逆順) を兼ねていて動かせない」場合だが、
+  重なり合う兄弟はオーバーレイ以外では稀。その実需が出たときにこの形で足す。
+  **後付けコストの見積もり** (実需待ちの条件として記録): ① `Component` にフィールド 1 個
+  (既定 0 = 挙動不変、利用者側マイグレーション無し)、② トラバーサルの列挙関数 1 か所に
+  兄弟の安定ソートを挿入、③ setter + apigen 1 行 (ただし C ABI 露出は capi のスカラー引数対応待ち)。
+  消費点が列挙関数 1 つに閉じているため、繰り延べコストは時間で増えない (LAF のような
+  「不在が多数の paint に焼き込まれる」型と逆)。
+  前提条件: 下記「列挙の一本化」が守られていること。
 
 ## 確定済みの方針 (作者承認)
 - P1: キーボード操作可能な UI にする (focusable 拡大 + Tab トラバーサル + Space/Enter 起動)。対象は上記一覧。
@@ -211,3 +249,10 @@ Label の `labelFor` (ラベルのニーモニックで別フィールドにフ�
 - フォーカスリングは各ウィジェットが `focused` を持って自前描画。
 - ニーモニック下線は v1 常時表示 (Alt-reveal は後回し)。
 - フォーカス不在時の fan-out は削除する (P1 と同時かそれ以降。「削除予定: フォーカス不在時の fan-out」参照)。
+- トラバーサル順は追加順 DFS で確定。幾何ソート / 差し替え Policy は不採用。BorderLayout は
+  「読み順に add する」規約で吸収 (追加順は配置に影響しないため常に可能)。
+- 動的フォーカス適格性 (disabled スキップ) は `FocusQuery` capability (フィールド方式)。
+  Component への `enabled` 複製案は不採用。
+- フォーカス喪失時 (削除 / 無効化) は `focus_owner = null` に戻す。自動移動はしない。
+- 明示タブオーダー (Order 値) は v1 では実装しない。実需が出たら「後付け余地」記載の形
+  (コンテナ内 `(order, 追加index)` 安定ソート) で足す。
