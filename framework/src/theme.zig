@@ -51,4 +51,36 @@ pub const Theme = struct {
     /// constant (immutable data, not a mutable global): components created
     /// outside an Application factory point here and stay valid forever.
     pub const default = Theme{};
+
+    /// Built-in dark preset, defined as a diff over the defaults. `accent`
+    /// and `text_on_accent` are untouched on purpose: the default blue reads
+    /// fine on dark surfaces, and it doubles as a demonstration that presets
+    /// are diff-definitions like any user theme.
+    pub const dark = Theme{
+        .accent_soft      = Color.rgb(0.22, 0.28, 0.40),
+        .selection_bg     = Color.rgb(0.20, 0.30, 0.45),
+        .focus_ring       = Color.rgb(0.40, 0.60, 0.95), // brighter: must stay visible on dark
+        .text             = Color.rgb(0.92, 0.92, 0.92),
+        .text_disabled    = Color.rgb(0.50, 0.50, 0.50),
+        .surface_window   = Color.rgb(0.13, 0.13, 0.14),
+        .surface_input    = Color.rgb(0.18, 0.18, 0.20),
+        .surface_disabled = Color.rgb(0.16, 0.16, 0.17),
+        .border           = Color.rgb(0.35, 0.35, 0.38),
+        .border_soft      = Color.rgb(0.28, 0.28, 0.32),
+        .separator        = Color.rgb(0.30, 0.30, 0.33),
+        .indicator_border = Color.rgb(0.45, 0.45, 0.48),
+
+        .button_bg             = Color.rgb(0.25, 0.25, 0.28),
+        .button_bg_hover       = Color.rgb(0.32, 0.32, 0.36),
+        .button_bg_armed       = Color.rgb(0.30, 0.40, 0.60),
+        .button_bg_disabled    = Color.rgb(0.20, 0.20, 0.22),
+        .button_flat_hover     = Color.rgb(0.22, 0.22, 0.26),
+        .button_flat_armed     = Color.rgb(0.26, 0.30, 0.40),
+        .scrollbar_track       = Color.rgb(0.18, 0.18, 0.20),
+        .scrollbar_thumb       = Color.rgb(0.40, 0.40, 0.44),
+        .scrollbar_thumb_hover = Color.rgb(0.55, 0.55, 0.60),
+        .slider_track          = Color.rgb(0.35, 0.35, 0.40),
+        .ime_preedit_underline = Color.rgb(0.65, 0.65, 0.65),
+        .ime_preedit_target    = Color.rgb(0.85, 0.85, 0.85),
+    };
 };

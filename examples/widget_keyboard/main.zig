@@ -120,7 +120,8 @@ fn labeledRow(app: *nimbus.Application, text: []const u8, child: *nimbus.Compone
 }
 
 pub fn main(init: std.process.Init) !void {
-    const app = try nimbus.Application.init(init.gpa, init.io);
+    // Built-in dark preset; also exercises initWithTheme on a real window.
+    const app = try nimbus.Application.initWithTheme(init.gpa, init.io, nimbus.Theme.dark);
     defer app.deinit();
 
     const frame = try app.frame("widget keyboard", 640, 360);

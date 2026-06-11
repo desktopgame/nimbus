@@ -44,6 +44,10 @@ pub const Theme = struct {
 
     /// ビルトインの既定テーマ。全フィールドの既定値そのもの。
     pub const default = Theme{};
+
+    /// ビルトインのダークプリセット。既定値に対する差分定義
+    /// (`accent` / `text_on_accent` は既定のまま)。具体的な配色は theme.zig を参照。
+    pub const dark = Theme{ ... };
 };
 ```
 
@@ -94,7 +98,13 @@ pub fn initWithTheme(allocator: std.mem.Allocator, io: std.Io, theme: Theme) !*A
 ---
 
 ## 利用例
-ダーク系テーマの差分定義。
+ビルトインのダークプリセットを使う。
+
+```zig
+const app = try nimbus.Application.initWithTheme(init.gpa, init.io, nimbus.Theme.dark);
+```
+
+自前のダーク系テーマの差分定義。
 
 ```zig
 pub fn main(init: std.process.Init) !void {
@@ -127,4 +137,3 @@ fn myPaint(self: *Component, g: *awt.Graphics) void {
 * メトリクス（角丸半径・パディング・ボーダー幅等）の Theme 化
 * 実行中のテーマ切り替え（全ツリーの re-metrics + 再レイアウトの無効化プロトコルが本体。実需待ち）
 * C ABI への露出（capi バックログ。struct 引数対応に依存。getter/setter 関数で包む案あり）
-* ビルトインのダークテーマプリセット（`Theme.dark` のような提供）
