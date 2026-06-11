@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # keybinding
@@ -54,7 +54,13 @@ pub const KeyStroke = struct {
     pub fn alt(code: awt.Event.KeyCode) KeyStroke;       // ニーモニック用
 };
 ```
-発火は press のみ (release バインドは稀なので後回し)。
+発火は **press と repeat の両方** (区別しない)。Swing / Win32 と同じで、ツールキットとしての
+リピートポリシーは持たない — OS がイベントを繰り返すなら束縛も繰り返し発火する。
+undo / paste / キャレット移動はリピート発火が望ましい側であり、連射されて困るハンドラ
+(べき等でない処理) の自衛はハンドラ側の責任とする。
+将来「この束縛だけリピート発火させたくない」が出たら `Entry` に `repeat: bool = true` を足すだけ
+(消費点は lookup 1 か所、既定 true で挙動不変の後付け)。
+release バインドは稀なので後回し。
 
 ### Handler — typed callback
 `listener.zig` の thunk と同型 ((T, f) ごとに安定 identity の thunk を comptime 生成し、登録解除で同じ関数ポインタが得られる)。
@@ -337,3 +343,5 @@ Label の `labelFor` (ラベルのニーモニックで別フィールドにフ�
 - MenuItem のニーモニックは開いている親メニューのローカル照合 (素の文字キー)。root 走査の対象外。
 - ニーモニック重複は先勝ち。Windows 流フォーカス巡回は実需待ち。
 - `doClick()` は `model.enabled == false` なら no-op (マウス / Space / Enter / ニーモニック共通のガード)。
+- 束縛の発火は press と repeat の両方 (区別しない。Swing / Win32 と同じ「リピートポリシーを持たない」)。
+  per-binding の repeat 抑制フラグは実需待ち、release バインドは後回し。
