@@ -110,7 +110,7 @@ A（doc から削除）か B（実装）か。バインディング着手時に�
 A なら `binding.md` の `getVTable()` 記述を削除。B なら `Component.getVTable()` を実装し doc と一致。
 
 ## #4 既定 LAF のスタイルを public な Theme テーブルから引く
-- 状態: 設計確定（大枠。残る設計点は「決めること」参照）
+- 状態: 設計確定（doc 起草済み: `theme.md` / `narrative/theme.md`。作者レビュー後に実装着手）
 - 優先度: 中
 - 影響範囲: framework の全ウィジェットの paint（`Button.zig` / `CheckBox.zig` / `Slider.zig` / `Menu.zig` / `TextField.zig` ほか約 20 種）、`Theme` 型の新設と公開、`Application` への theme 保持
 - 更新日: 2026-06-11
