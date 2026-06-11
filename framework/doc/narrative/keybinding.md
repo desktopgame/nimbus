@@ -205,6 +205,27 @@ focus_query: ?FocusQuery = null,
 - **列挙の一本化 (実装制約)**: focusable の DFS 列挙は 1 つの関数に集約し、`focusNext` /
   `focusPrev` / 初期フォーカスのすべてがそれを共有する。将来の Order 値 (「後付け余地」参照) の
   差し込み点をこの 1 か所に保つため。DFS を複数箇所に複製しない。
+- **オーバーレイ開放中の Tab = 外クリックと同じ扱いで閉じて移動**: モーダルオーバーレイ
+  (ComboBox のドロップダウン / ポップアップメニュー等) が開いている間に Tab が来たら、
+  `Window.dispatchInput` の ESC 処理と同じ場所で拾い、`dismissAll` (= キャンセル、ComboBox の値は
+  変えない) してから通常の `focusNext` / `focusPrev` を実行する。
+  原理: ポップアップは transient な UI であり、フォーカスを動かす意図はそれを閉じる
+  (外クリックと Tab で閉じ方の意味を統一する)。
+  - 不採用: 案A (Tab を飲み込む = 現状の挙動)。Tab 連打でフォームを移動する操作が
+    ドロップダウンで引っかかる。
+  - 実需待ち: 案C (Windows 流にハイライト中の項目を**確定**してから閉じて移動)。
+    オーバーレイ機構に「閉じ方の意味 (commit / cancel)」の契約を持ち込む必要がある。
+    後付けコスト: 消費点は同じ分岐 1 か所なので、ComboBox で違和感の実需が出たら
+    そこだけ commit 化すればよい (時間で増えない型)。
+- **Tab 移動時のスクロールイン (scrollRectToVisible 相当) は v1 に入れる**: `focusNext` /
+  `focusPrev` でフォーカスが移った先が ScrollPane の視界外にあるとき、視界内へスクロールさせる。
+  配管は既存の `Component.ScrollController` (汎用 rect API、TextArea キャレット追従用に実装済み) を
+  そのまま使う: `scrollIntoView(component)` ヘルパーを 1 つ書き、component の bounds を
+  スクロールされる view の座標系へ変換して `scroll_rect_to_visible` に渡す。
+  - フックは `focusNext` / `focusPrev` のみ。クリックフォーカスは定義上すでに見えている場所で、
+    プログラム由来の `requestFocus` での自動スクロールは利用者コードと喧嘩する余地があるため、
+    `requestFocusFor` には入れない (不採用)。
+  - ネストした ScrollPane は最寄りの 1 段だけ (外側への連鎖は実需が出たら)。
 - **Tab の扱い**: まず `focus_owner.processEvent` に渡す (将来 TextArea が Tab を文字として食う余地を残す)。食わなければ Window が `focusNext` / `focusPrev`。これは現状の「focus_owner 先取り → fallback」構造にそのまま乗る。
 - **初期フォーカス**: ウィンドウ open 時に最初の focusable へ。
 - **Space / Enter 起動**: フォーカス中ウィジェット自身の `processEvent` で処理する (widget-local)。Button は Space で起動。共通の起動口として **各ボタン系に `doClick()` を新設**する (press + fireAction + release を模す。マウス / Space / Enter / ニーモニックすべての入口)。
@@ -256,3 +277,7 @@ Label の `labelFor` (ラベルのニーモニックで別フィールドにフ�
 - フォーカス喪失時 (削除 / 無効化) は `focus_owner = null` に戻す。自動移動はしない。
 - 明示タブオーダー (Order 値) は v1 では実装しない。実需が出たら「後付け余地」記載の形
   (コンテナ内 `(order, 追加index)` 安定ソート) で足す。
+- オーバーレイ開放中の Tab は「外クリックと同じ扱いで閉じて (キャンセル)、focusNext」(案B)。
+  確定して閉じる Windows 流 (案C) は実需待ち。
+- Tab 移動時のスクロールインは v1 に入れる。フックは `focusNext` / `focusPrev` のみ、
+  既存 `ScrollController` を流用、ネストは最寄り 1 段。
