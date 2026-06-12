@@ -9,7 +9,19 @@ const awt = nimbus.awt;
 
 const custom_accent = awt.Graphics.Color.rgb(0.9, 0.1, 0.2);
 
+/// Test-quiet log: drop debug/info chatter, keep warn/error visible. Any
+/// stderr from a passing test binary makes `zig build` print it under a
+/// noisy "failed command:" banner, so the happy path must stay silent.
+fn quietLog(level: awt.LogLevel, category: [*c]const u8, message: [*c]const u8, _: ?*anyopaque) callconv(.c) void {
+    if (level < awt.c.nmLogLevelWarn) return;
+    const tag: []const u8 = if (level == awt.c.nmLogLevelWarn) "WARN" else "ERROR";
+    const cat: [*:0]const u8 = category;
+    const msg: [*:0]const u8 = message;
+    std.debug.print("[{s}] [{s}] {s}\n", .{ tag, std.mem.span(cat), std.mem.span(msg) });
+}
+
 fn newApp() !*nimbus.Application {
+    awt.setLogCallback(quietLog, null);
     return nimbus.Application.initHeadless(std.testing.allocator, std.testing.io) catch
         return error.SkipZigTest;
 }
@@ -61,6 +73,7 @@ test "direct create (no factory) stays on the built-in default theme" {
 }
 
 test "initWithTheme copies the theme by value" {
+    awt.setLogCallback(quietLog, null);
     var theme = nimbus.Theme{ .accent = custom_accent };
     const app = nimbus.Application.initWithTheme(std.testing.allocator, std.testing.io, theme) catch
         return error.SkipZigTest;

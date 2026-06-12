@@ -565,7 +565,11 @@ fn tokenize(gpa: std.mem.Allocator, line: []const u8, out: *std.ArrayList([]cons
 }
 
 fn fail(line_no: usize, msg: []const u8) error{SpecParse} {
-    std.debug.print("apigen: parse error at line {d}: {s}\n", .{ line_no, msg });
+    // Silent under `zig build test`: the negative parser tests hit this on
+    // purpose, and any stderr from a passing test binary makes `zig build`
+    // print it under a noisy "failed command:" banner. The CLI still reports.
+    if (!@import("builtin").is_test)
+        std.debug.print("apigen: parse error at line {d}: {s}\n", .{ line_no, msg });
     return error.SpecParse;
 }
 

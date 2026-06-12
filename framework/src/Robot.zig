@@ -206,11 +206,25 @@ fn treeHasRole(node: NodeSnapshot, role: Component.Role) bool {
     return false;
 }
 
+/// Test-quiet log: drop debug/info chatter, keep warn/error visible. Any
+/// stderr from a passing test binary makes `zig build` print it under a
+/// noisy "failed command:" banner, so the happy path must stay silent.
+const QuietLog = struct {
+    fn cb(level: awt.LogLevel, category: [*c]const u8, message: [*c]const u8, _: ?*anyopaque) callconv(.c) void {
+        if (level < awt.c.nmLogLevelWarn) return;
+        const tag: []const u8 = if (level == awt.c.nmLogLevelWarn) "WARN" else "ERROR";
+        const cat: [*:0]const u8 = category;
+        const msg: [*:0]const u8 = message;
+        std.debug.print("[{s}] [{s}] {s}\n", .{ tag, std.mem.span(cat), std.mem.span(msg) });
+    }
+};
+
 test "headless robot: click reaches the button; tree exposes its role" {
     const gpa = std.testing.allocator;
     const ActionEvent = @import("listener.zig").ActionEvent;
 
     // Headless app (no OS window; virtual clock). Skip where no GPU is available.
+    awt.setLogCallback(QuietLog.cb, null);
     const app = Application.initHeadless(gpa, std.testing.io) catch return error.SkipZigTest;
     defer app.deinit();
 
@@ -247,6 +261,7 @@ test "headless robot: button rollover / press / release+action / un-hover" {
     const gpa = std.testing.allocator;
     const ActionEvent = @import("listener.zig").ActionEvent;
 
+    awt.setLogCallback(QuietLog.cb, null);
     const app = Application.initHeadless(gpa, std.testing.io) catch return error.SkipZigTest;
     defer app.deinit();
 

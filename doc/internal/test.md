@@ -7,8 +7,9 @@ nimbus のテストの種類と典型的な書き方についてのドキュメ�
 |---|---|---|
 | 埋め込み単体テスト | `awt/src/**/*.zig` / `framework/src/**/*.zig` 内の `test "..."` ブロック | モジュール内のロジック単体検証 |
 | awt スナップショットテスト | `awt/tests/snapshot_test.zig` + `awt/tests/scenes.zig` + `awt/tests/fixtures/` | awt 直叩きでの描画結果をゴールデン画像と比較 |
-| framework レイアウトテスト | `framework/tests/box_layout_test.zig` / `framework/tests/border_layout_test.zig` | レイアウトマネージャの bounds を数値アサート（GPU 不要） |
+| framework レイアウトテスト | `framework/tests/box_layout_test.zig` / `framework/tests/border_layout_test.zig` / `framework/tests/split_pane_test.zig` | レイアウトマネージャ / レイアウトを内蔵するウィジェットの bounds を数値アサート（GPU 不要） |
 | framework スナップショットテスト | `framework/tests/snapshot_test.zig` + `framework/tests/scenes.zig` + `framework/tests/fixtures/` | ウィジェットツリーのレイアウト + 描画結果をゴールデン画像と比較 |
+| framework 結合テスト | `framework/tests/focus_test.zig` / `framework/tests/theme_test.zig` | ヘッドレス Application + Robot 経由のキーボード / フォーカス操作、テーマ DI の検証（GPU 必要、無ければ skip） |
 
 ## 埋め込み単体テスト
 Zig 標準の `test "..."` ブロックをソースファイル内に直接書く。`zig build test` がモジュールの root から到達できる全テストを実行する。
@@ -117,6 +118,7 @@ pub const my_layout = Scene{
 ## framework レイアウトテスト
 レイアウトは「コンテナのサイズと子の min / max / grow から子の bounds を計算する純粋な関数」なので、GPU 不要の数値アサーションで検証できる。
 レイアウトマネージャ 1 種類につき 1 ファイル（`box_layout_test.zig` / `border_layout_test.zig` ...）を置く方針。
+レイアウトを内蔵するウィジェット（`SplitPane` 等）も同じスタイルで 1 ファイル置く（`split_pane_test.zig`。合成マウスイベントによるドラッグ操作の検証もここに含む）。
 
 ### 書き方
 GPU や font を要求しない `Panel` を固定サイズの leaf として使う（`Panel.create` → `setMinSize` / `setMaxSize` で固定）。これにより `awt.init` も font ロードも不要で、テストが軽くて速い。
@@ -163,21 +165,28 @@ test "horizontal: 3 fixed-size children pack from the left" {
 たとえば上の "horizontal: 3 fixed-size children pack from the left" は `framework/tests/fixtures/box_horizontal_pack.png` を見れば一目でわかる。
 数値だけでは「正しい配置とは何か」が分かりにくいので、レビュー時 / 設計時の補助として画像を併用する形。
 
-## `zig build test` の出力の読み方（`failed command` は失敗ではない）
-`zig build test` の出力に `failed command: ....zig-cache\o\<hash>\test.exe ... --listen=-` という行が出ることがあるが、**これはテスト失敗ではない**。合否の基準は**ビルド全体の終了コード**で、`0` なら全テスト pass。
+## `zig build test` の出力（正常時は Build Summary の 1 行だけ）
+全テスト pass のときの出力は `Build Summary: N/N steps succeeded; M/M tests passed` の 1 行だけになる。
+**それ以外の行が出ていたら読む価値がある**（本物の失敗か、warn 以上のログ）。合否の基準は**ビルド全体の終了コード**で、`0` なら全テスト pass。
 
-理由: Zig 0.16 のビルドランナーは、`--listen=-` で走らせた test.exe が **stderr に何か出力すると**、終了コード 0 でもこの診断行を出す（「stderr を出した exe」を晒しているだけの紛らわしいラベル）。nimbus で stderr を出すのは次のテスト群:
+背景: Zig 0.16 のビルドランナーは、`--listen=-` で走らせた test.exe が **stderr に何か出力すると**、終了コード 0 でも
+その stderr を `failed command: ...test.exe ...` というラベル付きで晒す（失敗ではなく「stderr を出した exe」の表示）。
+以前はデバイス初期化の `[INFO]` ログや apigen 負系テストのパースエラーが正常時にもこのバナーを出していたため、
+**正常系のテストは stderr に書かない**規約にした:
 
-* **apigen テスト**（`tools/apigen/main.zig`）— `test "parse rejects: ..."` がわざと不正な spec を食わせてパーサが弾くのを確認する負のテスト。過程で `apigen: parse error at line N: ...` を stderr に出すが、テスト自体は pass。
-* **GPU を使うテスト**（awt / framework の埋め込み単体テスト、スナップショットテスト）— dx12 の `[INFO] device created` / `[WARN] ID3D12CommandList::ClearRenderTargetView ...` を stderr に出す。`[WARN]` は無害な性能警告。
+* **GPU を使うテストのハーネス**は、device 初期化の前に `awt.setLogCallback` で `quietLog`
+  （debug / info を捨て、warn / error は従来形式で stderr に通すコールバック）を設定する。
+  設置箇所: `awt/tests/snapshot_test.zig` / `framework/tests/snapshot_test.zig` の `ensureAwt`、
+  `focus_test.zig` / `theme_test.zig` の `newApp`（+ `initWithTheme` 直呼びテスト）、`Robot.zig` の単体テスト。
+  **新しく device を作るテストを書くときも同様にすること**（コールバックはプロセス全体に効くので、
+  ハーネスの入口で 1 回設定すればよい）。
+* **apigen の負系テスト**（わざと不正な spec を食わせて `error.SpecParse` を確認するテスト）は、
+  `fail()` が `builtin.is_test` のときだけ print を抑止する。CLI 実行時のエラー表示は従来どおり。
 
-疑わしいときは当該 test.exe を直接実行すれば確認できる（`All N tests passed.` + exit 0 が出る）:
+info 以下だけを捨てるのは意図的: 完全に黙らせると、テストが本当に失敗したときに dx12 のエラーメッセージまで消えるため。
+warn / error が出る = `failed command` バナーが復活する、はそれ自体がシグナルとして機能する。
 
-```
-.\.zig-cache\o\<hash>\test.exe
-```
-
-補足: スナップショット harness は awt を意図的に terminate せずリークさせる（`awt/tests/snapshot_test.zig` の冒頭コメント参照）が、それは**メモリリークであって終了コードは 0**。`failed command` の引き金は stderr 出力だけで、このリークは無関係。
+補足: スナップショット harness は awt を意図的に terminate せずリークさせる（`awt/tests/snapshot_test.zig` の冒頭コメント参照）が、それは**メモリリークであって終了コードは 0**。例（`run-widget_*` 等）の起動時 `[INFO]` ログは従来どおり出る — 黙らせたのはテストハーネス側だけで、log システムの既定挙動（コールバック未設定なら stderr）は変えていない。
 
 ## 機能要望
 * fuzz テストの導入（テキスト周りなど）
