@@ -232,8 +232,9 @@ List 上の**右プレス**で発火する。発火前に List は次を済ま�
 * フォーカスを取り、 ヒットした行があればそれを選択する
 
 メニュー自体は List は持たない。 アプリ側がリスナー内で自前の `PopupMenu` を
-`popup.show(window, e.x, e.y)` で出す (生のマウスリスナーを公開 API にしない方針のため、
-右クリックのフックは List が提供する)。動く例は `{REPO_ROOT}/examples/app_filer`。
+`popup.show(window, e.x, e.y)` で出す (現状 `Component` は生のマウスリスナーを公開していないため、
+右クリックのフックは List が提供している。 コンポーネント横断の汎用化は検討中 — framework バックログ参照)。
+動く例は `{REPO_ROOT}/examples/app_filer`。
 
 ## セルの編集 (CellEditor)
 ```zig
