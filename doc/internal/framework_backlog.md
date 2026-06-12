@@ -501,6 +501,11 @@ TableModel の形（行 = `*anyopaque` 借用は List 踏襲でよいか、列�
 ソートの所在（モデルが並べ替えるか view が index 写像を持つか）、
 選択モデルを List と共有するか（#10 と要調整）、行ヘッダー / セル単位選択をスコープ外にするか。
 
+→ doc ドラフト提出済み (2026-06-12、作者レビュー待ち): `framework/doc/table.md` + `narrative/table.md`。
+ドラフトの提案: Model = List.ListModel 同一型 / 列ごと CellFactory で値プロトコル無し /
+ソートは view 写像を持たず「ヘッダークリック通知 + インジケータのみ、並べ替えはアプリ」/
+ヘッダーは Table 自身が上端固定描画 (ScrollPane columnHeader を待たない) / セル編集は v1 外。
+
 ### 完了条件
 ファイラーの詳細表示が Table で動き、ヘッダーソートと列幅ドラッグが操作できる。doc + テスト + example。
 
