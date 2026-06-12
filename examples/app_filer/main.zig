@@ -1,4 +1,4 @@
-//! app_filer: dogfooding file manager (M2 — two panes via SplitPane).
+//! app_filer: dogfooding file manager (M3 — file operations).
 //!
 //! A real (if minimal) app built only on nimbus public APIs, to surface
 //! missing pieces and rough edges. Current state:
@@ -6,13 +6,15 @@
 //!     click navigates the right pane there
 //!   - right pane: entries of the current directory (folders first, then
 //!     files, case-insensitively sorted), each row = icon + name
-//!   - double-click / Enter on a folder enters it; on a file it just reports
-//!     in the status line (file operations come in a later milestone)
-//!   - the toolbar's up-arrow button (or Backspace anywhere) goes to the
-//!     parent directory; the current path shows next to the button
-//!   - the divider between the panes drags; the left pane keeps its width on
-//!     window resize (SplitPane's resize_weight 0 default)
-//!   - starts in the process's working directory
+//!   - double-click / Enter opens a folder; on a file it just reports in the
+//!     status line for now
+//!   - right-click a row for the context menu: Open / Rename / Delete
+//!   - F2 (or the menu) renames in place — the row swaps to a text field,
+//!     Enter commits (performs the actual rename on disk), Escape cancels
+//!   - Delete (or the menu) asks in a modal dialog, then deletes the file /
+//!     empty folder; non-empty folders are refused (no recursive delete)
+//!   - F5 reloads; the toolbar's up-arrow button (or Backspace) goes to the
+//!     parent; the divider between the panes drags
 //!
 //! Usage:
 //!     zig build run-app_filer
@@ -27,6 +29,7 @@ const ChangeEvent = nimbus.ChangeEvent;
 const ROW_HEIGHT: f32 = 24;
 const ICON: f32 = 16;
 const PATH_BUF = 4096;
+const NAME_BUF = 512;
 const SIDEBAR_WIDTH: f32 = 180;
 
 /// One directory entry. Owned by Filer (`entries`); the ListModel borrows it.
@@ -57,11 +60,19 @@ const Filer = struct {
     sp:          *nimbus.ScrollPane = undefined,   // right pane's scroll pane
     path_label:  *nimbus.Label = undefined,
     status:      *nimbus.Label = undefined,
+    window:      *nimbus.Window = undefined,       // for PopupMenu.show
+    popup:       *nimbus.PopupMenu = undefined,    // row context menu
+    confirm:     *nimbus.Dialog = undefined,       // delete confirmation
+    confirm_msg: *nimbus.Label = undefined,
     entries:     std.ArrayList(*Entry) = .empty,
     places:      std.ArrayList(*Place) = .empty,
     cur:         [PATH_BUF]u8 = undefined,
     cur_len:     usize = 0,
     status_buf:  [512]u8 = undefined,
+    /// Name to select after the next loadDir (set by rename so the renamed
+    /// row stays selected through the reload).
+    pending:     [NAME_BUF]u8 = undefined,
+    pending_len: usize = 0,
 
     fn curPath(self: *const Filer) []const u8 {
         return self.cur[0..self.cur_len];
@@ -142,6 +153,8 @@ const Filer = struct {
         };
         defer dir.close(self.io);
 
+        const same_dir = std.mem.eql(u8, path, self.curPath());
+
         // Unbind all rows before freeing the entries they borrow.
         self.list.model.clear();
         self.clearEntries();
@@ -173,15 +186,51 @@ const Filer = struct {
         self.cur_len = path.len;
 
         self.path_label.setText(self.curPath()) catch {};
-        self.list.setSelected(if (self.entries.items.len > 0) 0 else null);
-        self.sp.setScrollY(0);
+
+        // Selection: a pending name (post-rename) wins; otherwise first row.
+        var sel: ?usize = if (self.entries.items.len > 0) 0 else null;
+        if (self.pending_len > 0) {
+            const want = self.pending[0..self.pending_len];
+            for (self.entries.items, 0..) |e, i| {
+                if (std.mem.eql(u8, e.name, want)) {
+                    sel = i;
+                    break;
+                }
+            }
+            self.pending_len = 0;
+        }
+        self.list.setSelected(sel);
+
+        if (!same_dir) self.sp.setScrollY(0);
         self.setStatus("{d} items", .{self.entries.items.len});
     }
 
+    fn requestSelectName(self: *Filer, name: []const u8) void {
+        const n = @min(name.len, self.pending.len);
+        @memcpy(self.pending[0..n], name[0..n]);
+        self.pending_len = n;
+    }
+
+    fn reloadTask(ud: *anyopaque) void {
+        const self: *Filer = @ptrCast(@alignCast(ud));
+        self.loadDir(self.curPath());
+    }
+
+    /// Reload at the end of the current event-loop iteration. Used where a
+    /// synchronous reload would reenter List machinery (e.g. from inside a
+    /// CellEdit.commit, which List is still unwinding).
+    fn scheduleReload(self: *Filer) void {
+        self.app.event_queue.invokeLater(reloadTask, @ptrCast(self)) catch {};
+    }
+
+    fn selectedEntry(self: *Filer) ?*Entry {
+        const idx = self.list.getSelected() orelse return null;
+        if (idx >= self.entries.items.len) return null;
+        return self.entries.items[idx];
+    }
+
     fn openSelected(self: *Filer) void {
-        const idx = self.list.getSelected() orelse return;
-        if (idx >= self.entries.items.len) return;
-        const e = self.entries.items[idx];
+        const e = self.selectedEntry() orelse return;
         if (e.is_dir) {
             const joined = std.fs.path.join(self.allocator, &.{ self.curPath(), e.name }) catch return;
             defer self.allocator.free(joined);
@@ -199,10 +248,75 @@ const Filer = struct {
         self.loadDir(parent);
     }
 
+    fn renameSelected(self: *Filer) void {
+        if (self.list.getSelected()) |s| self.list.edit(s);
+    }
+
+    /// Modal confirmation, then delete the file / empty directory. The
+    /// listing reloads with the selection kept near the deleted row.
+    fn confirmDelete(self: *Filer) void {
+        const idx = self.list.getSelected() orelse return;
+        const e = self.selectedEntry() orelse return;
+
+        // Keep the name past the reload (e is freed by it).
+        var name_buf: [NAME_BUF]u8 = undefined;
+        const n = @min(e.name.len, name_buf.len);
+        @memcpy(name_buf[0..n], e.name[0..n]);
+        const name = name_buf[0..n];
+        const was_dir = e.is_dir;
+
+        var msg_buf: [NAME_BUF + 32]u8 = undefined;
+        const msg = std.fmt.bufPrint(&msg_buf, "Delete \"{s}\"?", .{name}) catch return;
+        self.confirm_msg.setText(msg) catch {};
+        if (self.confirm.showModal() != .ok) return;
+
+        var d = std.Io.Dir.openDirAbsolute(self.io, self.curPath(), .{}) catch |err| {
+            self.setStatus("cannot open {s}: {s}", .{ self.curPath(), @errorName(err) });
+            return;
+        };
+        defer d.close(self.io);
+        const res = if (was_dir) d.deleteDir(self.io, name) else d.deleteFile(self.io, name);
+        res catch |err| {
+            self.setStatus("delete failed: {s} ({s})", .{ name, @errorName(err) });
+            return;
+        };
+
+        self.loadDir(self.curPath());
+        self.list.setSelected(if (self.entries.items.len == 0)
+            null
+        else
+            @min(idx, self.entries.items.len - 1));
+        self.setStatus("deleted {s}", .{name});
+    }
+
+    /// Called by the editing cell after it performed the on-disk rename.
+    fn renamed(self: *Filer, new_name: []const u8) void {
+        self.setStatus("renamed to {s}", .{new_name});
+        self.requestSelectName(new_name);
+        self.scheduleReload();
+    }
+
     // ── listeners ────────────────────────────────────────────────────────
 
     fn onActivate(self: *Filer, _: *const ActionEvent) void {
         self.openSelected();
+    }
+
+    fn onContextMenu(self: *Filer, e: *const nimbus.List.ContextMenuEvent) void {
+        if (e.row == null) return; // no background menu yet
+        self.popup.show(self.window, e.x, e.y) catch {};
+    }
+
+    fn onMenuOpen(self: *Filer, _: *const ActionEvent) void {
+        self.openSelected();
+    }
+
+    fn onMenuRename(self: *Filer, _: *const ActionEvent) void {
+        self.renameSelected();
+    }
+
+    fn onMenuDelete(self: *Filer, _: *const ActionEvent) void {
+        self.confirmDelete();
     }
 
     fn onUpButton(self: *Filer, _: *const ActionEvent) void {
@@ -211,6 +325,18 @@ const Filer = struct {
 
     fn onBackspace(self: *Filer) void {
         self.goUp();
+    }
+
+    fn onRenameKey(self: *Filer) void {
+        self.renameSelected();
+    }
+
+    fn onDeleteKey(self: *Filer) void {
+        self.confirmDelete();
+    }
+
+    fn onReloadKey(self: *Filer) void {
+        self.loadDir(self.curPath());
     }
 
     /// Sidebar selection = navigation (single click, like a places sidebar).
@@ -223,31 +349,104 @@ const Filer = struct {
 
 // ── cells ────────────────────────────────────────────────────────────────
 
-/// One recycled file row: [6px margin | icon+name label]. Read-only (no
-/// edit), so double-click / Enter fall through to the List's activation
-/// listener.
+/// One recycled file row. Display mode: [6px margin | icon+name label].
+/// Edit mode (rename): the label swaps to a TextField; Enter commits (does
+/// the on-disk rename), Escape cancels. Same swap mechanics as
+/// `widget_listedit`'s EditCell.
 const FileCell = struct {
-    root:        *nimbus.Container,
-    label:       *nimbus.Label,
-    icon_folder: awt.Image,
-    icon_file:   awt.Image,
+    root:      *nimbus.Container,
+    label:     *nimbus.Label,
+    field:     *nimbus.TextField,
+    filer:     *Filer,
+    cur_entry: ?*Entry = null,
+    in_edit:   bool = false,
 
     fn update(ud: *anyopaque, ctx: nimbus.List.CellContext) void {
         const self: *FileCell = @ptrCast(@alignCast(ud));
         const e: *Entry = @ptrCast(@alignCast(ctx.value));
+        self.cur_entry = e;
         self.label.setText(e.name) catch {};
-        self.label.setIcon(if (e.is_dir) self.icon_folder else self.icon_file);
+        self.label.setIcon(if (e.is_dir) self.filer.icon_folder else self.filer.icon_file);
+    }
+
+    // CellEdit.start — swap to the text field seeded with the current name.
+    fn start(ud: *anyopaque, ctx: nimbus.List.CellContext) void {
+        const self: *FileCell = @ptrCast(@alignCast(ud));
+        const e: *Entry = @ptrCast(@alignCast(ctx.value));
+        self.cur_entry = e;
+        self.field.setText(e.name) catch {};
+        self.swapTo(true);
+        self.field.component.requestFocus();
+    }
+
+    // CellEdit.commit — perform the rename on disk; the listing reloads at
+    // the end of this event-loop pass (invokeLater) since List is still
+    // unwinding its edit machinery here.
+    fn commit(ud: *anyopaque) void {
+        const self: *FileCell = @ptrCast(@alignCast(ud));
+        self.swapTo(false);
+        const filer = self.filer;
+        const e = self.cur_entry orelse return;
+        const new_name = self.field.getText();
+        if (new_name.len == 0 or std.mem.eql(u8, new_name, e.name)) return;
+        if (std.mem.indexOfAny(u8, new_name, "/\\") != null) {
+            filer.setStatus("invalid name: {s}", .{new_name});
+            return;
+        }
+        var d = std.Io.Dir.openDirAbsolute(filer.io, filer.curPath(), .{}) catch |err| {
+            filer.setStatus("cannot open {s}: {s}", .{ filer.curPath(), @errorName(err) });
+            return;
+        };
+        defer d.close(filer.io);
+        d.rename(e.name, d, new_name, filer.io) catch |err| {
+            filer.setStatus("rename failed: {s} ({s})", .{ e.name, @errorName(err) });
+            return;
+        };
+        filer.renamed(new_name);
+    }
+
+    // CellEdit.cancel — back to display mode, nothing touched.
+    fn cancel(ud: *anyopaque) void {
+        const self: *FileCell = @ptrCast(@alignCast(ud));
+        self.swapTo(false);
+    }
+
+    fn swapTo(self: *FileCell, edit_mode: bool) void {
+        if (edit_mode == self.in_edit) return;
+        if (edit_mode) {
+            self.root.remove(&self.label.component);
+            nimbus.BorderLayout.add(self.root, .center, &self.field.component) catch {};
+        } else {
+            self.root.remove(&self.field.component);
+            nimbus.BorderLayout.add(self.root, .center, &self.label.component) catch {};
+        }
+        self.in_edit = edit_mode;
+        self.root.doLayout(); // size the newly-shown child to fill the cell
+    }
+
+    // Wired to the field's Enter / Escape via submit / cancel listeners.
+    fn onSubmit(self: *FileCell, _: *const ActionEvent) void {
+        self.filer.list.commitEdit();
+    }
+    fn onCancel(self: *FileCell, _: *const ActionEvent) void {
+        self.filer.list.cancelEdit();
     }
 
     fn destroyCell(ud: *anyopaque, allocator: std.mem.Allocator) void {
         const self: *FileCell = @ptrCast(@alignCast(ud));
-        const comp = &self.root.component;
-        comp.vtable.destroy(comp, allocator); // frees the subtree (margin + label)
+        // Detach both swappable children (remove is a no-op if not added) so
+        // the container destroys neither; the cell owns both.
+        self.root.remove(&self.label.component);
+        self.root.remove(&self.field.component);
+        const rc = &self.root.component;
+        rc.vtable.destroy(rc, allocator); // frees root + margin
+        self.label.component.vtable.destroy(&self.label.component, allocator);
+        self.field.component.vtable.destroy(&self.field.component, allocator);
         allocator.destroy(self);
     }
 };
 
-/// One recycled places row: same shape as FileCell, icon by place kind.
+/// One recycled places row: [6px margin | icon+name label], read-only.
 const PlaceCell = struct {
     root:       *nimbus.Container,
     label:      *nimbus.Label,
@@ -272,11 +471,47 @@ const PlaceCell = struct {
     }
 };
 
-/// Shared skeleton for both cell kinds: [6px margin | icon-capable label].
-fn createRowSkeleton(app: *nimbus.Application, allocator: std.mem.Allocator) anyerror!struct {
-    root:  *nimbus.Container,
-    label: *nimbus.Label,
-} {
+fn createFileCell(ud: *anyopaque, allocator: std.mem.Allocator) anyerror!nimbus.List.Cell {
+    const filer: *Filer = @ptrCast(@alignCast(ud));
+    const app = filer.app;
+
+    const fc = try allocator.create(FileCell);
+    errdefer allocator.destroy(fc);
+
+    // BorderLayout so the label/field swap is a center-region exchange.
+    const root = try app.container();
+    errdefer root.component.vtable.destroy(&root.component, allocator);
+    root.setLayout(nimbus.BorderLayout.get());
+
+    const margin = try app.container();
+    margin.component.setMinSize(.{ .width = 6, .height = 0 });
+    try nimbus.BorderLayout.add(root, .west, &margin.component);
+
+    const label = try app.label("");
+    label.setIconSize(.{ .width = ICON, .height = ICON });
+    const field = try app.textField("");
+    try nimbus.BorderLayout.add(root, .center, &label.component); // start in display mode
+
+    fc.* = .{ .root = root, .label = label, .field = field, .filer = filer };
+    try field.addSubmitListener(FileCell, FileCell.onSubmit, fc);
+    try field.addCancelListener(FileCell, FileCell.onCancel, fc);
+
+    return .{
+        .component = &root.component,
+        .update    = FileCell.update,
+        .destroy   = FileCell.destroyCell,
+        .edit      = .{ .start = FileCell.start, .commit = FileCell.commit, .cancel = FileCell.cancel },
+        .user_data = fc,
+    };
+}
+
+fn createPlaceCell(ud: *anyopaque, allocator: std.mem.Allocator) anyerror!nimbus.List.Cell {
+    const filer: *Filer = @ptrCast(@alignCast(ud));
+    const app = filer.app;
+
+    const pc = try allocator.create(PlaceCell);
+    errdefer allocator.destroy(pc);
+
     const root = try app.container();
     errdefer root.component.vtable.destroy(&root.component, allocator);
     root.setLayout(nimbus.BoxLayout.horizontal());
@@ -291,41 +526,14 @@ fn createRowSkeleton(app: *nimbus.Application, allocator: std.mem.Allocator) any
     label.setIconSize(.{ .width = ICON, .height = ICON });
     try root.add(&label.component);
 
-    return .{ .root = root, .label = label };
-}
-
-fn createFileCell(ud: *anyopaque, allocator: std.mem.Allocator) anyerror!nimbus.List.Cell {
-    const filer: *Filer = @ptrCast(@alignCast(ud));
-    const fc = try allocator.create(FileCell);
-    errdefer allocator.destroy(fc);
-    const sk = try createRowSkeleton(filer.app, allocator);
-    fc.* = .{
-        .root = sk.root,
-        .label = sk.label,
-        .icon_folder = filer.icon_folder,
-        .icon_file = filer.icon_file,
-    };
-    return .{
-        .component = &sk.root.component,
-        .update    = FileCell.update,
-        .destroy   = FileCell.destroyCell,
-        .user_data = fc,
-    };
-}
-
-fn createPlaceCell(ud: *anyopaque, allocator: std.mem.Allocator) anyerror!nimbus.List.Cell {
-    const filer: *Filer = @ptrCast(@alignCast(ud));
-    const pc = try allocator.create(PlaceCell);
-    errdefer allocator.destroy(pc);
-    const sk = try createRowSkeleton(filer.app, allocator);
     pc.* = .{
-        .root = sk.root,
-        .label = sk.label,
+        .root = root,
+        .label = label,
         .icon_home = filer.icon_home,
         .icon_drive = filer.icon_drive,
     };
     return .{
-        .component = &sk.root.component,
+        .component = &root.component,
         .update    = PlaceCell.update,
         .destroy   = PlaceCell.destroyCell,
         .user_data = pc,
@@ -333,6 +541,31 @@ fn createPlaceCell(ud: *anyopaque, allocator: std.mem.Allocator) anyerror!nimbus
 }
 
 // ── ui assembly ──────────────────────────────────────────────────────────
+
+fn buildConfirmDialog(app: *nimbus.Application, dialog: *nimbus.Dialog, msg: *nimbus.Label) !void {
+    dialog.window.container.setLayout(nimbus.BoxLayout.vertical());
+    msg.component.setAlignX(.center);
+
+    const row = try app.container();
+    row.setLayout(nimbus.BoxLayout.horizontal());
+    const ok = try app.button("Delete");
+    const cancel = try app.button("Cancel");
+    try ok.getModel().addActionListener(nimbus.Dialog, onConfirmOk, dialog);
+    try cancel.getModel().addActionListener(nimbus.Dialog, onConfirmCancel, dialog);
+    try row.add(&ok.component);
+    try row.add(&cancel.component);
+
+    try dialog.window.add(&msg.component);
+    try dialog.window.add(&row.component);
+}
+
+fn onConfirmOk(d: *nimbus.Dialog, _: *const ActionEvent) void {
+    d.close(.ok);
+}
+
+fn onConfirmCancel(d: *nimbus.Dialog, _: *const ActionEvent) void {
+    d.close(.cancel);
+}
 
 pub fn main(init: std.process.Init) !void {
     const app = try nimbus.Application.init(init.gpa, init.io);
@@ -349,6 +582,7 @@ pub fn main(init: std.process.Init) !void {
         .icon_home   = try app.icon(.house),
         .icon_drive  = try app.icon(.hard_drive),
     };
+    filer.window = &frame.window;
     // Runs before app.deinit (LIFO): the Lists still exist but are idle, and
     // they never touch the borrowed items during teardown.
     defer {
@@ -362,7 +596,11 @@ pub fn main(init: std.process.Init) !void {
     const lst = try app.list(.{ .create = createFileCell, .user_data = &filer });
     filer.list = lst;
     lst.setRowHeight(ROW_HEIGHT);
+    // Double-click / Enter must OPEN (activation), never start a rename —
+    // renames begin explicitly via F2 / the context menu.
+    lst.setEditTrigger(.manual);
     try lst.addActionListener(Filer, Filer.onActivate, &filer);
+    try lst.addContextMenuListener(Filer, Filer.onContextMenu, &filer);
     const sp = try app.scrollPane(lst.asComponent());
     filer.sp = sp;
 
@@ -379,6 +617,31 @@ pub fn main(init: std.process.Init) !void {
     split.asComponent().setGrowX(1);
     split.asComponent().setGrowY(1);
     try nimbus.BorderLayout.add(&frame.window.container, .center, split.asComponent());
+
+    // Row context menu (caller-owned, reused across shows).
+    const popup = try app.popupMenu();
+    defer popup.destroy();
+    filer.popup = popup;
+    const mi_open = try app.menuItem("Open");
+    mi_open.setIcon(try app.icon(.folder_open));
+    try mi_open.getModel().addActionListener(Filer, Filer.onMenuOpen, &filer);
+    try popup.add(&mi_open.component);
+    const mi_rename = try app.menuItem("Rename");
+    mi_rename.setIcon(try app.icon(.pencil));
+    try mi_rename.getModel().addActionListener(Filer, Filer.onMenuRename, &filer);
+    try popup.add(&mi_rename.component);
+    const mi_delete = try app.menuItem("Delete");
+    mi_delete.setIcon(try app.icon(.trash_2));
+    try mi_delete.getModel().addActionListener(Filer, Filer.onMenuDelete, &filer);
+    try popup.add(&mi_delete.component);
+
+    // Delete confirmation (caller-owned, message label rewritten per use).
+    const confirm = try app.dialog(&frame.window, "Confirm", 320, 120);
+    defer confirm.destroy();
+    filer.confirm = confirm;
+    const confirm_msg = try app.label("");
+    filer.confirm_msg = confirm_msg;
+    try buildConfirmDialog(app, confirm, confirm_msg);
 
     // Toolbar (north): [up] path
     const bar = try app.container();
@@ -403,11 +666,24 @@ pub fn main(init: std.process.Init) !void {
     filer.status = status;
     try nimbus.BorderLayout.add(&frame.window.container, .south, &status.component);
 
-    // Backspace anywhere = go up (bound on the window root, not the list, so
-    // it works regardless of which widget holds focus).
+    // Keys. Backspace / F5 on the window root (work regardless of focus);
+    // F2 / Delete on the file list (only meaningful with the list focused —
+    // and the rename TextField consumes Delete itself while editing).
     try frame.window.container.component.bindKey(
         nimbus.KeyStroke.of(.backspace),
         nimbus.KeyHandler.typed(Filer, Filer.onBackspace, &filer),
+    );
+    try frame.window.container.component.bindKey(
+        nimbus.KeyStroke.of(.f5),
+        nimbus.KeyHandler.typed(Filer, Filer.onReloadKey, &filer),
+    );
+    try lst.asComponent().bindKey(
+        nimbus.KeyStroke.of(.f2),
+        nimbus.KeyHandler.typed(Filer, Filer.onRenameKey, &filer),
+    );
+    try lst.asComponent().bindKey(
+        nimbus.KeyStroke.of(.delete),
+        nimbus.KeyHandler.typed(Filer, Filer.onDeleteKey, &filer),
     );
 
     const home_var = if (builtin.os.tag == .windows) "USERPROFILE" else "HOME";
@@ -418,6 +694,11 @@ pub fn main(init: std.process.Init) !void {
     const n = try std.Io.Dir.cwd().realPath(init.io, &buf);
     filer.loadDir(buf[0..n]);
 
-    std.debug.print("filer M2 — click a place on the left; double-click/Enter opens a folder; Backspace goes up.\n", .{});
+    std.debug.print(
+        \\filer M3 — right-click a row for Open / Rename / Delete.
+        \\F2 renames in place (Enter commits, Escape cancels), Delete asks then deletes,
+        \\F5 reloads, Backspace goes up.
+        \\
+    , .{});
     try app.run();
 }

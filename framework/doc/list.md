@@ -32,6 +32,7 @@ pub const List = struct {
     focus_lost:       FocusLostPolicy,    // 編集中フォーカス喪失時の決着 (既定 .commit)
     change_listeners: ChangeListenerList, // 選択変更通知
     action_listeners: ActionListenerList, // 行アクティベーション通知 (後述)
+    context_listeners: ContextMenuListenerList, // コンテキストメニュー要求 (後述)
     allocator:        std.mem.Allocator,
 
     // ... メソッド
@@ -212,6 +213,27 @@ pub fn removeActionListener(self: *List, comptime T: type, comptime f: fn (*T, *
 アクティベートされた行は `getSelected()` で得る (選択がアクティベーションに先行する契約)。
 ファイル一覧の「シングルクリック = 選択、 ダブルクリック / Enter = 開く」がこの API の想定ユースケース。
 動く例は `{REPO_ROOT}/examples/app_filer`。
+
+## コンテキストメニューリスナー
+```zig
+pub const ContextMenuEvent = struct {
+    source: *anyopaque,
+    row:    ?usize, // ヒットした行 (non-null なら発火前に選択済み)。null = 行の無い領域
+    x:      f32,    // ウィンドウ座標。そのまま PopupMenu.show に渡せる
+    y:      f32,
+};
+
+pub fn addContextMenuListener   (self: *List, comptime T: type, comptime f: fn (*T, *const ContextMenuEvent) void, user_data: *T) !void;
+pub fn removeContextMenuListener(self: *List, comptime T: type, comptime f: fn (*T, *const ContextMenuEvent) void, user_data: *T) void;
+```
+
+List 上の**右プレス**で発火する。発火前に List は次を済ませる:
+* 編集中で、 押下が編集行の外なら `FocusLostPolicy` に従い編集を決着する (左プレスと同じ規則)
+* フォーカスを取り、 ヒットした行があればそれを選択する
+
+メニュー自体は List は持たない。 アプリ側がリスナー内で自前の `PopupMenu` を
+`popup.show(window, e.x, e.y)` で出す (生のマウスリスナーを公開 API にしない方針のため、
+右クリックのフックは List が提供する)。動く例は `{REPO_ROOT}/examples/app_filer`。
 
 ## セルの編集 (CellEditor)
 ```zig

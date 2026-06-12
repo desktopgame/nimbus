@@ -68,6 +68,18 @@ pub const Cell = struct {
     user_data: *anyopaque,
 };
 
+/// Context-menu request (right press on the list). `row` is the hit row —
+/// already selected when non-null; null = the press landed below the rows.
+/// `x`/`y` are window coordinates, ready to pass to `PopupMenu.show`.
+pub const ContextMenuEvent = struct {
+    source: *anyopaque,
+    row:    ?usize,
+    x:      f32,
+    y:      f32,
+};
+
+const ContextMenuListenerList = listener.ListenerList(ContextMenuEvent);
+
 /// How an edit session begins. See `list.md`「開始トリガとフォーカス喪失」.
 pub const EditTrigger = enum {
     double_click,
@@ -190,6 +202,7 @@ last_click_time:  f64,               // ダブルクリック検出用 (awt.time
 last_click_row:   ?usize,
 change_listeners: ChangeListenerList,
 action_listeners: ActionListenerList,
+context_listeners: ContextMenuListenerList,
 allocator:        std.mem.Allocator,
 
 pub const vtable = Component.VTable{
@@ -235,11 +248,13 @@ fn createInternal(allocator: std.mem.Allocator, model: *ListModel, owns_model: b
         .last_click_row = null,
         .change_listeners = ChangeListenerList.init(allocator),
         .action_listeners = ActionListenerList.init(allocator),
+        .context_listeners = ContextMenuListenerList.init(allocator),
         .allocator = allocator,
     };
     list.component.role = .list;
     errdefer list.change_listeners.deinit();
     errdefer list.action_listeners.deinit();
+    errdefer list.context_listeners.deinit();
     errdefer list.pool.deinit(allocator);
 
     // Fill the viewport width and scroll only vertically (typical list).
@@ -305,6 +320,17 @@ pub fn addActionListener(self: *List, comptime T: type, comptime f: fn (*T, *con
 
 pub fn removeActionListener(self: *List, comptime T: type, comptime f: fn (*T, *const ActionEvent) void, user_data: *T) void {
     self.action_listeners.removeTyped(T, f, user_data);
+}
+
+/// Context menu: fires on a right press over the list, after the hit row (if
+/// any) was selected and the list took focus. The app shows its own
+/// `PopupMenu` at the event's window coordinates.
+pub fn addContextMenuListener(self: *List, comptime T: type, comptime f: fn (*T, *const ContextMenuEvent) void, user_data: *T) !void {
+    try self.context_listeners.addTyped(T, f, user_data);
+}
+
+pub fn removeContextMenuListener(self: *List, comptime T: type, comptime f: fn (*T, *const ContextMenuEvent) void, user_data: *T) void {
+    self.context_listeners.removeTyped(T, f, user_data);
 }
 
 // ── editing ────────────────────────────────────────────────────────────────
@@ -639,6 +665,26 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
                             list.action_listeners.fire(&.{ .source = list });
                     }
                 }
+            } else if (m.action == .press and (m.button orelse .left) == .right) {
+                // Same focus-lost rule as a left press: a right press off the
+                // editing row ends the current edit first.
+                if (list.editing) |e_idx| {
+                    if (!eqOpt(hit_row, e_idx)) switch (list.focus_lost) {
+                        .commit => list.commitEdit(),
+                        .cancel => list.cancelEdit(),
+                    };
+                }
+                if (!ev.isConsumed()) {
+                    self.requestFocus();
+                    if (hit_row) |r| list.setSelected(r);
+                    list.context_listeners.fire(&.{
+                        .source = list,
+                        .row = hit_row,
+                        .x = m.x,
+                        .y = m.y,
+                    });
+                    ev.consume();
+                }
             }
         },
         .key => |k| {
@@ -694,6 +740,7 @@ fn destroy(self: *Component, allocator: std.mem.Allocator) void {
     list.pool.deinit(allocator);
     list.change_listeners.deinit();
     list.action_listeners.deinit();
+    list.context_listeners.deinit();
     if (list.owns_model) {
         list.model.deinit();
         allocator.destroy(list.model);
