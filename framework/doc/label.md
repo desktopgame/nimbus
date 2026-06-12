@@ -4,7 +4,7 @@ unsafe: false
 
 # label
 ラベルについての設計ノート。
-テキストを 1 行描画するだけのもっとも単純な leaf ウィジェット。
+テキストを 1 行描画する leaf ウィジェット。オプションでテキストの左にアイコンを表示できる (Swing `JLabel` 相当)。
 v1 で唯一のビルトイン leaf ウィジェットとして、Component / Container / vtable 周りの動作検証も兼ねる。
 
 ## 型定義
@@ -14,6 +14,8 @@ pub const Label = struct {
     text:      []const u8,           // Label が所有 (allocator で dup)
     font:      awt.Graphics.TextFont,
     color:     awt.Graphics.Color,
+    icon:      ?awt.Image,           // 借用 (例: Application のアイコンキャッシュ)。null = 無し
+    icon_size: ?Component.Size,      // null = 画像の自然サイズ、非 null = 拡縮して描画
 
     pub const vtable = Component.VTable{
         .install      = install,
@@ -101,6 +103,35 @@ pub fn setColor(self: *Label, color: awt.Graphics.Color) void;
 `color` を保持して再描画を要求する。
 レイアウトには影響しない（dirty は paint のみ）。
 
+## アイコンの取得
+```zig
+pub fn getIcon(self: Label) ?awt.Image;
+```
+
+## アイコンの設定
+```zig
+pub fn setIcon(self: *Label, icon: ?awt.Image) void;
+```
+
+テキストの左に表示するアイコンを設定する（null でクリア）。
+`component.min_size` をアイコン + 間隔 + テキストで再計算する。
+
+アイコンが無いときの描画は従来どおり左上起点（既存レイアウト / スナップショットに影響しない）。
+アイコンがあるときはアイコン・テキストとも割り当てボックス内で**垂直センタリング**して描画する
+（行の中に置かれる用途で上揃えは破綻して見えるため）。
+
+### 事前条件
+* `icon` は借用。Label より長生きさせること（`Application.icon()` が返すビルトインアイコンは
+  Application 寿命なのでこの条件を満たす）。
+
+## アイコンサイズの取得 / 設定
+```zig
+pub fn getIconSize(self: Label) ?Component.Size;
+pub fn setIconSize(self: *Label, size: ?Component.Size) void;
+```
+
+null なら画像の自然サイズで、非 null ならそのサイズに拡縮して描画する（`Button` の `icon_size` と同じ意味論）。
+
 ## 利用例
 Application 経由の典型コード。
 
@@ -140,7 +171,6 @@ Component メソッド（`setBounds` 等）は委譲を生やしていないの�
 ## 機能要望
 * 改行 (`\n`) 対応 — 現状 `drawString` が無視するため対応なし。複数行は別ウィジェットで扱う
 * horizontal / vertical alignment — SwingConstants 相当を導入
-* icon / image 同時表示 — Swing `JLabel` の icon 機能
 * HTML / rich text — 当面スコープ外
 * mnemonic / accelerator — キーイベント整備後
 * `setTextBorrowed(text)` — 利用者が寿命を保証できるケースで dup を回避するための入口

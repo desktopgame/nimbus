@@ -216,6 +216,9 @@ pub fn build(b: *std.Build) void {
     addExample(b, "widget_layoutcost", framework_mod, null, target, optimize);
     addExample(b, "widget_keyboard", framework_mod, null, target, optimize);
 
+    // ── dogfooding apps (app_*) — real applications built on nimbus ──────
+    addExample(b, "app_filer", framework_mod, null, target, optimize);
+
     // ── C ABI example: drive nimbus from a C program (cnimbus_*) ─────────
     // A pure-C executable that includes only include/nimbus.h — no Zig, linked
     // against the public C ABI shared lib (libnimbus, dynamic). Proves the

@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # list
@@ -31,6 +31,7 @@ pub const List = struct {
     edit_trigger:     EditTrigger,        // 編集開始トリガ (既定 .double_click_or_enter)
     focus_lost:       FocusLostPolicy,    // 編集中フォーカス喪失時の決着 (既定 .commit)
     change_listeners: ChangeListenerList, // 選択変更通知
+    action_listeners: ActionListenerList, // 行アクティベーション通知 (後述)
     allocator:        std.mem.Allocator,
 
     // ... メソッド
@@ -196,6 +197,21 @@ pub fn removeChangeListener(self: *List, comptime T: type, comptime f: fn (*T, *
 
 `selected` が変化した瞬間に発火する。
 hover やセル内ボタンの押下では発火しない (それらはセルが配線したコールバックの領分)。
+
+## 行アクティベーションリスナー
+```zig
+pub fn addActionListener   (self: *List, comptime T: type, comptime f: fn (*T, *const ActionEvent) void, user_data: *T) !void;
+pub fn removeActionListener(self: *List, comptime T: type, comptime f: fn (*T, *const ActionEvent) void, user_data: *T) void;
+```
+
+行が「開かれた」ときに発火する。 発火条件は次の 2 つで、 いずれも**そのジェスチャで編集が始まらなかった場合のみ**
+(編集トリガが先取りする。 セルが読み取り専用 = `Cell.edit` が null なら常にアクティベーション側に落ちる):
+* 行への左ダブルクリック
+* 選択行がある状態での Enter
+
+アクティベートされた行は `getSelected()` で得る (選択がアクティベーションに先行する契約)。
+ファイル一覧の「シングルクリック = 選択、 ダブルクリック / Enter = 開く」がこの API の想定ユースケース。
+動く例は `{REPO_ROOT}/examples/app_filer`。
 
 ## セルの編集 (CellEditor)
 ```zig

@@ -13,6 +13,8 @@ const Component = @import("Component.zig");
 const listener = @import("listener.zig");
 const ChangeListenerList = listener.ChangeListenerList;
 const ChangeEvent = listener.ChangeEvent;
+const ActionListenerList = listener.ActionListenerList;
+const ActionEvent = listener.ActionEvent;
 
 const List = @This();
 
@@ -187,6 +189,7 @@ focus_lost:       FocusLostPolicy,
 last_click_time:  f64,               // ダブルクリック検出用 (awt.time)
 last_click_row:   ?usize,
 change_listeners: ChangeListenerList,
+action_listeners: ActionListenerList,
 allocator:        std.mem.Allocator,
 
 pub const vtable = Component.VTable{
@@ -231,10 +234,12 @@ fn createInternal(allocator: std.mem.Allocator, model: *ListModel, owns_model: b
         .last_click_time = 0,
         .last_click_row = null,
         .change_listeners = ChangeListenerList.init(allocator),
+        .action_listeners = ActionListenerList.init(allocator),
         .allocator = allocator,
     };
     list.component.role = .list;
     errdefer list.change_listeners.deinit();
+    errdefer list.action_listeners.deinit();
     errdefer list.pool.deinit(allocator);
 
     // Fill the viewport width and scroll only vertically (typical list).
@@ -287,6 +292,19 @@ pub fn addChangeListener(self: *List, comptime T: type, comptime f: fn (*T, *con
 
 pub fn removeChangeListener(self: *List, comptime T: type, comptime f: fn (*T, *const ChangeEvent) void, user_data: *T) void {
     self.change_listeners.removeTyped(T, f, user_data);
+}
+
+/// Row activation: fires when a row is "opened" — left double-click on a row,
+/// or Enter on the selected row — and the gesture did not start an edit (the
+/// edit trigger has priority when the cell is editable). The activated row is
+/// `getSelected()` (selection happens before activation). This is how a file
+/// list opens an item while keeping single-click = select.
+pub fn addActionListener(self: *List, comptime T: type, comptime f: fn (*T, *const ActionEvent) void, user_data: *T) !void {
+    try self.action_listeners.addTyped(T, f, user_data);
+}
+
+pub fn removeActionListener(self: *List, comptime T: type, comptime f: fn (*T, *const ActionEvent) void, user_data: *T) void {
+    self.action_listeners.removeTyped(T, f, user_data);
 }
 
 // ── editing ────────────────────────────────────────────────────────────────
@@ -615,6 +633,10 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
                             .enter, .manual => false,
                         };
                         if (start) list.edit(r);
+                        // Double-click that did not begin an edit (read-only
+                        // cell / non-double-click trigger) activates the row.
+                        if (dbl and list.editing == null)
+                            list.action_listeners.fire(&.{ .source = list });
                     }
                 }
             }
@@ -632,18 +654,22 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
                     },
                     .enter => {
                         // Enter on the selected row starts editing (when the
-                        // trigger allows it). While editing, the scratch field
-                        // owns focus and handles Enter itself, so List never
-                        // sees Enter in that state.
+                        // trigger allows it); if no edit began (read-only cell
+                        // or a trigger without Enter), it activates the row
+                        // instead. While editing, the scratch field owns focus
+                        // and handles Enter itself, so List never sees Enter
+                        // in that state.
                         if (list.editing == null) {
-                            const want = switch (list.edit_trigger) {
-                                .enter, .double_click_or_enter => true,
-                                .double_click, .manual => false,
-                            };
-                            if (want) if (list.selected) |s| {
-                                list.edit(s);
+                            if (list.selected) |s| {
+                                const want = switch (list.edit_trigger) {
+                                    .enter, .double_click_or_enter => true,
+                                    .double_click, .manual => false,
+                                };
+                                if (want) list.edit(s);
+                                if (list.editing == null)
+                                    list.action_listeners.fire(&.{ .source = list });
                                 ev.consume();
-                            };
+                            }
                         }
                     },
                     else => {},
@@ -667,9 +693,68 @@ fn destroy(self: *Component, allocator: std.mem.Allocator) void {
     }
     list.pool.deinit(allocator);
     list.change_listeners.deinit();
+    list.action_listeners.deinit();
     if (list.owns_model) {
         list.model.deinit();
         allocator.destroy(list.model);
     }
     allocator.destroy(list);
+}
+
+// ── tests ──────────────────────────────────────────────────────────────────
+
+test "list: Enter on a read-only cell fires activation, not editing" {
+    const a = std.testing.allocator;
+    const Panel = @import("Panel.zig");
+
+    // GPU-free factory: a bare Panel as the cell, no projection.
+    const F = struct {
+        fn createCell(_: *anyopaque, allocator: std.mem.Allocator) anyerror!Cell {
+            const p = try Panel.create(allocator);
+            return .{
+                .component = &p.container.component,
+                .update = updateCell,
+                .destroy = destroyCell,
+                .user_data = @ptrCast(p),
+            };
+        }
+        fn updateCell(_: *anyopaque, _: CellContext) void {}
+        fn destroyCell(ud: *anyopaque, allocator: std.mem.Allocator) void {
+            const p: *Panel = @ptrCast(@alignCast(ud));
+            p.container.component.vtable.destroy(&p.container.component, allocator);
+        }
+    };
+
+    var fac_state: u8 = 0;
+    const list = try create(a, .{ .create = F.createCell, .user_data = @ptrCast(&fac_state) });
+    defer list.component.vtable.destroy(&list.component, a);
+
+    var item: u32 = 42;
+    try list.model.add(@ptrCast(&item));
+    list.setSelected(0);
+
+    const Ctx = struct {
+        fired: u32 = 0,
+        fn onActivate(self: *@This(), _: *const ActionEvent) void {
+            self.fired += 1;
+        }
+    };
+    var ctx: Ctx = .{};
+    try list.addActionListener(Ctx, Ctx.onActivate, &ctx);
+
+    // Default trigger (.double_click_or_enter) tries to edit first; the cell
+    // is read-only (edit == null), so Enter must fall through to activation.
+    var ev = Component.Event{ .payload = .{ .key = .{ .code = .enter, .action = .press, .modifiers = .{} } } };
+    list.component.vtable.processEvent(&list.component, &ev);
+
+    try std.testing.expectEqual(@as(u32, 1), ctx.fired);
+    try std.testing.expect(ev.isConsumed());
+    try std.testing.expect(list.getEditing() == null);
+
+    // No selection → Enter neither fires nor consumes.
+    list.setSelected(null);
+    var ev2 = Component.Event{ .payload = .{ .key = .{ .code = .enter, .action = .press, .modifiers = .{} } } };
+    list.component.vtable.processEvent(&list.component, &ev2);
+    try std.testing.expectEqual(@as(u32, 1), ctx.fired);
+    try std.testing.expect(!ev2.isConsumed());
 }
