@@ -14,6 +14,7 @@ const ComboBox = @import("ComboBox.zig");
 const List = @import("List.zig");
 const ScrollBar = @import("ScrollBar.zig");
 const ScrollPane = @import("ScrollPane.zig");
+const SplitPane = @import("SplitPane.zig");
 const Slider = @import("Slider.zig");
 const Frame = @import("Frame.zig");
 const Dialog = @import("Dialog.zig");
@@ -768,6 +769,21 @@ pub fn scrollPane(self: *Application, view: *Component) !*ScrollPane {
     const sp = try ScrollPane.create(self.allocator, view);
     // Recursive: also reaches the internal viewport / bars (and re-stamps the
     // already-themed view harmlessly).
+    self.applyTheme(&sp.container.component);
+    return sp;
+}
+
+/// Two-pane splitter. `first` / `second` ownership transfers to the pane
+/// (even when creation fails).
+pub fn splitPane(
+    self: *Application,
+    orientation: SplitPane.Orientation,
+    first: *Component,
+    second: *Component,
+) !*SplitPane {
+    const sp = try SplitPane.create(self.allocator, orientation, first, second);
+    // Recursive: re-stamps the already-themed panes harmlessly and covers
+    // any not-yet-themed subtree.
     self.applyTheme(&sp.container.component);
     return sp;
 }

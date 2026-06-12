@@ -247,6 +247,7 @@ pub fn build(b: *std.Build) void {
     inline for (.{
         "framework/tests/box_layout_test.zig",
         "framework/tests/border_layout_test.zig",
+        "framework/tests/split_pane_test.zig",
         "framework/tests/focus_test.zig",
         "framework/tests/theme_test.zig",
     }) |path| {
