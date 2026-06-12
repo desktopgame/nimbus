@@ -1,4 +1,4 @@
-//! app_filer: dogfooding file manager (M3 — file operations).
+//! app_filer: dogfooding file manager (M4 — drag & drop move).
 //!
 //! A real (if minimal) app built only on nimbus public APIs, to surface
 //! missing pieces and rough edges. Current state:
@@ -13,6 +13,10 @@
 //!     Enter commits (performs the actual rename on disk), Escape cancels
 //!   - Delete (or the menu) asks in a modal dialog, then deletes the file /
 //!     empty folder; non-empty folders are refused (no recursive delete)
+//!   - drag a row and drop it on a folder row (highlighted) or on a place in
+//!     the sidebar to MOVE it there; a ghost with icon + name follows the
+//!     cursor; Escape cancels; cross-volume moves fail with a status message
+//!     (copy fallback not implemented)
 //!   - F5 reloads; the toolbar's up-arrow button (or Backspace) goes to the
 //!     parent; the divider between the panes drags
 //!
@@ -23,6 +27,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const nimbus = @import("nimbus");
 const awt = nimbus.awt;
+const dnd = nimbus.dnd;
 const ActionEvent = nimbus.ActionEvent;
 const ChangeEvent = nimbus.ChangeEvent;
 
@@ -296,6 +301,22 @@ const Filer = struct {
         self.scheduleReload();
     }
 
+    /// Move `entry` (in the current directory) into `dest_dir` (absolute).
+    /// Pure rename — a cross-volume move fails and only reports (no copy
+    /// fallback yet). The listing reloads at the end of the loop pass.
+    fn moveEntryTo(self: *Filer, entry: *Entry, dest_dir: []const u8) void {
+        const old_p = std.fs.path.join(self.allocator, &.{ self.curPath(), entry.name }) catch return;
+        defer self.allocator.free(old_p);
+        const new_p = std.fs.path.join(self.allocator, &.{ dest_dir, entry.name }) catch return;
+        defer self.allocator.free(new_p);
+        std.Io.Dir.renameAbsolute(old_p, new_p, self.io) catch |err| {
+            self.setStatus("move failed: {s} ({s})", .{ entry.name, @errorName(err) });
+            return;
+        };
+        self.setStatus("moved {s} -> {s}", .{ entry.name, dest_dir });
+        self.scheduleReload();
+    }
+
     // ── listeners ────────────────────────────────────────────────────────
 
     fn onActivate(self: *Filer, _: *const ActionEvent) void {
@@ -471,6 +492,163 @@ const PlaceCell = struct {
     }
 };
 
+// ── drag & drop move (dnd.md「List の行並べ替え」 pattern, cross-pane) ────
+
+const entry_tag = dnd.tagOf(Entry);
+
+/// DnD controller: drag a file row, drop on a folder row (same list) or on a
+/// places row (sidebar) to move it there. Capabilities are attached to the
+/// List components from the outside; the drop highlight is painted by a
+/// decorated copy of List.vtable (paint only) so scroll/clip follow for free.
+const Mover = struct {
+    filer: *Filer,
+    ghost: *nimbus.Label,         // app-owned, shown as passthrough overlay
+    files_highlight:  ?usize = null, // folder row under the drag (right pane)
+    places_highlight: ?usize = null, // place row under the drag (left pane)
+
+    fn dragEntry(e: *const dnd.DragEvent) ?*Entry {
+        if (e.transfer.flavor != .object or e.transfer.type_tag != entry_tag) return null;
+        return @ptrCast(@alignCast(e.transfer.object()));
+    }
+
+    fn rowAt(list: *nimbus.List, y: f32) ?usize {
+        const h = list.getRowHeight();
+        if (h <= 0 or y < 0) return null;
+        const row: usize = @intFromFloat(y / h);
+        return row;
+    }
+
+    // ── source: the file list ────────────────────────────────────────────
+
+    fn onDragStart(ud: *anyopaque, x: f32, y: f32) ?dnd.Transfer {
+        _ = x;
+        const self: *Mover = @ptrCast(@alignCast(ud));
+        const filer = self.filer;
+        const row = rowAt(filer.list, y) orelse return null;
+        if (row >= filer.entries.items.len) return null;
+        const entry = filer.entries.items[row];
+        self.ghost.setText(entry.name) catch {};
+        self.ghost.setIcon(if (entry.is_dir) filer.icon_folder else filer.icon_file);
+        filer.window.overlays.addPassthrough(&self.ghost.component) catch {};
+        return .{
+            .flavor = .object,
+            .ctx = entry,
+            .type_tag = entry_tag,
+            .source = filer.list.asComponent(),
+        };
+    }
+
+    fn onDrag(ud: *anyopaque, x: f32, y: f32) void {
+        const self: *Mover = @ptrCast(@alignCast(ud));
+        self.ghost.component.position = .{ .x = x + 12, .y = y + 12 };
+    }
+
+    fn onDragDone(ud: *anyopaque, performed: ?dnd.Action) void {
+        _ = performed; // the fs operation already happened in onDrop
+        const self: *Mover = @ptrCast(@alignCast(ud));
+        self.filer.window.overlays.remove(@ptrCast(&self.ghost.component));
+    }
+
+    // ── target: the file list (drop into a folder row) ──────────────────
+
+    fn filesOnOver(ud: *anyopaque, e: *const dnd.DragEvent) bool {
+        const self: *Mover = @ptrCast(@alignCast(ud));
+        const filer = self.filer;
+        const entry = dragEntry(e) orelse return false;
+        var hl: ?usize = null;
+        if (rowAt(filer.list, e.y)) |row| {
+            if (row < filer.entries.items.len) {
+                const target = filer.entries.items[row];
+                // Only a folder row, and never the dragged row itself.
+                if (target.is_dir and target != entry) hl = row;
+            }
+        }
+        self.files_highlight = hl;
+        filer.list.asComponent().repaint();
+        return hl != null;
+    }
+
+    fn filesOnLeave(ud: *anyopaque) void {
+        const self: *Mover = @ptrCast(@alignCast(ud));
+        self.files_highlight = null;
+        self.filer.list.asComponent().repaint();
+    }
+
+    fn filesOnDrop(ud: *anyopaque, e: *const dnd.DragEvent) void {
+        const self: *Mover = @ptrCast(@alignCast(ud));
+        const filer = self.filer;
+        self.files_highlight = null;
+        const entry = dragEntry(e) orelse return;
+        const row = rowAt(filer.list, e.y) orelse return;
+        if (row >= filer.entries.items.len) return;
+        const target = filer.entries.items[row];
+        if (!target.is_dir or target == entry) return;
+        const dest = std.fs.path.join(filer.allocator, &.{ filer.curPath(), target.name }) catch return;
+        defer filer.allocator.free(dest);
+        filer.moveEntryTo(entry, dest);
+    }
+
+    // ── target: the places list (drop on a place) ────────────────────────
+
+    fn placesOnOver(ud: *anyopaque, e: *const dnd.DragEvent) bool {
+        const self: *Mover = @ptrCast(@alignCast(ud));
+        const filer = self.filer;
+        var hl: ?usize = null;
+        if (dragEntry(e) != null) {
+            if (rowAt(filer.places_list, e.y)) |row| {
+                if (row < filer.places.items.len) {
+                    // Dropping into the directory we are already in is a no-op.
+                    const place = filer.places.items[row];
+                    if (!std.mem.eql(u8, place.path, filer.curPath())) hl = row;
+                }
+            }
+        }
+        self.places_highlight = hl;
+        filer.places_list.asComponent().repaint();
+        return hl != null;
+    }
+
+    fn placesOnLeave(ud: *anyopaque) void {
+        const self: *Mover = @ptrCast(@alignCast(ud));
+        self.places_highlight = null;
+        self.filer.places_list.asComponent().repaint();
+    }
+
+    fn placesOnDrop(ud: *anyopaque, e: *const dnd.DragEvent) void {
+        const self: *Mover = @ptrCast(@alignCast(ud));
+        const filer = self.filer;
+        self.places_highlight = null;
+        const entry = dragEntry(e) orelse return;
+        const row = rowAt(filer.places_list, e.y) orelse return;
+        if (row >= filer.places.items.len) return;
+        const place = filer.places.items[row];
+        if (std.mem.eql(u8, place.path, filer.curPath())) return;
+        filer.moveEntryTo(entry, place.path);
+    }
+};
+
+/// Decorated List paint: List's own painting first, then a ring around the
+/// row the drag is hovering (the same Graphics, so scroll/clip follow).
+fn dndListPaint(self: *nimbus.Component, g: *awt.Graphics) void {
+    nimbus.List.vtable.paint(self, g);
+    const m = self.getTyped(Mover) orelse return;
+    const is_files = self == m.filer.list.asComponent();
+    const hl = if (is_files) m.files_highlight else m.places_highlight;
+    if (hl) |row| {
+        const list = if (is_files) m.filer.list else m.filer.places_list;
+        const h = list.getRowHeight();
+        const y = @as(f32, @floatFromInt(row)) * h;
+        g.setColor(self.theme.focus_ring);
+        g.drawRect(.{ .x = 1, .y = y + 1, .width = self.size.width - 2, .height = h - 2 });
+    }
+}
+
+const dnd_list_vt = blk: {
+    var vt = nimbus.List.vtable;
+    vt.paint = dndListPaint;
+    break :blk vt;
+};
+
 fn createFileCell(ud: *anyopaque, allocator: std.mem.Allocator) anyerror!nimbus.List.Cell {
     const filer: *Filer = @ptrCast(@alignCast(ud));
     const app = filer.app;
@@ -618,6 +796,40 @@ pub fn main(init: std.process.Init) !void {
     split.asComponent().setGrowY(1);
     try nimbus.BorderLayout.add(&frame.window.container, .center, split.asComponent());
 
+    // Drag & drop move. Capabilities attach to the List components from the
+    // outside (cells live outside the container tree, so the List body is
+    // the hit-test target — see dnd.md). The ghost is app-owned and belongs
+    // to no tree, so it is destroyed here.
+    const ghost = try app.label("");
+    ghost.setIconSize(.{ .width = ICON, .height = ICON });
+    ghost.component.size = .{ .width = 240, .height = ROW_HEIGHT };
+    defer ghost.component.vtable.destroy(&ghost.component, init.gpa);
+
+    var mover = Mover{ .filer = &filer, .ghost = ghost };
+    lst.asComponent().drag_source = .{
+        .onDragStart = Mover.onDragStart,
+        .onDrag      = Mover.onDrag,
+        .onDragDone  = Mover.onDragDone,
+        .user_data   = &mover,
+    };
+    lst.asComponent().drop_target = .{
+        .onOver    = Mover.filesOnOver,
+        .onLeave   = Mover.filesOnLeave,
+        .onDrop    = Mover.filesOnDrop,
+        .user_data = &mover,
+    };
+    places.asComponent().drop_target = .{
+        .onOver    = Mover.placesOnOver,
+        .onLeave   = Mover.placesOnLeave,
+        .onDrop    = Mover.placesOnDrop,
+        .user_data = &mover,
+    };
+    // Drop-highlight decoration (paint-only vtable copy) on both lists.
+    lst.asComponent().vtable = &dnd_list_vt;
+    places.asComponent().vtable = &dnd_list_vt;
+    try lst.asComponent().putProperty(@typeName(Mover), &mover, null);
+    try places.asComponent().putProperty(@typeName(Mover), &mover, null);
+
     // Row context menu (caller-owned, reused across shows).
     const popup = try app.popupMenu();
     defer popup.destroy();
@@ -695,9 +907,9 @@ pub fn main(init: std.process.Init) !void {
     filer.loadDir(buf[0..n]);
 
     std.debug.print(
-        \\filer M3 — right-click a row for Open / Rename / Delete.
-        \\F2 renames in place (Enter commits, Escape cancels), Delete asks then deletes,
-        \\F5 reloads, Backspace goes up.
+        \\filer M4 — drag a row onto a folder row or a sidebar place to move it.
+        \\Right-click a row for Open / Rename / Delete. F2 renames in place,
+        \\Delete asks then deletes, F5 reloads, Backspace goes up.
         \\
     , .{});
     try app.run();
