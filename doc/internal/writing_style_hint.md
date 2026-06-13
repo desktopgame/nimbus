@@ -6,7 +6,11 @@
 ## 実行
 
 - 単体: `npm run lint -- <path/to/file.md>`
-- 全体: `npm run lint_all`
+- 全体: `npm run lint_all`（対象は `awt/doc/` `awt-c/doc/` `framework/doc/` のみ）
+
+`lint_all` は各モジュール直下の doc（利用者向け仕様）だけを見る。
+このファイルが置かれているトップレベル `doc/`（backlog や内部メモ）は対象外。
+必要なら個別に `npm run lint -- <file>` を流せる。
 
 用語統一など機械的に直せるものは `textlint --fix` で置換できる（差分を確認してから）。
 

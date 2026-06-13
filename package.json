@@ -10,7 +10,7 @@
   },
   "scripts": {
     "lint": "textlint --rulesdir tools/textlint/rules",
-    "lint_all": "textlint --rulesdir tools/textlint/rules \"**/doc/**/*.md\""
+    "lint_all": "textlint --rulesdir tools/textlint/rules \"*/doc/**/*.md\""
   },
   "repository": {
     "type": "git",
