@@ -282,8 +282,8 @@ fn sdfQuad(self: *Graphics, r: Rect, color: Color, corner_radius: f32, thickness
     const verts = [_]f32{
         x0, y0, -uv_x, -uv_y, // TL
         x0, y1, -uv_x, uv_y, // BL
-        x1, y1, uv_x,  uv_y, // BR
-        x1, y0, uv_x,  -uv_y, // TR
+        x1, y1, uv_x, uv_y, // BR
+        x1, y0, uv_x, -uv_y, // TR
     };
     const vh = self.ctx.vertex_ring.pushBytes(std.mem.sliceAsBytes(verts[0..])) catch return;
     const uh = self.ctx.uniforms.push(programs.RoundedRect.Uniforms{
@@ -324,7 +324,8 @@ pub fn drawCircle(self: *Graphics, r: Rect) void {
 pub fn drawImage(self: *Graphics, image: Image, x: f32, y: f32) void {
     self.drawImageScaled(
         image,
-        x, y,
+        x,
+        y,
         @floatFromInt(image.width),
         @floatFromInt(image.height),
     );

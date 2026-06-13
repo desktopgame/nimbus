@@ -43,12 +43,12 @@ pub const SortDirection = enum { ascending, descending };
 // ── public cell protocol (List's, plus the column index) ───────────────────
 
 pub const CellContext = struct {
-    table:    *Table,
-    value:    *anyopaque, // the row item; the cell casts it
-    row:      usize,
-    col:      usize,
+    table: *Table,
+    value: *anyopaque, // the row item; the cell casts it
+    row: usize,
+    col: usize,
     selected: bool,
-    focused:  bool,
+    focused: bool,
 };
 
 /// Optional edit lifecycle for a cell (single-cell editing — see table.md /
@@ -57,7 +57,7 @@ pub const CellContext = struct {
 pub const CellEdit = struct {
     // Enter edit mode: swap the subtree to a scratch input, seed from the item,
     // request focus on the input.
-    start:  *const fn (self: *anyopaque, ctx: CellContext) void,
+    start: *const fn (self: *anyopaque, ctx: CellContext) void,
     // Commit: write the scratch value back to the item, return to display mode.
     commit: *const fn (self: *anyopaque) void,
     // Cancel: discard the scratch, return to display mode (item unchanged).
@@ -66,9 +66,9 @@ pub const CellEdit = struct {
 
 pub const Cell = struct {
     component: *Component,
-    update:    *const fn (self: *anyopaque, ctx: CellContext) void,
-    destroy:   *const fn (self: *anyopaque, allocator: std.mem.Allocator) void,
-    edit:      ?CellEdit = null,
+    update: *const fn (self: *anyopaque, ctx: CellContext) void,
+    destroy: *const fn (self: *anyopaque, allocator: std.mem.Allocator) void,
+    edit: ?CellEdit = null,
     user_data: *anyopaque,
 };
 
@@ -76,24 +76,24 @@ pub const Cell = struct {
 pub const EditPos = struct { row: usize, col: usize };
 
 pub const CellFactory = struct {
-    create:    *const fn (self: *anyopaque, allocator: std.mem.Allocator) anyerror!Cell,
+    create: *const fn (self: *anyopaque, allocator: std.mem.Allocator) anyerror!Cell,
     user_data: *anyopaque,
 };
 
 /// Column definition passed to `create`. Copied by value (the `title` is
 /// duped); `factory` is borrowed (kept alive by the caller).
 pub const Column = struct {
-    title:     []const u8,
-    width:     f32  = 120,
-    min_width: f32  = 40,
-    sortable:  bool = true,
-    factory:   CellFactory,
+    title: []const u8,
+    width: f32 = 120,
+    min_width: f32 = 40,
+    sortable: bool = true,
+    factory: CellFactory,
 };
 
 /// Header click on a sortable column, after the indicator was updated.
 pub const SortEvent = struct {
-    source:    *anyopaque,
-    column:    usize,
+    source: *anyopaque,
+    column: usize,
     direction: SortDirection,
 };
 
@@ -101,9 +101,9 @@ pub const SortEvent = struct {
 /// List.ContextMenuEvent; cross-widget unification is framework#8.
 pub const ContextMenuEvent = struct {
     source: *anyopaque,
-    row:    ?usize,
-    x:      f32,
-    y:      f32,
+    row: ?usize,
+    x: f32,
+    y: f32,
 };
 
 const SortListenerList = listener.ListenerList(SortEvent);
@@ -111,56 +111,56 @@ const ContextMenuListenerList = listener.ListenerList(ContextMenuEvent);
 
 const PooledCell = struct {
     cell: Cell,
-    row:  ?usize, // bound row, or null = free (recyclable)
+    row: ?usize, // bound row, or null = free (recyclable)
 };
 
 /// Per-column definition + runtime state. Owns the duped title and the
 /// column's own cell pool.
 const ColumnState = struct {
-    title:     []u8,
-    width:     f32,
+    title: []u8,
+    width: f32,
     min_width: f32,
-    sortable:  bool,
-    factory:   CellFactory,
-    pool:      std.ArrayList(PooledCell),
+    sortable: bool,
+    factory: CellFactory,
+    pool: std.ArrayList(PooledCell),
 };
 
 /// Column-resize gesture in progress. `grab` is the cursor's offset from the
 /// column's right edge at press time, so the edge doesn't jump on the first move.
 const HeaderDrag = struct {
-    col:  usize,
+    col: usize,
     grab: f32,
 };
 
 // ── fields ───────────────────────────────────────────────────────────────
 
-component:         Component,
-model:             *Model,
-owns_model:        bool,
-columns:           []ColumnState,
-header_font:       awt.Graphics.TextFont,
-selection:         SelectionModel,
-editing:           ?EditPos,
-row_height:        f32,
-sort_column:       ?usize,
-sort_direction:    SortDirection,
-has_focus:         bool,
-hovered:           ?*Component,
-header_drag:       ?HeaderDrag,
-last_click_time:   f64,
-last_click_row:    ?usize,
-change_listeners:  ChangeListenerList,
-action_listeners:  ActionListenerList,
+component: Component,
+model: *Model,
+owns_model: bool,
+columns: []ColumnState,
+header_font: awt.Graphics.TextFont,
+selection: SelectionModel,
+editing: ?EditPos,
+row_height: f32,
+sort_column: ?usize,
+sort_direction: SortDirection,
+has_focus: bool,
+hovered: ?*Component,
+header_drag: ?HeaderDrag,
+last_click_time: f64,
+last_click_row: ?usize,
+change_listeners: ChangeListenerList,
+action_listeners: ActionListenerList,
 context_listeners: ContextMenuListenerList,
-sort_listeners:    SortListenerList,
-allocator:         std.mem.Allocator,
+sort_listeners: SortListenerList,
+allocator: std.mem.Allocator,
 
 pub const vtable = Component.VTable{
-    .install      = install,
-    .uninstall    = uninstall,
-    .paint        = paint,
+    .install = install,
+    .uninstall = uninstall,
+    .paint = paint,
     .processEvent = processEvent,
-    .destroy      = destroy,
+    .destroy = destroy,
 };
 
 // ── construction ───────────────────────────────────────────────────────────

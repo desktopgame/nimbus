@@ -10,10 +10,10 @@ const ChangeEvent = nimbus.ChangeEvent;
 const ActionEvent = nimbus.ActionEvent;
 
 const State = struct {
-    label:         *nimbus.Label,
-    slider:        *nimbus.Slider,
+    label: *nimbus.Label,
+    slider: *nimbus.Slider,
     button_clicks: u32 = 0,
-    buf:           [128]u8 = undefined,
+    buf: [128]u8 = undefined,
 };
 
 fn refreshLabel(state: *State) void {
@@ -54,7 +54,7 @@ pub fn main(init: std.process.Init) !void {
         .height = button.component.getMinSize().height,
     });
     const slider = try app.slider(.horizontal, 0, 50, 100);
-    slider.component.setGrowX(1);     // slider eats leftover horizontal space
+    slider.component.setGrowX(1); // slider eats leftover horizontal space
     slider.component.setAlignY(.center);
     const label = try app.label("clicks: 0 / value: 50");
     label.component.setAlignY(.center);

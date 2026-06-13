@@ -11,8 +11,7 @@ const Swapchain = @This();
 handle: *c.struct_nmSwapchain,
 
 pub fn init(device: Device, window: Window) !Swapchain {
-    const h = c.nmCreateSwapchain(device.handle, window.handle)
-        orelse return error.SwapchainCreateFailed;
+    const h = c.nmCreateSwapchain(device.handle, window.handle) orelse return error.SwapchainCreateFailed;
     return .{ .handle = h };
 }
 

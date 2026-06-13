@@ -1,4 +1,5 @@
-//! Menu item with a toggleable checked state. See `framework/doc/checkbox_menu_item.md`.
+//! Menu item with radio-style selected state. See
+//! `framework/doc/radio_button_menu_item.md`.
 
 const std = @import("std");
 const awt = @import("awt");
@@ -6,8 +7,10 @@ const Component = @import("Component.zig");
 const ChangeEvent = @import("listener.zig").ChangeEvent;
 const ToggleButtonModel = @import("ToggleButtonModel.zig");
 const MenuItem = @import("MenuItem.zig");
+const ButtonGroup = @import("ButtonGroup.zig");
+const Application = @import("Application.zig");
 
-const CheckBoxMenuItem = @This();
+const RadioButtonMenuItem = @This();
 
 component: Component,
 text: []const u8,
@@ -30,7 +33,7 @@ pub fn create(
     text: []const u8,
     font: awt.Graphics.TextFont,
     color: awt.Graphics.Color,
-) !*CheckBoxMenuItem {
+) !*RadioButtonMenuItem {
     const model = try allocator.create(ToggleButtonModel);
     errdefer allocator.destroy(model);
     model.* = ToggleButtonModel.init(allocator);
@@ -44,7 +47,7 @@ pub fn createWithModel(
     text: []const u8,
     font: awt.Graphics.TextFont,
     color: awt.Graphics.Color,
-) !*CheckBoxMenuItem {
+) !*RadioButtonMenuItem {
     return createInternal(allocator, model, false, text, font, color);
 }
 
@@ -55,8 +58,8 @@ fn createInternal(
     text: []const u8,
     font: awt.Graphics.TextFont,
     color: awt.Graphics.Color,
-) !*CheckBoxMenuItem {
-    const item = try allocator.create(CheckBoxMenuItem);
+) !*RadioButtonMenuItem {
+    const item = try allocator.create(RadioButtonMenuItem);
     errdefer allocator.destroy(item);
 
     const text_dup = try allocator.dupe(u8, text);
@@ -71,13 +74,13 @@ fn createInternal(
         .owns_model = owns_model,
         .allocator = allocator,
     };
-    item.component.role = .checkbox_menu_item;
+    item.component.role = .radio_button_menu_item;
     item.applyMetrics();
-    try CheckBoxMenuItem.vtable.install(&item.component);
+    try RadioButtonMenuItem.vtable.install(&item.component);
     return item;
 }
 
-fn applyMetrics(self: *CheckBoxMenuItem) void {
+fn applyMetrics(self: *RadioButtonMenuItem) void {
     const m = self.font.measureString(self.text);
     const min = Component.Size{
         .width = MenuItem.ICON_SLOT_WIDTH + m.width + MenuItem.ACCEL_SLOT_WIDTH + MenuItem.PADDING_X * 2,
@@ -87,47 +90,47 @@ fn applyMetrics(self: *CheckBoxMenuItem) void {
     self.component.max_size = .{ .width = std.math.inf(f32), .height = min.height };
 }
 
-pub fn getText(self: CheckBoxMenuItem) []const u8 {
+pub fn getText(self: RadioButtonMenuItem) []const u8 {
     return self.text;
 }
 
-pub fn setText(self: *CheckBoxMenuItem, text: []const u8) !void {
+pub fn setText(self: *RadioButtonMenuItem, text: []const u8) !void {
     const new_text = try self.allocator.dupe(u8, text);
     self.allocator.free(self.text);
     self.text = new_text;
     self.applyMetrics();
 }
 
-pub fn isChecked(self: CheckBoxMenuItem) bool {
+pub fn isSelected(self: RadioButtonMenuItem) bool {
     return self.model.isSelected();
 }
 
-pub fn setChecked(self: *CheckBoxMenuItem, v: bool) void {
+pub fn setSelected(self: *RadioButtonMenuItem, v: bool) void {
     self.model.setSelected(v);
 }
 
-pub fn getModel(self: CheckBoxMenuItem) *ToggleButtonModel {
+pub fn getModel(self: RadioButtonMenuItem) *ToggleButtonModel {
     return self.model;
 }
 
-/// Programmatic activation: toggle + fire (the owning Menu's auto-dismiss
-/// listener closes the popup). Entry point for menu-local mnemonics.
+/// Programmatic activation: select + fire. Unlike CheckBoxMenuItem this never
+/// toggles off; mutual exclusion is handled by ButtonGroup when present.
 /// No-op while disabled.
-pub fn doClick(self: *CheckBoxMenuItem) void {
+pub fn doClick(self: *RadioButtonMenuItem) void {
     if (!self.model.button.enabled) return;
-    self.model.setSelected(!self.model.isSelected());
+    if (!self.model.isSelected()) self.model.setSelected(true);
     self.model.fireAction();
 }
 
-// ── vtable impl ──────────────────────────────────────────────────────────
+// ── vtable impl ─────────────────────────────────────────────────────────
 
 fn install(self: *Component) !void {
-    const item: *CheckBoxMenuItem = @fieldParentPtr("component", self);
+    const item: *RadioButtonMenuItem = @fieldParentPtr("component", self);
     try item.model.addChangeListener(Component, onModelChange, self);
 }
 
 fn uninstall(self: *Component) void {
-    const item: *CheckBoxMenuItem = @fieldParentPtr("component", self);
+    const item: *RadioButtonMenuItem = @fieldParentPtr("component", self);
     item.model.removeChangeListener(Component, onModelChange, self);
 }
 
@@ -136,12 +139,11 @@ fn onModelChange(comp: *Component, _: *const ChangeEvent) void {
 }
 
 fn paint(self: *Component, g: *awt.Graphics) void {
-    const item: *CheckBoxMenuItem = @fieldParentPtr("component", self);
+    const item: *RadioButtonMenuItem = @fieldParentPtr("component", self);
     const t = self.theme;
     const sz = self.size;
     const btn = &item.model.button;
 
-    // Background by state.
     const armed_pressed = btn.armed and btn.pressed;
     if (btn.enabled) {
         if (armed_pressed) {
@@ -153,18 +155,16 @@ fn paint(self: *Component, g: *awt.Graphics) void {
         }
     }
 
-    // Checkmark in icon slot.
     if (item.model.isSelected()) {
-        const check_color = if (armed_pressed)
+        const dot_color = if (armed_pressed)
             t.text_on_accent
         else if (!btn.enabled)
             t.text_disabled
         else
             t.accent;
-        drawCheckmark(g, MenuItem.PADDING_X, sz.height, check_color);
+        drawRadioDot(g, MenuItem.PADDING_X, sz.height, dot_color);
     }
 
-    // Label.
     const m = item.font.measureString(item.text);
     const text_color = blk: {
         if (!btn.enabled) break :blk t.text_disabled;
@@ -178,31 +178,16 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     g.drawString(item.text, tx, ty);
 }
 
-/// Checkmark: two diagonal strokes approximated by small filled squares
-/// along each diagonal. Origin x is left of the icon slot; vertically
-/// centered in the row height.
-fn drawCheckmark(g: *awt.Graphics, x0: f32, row_h: f32, color: awt.Graphics.Color) void {
+fn drawRadioDot(g: *awt.Graphics, x0: f32, row_h: f32, color: awt.Graphics.Color) void {
     g.setColor(color);
-    const size: f32 = 12;
+    const size: f32 = 8;
     const cx = x0 + (MenuItem.ICON_SLOT_WIDTH - size) / 2;
     const cy = (row_h - size) / 2;
-    const dot: f32 = 2;
-    // Short stroke (down-right): 5 dots from lower-left to mid-bottom.
-    var i: usize = 0;
-    while (i < 5) : (i += 1) {
-        const f: f32 = @floatFromInt(i);
-        g.fillRect(.{ .x = cx + 1 + f, .y = cy + 5 + f, .width = dot, .height = dot });
-    }
-    // Long stroke (up-right): 7 dots from mid-bottom to upper-right.
-    i = 0;
-    while (i < 7) : (i += 1) {
-        const f: f32 = @floatFromInt(i);
-        g.fillRect(.{ .x = cx + 5 + f, .y = cy + 9 - f, .width = dot, .height = dot });
-    }
+    g.fillCircle(.{ .x = cx, .y = cy, .width = size, .height = size });
 }
 
 fn processEvent(self: *Component, ev: *Component.Event) void {
-    const item: *CheckBoxMenuItem = @fieldParentPtr("component", self);
+    const item: *RadioButtonMenuItem = @fieldParentPtr("component", self);
     const btn = &item.model.button;
     if (!btn.enabled) return;
 
@@ -227,10 +212,7 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
                         const was_armed = btn.isArmed();
                         btn.setPressed(false);
                         btn.setArmed(false);
-                        if (was_armed and inside) {
-                            item.model.setSelected(!item.model.isSelected());
-                            item.model.fireAction();
-                        }
+                        if (was_armed and inside) item.doClick();
                         ev.consume();
                     }
                 },
@@ -246,7 +228,7 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
 }
 
 fn destroy(self: *Component, allocator: std.mem.Allocator) void {
-    const item: *CheckBoxMenuItem = @fieldParentPtr("component", self);
+    const item: *RadioButtonMenuItem = @fieldParentPtr("component", self);
     self.deinit();
     allocator.free(item.text);
     if (item.owns_model) {
@@ -254,4 +236,60 @@ fn destroy(self: *Component, allocator: std.mem.Allocator) void {
         allocator.destroy(item.model);
     }
     allocator.destroy(item);
+}
+
+const QuietLog = struct {
+    fn cb(level: awt.LogLevel, category: [*c]const u8, message: [*c]const u8, _: ?*anyopaque) callconv(.c) void {
+        if (level < awt.c.nmLogLevelWarn) return;
+        const tag: []const u8 = if (level == awt.c.nmLogLevelWarn) "WARN" else "ERROR";
+        const cat: [*:0]const u8 = category;
+        const msg: [*:0]const u8 = message;
+        std.debug.print("[{s}] [{s}] {s}\n", .{ tag, std.mem.span(cat), std.mem.span(msg) });
+    }
+};
+
+fn newApp() !*Application {
+    awt.setLogCallback(QuietLog.cb, null);
+    return Application.initHeadless(std.testing.allocator, std.testing.io) catch
+        return error.SkipZigTest;
+}
+
+test "radio menu item click selects and does not toggle off" {
+    const app = try newApp();
+    defer app.deinit();
+
+    const item = try app.radioButtonMenuItem("List");
+    defer item.component.vtable.destroy(&item.component, std.testing.allocator);
+
+    try std.testing.expect(!item.isSelected());
+    item.doClick();
+    try std.testing.expect(item.isSelected());
+    item.doClick();
+    try std.testing.expect(item.isSelected());
+}
+
+test "radio menu item works with ButtonGroup exclusion" {
+    const app = try newApp();
+    defer app.deinit();
+
+    const list = try app.radioButtonMenuItem("List");
+    defer list.component.vtable.destroy(&list.component, std.testing.allocator);
+    const details = try app.radioButtonMenuItem("Details");
+    defer details.component.vtable.destroy(&details.component, std.testing.allocator);
+
+    var group = ButtonGroup.init(std.testing.allocator);
+    defer group.deinit();
+
+    try group.add(list.getModel());
+    try group.add(details.getModel());
+
+    list.doClick();
+    try std.testing.expect(list.isSelected());
+    try std.testing.expect(!details.isSelected());
+    try std.testing.expectEqual(@as(?*ToggleButtonModel, list.getModel()), group.getSelected());
+
+    details.doClick();
+    try std.testing.expect(!list.isSelected());
+    try std.testing.expect(details.isSelected());
+    try std.testing.expectEqual(@as(?*ToggleButtonModel, details.getModel()), group.getSelected());
 }

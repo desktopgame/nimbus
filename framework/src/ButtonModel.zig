@@ -15,16 +15,16 @@ pub fn fireState(self: *ButtonModel) void {
     self.state_listeners.fire(&.{ .source = self });
 }
 
-pressed:  bool = false,
-armed:    bool = false,
+pressed: bool = false,
+armed: bool = false,
 rollover: bool = false,
-enabled:  bool = true,
-state_listeners:  ChangeListenerList,
+enabled: bool = true,
+state_listeners: ChangeListenerList,
 action_listeners: ActionListenerList,
 
 pub fn init(allocator: std.mem.Allocator) ButtonModel {
     return .{
-        .state_listeners  = ChangeListenerList.init(allocator),
+        .state_listeners = ChangeListenerList.init(allocator),
         .action_listeners = ActionListenerList.init(allocator),
     };
 }
@@ -41,28 +41,36 @@ pub fn setPressed(self: *ButtonModel, v: bool) void {
     self.pressed = v;
     self.fireState();
 }
-pub fn isPressed(self: *const ButtonModel) bool { return self.pressed; }
+pub fn isPressed(self: *const ButtonModel) bool {
+    return self.pressed;
+}
 
 pub fn setArmed(self: *ButtonModel, v: bool) void {
     if (self.armed == v) return;
     self.armed = v;
     self.fireState();
 }
-pub fn isArmed(self: *const ButtonModel) bool { return self.armed; }
+pub fn isArmed(self: *const ButtonModel) bool {
+    return self.armed;
+}
 
 pub fn setRollover(self: *ButtonModel, v: bool) void {
     if (self.rollover == v) return;
     self.rollover = v;
     self.fireState();
 }
-pub fn isRollover(self: *const ButtonModel) bool { return self.rollover; }
+pub fn isRollover(self: *const ButtonModel) bool {
+    return self.rollover;
+}
 
 pub fn setEnabled(self: *ButtonModel, v: bool) void {
     if (self.enabled == v) return;
     self.enabled = v;
     self.fireState();
 }
-pub fn isEnabled(self: *const ButtonModel) bool { return self.enabled; }
+pub fn isEnabled(self: *const ButtonModel) bool {
+    return self.enabled;
+}
 
 // `selected` lives on `ToggleButtonModel` (which embeds this one). Plain
 // momentary buttons do not have a selected state, so keeping that flag

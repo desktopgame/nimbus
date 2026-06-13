@@ -11,26 +11,26 @@ const Panel = @This();
 
 pub const Border = struct {
     thickness: f32,
-    color:     awt.Graphics.Color,
+    color: awt.Graphics.Color,
 };
 
-container:  Container,
+container: Container,
 background: ?awt.Graphics.Color,
-border:     ?Border,
+border: ?Border,
 
 pub const vtable = Component.VTable{
-    .install      = install,
-    .uninstall    = uninstall,
-    .paint        = paint,
+    .install = install,
+    .uninstall = uninstall,
+    .paint = paint,
     .processEvent = processEvent,
-    .destroy      = destroy,
+    .destroy = destroy,
 };
 
 pub fn init(allocator: std.mem.Allocator) Panel {
     var p = Panel{
-        .container  = Container.init(allocator),
+        .container = Container.init(allocator),
         .background = null,
-        .border     = null,
+        .border = null,
     };
     // Override the inner Container's vtable so paint hits Panel.paint
     // (which draws bg + border + children) instead of Container.paint.
@@ -146,6 +146,6 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
 fn destroy(self: *Component, allocator: std.mem.Allocator) void {
     const cont: *Container = @fieldParentPtr("component", self);
     const panel: *Panel = @fieldParentPtr("container", cont);
-    cont.deinit();   // frees children
+    cont.deinit(); // frees children
     allocator.destroy(panel);
 }

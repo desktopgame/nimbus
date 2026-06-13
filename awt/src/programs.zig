@@ -188,8 +188,8 @@ pub const Color = ProgramFromMeta(.{
     .shaders = .{
         .hlsl_vs = @embedFile("shaders/Color/color.hlsl.vs"),
         .hlsl_ps = @embedFile("shaders/Color/color.hlsl.ps"),
-        .msl_vs  = @embedFile("shaders/Color/color.msl.vs"),
-        .msl_ps  = @embedFile("shaders/Color/color.msl.ps"),
+        .msl_vs = @embedFile("shaders/Color/color.msl.vs"),
+        .msl_ps = @embedFile("shaders/Color/color.msl.ps"),
     },
 });
 
@@ -212,8 +212,8 @@ pub const Image = ProgramFromMeta(.{
     .shaders = .{
         .hlsl_vs = @embedFile("shaders/Image/image.hlsl.vs"),
         .hlsl_ps = @embedFile("shaders/Image/image.hlsl.ps"),
-        .msl_vs  = @embedFile("shaders/Image/image.msl.vs"),
-        .msl_ps  = @embedFile("shaders/Image/image.msl.ps"),
+        .msl_vs = @embedFile("shaders/Image/image.msl.vs"),
+        .msl_ps = @embedFile("shaders/Image/image.msl.ps"),
     },
 });
 
@@ -246,7 +246,7 @@ pub const RoundedRect = ProgramFromMeta(.{
     .shaders = .{
         .hlsl_vs = @embedFile("shaders/RoundedRect/rounded_rect.hlsl.vs"),
         .hlsl_ps = @embedFile("shaders/RoundedRect/rounded_rect.hlsl.ps"),
-        .msl_vs  = @embedFile("shaders/RoundedRect/rounded_rect.msl.vs"),
-        .msl_ps  = @embedFile("shaders/RoundedRect/rounded_rect.msl.ps"),
+        .msl_vs = @embedFile("shaders/RoundedRect/rounded_rect.msl.vs"),
+        .msl_ps = @embedFile("shaders/RoundedRect/rounded_rect.msl.ps"),
     },
 });

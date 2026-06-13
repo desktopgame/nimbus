@@ -7,8 +7,8 @@ const MenuBar = @import("MenuBar.zig");
 
 const Frame = @This();
 
-window:    Window,
-menu_bar:  ?*MenuBar = null,
+window: Window,
+menu_bar: ?*MenuBar = null,
 owns_menu: bool = false,
 
 pub fn init(

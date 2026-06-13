@@ -26,38 +26,38 @@ const ARROW_SLOT_W: f32 = 16;
 // Popup colors come from `component.theme`: surface_input (background) and
 // border (frame). See `framework/doc/theme.md`.
 
-component:  Component,
+component: Component,
 popup_root: Component,
-text:       []const u8,
-icon:       ?awt.Image,
-font:       awt.Graphics.TextFont,
-color:      awt.Graphics.Color,
-items:      std.ArrayList(*Component),
-model:      *ButtonModel,
+text: []const u8,
+icon: ?awt.Image,
+font: awt.Graphics.TextFont,
+color: awt.Graphics.Color,
+items: std.ArrayList(*Component),
+model: *ButtonModel,
 owns_model: bool,
-mode:       Mode,
-open:       bool,
+mode: Mode,
+open: bool,
 open_child: ?*Menu,
-window:     ?*Window,
+window: ?*Window,
 /// Byte index into `text` of the mnemonic character (underline paint),
 /// or null. Matching uses `component.mnemonic` (Window's mnemonic scan).
 mnemonic_index: ?usize,
-allocator:  std.mem.Allocator,
+allocator: std.mem.Allocator,
 
 pub const vtable = Component.VTable{
-    .install      = install,
-    .uninstall    = uninstall,
-    .paint        = paint,
+    .install = install,
+    .uninstall = uninstall,
+    .paint = paint,
     .processEvent = processEvent,
-    .destroy      = destroy,
+    .destroy = destroy,
 };
 
 const popup_vtable = Component.VTable{
-    .install      = popupInstall,
-    .uninstall    = popupUninstall,
-    .paint        = popupPaint,
+    .install = popupInstall,
+    .uninstall = popupUninstall,
+    .paint = popupPaint,
     .processEvent = popupProcessEvent,
-    .destroy      = popupDestroyNoop,
+    .destroy = popupDestroyNoop,
 };
 
 pub fn create(
@@ -78,21 +78,21 @@ pub fn create(
     errdefer allocator.free(text_dup);
 
     menu.* = .{
-        .component  = Component.init(allocator, &vtable),
+        .component = Component.init(allocator, &vtable),
         .popup_root = Component.init(allocator, &popup_vtable),
-        .text       = text_dup,
-        .icon       = null,
-        .font       = font,
-        .color      = color,
-        .items      = .empty,
-        .model      = model,
+        .text = text_dup,
+        .icon = null,
+        .font = font,
+        .color = color,
+        .items = .empty,
+        .model = model,
         .owns_model = true,
-        .mode       = .item,
-        .open       = false,
+        .mode = .item,
+        .open = false,
         .open_child = null,
-        .window     = null,
+        .window = null,
         .mnemonic_index = null,
-        .allocator  = allocator,
+        .allocator = allocator,
     };
     menu.component.role = .menu;
     menu.applyMetrics();
@@ -145,7 +145,7 @@ pub fn setWindow(self: *Menu, w: *Window) void {
 
 pub fn add(self: *Menu, child: *Component) !void {
     try self.items.append(self.allocator, child);
-    child.parent = null;  // will be set to popup_root on show
+    child.parent = null; // will be set to popup_root on show
     if (child.vtable == &Menu.vtable) {
         const sub: *Menu = @fieldParentPtr("component", child);
         sub.setMode(.item);
@@ -228,7 +228,7 @@ pub fn show(self: *Menu, w: *Window, anchor: Component.Point) !void {
         popup_h += item.min_size.height;
     }
     popup_w = @max(popup_w, 80);
-    popup_h += 2;  // border
+    popup_h += 2; // border
 
     // Clamp to window (v1: simple reposition).
     const win_size = w.getSize();
@@ -459,11 +459,11 @@ fn drawMnemonicUnderline(menu: *Menu, g: *awt.Graphics, tx: f32, ty: f32, text_h
 fn drawArrow(g: *awt.Graphics, x: f32, y: f32, color: awt.Graphics.Color) void {
     g.setColor(color);
     const t: f32 = 1.5;
-    g.fillRect(.{ .x = x,     .y = y,     .width = 1, .height = t });
+    g.fillRect(.{ .x = x, .y = y, .width = 1, .height = t });
     g.fillRect(.{ .x = x + 2, .y = y + 2, .width = 1, .height = t });
     g.fillRect(.{ .x = x + 4, .y = y + 4, .width = 1, .height = t });
     g.fillRect(.{ .x = x + 2, .y = y + 6, .width = 1, .height = t });
-    g.fillRect(.{ .x = x,     .y = y + 8, .width = 1, .height = t });
+    g.fillRect(.{ .x = x, .y = y + 8, .width = 1, .height = t });
 }
 
 fn processEvent(self: *Component, ev: *Component.Event) void {

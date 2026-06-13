@@ -35,11 +35,11 @@ const DOUBLE_CLICK_S: f64 = 0.4;
 /// ListModel item (cast by the cell); `selected`/`focused` are List-side facts
 /// not present in the item, supplied here so the cell can project them.
 pub const CellContext = struct {
-    list:     *List,
-    value:    *anyopaque,
-    index:    usize,
+    list: *List,
+    value: *anyopaque,
+    index: usize,
     selected: bool,
-    focused:  bool,
+    focused: bool,
 };
 
 /// Optional edit lifecycle for a cell. Present (non-null on `Cell.edit`) only
@@ -49,7 +49,7 @@ pub const CellContext = struct {
 pub const CellEdit = struct {
     // Enter edit mode: swap the subtree to a scratch input, seed from the item,
     // request focus on the input.
-    start:  *const fn (self: *anyopaque, ctx: CellContext) void,
+    start: *const fn (self: *anyopaque, ctx: CellContext) void,
     // Commit: write the scratch value back to the item, return to display mode.
     commit: *const fn (self: *anyopaque) void,
     // Cancel: discard the scratch, return to display mode (item unchanged).
@@ -63,9 +63,9 @@ pub const CellEdit = struct {
 /// once produced.
 pub const Cell = struct {
     component: *Component,
-    update:    *const fn (self: *anyopaque, ctx: CellContext) void,
-    destroy:   *const fn (self: *anyopaque, allocator: std.mem.Allocator) void,
-    edit:      ?CellEdit = null,
+    update: *const fn (self: *anyopaque, ctx: CellContext) void,
+    destroy: *const fn (self: *anyopaque, allocator: std.mem.Allocator) void,
+    edit: ?CellEdit = null,
     user_data: *anyopaque,
 };
 
@@ -74,9 +74,9 @@ pub const Cell = struct {
 /// `x`/`y` are window coordinates, ready to pass to `PopupMenu.show`.
 pub const ContextMenuEvent = struct {
     source: *anyopaque,
-    row:    ?usize,
-    x:      f32,
-    y:      f32,
+    row: ?usize,
+    x: f32,
+    y: f32,
 };
 
 const ContextMenuListenerList = listener.ListenerList(ContextMenuEvent);
@@ -98,14 +98,14 @@ pub const FocusLostPolicy = enum {
 /// Produces fresh cell instances on demand (when the pool must grow). Borrowed
 /// by the List; the caller retains ownership of the factory itself.
 pub const CellFactory = struct {
-    create:    *const fn (self: *anyopaque, allocator: std.mem.Allocator) anyerror!Cell,
+    create: *const fn (self: *anyopaque, allocator: std.mem.Allocator) anyerror!Cell,
     user_data: *anyopaque,
 };
 
 const PooledCell = struct {
     cell: Cell,
     /// Row this cell is currently bound to; null = free (recyclable / hidden).
-    row:  ?usize,
+    row: ?usize,
 };
 
 // ── ListModel ────────────────────────────────────────────────────────────
@@ -113,9 +113,9 @@ const PooledCell = struct {
 /// Observable item source. Items are borrowed `*anyopaque` — the backing
 /// memory is owned by the caller and must outlive the List / ListModel.
 pub const ListModel = struct {
-    items:            std.ArrayList(*anyopaque),
+    items: std.ArrayList(*anyopaque),
     change_listeners: ChangeListenerList,
-    allocator:        std.mem.Allocator,
+    allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) ListModel {
         return .{
@@ -185,33 +185,33 @@ pub const ListModel = struct {
 
 // ── List fields ────────────────────────────────────────────────────────────
 
-component:        Component,
-model:            *ListModel,
-owns_model:       bool,
-factory:          CellFactory,
-selection:        SelectionModel,
-row_height:       f32,
-pool:             std.ArrayList(PooledCell),
-has_focus:        bool,
+component: Component,
+model: *ListModel,
+owns_model: bool,
+factory: CellFactory,
+selection: SelectionModel,
+row_height: f32,
+pool: std.ArrayList(PooledCell),
+has_focus: bool,
 /// Cell root the pointer is currently over, for synthesizing `mouseExited`
 /// when the pointer moves off it (same role as `Container.last_hovered`).
-hovered:          ?*Component,
-editing:          ?usize,            // 編集中の行 (高々 1 つ)。 読み取り専用なら常に null
-edit_trigger:     EditTrigger,
-focus_lost:       FocusLostPolicy,
-last_click_time:  f64,               // ダブルクリック検出用 (awt.time)
-last_click_row:   ?usize,
+hovered: ?*Component,
+editing: ?usize, // 編集中の行 (高々 1 つ)。 読み取り専用なら常に null
+edit_trigger: EditTrigger,
+focus_lost: FocusLostPolicy,
+last_click_time: f64, // ダブルクリック検出用 (awt.time)
+last_click_row: ?usize,
 change_listeners: ChangeListenerList,
 action_listeners: ActionListenerList,
 context_listeners: ContextMenuListenerList,
-allocator:        std.mem.Allocator,
+allocator: std.mem.Allocator,
 
 pub const vtable = Component.VTable{
-    .install      = install,
-    .uninstall    = uninstall,
-    .paint        = paint,
+    .install = install,
+    .uninstall = uninstall,
+    .paint = paint,
     .processEvent = processEvent,
-    .destroy      = destroy,
+    .destroy = destroy,
 };
 
 // ── construction ───────────────────────────────────────────────────────────
@@ -375,7 +375,7 @@ pub fn edit(self: *List, idx: usize) void {
     self.reconcile();
     const ci = self.findCellRowIndex(idx) orelse return;
     const cell = self.pool.items[ci].cell;
-    const e = cell.edit orelse return;   // read-only cell: nothing to edit
+    const e = cell.edit orelse return; // read-only cell: nothing to edit
     const ctx = self.cellContext(idx) orelse return;
 
     self.editing = idx;

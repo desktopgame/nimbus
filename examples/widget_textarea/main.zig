@@ -32,7 +32,7 @@ const SAMPLE =
 ;
 
 const State = struct {
-    area:   *nimbus.TextArea,
+    area: *nimbus.TextArea,
     button: *nimbus.Button,
 };
 

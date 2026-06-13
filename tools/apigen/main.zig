@@ -935,9 +935,7 @@ fn emitZigShim(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), model: *const Mo
             },
             .str_array => {
                 // Build a temp []const []const u8; freed after the call (callee copies).
-                try print(gpa, &prelude,
-                    "    const _{s} = std.heap.c_allocator.alloc([]const u8, {s}_len) catch |e| {{ setLastError(e); return {s}; }};\n    defer std.heap.c_allocator.free(_{s});\n    for (_{s}, 0..) |*_it, _i| _it.* = std.mem.span({s}[_i]);\n",
-                    .{ a.name, a.name, fail_expr, a.name, a.name, a.name });
+                try print(gpa, &prelude, "    const _{s} = std.heap.c_allocator.alloc([]const u8, {s}_len) catch |e| {{ setLastError(e); return {s}; }};\n    defer std.heap.c_allocator.free(_{s});\n    for (_{s}, 0..) |*_it, _i| _it.* = std.mem.span({s}[_i]);\n", .{ a.name, a.name, fail_expr, a.name, a.name, a.name });
                 try print(gpa, &call, "_{s}", .{a.name});
             },
         }

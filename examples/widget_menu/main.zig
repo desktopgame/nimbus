@@ -11,10 +11,9 @@ const nimbus = @import("nimbus");
 const Event = nimbus.ActionEvent;
 const awt = nimbus.awt;
 
-
 const State = struct {
-    label:   *nimbus.Label,
-    buf:     [256]u8 = undefined,
+    label: *nimbus.Label,
+    buf: [256]u8 = undefined,
     counter: u32 = 0,
 };
 
@@ -74,7 +73,7 @@ fn onViewRuler(s: *State, _: *const Event) void {
 // property bag. No globals, no full delegation stubs.
 
 const ContextPanel = struct {
-    popup:  *nimbus.PopupMenu,
+    popup: *nimbus.PopupMenu,
     window: *nimbus.Window,
 };
 
@@ -134,17 +133,17 @@ pub fn main(init: std.process.Init) !void {
 
     // Decode the lucide icons we use. Images are owned and cached by the
     // Application; they outlive every widget that references them.
-    const ic_new    = try app.icon(.file_plus);
-    const ic_open   = try app.icon(.folder_open);
-    const ic_save   = try app.icon(.save);
-    const ic_quit   = try app.icon(.x);
-    const ic_cut    = try app.icon(.scissors);
-    const ic_copy   = try app.icon(.copy);
-    const ic_paste  = try app.icon(.clipboard);
+    const ic_new = try app.icon(.file_plus);
+    const ic_open = try app.icon(.folder_open);
+    const ic_save = try app.icon(.save);
+    const ic_quit = try app.icon(.x);
+    const ic_cut = try app.icon(.scissors);
+    const ic_copy = try app.icon(.copy);
+    const ic_paste = try app.icon(.clipboard);
     const ic_search = try app.icon(.search);
-    const ic_undo   = try app.icon(.undo);
-    const ic_redo   = try app.icon(.redo);
-    const ic_trash  = try app.icon(.trash);
+    const ic_undo = try app.icon(.undo);
+    const ic_redo = try app.icon(.redo);
+    const ic_trash = try app.icon(.trash);
 
     // Content panel.
     const content = try app.panel();
@@ -257,7 +256,7 @@ pub fn main(init: std.process.Init) !void {
         try grid.getModel().addActionListener(State, onViewGrid, &state);
         try view.add(&grid.component);
         const ruler = try app.checkBoxMenuItem("Show Ruler");
-        ruler.setChecked(true);  // initial state
+        ruler.setChecked(true); // initial state
         try ruler.getModel().addActionListener(State, onViewRuler, &state);
         try view.add(&ruler.component);
         try bar.add(view);

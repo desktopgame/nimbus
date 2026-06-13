@@ -12,18 +12,18 @@ pub const Point = struct { x: f32, y: f32 };
 
 pub const Modifiers = packed struct(u8) {
     shift: bool = false,
-    ctrl:  bool = false,
-    alt:   bool = false,
-    meta:  bool = false,
-    _pad:  u4   = 0,
+    ctrl: bool = false,
+    alt: bool = false,
+    meta: bool = false,
+    _pad: u4 = 0,
 
     pub fn fromCBits(bits: c_int) Modifiers {
         const b: u32 = @bitCast(bits);
         return .{
             .shift = (b & @as(u32, @intCast(c.nmModifierShift))) != 0,
-            .ctrl  = (b & @as(u32, @intCast(c.nmModifierCtrl))) != 0,
-            .alt   = (b & @as(u32, @intCast(c.nmModifierAlt))) != 0,
-            .meta  = (b & @as(u32, @intCast(c.nmModifierMeta))) != 0,
+            .ctrl = (b & @as(u32, @intCast(c.nmModifierCtrl))) != 0,
+            .alt = (b & @as(u32, @intCast(c.nmModifierAlt))) != 0,
+            .meta = (b & @as(u32, @intCast(c.nmModifierMeta))) != 0,
         };
     }
 
@@ -42,10 +42,10 @@ pub const KeyAction = enum {
 
     pub fn fromC(a: c.nmKeyAction) KeyAction {
         return switch (a) {
-            c.nmKeyActionPress   => .press,
+            c.nmKeyActionPress => .press,
             c.nmKeyActionRelease => .release,
-            c.nmKeyActionRepeat  => .repeat,
-            else                 => .release,
+            c.nmKeyActionRepeat => .repeat,
+            else => .release,
         };
     }
 };
@@ -57,10 +57,10 @@ pub const MouseButton = enum {
 
     pub fn fromC(b: c.nmMouseButton) MouseButton {
         return switch (b) {
-            c.nmMouseButtonLeft   => .left,
+            c.nmMouseButtonLeft => .left,
             c.nmMouseButtonMiddle => .middle,
-            c.nmMouseButtonRight  => .right,
-            else                  => .left,
+            c.nmMouseButtonRight => .right,
+            else => .left,
         };
     }
 };
@@ -72,54 +72,97 @@ pub const MouseAction = enum { press, release, move, scroll };
 pub const KeyCode = enum(c_int) {
     unknown = -1,
 
-    space     = 32,
+    space = 32,
     apostrophe = 39,
-    comma     = 44,
-    minus     = 45,
-    period    = 46,
-    slash     = 47,
+    comma = 44,
+    minus = 45,
+    period = 46,
+    slash = 47,
 
-    digit_0 = 48, digit_1, digit_2, digit_3, digit_4,
-    digit_5,      digit_6, digit_7, digit_8, digit_9,
+    digit_0 = 48,
+    digit_1,
+    digit_2,
+    digit_3,
+    digit_4,
+    digit_5,
+    digit_6,
+    digit_7,
+    digit_8,
+    digit_9,
 
     semicolon = 59,
-    equal     = 61,
+    equal = 61,
 
-    a = 65, b, c, d, e, f, g, h, i, j, k, l, m,
-    n,      o, p, q, r, s, t, u, v, w, x, y, z,
+    a = 65,
+    b,
+    c,
+    d,
+    e,
+    f,
+    g,
+    h,
+    i,
+    j,
+    k,
+    l,
+    m,
+    n,
+    o,
+    p,
+    q,
+    r,
+    s,
+    t,
+    u,
+    v,
+    w,
+    x,
+    y,
+    z,
 
-    left_bracket  = 91,
-    backslash     = 92,
+    left_bracket = 91,
+    backslash = 92,
     right_bracket = 93,
-    grave_accent  = 96,
+    grave_accent = 96,
 
-    escape    = 256,
-    enter     = 257,
-    tab       = 258,
+    escape = 256,
+    enter = 257,
+    tab = 258,
     backspace = 259,
-    insert    = 260,
-    delete    = 261,
+    insert = 260,
+    delete = 261,
 
     arrow_right = 262,
-    arrow_left  = 263,
-    arrow_down  = 264,
-    arrow_up    = 265,
+    arrow_left = 263,
+    arrow_down = 264,
+    arrow_up = 265,
 
-    page_up   = 266,
+    page_up = 266,
     page_down = 267,
-    home      = 268,
-    end       = 269,
+    home = 268,
+    end = 269,
 
-    f1 = 290, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12,
+    f1 = 290,
+    f2,
+    f3,
+    f4,
+    f5,
+    f6,
+    f7,
+    f8,
+    f9,
+    f10,
+    f11,
+    f12,
 
-    shift_left   = 340,
-    ctrl_left    = 341,
-    alt_left     = 342,
-    super_left   = 343,
-    shift_right  = 344,
-    ctrl_right   = 345,
-    alt_right    = 346,
-    super_right  = 347,
+    shift_left = 340,
+    ctrl_left = 341,
+    alt_left = 342,
+    super_left = 343,
+    shift_right = 344,
+    ctrl_right = 345,
+    alt_right = 346,
+    super_right = 347,
 
     _,
 
@@ -129,8 +172,8 @@ pub const KeyCode = enum(c_int) {
 };
 
 pub const KeyEvent = struct {
-    code:      KeyCode,
-    action:    KeyAction,
+    code: KeyCode,
+    action: KeyAction,
     modifiers: Modifiers,
 };
 
@@ -165,17 +208,17 @@ pub const FocusEvent = struct {
 /// through `CharEvent`, so widgets need only clear their preedit overlay
 /// here and let normal char-input handling insert the text.
 pub const CompositionEvent = struct {
-    text:         []const u8,
+    text: []const u8,
     target_start: usize,
-    target_end:   usize,
+    target_end: usize,
 };
 
 pub const MouseEvent = struct {
-    x:         f32,
-    y:         f32,
-    button:    ?MouseButton = null,
-    action:    MouseAction,
-    wheel:     f32 = 0,
+    x: f32,
+    y: f32,
+    button: ?MouseButton = null,
+    action: MouseAction,
+    wheel: f32 = 0,
     modifiers: Modifiers = .{},
 
     /// Return a copy of this event with `x` / `y` shifted by `-offset`.
@@ -189,15 +232,15 @@ pub const MouseEvent = struct {
 };
 
 pub const Payload = union(enum) {
-    key:         KeyEvent,
-    char:        CharEvent,
-    mouse:       MouseEvent,
-    focus:       FocusEvent,
+    key: KeyEvent,
+    char: CharEvent,
+    mouse: MouseEvent,
+    focus: FocusEvent,
     composition: CompositionEvent,
 };
 
 consumed: bool = false,
-payload:  Payload,
+payload: Payload,
 /// Mouse-capture request. A widget that wants to receive subsequent
 /// drag (`move`) and `release` events regardless of cursor position
 /// calls `requestCapture(&self.component)` from its `.press` handler.
@@ -228,7 +271,7 @@ pub fn translated(self: Event, offset: Point) Event {
     return switch (self.payload) {
         .mouse => |m| .{
             .consumed = self.consumed,
-            .payload  = .{ .mouse = m.translated(offset) },
+            .payload = .{ .mouse = m.translated(offset) },
         },
         .key, .char, .focus, .composition => self,
     };

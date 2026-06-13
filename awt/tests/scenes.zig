@@ -13,11 +13,11 @@ const framework = @import("nimbus");
 pub const default_font_bytes = framework.noto.noto_sans_jp_regular;
 
 pub const PaintContext = struct {
-    g:         *awt.Graphics,
+    g: *awt.Graphics,
     allocator: std.mem.Allocator,
-    font:      awt.Font,
-    width:     i32,
-    height:    i32,
+    font: awt.Font,
+    width: i32,
+    height: i32,
 };
 
 pub const Scene = struct {
@@ -64,7 +64,7 @@ fn paintBasicShapes(ctx: PaintContext) anyerror!void {
 /// Helper: build a root Container, lay it out at full ctx size, paint, free.
 const FrameworkSetup = struct {
     container: *framework.Container,
-    ctx:       PaintContext,
+    ctx: PaintContext,
 
     fn init(ctx: PaintContext) !FrameworkSetup {
         const cont = try framework.Container.create(ctx.allocator);
@@ -74,7 +74,8 @@ const FrameworkSetup = struct {
     fn paint(self: *FrameworkSetup) void {
         // Apply root bounds (window-like) and run layout, then paint via vtable.
         self.container.component.setBounds(.{
-            .x = 0, .y = 0,
+            .x = 0,
+            .y = 0,
             .width = @floatFromInt(self.ctx.width),
             .height = @floatFromInt(self.ctx.height),
         });
@@ -231,7 +232,8 @@ fn paintPanelDecoration(ctx: PaintContext) anyerror!void {
 
     // No layout on root container, manual placement of one panel.
     setup.container.setBounds(.{
-        .x = 0, .y = 0,
+        .x = 0,
+        .y = 0,
         .width = @floatFromInt(ctx.width),
         .height = @floatFromInt(ctx.height),
     });
@@ -273,9 +275,9 @@ fn paintBorderShell(ctx: PaintContext) anyerror!void {
     const content = try framework.Panel.create(ctx.allocator);
     content.setBackground(awt.Graphics.Color.rgb(1, 1, 1));
 
-    try framework.BorderLayout.add(setup.container, .north,  &toolbar.container.component);
-    try framework.BorderLayout.add(setup.container, .south,  &status.container.component);
-    try framework.BorderLayout.add(setup.container, .west,   &sidebar.container.component);
+    try framework.BorderLayout.add(setup.container, .north, &toolbar.container.component);
+    try framework.BorderLayout.add(setup.container, .south, &status.container.component);
+    try framework.BorderLayout.add(setup.container, .west, &sidebar.container.component);
     try framework.BorderLayout.add(setup.container, .center, &content.container.component);
 
     setup.paint();
@@ -356,7 +358,8 @@ fn paintMenuBarClosed(ctx: PaintContext) anyerror!void {
 
     // Lay out the bar at top, full width.
     bar.component.setBounds(.{
-        .x = 0, .y = 0,
+        .x = 0,
+        .y = 0,
         .width = @floatFromInt(ctx.width),
         .height = bar.component.min_size.height,
     });

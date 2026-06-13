@@ -39,17 +39,17 @@ const Row = struct {
 };
 
 const Ctx = struct {
-    app:  *nimbus.Application,
+    app: *nimbus.Application,
     list: *nimbus.List = undefined,
 };
 
 /// One real cell. Display mode = `label` as the container's center; edit mode
 /// = `field` as the center. The cell owns both widgets and the container.
 const EditCell = struct {
-    root:    *nimbus.Container,
-    label:   *nimbus.Label,
-    field:   *nimbus.TextField,
-    list:    *nimbus.List,
+    root: *nimbus.Container,
+    label: *nimbus.Label,
+    field: *nimbus.TextField,
+    list: *nimbus.List,
     cur_row: ?*Row = null,
     in_edit: bool = false,
 
@@ -139,9 +139,9 @@ fn createCell(ud: *anyopaque, allocator: std.mem.Allocator) anyerror!nimbus.List
 
     return .{
         .component = &root.component,
-        .update    = EditCell.update,
-        .destroy   = EditCell.destroyCell,
-        .edit      = .{ .start = EditCell.start, .commit = EditCell.commit, .cancel = EditCell.cancel },
+        .update = EditCell.update,
+        .destroy = EditCell.destroyCell,
+        .edit = .{ .start = EditCell.start, .commit = EditCell.commit, .cancel = EditCell.cancel },
         .user_data = cell,
     };
 }

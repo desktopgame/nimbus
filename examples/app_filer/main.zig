@@ -42,10 +42,10 @@ const ViewMode = enum { list, details };
 
 /// One directory entry. Owned by Filer (`entries`); the model borrows it.
 const Entry = struct {
-    name:   []u8,
+    name: []u8,
     is_dir: bool,
-    size:   u64 = 0,
-    mtime:  i64 = 0, // seconds since epoch (UTC), 0 = unknown
+    size: u64 = 0,
+    mtime: i64 = 0, // seconds since epoch (UTC), 0 = unknown
 };
 
 /// One sidebar destination. Owned by Filer (`places`); the model borrows it.
@@ -62,7 +62,7 @@ const Place = struct {
 /// nimbus has no built-in CardLayout; this is the few-line custom-LayoutManager
 /// recipe (a dogfooding finding worth a backlog note).
 const CardLayout = struct {
-    base:   nimbus.LayoutManager,
+    base: nimbus.LayoutManager,
     active: ?*nimbus.Component = null,
 
     const vt = nimbus.LayoutManager.VTable{
@@ -92,37 +92,37 @@ const CardLayout = struct {
 const SortCtx = struct { col: usize, dir: nimbus.Table.SortDirection };
 
 const Filer = struct {
-    allocator:   std.mem.Allocator,
-    io:          std.Io,
-    app:         *nimbus.Application,
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    app: *nimbus.Application,
     icon_folder: awt.Image,
-    icon_file:   awt.Image,
-    icon_home:   awt.Image,
-    icon_drive:  awt.Image,
-    model:       *Model,                  // shared by both right-pane views
-    list:        *nimbus.List = undefined,
-    list_sp:     *nimbus.ScrollPane = undefined,
-    table:       *nimbus.Table = undefined,
-    table_sp:    *nimbus.ScrollPane = undefined,
-    right_center:*nimbus.Container = undefined,
-    card:        *CardLayout = undefined,
-    view_mode:   ViewMode = .list,
+    icon_file: awt.Image,
+    icon_home: awt.Image,
+    icon_drive: awt.Image,
+    model: *Model, // shared by both right-pane views
+    list: *nimbus.List = undefined,
+    list_sp: *nimbus.ScrollPane = undefined,
+    table: *nimbus.Table = undefined,
+    table_sp: *nimbus.ScrollPane = undefined,
+    right_center: *nimbus.Container = undefined,
+    card: *CardLayout = undefined,
+    view_mode: ViewMode = .list,
     view_button: *nimbus.Button = undefined,
     places_list: *nimbus.List = undefined,
-    path_label:  *nimbus.Label = undefined,
-    status:      *nimbus.Label = undefined,
-    window:      *nimbus.Window = undefined,
-    popup:       *nimbus.PopupMenu = undefined,
-    confirm:     *nimbus.Dialog = undefined,
+    path_label: *nimbus.Label = undefined,
+    status: *nimbus.Label = undefined,
+    window: *nimbus.Window = undefined,
+    popup: *nimbus.PopupMenu = undefined,
+    confirm: *nimbus.Dialog = undefined,
     confirm_msg: *nimbus.Label = undefined,
-    entries:     std.ArrayList(*Entry) = .empty,
-    places:      std.ArrayList(*Place) = .empty,
-    cur:         [PATH_BUF]u8 = undefined,
-    cur_len:     usize = 0,
-    status_buf:  [512]u8 = undefined,
-    sort_col:    usize = 0,
-    sort_dir:    nimbus.Table.SortDirection = .ascending,
-    pending:     [NAME_BUF]u8 = undefined,
+    entries: std.ArrayList(*Entry) = .empty,
+    places: std.ArrayList(*Place) = .empty,
+    cur: [PATH_BUF]u8 = undefined,
+    cur_len: usize = 0,
+    status_buf: [512]u8 = undefined,
+    sort_col: usize = 0,
+    sort_dir: nimbus.Table.SortDirection = .ascending,
+    pending: [NAME_BUF]u8 = undefined,
     pending_len: usize = 0,
 
     fn curPath(self: *const Filer) []const u8 {
@@ -593,12 +593,12 @@ fn fmtDate(buf: []u8, secs: i64) []const u8 {
 // ── list-view cell (icon + name; inline rename via CellEditor) ──────────────
 
 const FileCell = struct {
-    root:      *nimbus.Container,
-    label:     *nimbus.Label,
-    field:     *nimbus.TextField,
-    filer:     *Filer,
+    root: *nimbus.Container,
+    label: *nimbus.Label,
+    field: *nimbus.TextField,
+    filer: *Filer,
     cur_entry: ?*Entry = null,
-    in_edit:   bool = false,
+    in_edit: bool = false,
 
     fn update(ud: *anyopaque, ctx: nimbus.List.CellContext) void {
         const self: *FileCell = @ptrCast(@alignCast(ud));
@@ -661,9 +661,9 @@ const FileCell = struct {
 };
 
 const PlaceCell = struct {
-    root:       *nimbus.Container,
-    label:      *nimbus.Label,
-    icon_home:  awt.Image,
+    root: *nimbus.Container,
+    label: *nimbus.Label,
+    icon_home: awt.Image,
     icon_drive: awt.Image,
 
     fn update(ud: *anyopaque, ctx: nimbus.List.CellContext) void {
@@ -710,9 +710,9 @@ fn createFileCell(ud: *anyopaque, allocator: std.mem.Allocator) anyerror!nimbus.
 
     return .{
         .component = &root.component,
-        .update    = FileCell.update,
-        .destroy   = FileCell.destroyCell,
-        .edit      = .{ .start = FileCell.start, .commit = FileCell.commit, .cancel = FileCell.cancel },
+        .update = FileCell.update,
+        .destroy = FileCell.destroyCell,
+        .edit = .{ .start = FileCell.start, .commit = FileCell.commit, .cancel = FileCell.cancel },
         .user_data = fc,
     };
 }
@@ -740,8 +740,8 @@ fn createPlaceCell(ud: *anyopaque, allocator: std.mem.Allocator) anyerror!nimbus
     pc.* = .{ .root = root, .label = label, .icon_home = filer.icon_home, .icon_drive = filer.icon_drive };
     return .{
         .component = &root.component,
-        .update    = PlaceCell.update,
-        .destroy   = PlaceCell.destroyCell,
+        .update = PlaceCell.update,
+        .destroy = PlaceCell.destroyCell,
         .user_data = pc,
     };
 }
@@ -751,12 +751,12 @@ fn createPlaceCell(ud: *anyopaque, allocator: std.mem.Allocator) anyerror!nimbus
 // Table Name-column cell: like the list FileCell (icon + name, with inline
 // rename via CellEdit — label / field swap).
 const NameCell = struct {
-    root:      *nimbus.Container,
-    label:     *nimbus.Label,
-    field:     *nimbus.TextField,
-    filer:     *Filer,
+    root: *nimbus.Container,
+    label: *nimbus.Label,
+    field: *nimbus.TextField,
+    filer: *Filer,
     cur_entry: ?*Entry = null,
-    in_edit:   bool = false,
+    in_edit: bool = false,
 
     fn update(ud: *anyopaque, ctx: nimbus.Table.CellContext) void {
         const self: *NameCell = @ptrCast(@alignCast(ud));
@@ -816,8 +816,8 @@ const TextKind = enum { size, date };
 
 const TextCell = struct {
     label: *nimbus.Label,
-    kind:  TextKind,
-    buf:   [40]u8 = undefined,
+    kind: TextKind,
+    buf: [40]u8 = undefined,
     fn update(ud: *anyopaque, ctx: nimbus.Table.CellContext) void {
         const self: *TextCell = @ptrCast(@alignCast(ud));
         const e: *Entry = @ptrCast(@alignCast(ctx.value));
@@ -854,9 +854,9 @@ fn createNameCell(ud: *anyopaque, allocator: std.mem.Allocator) anyerror!nimbus.
     try field.addCancelListener(NameCell, NameCell.onCancel, nc);
     return .{
         .component = &root.component,
-        .update    = NameCell.update,
-        .destroy   = NameCell.destroyCell,
-        .edit      = .{ .start = NameCell.start, .commit = NameCell.commit, .cancel = NameCell.cancel },
+        .update = NameCell.update,
+        .destroy = NameCell.destroyCell,
+        .edit = .{ .start = NameCell.start, .commit = NameCell.commit, .cancel = NameCell.cancel },
         .user_data = nc,
     };
 }
@@ -883,7 +883,7 @@ const entry_tag = dnd.tagOf(Entry);
 const Mover = struct {
     filer: *Filer,
     ghost: *nimbus.Label,
-    files_highlight:  ?usize = null,
+    files_highlight: ?usize = null,
     places_highlight: ?usize = null,
 
     fn dragEntry(e: *const dnd.DragEvent) ?*Entry {
@@ -1043,14 +1043,14 @@ pub fn main(init: std.process.Init) !void {
     const frame = try app.frame("nimbus filer", 760, 520);
 
     var filer = Filer{
-        .allocator   = init.gpa,
-        .io          = init.io,
-        .app         = app,
+        .allocator = init.gpa,
+        .io = init.io,
+        .app = app,
         .icon_folder = try app.icon(.folder),
-        .icon_file   = try app.icon(.file),
-        .icon_home   = try app.icon(.house),
-        .icon_drive  = try app.icon(.hard_drive),
-        .model       = &model,
+        .icon_file = try app.icon(.file),
+        .icon_home = try app.icon(.house),
+        .icon_drive = try app.icon(.hard_drive),
+        .model = &model,
     };
     filer.window = &frame.window;
     defer {

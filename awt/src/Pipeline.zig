@@ -9,42 +9,42 @@ const RootSignature = @import("RootSignature.zig");
 const Pipeline = @This();
 
 pub const VertexLayout = enum(c_uint) {
-    vertex_2d          = c.nmVertexLayoutVertex2D,
+    vertex_2d = c.nmVertexLayoutVertex2D,
     vertex_texcoord_2d = c.nmVertexLayoutVertexTexCoord2D,
 };
 
 pub const Topology = enum(c_uint) {
     triangle_list = c.nmPrimitiveTopologyTriangleList,
-    line_list     = c.nmPrimitiveTopologyLineList,
-    point_list    = c.nmPrimitiveTopologyPointList,
+    line_list = c.nmPrimitiveTopologyLineList,
+    point_list = c.nmPrimitiveTopologyPointList,
 };
 
 pub const BlendMode = enum(c_uint) {
-    none                = c.nmBlendModeNone,
-    alpha               = c.nmBlendModeAlpha,
+    none = c.nmBlendModeNone,
+    alpha = c.nmBlendModeAlpha,
     premultiplied_alpha = c.nmBlendModePremultipliedAlpha,
 };
 
 pub const StencilOp = enum(c_uint) {
-    keep            = c.nmStencilOpKeep,
-    zero            = c.nmStencilOpZero,
-    replace         = c.nmStencilOpReplace,
-    increment_sat   = c.nmStencilOpIncrementSat,
-    decrement_sat   = c.nmStencilOpDecrementSat,
-    invert          = c.nmStencilOpInvert,
-    increment_wrap  = c.nmStencilOpIncrementWrap,
-    decrement_wrap  = c.nmStencilOpDecrementWrap,
+    keep = c.nmStencilOpKeep,
+    zero = c.nmStencilOpZero,
+    replace = c.nmStencilOpReplace,
+    increment_sat = c.nmStencilOpIncrementSat,
+    decrement_sat = c.nmStencilOpDecrementSat,
+    invert = c.nmStencilOpInvert,
+    increment_wrap = c.nmStencilOpIncrementWrap,
+    decrement_wrap = c.nmStencilOpDecrementWrap,
 };
 
 pub const CompareFunc = enum(c_uint) {
-    never         = c.nmCompareFuncNever,
-    less          = c.nmCompareFuncLess,
-    equal         = c.nmCompareFuncEqual,
-    less_equal    = c.nmCompareFuncLessEqual,
-    greater       = c.nmCompareFuncGreater,
-    not_equal     = c.nmCompareFuncNotEqual,
+    never = c.nmCompareFuncNever,
+    less = c.nmCompareFuncLess,
+    equal = c.nmCompareFuncEqual,
+    less_equal = c.nmCompareFuncLessEqual,
+    greater = c.nmCompareFuncGreater,
+    not_equal = c.nmCompareFuncNotEqual,
     greater_equal = c.nmCompareFuncGreaterEqual,
-    always        = c.nmCompareFuncAlways,
+    always = c.nmCompareFuncAlways,
 };
 
 pub const StencilState = struct {
@@ -89,8 +89,7 @@ pub fn init(device: Device, desc: Desc) !Pipeline {
         },
         .color_write_enable = desc.color_write_enable,
     };
-    const h = c.nmCreatePipeline(device.handle, &c_desc)
-        orelse return error.PipelineCreateFailed;
+    const h = c.nmCreatePipeline(device.handle, &c_desc) orelse return error.PipelineCreateFailed;
     return .{ .handle = h };
 }
 

@@ -12,31 +12,31 @@ const ToggleButtonModel = @import("ToggleButtonModel.zig");
 const RadioButton = @This();
 
 const CIRCLE_SIZE: f32 = 16;
-const CIRCLE_GAP: f32  = 6;
-const PADDING_X: f32   = 4;
-const PADDING_Y: f32   = 4;
+const CIRCLE_GAP: f32 = 6;
+const PADDING_X: f32 = 4;
+const PADDING_Y: f32 = 4;
 
 // Colors come from `component.theme` (see `framework/doc/theme.md`):
 // circle bg = surface_input / surface_disabled, frame = indicator_border
 // (accent on hover), inner dot = accent (text_disabled when disabled).
 
-component:  Component,
-model:      *ToggleButtonModel,
+component: Component,
+model: *ToggleButtonModel,
 owns_model: bool,
-text:       []const u8,
-font:       awt.Graphics.TextFont,
-color:      awt.Graphics.Color,
+text: []const u8,
+font: awt.Graphics.TextFont,
+color: awt.Graphics.Color,
 /// True while this radio is the window's focus owner (FocusEvent-driven);
 /// drives the focus-ring paint.
-focused:    bool,
-allocator:  std.mem.Allocator,
+focused: bool,
+allocator: std.mem.Allocator,
 
 pub const vtable = Component.VTable{
-    .install      = install,
-    .uninstall    = uninstall,
-    .paint        = paint,
+    .install = install,
+    .uninstall = uninstall,
+    .paint = paint,
     .processEvent = processEvent,
-    .destroy      = destroy,
+    .destroy = destroy,
 };
 
 pub fn create(

@@ -29,50 +29,50 @@ const DRAG_THRESHOLD_SQ: f32 = 4 * 4;
 pub const OverlayEntry = OverlayManager.OverlayEntry;
 pub const OverlayPolicy = OverlayManager.OverlayPolicy;
 
-container:    Container,
+container: Container,
 /// OS window. Null in headless mode (no OS window opened; rendered to
 /// `render_target` instead). See `framework/doc/robot.md`「ヘッドレスサーフェス」.
-awt_window:   ?awt.Window,
+awt_window: ?awt.Window,
 /// Swapchain presenting to `awt_window`. Null in headless mode.
-swapchain:    ?awt.Swapchain,
+swapchain: ?awt.Swapchain,
 /// Offscreen render target. Non-null only in headless mode; `redraw` binds it
 /// instead of the swapchain and `snapshotPixels` reads it back.
 render_target: ?awt.RenderTarget,
-context:      *awt.Graphics.Context,
-device:       *awt.Device,
-app:          *anyopaque,                 // *Application (avoid circular import)
+context: *awt.Graphics.Context,
+device: *awt.Device,
+app: *anyopaque, // *Application (avoid circular import)
 /// Borrowed reference to the Application-owned EventQueue. Input
 /// callbacks post events here instead of dispatching synchronously,
 /// so input / invokeLater / redraw all serialize through the same
 /// queue (see `framework/doc/window.md`「イベント post と dispatch」).
-event_queue:  *awt.EventQueue,
+event_queue: *awt.EventQueue,
 /// Optional top-strip menu bar. Generic `*Component` (typically the
 /// `&MenuBar.component` set via Frame.setMenuBar). Not owned by Window —
 /// Frame manages lifetime. When non-null, the container is laid out
 /// below it (container.position.y = menu_bar.size.height).
-menu_bar:     ?*Component,
+menu_bar: ?*Component,
 /// Floating overlays (popups / drag ghost / tooltips). See `OverlayManager`.
-overlays:     OverlayManager,
+overlays: OverlayManager,
 /// Dirty-notify pointer used by overlays/menu_bar that share Window's
 /// repaint propagation (same value the container's root uses via property).
-title:        [:0]u8,
-background:   awt.Graphics.Color,
-fb_w:         i32,
-fb_h:         i32,
+title: [:0]u8,
+background: awt.Graphics.Color,
+fb_w: i32,
+fb_h: i32,
 /// Desired window geometry in logical screen units, held at the framework
 /// layer. `setPos`/`setSize` update these; Application pushes any change to
 /// the OS at each event-loop tail (see `application.md`「OS との同期」). The
 /// OS resize callback writes the realized size back here so the loop's diff
 /// does not fight a live user resize.
-win_pos:      awt.Window.Point,
-win_size:     awt.Window.Size,
-cursor_x:     f32,
-cursor_y:     f32,
-paint_dirty:  bool,
+win_pos: awt.Window.Point,
+win_size: awt.Window.Size,
+cursor_x: f32,
+cursor_y: f32,
+paint_dirty: bool,
 layout_dirty: bool,
 /// True for headless windows (no `awt_window`/`swapchain`; renders offscreen,
 /// input injected synthetically). See `initHeadless`.
-headless:     bool,
+headless: bool,
 /// Close request for headless windows (no OS `shouldClose` flag to poll).
 headless_close: bool,
 /// True only while `redraw` is executing. Used by the dirty notify callbacks
@@ -81,7 +81,7 @@ headless_close: bool,
 /// during `doLayout`): we're already in the middle of a frame, so waking the
 /// event loop is wasted work. Real external triggers (timers, input handlers,
 /// background callbacks) run with `in_redraw == false` and still wake.
-in_redraw:    bool,
+in_redraw: bool,
 /// Mouse-capture target. While non-null, `.move` and `.release` events
 /// bypass hit-testing and go straight to this component. Set when a
 /// widget calls `ev.requestCapture(&self.component)` from a `.press`
@@ -91,7 +91,7 @@ mouse_capture: ?*Component,
 /// this component (raw key events never reach anyone else — see
 /// `narrative/keybinding.md`「processEvent に .key が届く範囲」).
 /// Cleared (set to null) when the owning component is torn down.
-focus_owner:  ?*Component,
+focus_owner: ?*Component,
 /// One-shot guard for the initial-focus rule: on the first frame, focus
 /// moves to the first focusable in traversal order (see `redraw`).
 initial_focus_done: bool,
@@ -103,29 +103,29 @@ input_blocked: bool,
 // ── drag-and-drop controller state (see `framework/doc/dnd.md`) ──
 /// A press landed on a component with a `drag_source`; waiting to exceed the
 /// movement threshold before the drag actually starts. Null = not armed.
-drag_armed:    ?*Component,
+drag_armed: ?*Component,
 /// Window coords of the arming press (threshold + onDragStart origin).
-drag_start:    Component.Point,
+drag_start: Component.Point,
 /// True while a drag is active (onDragStart returned a transfer).
-dragging:      bool,
+dragging: bool,
 /// The source component of the active drag (for `onDragDone`).
 drag_source_c: ?*Component,
 /// The payload of the active drag. Valid only while `dragging`.
 drag_transfer: dnd.Transfer,
 /// The drop target the cursor is currently over (for enter/leave).
-drag_target:   ?*Component,
+drag_target: ?*Component,
 /// Whether the last `onOver` accepted (drives whether `onDrop` fires).
 drag_accepted: bool,
-allocator:    std.mem.Allocator,
+allocator: std.mem.Allocator,
 dirty_notify: Component.DirtyNotify,
 focus_controller: Component.FocusController,
 
 pub const vtable = Component.VTable{
-    .install      = install,
-    .uninstall    = uninstall,
-    .paint        = paintWindow,
+    .install = install,
+    .uninstall = uninstall,
+    .paint = paintWindow,
     .processEvent = processEvent,
-    .destroy      = destroy,
+    .destroy = destroy,
 };
 
 pub fn init(
@@ -152,43 +152,43 @@ pub fn init(
     const init_size = aw.size();
 
     var win = Window{
-        .container     = Container.init(allocator),
-        .awt_window    = aw,
-        .swapchain     = sc,
+        .container = Container.init(allocator),
+        .awt_window = aw,
+        .swapchain = sc,
         .render_target = null,
-        .context       = context,
-        .device        = device,
-        .app           = app_ptr,
-        .event_queue   = event_queue,
-        .menu_bar      = null,
-        .overlays      = OverlayManager.init(allocator),
-        .title         = title_dup,
-        .background    = awt.Graphics.Color.rgb(0.94, 0.94, 0.94),
-        .fb_w          = fb.width,
-        .fb_h          = fb.height,
-        .win_pos       = init_pos,
-        .win_size      = init_size,
-        .cursor_x      = 0,
-        .cursor_y      = 0,
-        .paint_dirty   = true,
-        .layout_dirty  = true,
-        .headless      = false,
+        .context = context,
+        .device = device,
+        .app = app_ptr,
+        .event_queue = event_queue,
+        .menu_bar = null,
+        .overlays = OverlayManager.init(allocator),
+        .title = title_dup,
+        .background = awt.Graphics.Color.rgb(0.94, 0.94, 0.94),
+        .fb_w = fb.width,
+        .fb_h = fb.height,
+        .win_pos = init_pos,
+        .win_size = init_size,
+        .cursor_x = 0,
+        .cursor_y = 0,
+        .paint_dirty = true,
+        .layout_dirty = true,
+        .headless = false,
         .headless_close = false,
-        .in_redraw     = false,
-        .mouse_capture    = null,
-        .focus_owner      = null,
+        .in_redraw = false,
+        .mouse_capture = null,
+        .focus_owner = null,
         .initial_focus_done = false,
-        .input_blocked    = false,
-        .drag_armed       = null,
-        .drag_start       = .{ .x = 0, .y = 0 },
-        .dragging         = false,
-        .drag_source_c    = null,
-        .drag_transfer    = undefined,
-        .drag_target      = null,
-        .drag_accepted    = false,
-        .allocator        = allocator,
-        .dirty_notify     = undefined,     // filled in install
-        .focus_controller = undefined,     // filled in install
+        .input_blocked = false,
+        .drag_armed = null,
+        .drag_start = .{ .x = 0, .y = 0 },
+        .dragging = false,
+        .drag_source_c = null,
+        .drag_transfer = undefined,
+        .drag_target = null,
+        .drag_accepted = false,
+        .allocator = allocator,
+        .dirty_notify = undefined, // filled in install
+        .focus_controller = undefined, // filled in install
     };
     win.container.component.vtable = &vtable;
     // Default layout: BorderLayout. Lets users compose a toolbar / status /
@@ -222,42 +222,42 @@ pub fn initHeadless(
     errdefer rt.deinit();
 
     var win = Window{
-        .container     = Container.init(allocator),
-        .awt_window    = null,
-        .swapchain     = null,
+        .container = Container.init(allocator),
+        .awt_window = null,
+        .swapchain = null,
         .render_target = rt,
-        .context       = context,
-        .device        = device,
-        .app           = app_ptr,
-        .event_queue   = event_queue,
-        .menu_bar      = null,
-        .overlays      = OverlayManager.init(allocator),
-        .title         = title_dup,
-        .background    = awt.Graphics.Color.rgb(0.94, 0.94, 0.94),
-        .fb_w          = iw,
-        .fb_h          = ih,
-        .win_pos       = .{ .x = 0, .y = 0 },
-        .win_size      = .{ .width = iw, .height = ih },
-        .cursor_x      = 0,
-        .cursor_y      = 0,
-        .paint_dirty   = true,
-        .layout_dirty  = true,
-        .headless      = true,
+        .context = context,
+        .device = device,
+        .app = app_ptr,
+        .event_queue = event_queue,
+        .menu_bar = null,
+        .overlays = OverlayManager.init(allocator),
+        .title = title_dup,
+        .background = awt.Graphics.Color.rgb(0.94, 0.94, 0.94),
+        .fb_w = iw,
+        .fb_h = ih,
+        .win_pos = .{ .x = 0, .y = 0 },
+        .win_size = .{ .width = iw, .height = ih },
+        .cursor_x = 0,
+        .cursor_y = 0,
+        .paint_dirty = true,
+        .layout_dirty = true,
+        .headless = true,
         .headless_close = false,
-        .in_redraw     = false,
-        .mouse_capture    = null,
-        .focus_owner      = null,
+        .in_redraw = false,
+        .mouse_capture = null,
+        .focus_owner = null,
         .initial_focus_done = false,
-        .input_blocked    = false,
-        .drag_armed       = null,
-        .drag_start       = .{ .x = 0, .y = 0 },
-        .dragging         = false,
-        .drag_source_c    = null,
-        .drag_transfer    = undefined,
-        .drag_target      = null,
-        .drag_accepted    = false,
-        .allocator        = allocator,
-        .dirty_notify     = undefined,
+        .input_blocked = false,
+        .drag_armed = null,
+        .drag_start = .{ .x = 0, .y = 0 },
+        .dragging = false,
+        .drag_source_c = null,
+        .drag_transfer = undefined,
+        .drag_target = null,
+        .drag_accepted = false,
+        .allocator = allocator,
+        .dirty_notify = undefined,
         .focus_controller = undefined,
     };
     win.container.component.vtable = &vtable;
@@ -269,7 +269,7 @@ pub fn deinit(self: *Window) void {
     // Overlays are not owned (Menu/PopupMenu owners hold them) — just drop the list.
     // menu_bar is owned by Frame, not Window — do not destroy.
     self.overlays.deinit();
-    self.container.deinit();      // drops children + container component
+    self.container.deinit(); // drops children + container component
     if (self.swapchain) |*sc| sc.deinit();
     if (self.awt_window) |*aw| aw.deinit();
     if (self.render_target) |*rt| rt.deinit();
@@ -385,7 +385,8 @@ pub fn redraw(self: *Window) void {
         // for `LayoutManager` authors — see `Container.setBounds` comment).
         // Drive the layout cascade explicitly here, the one legitimate place.
         self.container.component.setBounds(.{
-            .x = 0, .y = bar_h,
+            .x = 0,
+            .y = bar_h,
             .width = win_w,
             .height = @max(0, win_h - bar_h),
         });
@@ -586,15 +587,15 @@ fn install(self: *Component) !void {
     // walks up here and sets our flags.
     win.dirty_notify = .{
         .user_data = @ptrCast(win),
-        .paint     = notifyPaint,
-        .layout    = notifyLayout,
+        .paint = notifyPaint,
+        .layout = notifyLayout,
     };
     try self.putProperty(@typeName(Component.DirtyNotify), @ptrCast(&win.dirty_notify), null);
 
     // Focus controller — lets descendants call `c.requestFocus()` and have
     // it bubble back to this Window via property lookup.
     win.focus_controller = .{
-        .user_data         = @ptrCast(win),
+        .user_data = @ptrCast(win),
         .request_focus_for = focusControllerCallback,
     };
     try self.putProperty(@typeName(Component.FocusController), @ptrCast(&win.focus_controller), null);
@@ -772,8 +773,7 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
                 // a List materializes its cells outside the container tree, so
                 // its in-cell editor field is invisible to findFocusableAt.
                 if (self.focus_owner == focus_before) {
-                    if (self.findFocusableAt(m.x, m.y)) |w| self.requestFocusFor(w)
-                    else self.requestFocusFor(null);
+                    if (self.findFocusableAt(m.x, m.y)) |w| self.requestFocusFor(w) else self.requestFocusFor(null);
                 }
                 // DnD: arm a drag gesture if the press landed on a draggable and
                 // nothing grabbed the mouse (a captured widget / button takes
@@ -879,11 +879,11 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
             if (self.overlays.topModalIndex()) |ti| {
                 const top = self.overlays.entries.items[ti];
                 top.component.vtable.processEvent(top.component, ev);
-                return;  // modal
+                return; // modal
             }
             if (self.focus_owner) |fo| {
                 fo.vtable.processEvent(fo, ev);
-                return;  // text input only goes to focused widget
+                return; // text input only goes to focused widget
             }
             // No focus owner: drop on the floor (nothing to type into).
         },
@@ -921,8 +921,8 @@ pub fn postInput(self: *Window, ev: awt.Event) !void {
 fn isAttentionPoke(ev: *const awt.Event) bool {
     return switch (ev.payload) {
         .mouse => |m| m.action == .press,
-        .key   => |k| k.action == .press,
-        else   => false,
+        .key => |k| k.action == .press,
+        else => false,
     };
 }
 

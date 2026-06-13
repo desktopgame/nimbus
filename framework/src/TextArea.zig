@@ -42,49 +42,49 @@ fn selectionColor(t: *const @import("theme.zig").Theme) awt.Graphics.Color {
 /// trailing '\n'. For wrapped segments `end` is the soft-break point and equals
 /// the next segment's `start` (no character between them).
 const VisualLine = struct {
-    start:       usize,
-    end:         usize,
+    start: usize,
+    end: usize,
     has_newline: bool, // a hard '\n' follows at `end` (logical)
 };
 
-component:      Component,
-app:            *Application,
-text:           GapBuffer,
+component: Component,
+app: *Application,
+text: GapBuffer,
 /// Caret / selection anchor as logical byte offsets. caret == mark → no
 /// selection. Byte offsets are internal; public API speaks in abstract terms.
-caret:          usize,
-mark:           usize,
-font:           awt.Graphics.TextFont,
-color:          awt.Graphics.Color,
-background:     awt.Graphics.Color,
-caret_color:    awt.Graphics.Color,
-caret_visible:  bool,
+caret: usize,
+mark: usize,
+font: awt.Graphics.TextFont,
+color: awt.Graphics.Color,
+background: awt.Graphics.Color,
+caret_color: awt.Graphics.Color,
+caret_visible: bool,
 blink_timer_id: ?Application.TimerId,
-has_focus:      bool,
+has_focus: bool,
 /// True between a left-button press inside and its release. Gates selection-
 /// by-drag: plain hover also delivers `.move` (via the container hit-test, not
 /// only via mouse capture), so without this a focused area would extend its
 /// selection just from the cursor passing over it.
-dragging:       bool,
-line_wrap:      bool,
+dragging: bool,
+line_wrap: bool,
 /// On-screen line model, rebuilt by `reflowAt` (and so by `refreshMinSize`
 /// and `sizeQueryMinHeightForWidth`, both of which call into it).
-lines:          std.ArrayList(VisualLine),
+lines: std.ArrayList(VisualLine),
 /// Reusable buffer for copying a (logical) byte range out of the gap buffer
 /// into contiguous memory for measuring / drawing.
-scratch:        std.ArrayList(u8),
+scratch: std.ArrayList(u8),
 /// IME preedit (composition). Empty when not composing.
-preedit_text:         std.ArrayList(u8),
+preedit_text: std.ArrayList(u8),
 preedit_target_start: usize,
-preedit_target_end:   usize,
-allocator:      std.mem.Allocator,
+preedit_target_end: usize,
+allocator: std.mem.Allocator,
 
 pub const vtable = Component.VTable{
-    .install      = install,
-    .uninstall    = uninstall,
-    .paint        = paint,
+    .install = install,
+    .uninstall = uninstall,
+    .paint = paint,
     .processEvent = processEvent,
-    .destroy      = destroy,
+    .destroy = destroy,
 };
 
 const size_query = Component.SizeQuery{
@@ -115,26 +115,26 @@ pub fn create(
     const end = text.len();
 
     ta.* = .{
-        .component      = Component.init(allocator, &vtable),
-        .app            = app,
-        .text           = text,
-        .caret          = end,
-        .mark           = end,
-        .font           = font,
-        .color          = color,
-        .background     = awt.Graphics.Color.rgb(1.0, 1.0, 1.0),
-        .caret_color    = color,
-        .caret_visible  = true,
+        .component = Component.init(allocator, &vtable),
+        .app = app,
+        .text = text,
+        .caret = end,
+        .mark = end,
+        .font = font,
+        .color = color,
+        .background = awt.Graphics.Color.rgb(1.0, 1.0, 1.0),
+        .caret_color = color,
+        .caret_visible = true,
         .blink_timer_id = null,
-        .has_focus      = false,
-        .dragging       = false,
-        .line_wrap      = false,
-        .lines          = .empty,
-        .scratch        = .empty,
-        .preedit_text         = .empty,
+        .has_focus = false,
+        .dragging = false,
+        .line_wrap = false,
+        .lines = .empty,
+        .scratch = .empty,
+        .preedit_text = .empty,
         .preedit_target_start = 0,
-        .preedit_target_end   = 0,
-        .allocator      = allocator,
+        .preedit_target_end = 0,
+        .allocator = allocator,
     };
     ta.component.role = .text_area;
     ta.refreshMinSize();
@@ -633,8 +633,8 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
     const ta: *TextArea = @fieldParentPtr("component", self);
     switch (ev.payload) {
         .mouse => |m| handleMouse(ta, ev, m),
-        .key   => |k| handleKey(ta, ev, k),
-        .char  => |ch| handleChar(ta, ev, ch),
+        .key => |k| handleKey(ta, ev, k),
+        .char => |ch| handleChar(ta, ev, ch),
         .focus => |f| {
             ta.has_focus = f.gained;
             ta.caret_visible = true;

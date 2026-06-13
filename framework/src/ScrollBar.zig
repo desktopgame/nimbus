@@ -22,24 +22,24 @@ const MIN_THUMB: f32 = 20;
 // Colors come from `component.theme`: scrollbar_track / scrollbar_thumb /
 // scrollbar_thumb_hover (see `framework/doc/theme.md`).
 
-component:       Component,
-model:           *BoundedRangeModel,
-owns_model:      bool,
-orientation:     Orientation,
-unit_increment:  i32,
+component: Component,
+model: *BoundedRangeModel,
+owns_model: bool,
+orientation: Orientation,
+unit_increment: i32,
 block_increment: i32,
-dragging:        bool,
-rollover:        bool,
+dragging: bool,
+rollover: bool,
 /// Distance from the thumb's leading edge to the cursor at grab time (px).
-drag_grab:       f32,
-allocator:       std.mem.Allocator,
+drag_grab: f32,
+allocator: std.mem.Allocator,
 
 pub const vtable = Component.VTable{
-    .install      = install,
-    .uninstall    = uninstall,
-    .paint        = paint,
+    .install = install,
+    .uninstall = uninstall,
+    .paint = paint,
     .processEvent = processEvent,
-    .destroy      = destroy,
+    .destroy = destroy,
 };
 
 pub fn create(
@@ -74,16 +74,16 @@ fn createInternal(
     errdefer allocator.destroy(sb);
 
     sb.* = .{
-        .component       = Component.init(allocator, &vtable),
-        .model           = model,
-        .owns_model      = owns_model,
-        .orientation     = orientation,
-        .unit_increment  = 16,
+        .component = Component.init(allocator, &vtable),
+        .model = model,
+        .owns_model = owns_model,
+        .orientation = orientation,
+        .unit_increment = 16,
         .block_increment = 0, // 0 → page by extent
-        .dragging        = false,
-        .rollover        = false,
-        .drag_grab       = 0,
-        .allocator       = allocator,
+        .dragging = false,
+        .rollover = false,
+        .drag_grab = 0,
+        .allocator = allocator,
     };
     sb.component.role = .scroll_bar;
     sb.applyDefaultLayoutAttrs();
@@ -157,7 +157,7 @@ pub fn removeChangeListener(
 fn trackLen(self: *const ScrollBar) f32 {
     return switch (self.orientation) {
         .horizontal => self.component.size.width,
-        .vertical   => self.component.size.height,
+        .vertical => self.component.size.height,
     };
 }
 
@@ -251,7 +251,7 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
             const ly = m.y - origin.y;
             const main: f32 = switch (sb.orientation) {
                 .horizontal => lx,
-                .vertical   => ly,
+                .vertical => ly,
             };
             switch (m.action) {
                 .press => {

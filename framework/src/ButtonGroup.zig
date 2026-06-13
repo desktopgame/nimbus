@@ -14,7 +14,7 @@ const ChangeEvent = @import("listener.zig").ChangeEvent;
 const ButtonGroup = @This();
 
 allocator: std.mem.Allocator,
-members:   std.ArrayList(*ToggleButtonModel),
+members: std.ArrayList(*ToggleButtonModel),
 /// Per-member snapshot of `isSelected()` as of the previous change
 /// notification. We use this in `onMemberChange` to figure out *which*
 /// model just transitioned false→true (the ChangeListener signature
@@ -24,7 +24,7 @@ prev_selected: std.ArrayList(bool),
 /// True while we are programmatically clearing other members so their
 /// resulting listener fires can early-out and avoid re-entry. UI thread
 /// only — single bool is enough.
-muting:    bool = false,
+muting: bool = false,
 
 pub fn init(allocator: std.mem.Allocator) ButtonGroup {
     return .{

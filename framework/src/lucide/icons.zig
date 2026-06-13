@@ -1595,7 +1595,7 @@ pub const Icon = enum {
     tv,
     tv_minimal,
     tv_minimal_play,
-    @"type",
+    type,
     type_outline,
     umbrella,
     umbrella_off,

@@ -7,9 +7,9 @@ const std = @import("std");
 
 pub const Level = enum(c_int) {
     debug = 0,
-    info  = 1,
-    warn  = 2,
-    err   = 3,
+    info = 1,
+    warn = 2,
+    err = 3,
 };
 
 pub const Callback = *const fn (
@@ -19,8 +19,8 @@ pub const Callback = *const fn (
     user_data: ?*anyopaque,
 ) callconv(.c) void;
 
-var g_cb:   ?Callback     = null;
-var g_user: ?*anyopaque   = null;
+var g_cb: ?Callback = null;
+var g_user: ?*anyopaque = null;
 
 /// Install a log callback for framework-side messages. Pass null to restore
 /// the default stderr writer. Does NOT affect awt's log; set that separately
@@ -65,9 +65,9 @@ fn emit(level: Level, category: []const u8, comptime fmt: []const u8, args: anyt
     } else {
         const lvl_str = switch (level) {
             .debug => "DEBUG",
-            .info  => "INFO",
-            .warn  => "WARN",
-            .err   => "ERROR",
+            .info => "INFO",
+            .warn => "WARN",
+            .err => "ERROR",
         };
         // Same format as awt-c's stderr default: "[LEVEL] [category] message".
         std.debug.print("[{s}] [{s}] {s}\n", .{
@@ -83,10 +83,10 @@ fn emit(level: Level, category: []const u8, comptime fmt: []const u8, args: anyt
 test "log: callback receives level / category / formatted message" {
     const S = struct {
         var saw_level: ?Level = null;
-        var cat_buf:  [32]u8 = undefined;
-        var msg_buf:  [128]u8 = undefined;
-        var cat_len:  usize = 0;
-        var msg_len:  usize = 0;
+        var cat_buf: [32]u8 = undefined;
+        var msg_buf: [128]u8 = undefined;
+        var cat_len: usize = 0;
+        var msg_len: usize = 0;
 
         fn cb(level: Level, category: [*:0]const u8, message: [*:0]const u8, _: ?*anyopaque) callconv(.c) void {
             saw_level = level;

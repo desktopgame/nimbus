@@ -12,20 +12,20 @@ const MenuBar = @This();
 // Colors come from `component.theme`: surface_window (background) and
 // border_soft (bottom border). See `framework/doc/theme.md`.
 
-component:  Component,
-menus:      std.ArrayList(*Menu),
-open_menu:  ?*Menu,
-font:       awt.Graphics.TextFont,
-color:      awt.Graphics.Color,
-window:     ?*Window,
-allocator:  std.mem.Allocator,
+component: Component,
+menus: std.ArrayList(*Menu),
+open_menu: ?*Menu,
+font: awt.Graphics.TextFont,
+color: awt.Graphics.Color,
+window: ?*Window,
+allocator: std.mem.Allocator,
 
 pub const vtable = Component.VTable{
-    .install      = install,
-    .uninstall    = uninstall,
-    .paint        = paint,
+    .install = install,
+    .uninstall = uninstall,
+    .paint = paint,
     .processEvent = processEvent,
-    .destroy      = destroy,
+    .destroy = destroy,
 };
 
 pub fn create(
@@ -37,11 +37,11 @@ pub fn create(
     errdefer allocator.destroy(bar);
     bar.* = .{
         .component = Component.init(allocator, &vtable),
-        .menus     = .empty,
+        .menus = .empty,
         .open_menu = null,
-        .font      = font,
-        .color     = color,
-        .window    = null,
+        .font = font,
+        .color = color,
+        .window = null,
         .allocator = allocator,
     };
     // Min height ≒ font ascent + padding. Computed lazily once a menu is added.

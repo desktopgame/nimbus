@@ -747,9 +747,9 @@ GLFW の `GLFW_DECORATED` / `GLFW_FOCUS_ON_SHOW` / `GLFW_FLOATING` でほぼま�
 （旧 `doc/internal/menu-bar-requirements.md` の v2 記述から移設）
 
 ## #21 RadioButtonMenuItem
-- 状態: spec 済み・実装待ち（Codex ハンドオフ試行の初回題材）
+- 状態: 完了（Codex ハンドオフ試行の初回題材）。実装・factory・export・テスト（doClick 冪等 / ButtonGroup 排他）入り、`zig build test` 緑
 - 優先度: 低
-- 影響範囲: `RadioButtonMenuItem.zig`（新規）、`Application.radioButtonMenuItem` + root.zig export、`radio_button_menu_item.md`（spec/narrative 作成済み）
+- 影響範囲: `RadioButtonMenuItem.zig`（新規）、`Application.radioButtonMenuItem` + root.zig export、`Component.role` に `.radio_button_menu_item`、`radio_button_menu_item.md`（spec/narrative）
 - 更新日: 2026-06-14
 
 ### 何

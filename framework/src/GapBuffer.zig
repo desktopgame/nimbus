@@ -19,9 +19,9 @@ const MIN_GAP: usize = 64;
 
 /// Backing storage. The gap occupies `[gap_start, gap_end)`; everything else is
 /// live content. `buf.len - (gap_end - gap_start)` is the logical length.
-buf:       []u8,
+buf: []u8,
 gap_start: usize,
-gap_end:   usize,
+gap_end: usize,
 allocator: std.mem.Allocator,
 
 pub fn init(allocator: std.mem.Allocator) GapBuffer {

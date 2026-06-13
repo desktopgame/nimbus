@@ -13,11 +13,11 @@ const BoxLayout = @This();
 
 pub const Orientation = enum { horizontal, vertical };
 
-base:        LayoutManager,
+base: LayoutManager,
 orientation: Orientation,
 
 pub const vtable = LayoutManager.VTable{
-    .doLayout       = doLayout,
+    .doLayout = doLayout,
     .computeMinSize = computeMinSize,
     .computeMaxSize = computeMaxSize,
 };
@@ -46,21 +46,21 @@ pub fn vertical() *LayoutManager {
 fn mainOf(o: Orientation, s: Component.Size) f32 {
     return switch (o) {
         .horizontal => s.width,
-        .vertical   => s.height,
+        .vertical => s.height,
     };
 }
 
 fn crossOf(o: Orientation, s: Component.Size) f32 {
     return switch (o) {
         .horizontal => s.height,
-        .vertical   => s.width,
+        .vertical => s.width,
     };
 }
 
 fn growMain(o: Orientation, c: *const Component) f32 {
     return switch (o) {
         .horizontal => c.grow_x,
-        .vertical   => c.grow_y,
+        .vertical => c.grow_y,
     };
 }
 
@@ -69,7 +69,7 @@ fn growMain(o: Orientation, c: *const Component) f32 {
 fn crossAlign(o: Orientation, c: *const Component) Component.Alignment {
     return switch (o) {
         .horizontal => c.align_y,
-        .vertical   => c.align_x,
+        .vertical => c.align_x,
     };
 }
 
@@ -116,20 +116,20 @@ fn doLayout(self: *LayoutManager, container: *Container) void {
         const align_v = crossAlign(ori, child);
         var cross: f32 = switch (align_v) {
             .stretch => cross_size,
-            else     => child_cmin,    // start / center / end use min size
+            else => child_cmin, // start / center / end use min size
         };
         if (cross > child_cmax) cross = child_cmax;
         if (cross < child_cmin) cross = child_cmin;
 
         const cross_pos: f32 = switch (align_v) {
             .stretch, .start => 0,
-            .center          => (cross_size - cross) / 2,
-            .end             => cross_size - cross,
+            .center => (cross_size - cross) / 2,
+            .end => cross_size - cross,
         };
 
         const bounds: Component.Rect = switch (ori) {
             .horizontal => .{ .x = pos, .y = cross_pos, .width = main, .height = cross },
-            .vertical   => .{ .x = cross_pos, .y = pos, .width = cross, .height = main },
+            .vertical => .{ .x = cross_pos, .y = pos, .width = cross, .height = main },
         };
 
         // Container.doLayout owns the single recursion into children. We just
@@ -154,7 +154,7 @@ fn computeMinSize(self: *LayoutManager, container: *const Container) Component.S
     }
     return switch (ori) {
         .horizontal => .{ .width = main_total, .height = cross_max },
-        .vertical   => .{ .width = cross_max,  .height = main_total },
+        .vertical => .{ .width = cross_max, .height = main_total },
     };
 }
 
@@ -172,6 +172,6 @@ fn computeMaxSize(self: *LayoutManager, container: *const Container) Component.S
     }
     return switch (ori) {
         .horizontal => .{ .width = main_total, .height = cross_max },
-        .vertical   => .{ .width = cross_max,  .height = main_total },
+        .vertical => .{ .width = cross_max, .height = main_total },
     };
 }

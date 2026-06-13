@@ -9,11 +9,11 @@ const nimbus = @import("nimbus");
 const Event = nimbus.ActionEvent;
 
 const State = struct {
-    cb_a:  *nimbus.CheckBox,
-    cb_b:  *nimbus.CheckBox,
-    cb_c:  *nimbus.CheckBox,
+    cb_a: *nimbus.CheckBox,
+    cb_b: *nimbus.CheckBox,
+    cb_c: *nimbus.CheckBox,
     label: *nimbus.Label,
-    buf:   [256]u8 = undefined,
+    buf: [256]u8 = undefined,
 };
 
 fn refresh(state: *State) void {

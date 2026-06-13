@@ -28,8 +28,7 @@ pub const IndexFormat = enum(c_uint) {
 handle: *c.struct_nmBuffer,
 
 pub fn init(device: Device, size: usize, usage: Usage) !Buffer {
-    const h = c.nmCreateBuffer(device.handle, size, usage.toC())
-        orelse return error.BufferCreateFailed;
+    const h = c.nmCreateBuffer(device.handle, size, usage.toC()) orelse return error.BufferCreateFailed;
     return .{ .handle = h };
 }
 

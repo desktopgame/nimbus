@@ -40,7 +40,7 @@ pub const Alignment = enum { start, center, end, stretch };
 /// scrolls vertically. Held as a plain optional field (not a property) because
 /// it is an intrinsic, static attribute of the view. See `scrollpane.md`.
 pub const Scrollable = struct {
-    tracks_viewport_width:  bool = false,
+    tracks_viewport_width: bool = false,
     tracks_viewport_height: bool = false,
 };
 
@@ -73,10 +73,28 @@ pub const SizeQuery = struct {
 /// in `VTable` or a capability struct. See `framework/doc/robot.md`.
 pub const Role = enum {
     none,
-    button, toggle_button, checkbox, radio_button,
-    label, slider, combobox, text_field, text_area,
-    list, table, scroll_bar, scroll_pane, split_pane, panel,
-    menu, menu_item, checkbox_menu_item, menu_bar, popup_menu, separator,
+    button,
+    toggle_button,
+    checkbox,
+    radio_button,
+    label,
+    slider,
+    combobox,
+    text_field,
+    text_area,
+    list,
+    table,
+    scroll_bar,
+    scroll_pane,
+    split_pane,
+    panel,
+    menu,
+    menu_item,
+    checkbox_menu_item,
+    radio_button_menu_item,
+    menu_bar,
+    popup_menu,
+    separator,
     window,
 };
 
@@ -112,37 +130,37 @@ pub const VTable = struct {
     /// the root, immediately after construction). May fail if it allocates
     /// (listener registration, property insertion, etc.). `create()` factories
     /// propagate this error so the half-built widget is freed cleanly.
-    install:      *const fn (self: *Component) anyerror!void,
+    install: *const fn (self: *Component) anyerror!void,
     /// Tear down whatever `install` set up. Conceptually a destructor — only
     /// releases resources, never fails. Callers do not need to handle errors.
-    uninstall:    *const fn (self: *Component) void,
-    paint:        *const fn (self: *Component, g: *awt.Graphics) void,
+    uninstall: *const fn (self: *Component) void,
+    paint: *const fn (self: *Component, g: *awt.Graphics) void,
     /// Mutable Event pointer; consumption is via `ev.consume()`. See
     /// `awt/doc/event.md` for the consumption model.
     processEvent: *const fn (self: *Component, ev: *Event) void,
     /// Free the concrete widget's memory (sizeof Label / Button / ... not sizeof Component).
     /// Called by Container.deinit after `uninstall` + property cleanup. The implementation
     /// is expected to `@fieldParentPtr` back to the outer type and call `allocator.destroy`.
-    destroy:      *const fn (self: *Component, allocator: std.mem.Allocator) void,
+    destroy: *const fn (self: *Component, allocator: std.mem.Allocator) void,
 };
 
 pub const Property = struct {
-    value:   *anyopaque,
+    value: *anyopaque,
     destroy: ?*const fn (*anyopaque, std.mem.Allocator) void,
 };
 
 // Forward declaration so `container` field can reference Container.
 const Container = @import("Container.zig");
 
-vtable:     *const VTable,
-position:   Point,
-size:       Size,
-min_size:   Size,
-max_size:   Size,
-grow_x:     f32,
-grow_y:     f32,
-align_x:    Alignment,
-align_y:    Alignment,
+vtable: *const VTable,
+position: Point,
+size: Size,
+min_size: Size,
+max_size: Size,
+grow_x: f32,
+grow_y: f32,
+align_x: Alignment,
+align_y: Alignment,
 /// Scroll-tracking hint read by an enclosing `ScrollPane`. Null = use the
 /// view's natural size on both axes (default). See `Scrollable`.
 scrollable: ?Scrollable,
@@ -156,18 +174,18 @@ drop_target: ?dnd.DropTarget,
 size_query: ?SizeQuery,
 /// Accessibility / automation role (opt-in semantic kind). Set by each widget
 /// in `create`; default `.none`. See `Role`.
-role:       Role,
+role: Role,
 /// Accessibility facet (opt-in; null = no accessible name). Set by widgets that
 /// expose a name. See `A11y`.
-a11y:       ?A11y,
-parent:     ?*Component,
-container:  ?*Container,
+a11y: ?A11y,
+parent: ?*Component,
+container: ?*Container,
 /// True if this component can receive keyboard focus. Default false (Label,
 /// Panel, separators...); interactive widgets (Button, CheckBox, Slider,
 /// TextField, List, ...) set this to true so Tab traversal and click
 /// auto-focus reach them. Dynamic eligibility (enabled state) layers on top
 /// via `focus_query`. See `framework/doc/keybinding.md`.
-focusable:  bool,
+focusable: bool,
 /// Opt-in dynamic focus eligibility. See `FocusQuery`.
 focus_query: ?FocusQuery,
 /// Lazily-created keystroke bindings (`bindKey`); null until first bind.
@@ -176,43 +194,43 @@ key_bindings: ?*keybinding.KeyBindings,
 /// Mnemonic character (lowercase ASCII), or null. Set by widgets'
 /// `setMnemonic`; matched by the Window's mnemonic scan stage (Alt+letter).
 /// Not a registration — just data the scan reads. See `narrative/keybinding.md`.
-mnemonic:   ?u8,
+mnemonic: ?u8,
 /// Color catalog the default look consults at paint time. Application
 /// factories inject `&app.theme`; components created outside a factory keep
 /// the built-in default. Always valid (never null) — whether a custom-paint
 /// LAF reads it is its own business. See `framework/doc/theme.md`.
-theme:      *const Theme,
-name:       ?[]const u8,
+theme: *const Theme,
+name: ?[]const u8,
 properties: ?std.StringHashMap(Property),
-allocator:  std.mem.Allocator,
+allocator: std.mem.Allocator,
 
 pub fn init(allocator: std.mem.Allocator, vtable: *const VTable) Component {
     return .{
-        .vtable     = vtable,
-        .position   = .{ .x = 0, .y = 0 },
-        .size       = .{ .width = 0, .height = 0 },
-        .min_size   = .{ .width = 0, .height = 0 },
-        .max_size   = .{ .width = std.math.inf(f32), .height = std.math.inf(f32) },
-        .grow_x     = 0,
-        .grow_y     = 0,
-        .align_x    = .stretch,
-        .align_y    = .stretch,
+        .vtable = vtable,
+        .position = .{ .x = 0, .y = 0 },
+        .size = .{ .width = 0, .height = 0 },
+        .min_size = .{ .width = 0, .height = 0 },
+        .max_size = .{ .width = std.math.inf(f32), .height = std.math.inf(f32) },
+        .grow_x = 0,
+        .grow_y = 0,
+        .align_x = .stretch,
+        .align_y = .stretch,
         .scrollable = null,
         .drag_source = null,
         .drop_target = null,
-        .size_query  = null,
-        .role       = .none,
-        .a11y       = null,
-        .parent     = null,
-        .container  = null,
-        .focusable  = false,
+        .size_query = null,
+        .role = .none,
+        .a11y = null,
+        .parent = null,
+        .container = null,
+        .focusable = false,
         .focus_query = null,
         .key_bindings = null,
-        .mnemonic   = null,
-        .theme      = &Theme.default,
-        .name       = null,
+        .mnemonic = null,
+        .theme = &Theme.default,
+        .name = null,
         .properties = null,
-        .allocator  = allocator,
+        .allocator = allocator,
     };
 }
 
@@ -447,7 +465,7 @@ pub fn requestFocus(self: *Component) void {
 /// focus-owner state without a direct framework→framework dependency
 /// cycle. Same pattern as `DirtyNotify`.
 pub const FocusController = struct {
-    user_data:         *anyopaque,
+    user_data: *anyopaque,
     request_focus_for: *const fn (*anyopaque, ?*Component) void,
 };
 
@@ -457,7 +475,7 @@ pub const FocusController = struct {
 /// calls `enclosingScrollController()` and passes a rect in its own local
 /// coordinates to bring into view.
 pub const ScrollController = struct {
-    user_data:              *anyopaque,
+    user_data: *anyopaque,
     scroll_rect_to_visible: *const fn (*anyopaque, Rect) void,
 };
 
@@ -525,7 +543,7 @@ fn markDirty(c: *Component, kind: DirtyKind) void {
             // Root reached. Check whether it has the dirty notify property.
             if (cur.getTyped(DirtyNotify)) |notify| {
                 switch (kind) {
-                    .paint  => notify.paint(notify.user_data),
+                    .paint => notify.paint(notify.user_data),
                     .layout => notify.layout(notify.user_data),
                 }
             }
@@ -540,8 +558,8 @@ fn markDirty(c: *Component, kind: DirtyKind) void {
 /// Frame/Application of pending work.
 pub const DirtyNotify = struct {
     user_data: *anyopaque,
-    paint:     *const fn (*anyopaque) void,
-    layout:    *const fn (*anyopaque) void,
+    paint: *const fn (*anyopaque) void,
+    layout: *const fn (*anyopaque) void,
 };
 
 /// Helper: build a child Graphics clipped to self.getBounds and dispatch

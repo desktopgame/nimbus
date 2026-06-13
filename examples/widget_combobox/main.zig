@@ -20,7 +20,7 @@ const Event = nimbus.ChangeEvent;
 const State = struct {
     combo: *nimbus.ComboBox,
     label: *nimbus.Label,
-    buf:   [128]u8 = undefined,
+    buf: [128]u8 = undefined,
 };
 
 fn refresh(state: *State) void {

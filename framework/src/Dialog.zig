@@ -21,25 +21,25 @@ const Dialog = @This();
 /// integer codes (yes/no/apply, a chosen index, ...) through the same
 /// channel — `close` accepts any `Result` and `showModal` returns it.
 pub const Result = enum(i32) {
-    none   = 0, // closed with no explicit result (X button / dispose)
-    ok     = 1,
+    none = 0, // closed with no explicit result (X button / dispose)
+    ok = 1,
     cancel = 2,
     _,
 };
 
-window:     Window,
-app:        *Application,
-owner:      *Window,
+window: Window,
+app: *Application,
+owner: *Window,
 /// True while shown via `showModal` (vs `show`).
-modal:      bool,
+modal: bool,
 /// Result set by the most recent `close`; `showModal` returns it.
-result:     Result,
+result: Result,
 /// Set by `close` to break the modal loop in `showModal`.
 modal_done: bool,
 /// True while registered in Application's window list (guards double
 /// show / double close).
-shown:      bool,
-allocator:  std.mem.Allocator,
+shown: bool,
+allocator: std.mem.Allocator,
 
 pub fn init(
     app: *Application,
@@ -56,14 +56,14 @@ pub fn init(
     // rather than create/destroy the OS window.
     window.awt_window.?.setVisible(false);
     return .{
-        .window     = window,
-        .app        = app,
-        .owner      = owner,
-        .modal      = false,
-        .result     = .none,
+        .window = window,
+        .app = app,
+        .owner = owner,
+        .modal = false,
+        .result = .none,
         .modal_done = false,
-        .shown      = false,
-        .allocator  = app.allocator,
+        .shown = false,
+        .allocator = app.allocator,
     };
 }
 

@@ -333,17 +333,39 @@ export fn nmListModelGetElementAt(self: *framework.List.ListModel, idx: usize) ?
 
 // ── generated exports (do not edit; regenerate with `zig build apigen`) ──
 
-const nmColor = extern struct { r: f32, g: f32, b: f32, a: f32, };
+const nmColor = extern struct {
+    r: f32,
+    g: f32,
+    b: f32,
+    a: f32,
+};
 
-const nmSize = extern struct { width: f32, height: f32, };
+const nmSize = extern struct {
+    width: f32,
+    height: f32,
+};
 
-const nmWindowPoint = extern struct { x: i32, y: i32, };
+const nmWindowPoint = extern struct {
+    x: i32,
+    y: i32,
+};
 
-const nmWindowSize = extern struct { width: i32, height: i32, };
+const nmWindowSize = extern struct {
+    width: i32,
+    height: i32,
+};
 
-const nmPoint = extern struct { x: f32, y: f32, };
+const nmPoint = extern struct {
+    x: f32,
+    y: f32,
+};
 
-const nmRect = extern struct { x: f32, y: f32, width: f32, height: f32, };
+const nmRect = extern struct {
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+};
 
 comptime {
     std.debug.assert(@intFromEnum(framework.Component.Alignment.start) == 0);
@@ -556,7 +578,10 @@ export fn nmComponentAbsoluteOrigin(self: *framework.Component) nmPoint {
 }
 
 export fn nmAppComboBox(self: *framework.Application, items: [*]const [*:0]const u8, items_len: usize) ?*framework.ComboBox {
-    const _items = std.heap.c_allocator.alloc([]const u8, items_len) catch |e| { setLastError(e); return null; };
+    const _items = std.heap.c_allocator.alloc([]const u8, items_len) catch |e| {
+        setLastError(e);
+        return null;
+    };
     defer std.heap.c_allocator.free(_items);
     for (_items, 0..) |*_it, _i| _it.* = std.mem.span(items[_i]);
     return self.comboBox(_items) catch |e| {

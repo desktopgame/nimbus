@@ -14,7 +14,7 @@ pub const TaskFn = *const fn (*anyopaque) void;
 pub const InputDispatchFn = *const fn (*anyopaque, *Event) void;
 
 const Task = struct {
-    fn_ptr:    TaskFn,
+    fn_ptr: TaskFn,
     user_data: *anyopaque,
     /// For invokeAndWait, the poster waits on `done` after appending.
     /// `null` means fire-and-forget.
@@ -22,26 +22,26 @@ const Task = struct {
 };
 
 const InputItem = struct {
-    event:       Event,
-    target:      *anyopaque,
+    event: Event,
+    target: *anyopaque,
     dispatch_fn: InputDispatchFn,
 };
 
 const Item = union(enum) {
-    task:  Task,
+    task: Task,
     input: InputItem,
 };
 
 const Sync = struct {
-    mutex:    std.Io.Mutex = .init,
-    cond:     std.Io.Condition = .init,
+    mutex: std.Io.Mutex = .init,
+    cond: std.Io.Condition = .init,
     finished: bool = false,
 };
 
 allocator: std.mem.Allocator,
-io:        std.Io,
-mutex:     std.Io.Mutex,
-queue:     std.ArrayList(Item),
+io: std.Io,
+mutex: std.Io.Mutex,
+queue: std.ArrayList(Item),
 ui_thread: ?std.Thread.Id,
 
 /// Allocate and initialize a new EventQueue. Caller owns the returned pointer.
@@ -50,9 +50,9 @@ pub fn init(allocator: std.mem.Allocator, io: std.Io) !*EventQueue {
     errdefer allocator.destroy(q);
     q.* = .{
         .allocator = allocator,
-        .io        = io,
-        .mutex     = .init,
-        .queue     = .empty,
+        .io = io,
+        .mutex = .init,
+        .queue = .empty,
         .ui_thread = null,
     };
     return q;
@@ -128,8 +128,8 @@ pub fn postEvent(
         self.mutex.lockUncancelable(self.io);
         defer self.mutex.unlock(self.io);
         try self.queue.append(self.allocator, .{ .input = .{
-            .event       = event,
-            .target      = target,
+            .event = event,
+            .target = target,
             .dispatch_fn = dispatch_fn,
         } });
     }

@@ -36,38 +36,38 @@ fn selectionColor(t: *const @import("theme.zig").Theme) awt.Graphics.Color {
     return awt.Graphics.Color.rgba(t.accent.r, t.accent.g, t.accent.b, 0.40);
 }
 
-component:      Component,
-app:            *Application,
+component: Component,
+app: *Application,
 /// UTF-8 internal buffer. caret_byte / mark_byte are byte offsets into
 /// this slice. Public APIs (setCaretAtCodepoint etc.) accept codepoint
 /// indices so the byte representation is not contract surface.
-text:           std.ArrayList(u8),
-caret_byte:     usize,
-mark_byte:      usize,
-font:           awt.Graphics.TextFont,
-color:          awt.Graphics.Color,
-background:     awt.Graphics.Color,
-caret_color:    awt.Graphics.Color,
-caret_visible:  bool,
+text: std.ArrayList(u8),
+caret_byte: usize,
+mark_byte: usize,
+font: awt.Graphics.TextFont,
+color: awt.Graphics.Color,
+background: awt.Graphics.Color,
+caret_color: awt.Graphics.Color,
+caret_visible: bool,
 blink_timer_id: ?Application.TimerId,
-has_focus:      bool,
+has_focus: bool,
 /// True between a left-button press inside the field and its release. Gates
 /// selection-by-drag: plain hover also delivers `.move` (it reaches us via the
 /// container hit-test, not just via mouse capture), so without this flag a
 /// focused field would extend its selection just from the cursor passing over.
-dragging:       bool,
+dragging: bool,
 /// Horizontal scroll offset in pixels, measured from the text start (>= 0).
 /// On-screen x of a glyph = PADDING_X + glyphXAtByte(b) - scroll_x. Kept so
 /// the caret stays visible once the text outgrows the field width.
 /// Recomputed by `ensureCaretVisible` whenever the caret moves (and as a
 /// safety net at paint time, since width is only known after layout).
-scroll_x:       f32,
+scroll_x: f32,
 /// IME preedit (composition) state. Empty when not composing. The bytes
 /// are an owned copy of what the IME most recently reported (the C-side
 /// pointer is only valid for one callback, so we copy on receipt).
-preedit_text:         std.ArrayList(u8),
+preedit_text: std.ArrayList(u8),
 preedit_target_start: usize,
-preedit_target_end:   usize,
+preedit_target_end: usize,
 /// Fired (and the key consumed) when Enter is pressed — "submit this field".
 /// Used e.g. by a List cell editor to commit. See `textfield.md`.
 submit_listeners: ActionListenerList,
@@ -79,14 +79,14 @@ cancel_listeners: ActionListenerList,
 /// selection, focus, or IME preedit (uncommitted). Lets callers observe the
 /// field without polling (mirrors Swing's DocumentListener at widget level).
 change_listeners: ChangeListenerList,
-allocator:      std.mem.Allocator,
+allocator: std.mem.Allocator,
 
 pub const vtable = Component.VTable{
-    .install      = install,
-    .uninstall    = uninstall,
-    .paint        = paint,
+    .install = install,
+    .uninstall = uninstall,
+    .paint = paint,
     .processEvent = processEvent,
-    .destroy      = destroy,
+    .destroy = destroy,
 };
 
 pub fn create(
@@ -104,27 +104,27 @@ pub fn create(
     try text_buf.appendSlice(allocator, initial_text);
 
     tf.* = .{
-        .component      = Component.init(allocator, &vtable),
-        .app            = app,
-        .text           = text_buf,
-        .caret_byte     = text_buf.items.len,
-        .mark_byte      = text_buf.items.len,
-        .font           = font,
-        .color          = color,
-        .background     = awt.Graphics.Color.rgb(1.0, 1.0, 1.0),
-        .caret_color    = color,
-        .caret_visible  = true,
+        .component = Component.init(allocator, &vtable),
+        .app = app,
+        .text = text_buf,
+        .caret_byte = text_buf.items.len,
+        .mark_byte = text_buf.items.len,
+        .font = font,
+        .color = color,
+        .background = awt.Graphics.Color.rgb(1.0, 1.0, 1.0),
+        .caret_color = color,
+        .caret_visible = true,
         .blink_timer_id = null,
-        .has_focus      = false,
-        .dragging       = false,
-        .scroll_x       = 0,
-        .preedit_text         = .empty,
+        .has_focus = false,
+        .dragging = false,
+        .scroll_x = 0,
+        .preedit_text = .empty,
         .preedit_target_start = 0,
-        .preedit_target_end   = 0,
+        .preedit_target_end = 0,
         .submit_listeners = ActionListenerList.init(allocator),
         .cancel_listeners = ActionListenerList.init(allocator),
         .change_listeners = ChangeListenerList.init(allocator),
-        .allocator      = allocator,
+        .allocator = allocator,
     };
     tf.component.role = .text_field;
     tf.applyMetrics();
@@ -363,8 +363,8 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
     const tf: *TextField = @fieldParentPtr("component", self);
     switch (ev.payload) {
         .mouse => |m| handleMouse(tf, ev, m),
-        .key   => |k| handleKey(tf, ev, k),
-        .char  => |ch| handleChar(tf, ev, ch),
+        .key => |k| handleKey(tf, ev, k),
+        .char => |ch| handleChar(tf, ev, ch),
         .focus => |f| {
             tf.has_focus = f.gained;
             // Restart blink at "visible" so the caret appears immediately
@@ -458,7 +458,7 @@ fn handleKey(tf: *TextField, ev: *Component.Event, k: awt.Event.KeyEvent) void {
     if (tf.preedit_text.items.len > 0) return;
 
     const shift = k.modifiers.shift;
-    const ctrl  = k.modifiers.ctrl;
+    const ctrl = k.modifiers.ctrl;
 
     switch (k.code) {
         .arrow_left => {

@@ -10,16 +10,16 @@ const keybinding = @import("keybinding.zig");
 const MenuItem = @This();
 
 pub const ICON_SLOT_WIDTH: f32 = 24;
-pub const ACCEL_SLOT_WIDTH: f32 = 0;        // v1: not rendered
+pub const ACCEL_SLOT_WIDTH: f32 = 0; // v1: not rendered
 pub const PADDING_X: f32 = 8;
 pub const PADDING_Y: f32 = 6;
 
-component:  Component,
-text:       []const u8,
-icon:       ?awt.Image,
-font:       awt.Graphics.TextFont,
-color:      awt.Graphics.Color,
-model:      *ButtonModel,
+component: Component,
+text: []const u8,
+icon: ?awt.Image,
+font: awt.Graphics.TextFont,
+color: awt.Graphics.Color,
+model: *ButtonModel,
 owns_model: bool,
 /// Window-wide accelerator (e.g. Cmd/Ctrl+S). Stored only — the Window's
 /// accelerator scan stage walks the menu tree and matches at dispatch time;
@@ -29,14 +29,14 @@ accelerator: ?keybinding.KeyStroke,
 /// Matching uses `component.mnemonic` — menu-local only (plain letter while
 /// the parent menu is open), never the window-wide Alt+letter scan.
 mnemonic_index: ?usize,
-allocator:  std.mem.Allocator,
+allocator: std.mem.Allocator,
 
 pub const vtable = Component.VTable{
-    .install      = install,
-    .uninstall    = uninstall,
-    .paint        = paint,
+    .install = install,
+    .uninstall = uninstall,
+    .paint = paint,
     .processEvent = processEvent,
-    .destroy      = destroy,
+    .destroy = destroy,
 };
 
 pub fn create(

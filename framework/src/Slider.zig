@@ -17,22 +17,22 @@ pub const Orientation = enum { horizontal, vertical };
 const TRACK_THICKNESS: f32 = 4;
 const THUMB_RADIUS: f32 = 8;
 
-component:   Component,
-model:       *BoundedRangeModel,
-owns_model:  bool,
+component: Component,
+model: *BoundedRangeModel,
+owns_model: bool,
 orientation: Orientation,
-allocator:   std.mem.Allocator,
-dragging:    bool = false,
+allocator: std.mem.Allocator,
+dragging: bool = false,
 /// True while this slider is the window's focus owner (FocusEvent-driven);
 /// drives the focus-ring paint.
-focused:     bool = false,
+focused: bool = false,
 
 pub const vtable = Component.VTable{
-    .install      = install,
-    .uninstall    = uninstall,
-    .paint        = paint,
+    .install = install,
+    .uninstall = uninstall,
+    .paint = paint,
     .processEvent = processEvent,
-    .destroy      = destroy,
+    .destroy = destroy,
 };
 
 pub fn create(
@@ -125,7 +125,7 @@ fn valueToPos(self: *const Slider) f32 {
     const t: f32 = @as(f32, @floatFromInt(self.model.value - self.model.min)) / range;
     return switch (self.orientation) {
         .horizontal => THUMB_RADIUS + t * (sz.width - 2 * THUMB_RADIUS),
-        .vertical   => THUMB_RADIUS + t * (sz.height - 2 * THUMB_RADIUS),
+        .vertical => THUMB_RADIUS + t * (sz.height - 2 * THUMB_RADIUS),
     };
 }
 
@@ -133,11 +133,11 @@ fn posToValue(self: *const Slider, local_x: f32, local_y: f32) i32 {
     const sz = self.component.size;
     const main: f32 = switch (self.orientation) {
         .horizontal => local_x - THUMB_RADIUS,
-        .vertical   => local_y - THUMB_RADIUS,
+        .vertical => local_y - THUMB_RADIUS,
     };
     const total: f32 = switch (self.orientation) {
         .horizontal => sz.width - 2 * THUMB_RADIUS,
-        .vertical   => sz.height - 2 * THUMB_RADIUS,
+        .vertical => sz.height - 2 * THUMB_RADIUS,
     };
     const t: f32 = if (total > 0) std.math.clamp(main / total, 0, 1) else 0;
     const range: f32 = @floatFromInt(self.model.max - self.model.min);

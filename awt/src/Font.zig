@@ -33,8 +33,7 @@ handle: *c.struct_nmFont,
 /// `data` must outlive the font (freetype holds the pointer internally).
 /// `@embedFile` output is fine since it lives in `.rodata` for the program's life.
 pub fn init(data: []const u8, face_index: i32) !Font {
-    const h = c.nmCreateFont(data.ptr, data.len, face_index)
-        orelse return error.FontCreateFailed;
+    const h = c.nmCreateFont(data.ptr, data.len, face_index) orelse return error.FontCreateFailed;
     return .{ .handle = h };
 }
 

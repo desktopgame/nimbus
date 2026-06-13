@@ -16,21 +16,21 @@ const nimbus = @import("nimbus");
 pub const default_font_bytes = nimbus.noto.noto_sans_jp_regular;
 
 pub const PaintContext = struct {
-    g:         *awt.Graphics,
+    g: *awt.Graphics,
     allocator: std.mem.Allocator,
-    font:      awt.Font,
-    width:     i32,
-    height:    i32,
+    font: awt.Font,
+    width: i32,
+    height: i32,
 };
 
 pub const Scene = struct {
     /// Stable identifier; used as the fixture file basename.
-    name:   []const u8,
-    width:  i32,
+    name: []const u8,
+    width: i32,
     height: i32,
     /// Clear color applied before `paint`. Off-white so colored Panels stand out.
-    clear:  [4]f32 = .{ 0.95, 0.95, 0.95, 1.0 },
-    paint:  *const fn (ctx: PaintContext) anyerror!void,
+    clear: [4]f32 = .{ 0.95, 0.95, 0.95, 1.0 },
+    paint: *const fn (ctx: PaintContext) anyerror!void,
 };
 
 // ── helpers ──────────────────────────────────────────────────────────────
@@ -73,7 +73,7 @@ fn growableLeaf(
 /// re-implement the boilerplate.
 const Setup = struct {
     container: *nimbus.Container,
-    ctx:       PaintContext,
+    ctx: PaintContext,
 
     fn init(ctx: PaintContext) !Setup {
         const cont = try nimbus.Container.create(ctx.allocator);
@@ -82,7 +82,8 @@ const Setup = struct {
 
     fn paint(self: *Setup) void {
         self.container.setBounds(.{
-            .x = 0, .y = 0,
+            .x = 0,
+            .y = 0,
             .width = @floatFromInt(self.ctx.width),
             .height = @floatFromInt(self.ctx.height),
         });
@@ -102,10 +103,10 @@ const Setup = struct {
 /// 3 fixed-size colored Panels packed from the left, no grow.
 /// Mirrors `box_layout_test.zig::"horizontal: 3 fixed-size children pack from the left"`.
 pub const box_horizontal_pack = Scene{
-    .name   = "box_horizontal_pack",
-    .width  = 400,
+    .name = "box_horizontal_pack",
+    .width = 400,
     .height = 80,
-    .paint  = paintBoxHorizontalPack,
+    .paint = paintBoxHorizontalPack,
 };
 
 fn paintBoxHorizontalPack(ctx: PaintContext) anyerror!void {
@@ -123,10 +124,10 @@ fn paintBoxHorizontalPack(ctx: PaintContext) anyerror!void {
 /// Two growable children with weights 1 and 3 split the horizontal space.
 /// Mirrors `box_layout_test.zig::"horizontal: grow split by weight"`.
 pub const box_horizontal_grow_weights = Scene{
-    .name   = "box_horizontal_grow_weights",
-    .width  = 400,
+    .name = "box_horizontal_grow_weights",
+    .width = 400,
     .height = 60,
-    .paint  = paintBoxHorizontalGrowWeights,
+    .paint = paintBoxHorizontalGrowWeights,
 };
 
 fn paintBoxHorizontalGrowWeights(ctx: PaintContext) anyerror!void {
@@ -144,10 +145,10 @@ fn paintBoxHorizontalGrowWeights(ctx: PaintContext) anyerror!void {
 /// alignment (start / center / end / stretch).
 /// Mirrors `box_layout_test.zig::"vertical: cross-axis alignment"`.
 pub const box_vertical_align_cross = Scene{
-    .name   = "box_vertical_align_cross",
-    .width  = 200,
+    .name = "box_vertical_align_cross",
+    .width = 200,
     .height = 100,
-    .paint  = paintBoxVerticalAlignCross,
+    .paint = paintBoxVerticalAlignCross,
 };
 
 fn paintBoxVerticalAlignCross(ctx: PaintContext) anyerror!void {
@@ -180,10 +181,10 @@ fn paintBoxVerticalAlignCross(ctx: PaintContext) anyerror!void {
 /// All 5 regions filled with color-coded fixed-size Panels.
 /// Mirrors `border_layout_test.zig::"all 5 regions partition correctly"`.
 pub const border_five_regions = Scene{
-    .name   = "border_five_regions",
-    .width  = 400,
+    .name = "border_five_regions",
+    .width = 400,
     .height = 300,
-    .paint  = paintBorderFiveRegions,
+    .paint = paintBorderFiveRegions,
 };
 
 fn paintBorderFiveRegions(ctx: PaintContext) anyerror!void {
@@ -191,16 +192,11 @@ fn paintBorderFiveRegions(ctx: PaintContext) anyerror!void {
     defer setup.deinit();
     setup.container.setLayout(nimbus.BorderLayout.get());
 
-    try nimbus.BorderLayout.add(setup.container, .north,
-        &(try coloredLeaf(ctx.allocator, 50, 20, awt.Graphics.Color.rgb(0.85, 0.30, 0.30))).container.component);
-    try nimbus.BorderLayout.add(setup.container, .south,
-        &(try coloredLeaf(ctx.allocator, 50, 30, awt.Graphics.Color.rgb(0.30, 0.50, 0.85))).container.component);
-    try nimbus.BorderLayout.add(setup.container, .west,
-        &(try coloredLeaf(ctx.allocator, 40, 50, awt.Graphics.Color.rgb(0.85, 0.65, 0.20))).container.component);
-    try nimbus.BorderLayout.add(setup.container, .east,
-        &(try coloredLeaf(ctx.allocator, 60, 50, awt.Graphics.Color.rgb(0.30, 0.70, 0.40))).container.component);
-    try nimbus.BorderLayout.add(setup.container, .center,
-        &(try coloredLeaf(ctx.allocator, 50, 50, awt.Graphics.Color.rgb(0.55, 0.55, 0.55))).container.component);
+    try nimbus.BorderLayout.add(setup.container, .north, &(try coloredLeaf(ctx.allocator, 50, 20, awt.Graphics.Color.rgb(0.85, 0.30, 0.30))).container.component);
+    try nimbus.BorderLayout.add(setup.container, .south, &(try coloredLeaf(ctx.allocator, 50, 30, awt.Graphics.Color.rgb(0.30, 0.50, 0.85))).container.component);
+    try nimbus.BorderLayout.add(setup.container, .west, &(try coloredLeaf(ctx.allocator, 40, 50, awt.Graphics.Color.rgb(0.85, 0.65, 0.20))).container.component);
+    try nimbus.BorderLayout.add(setup.container, .east, &(try coloredLeaf(ctx.allocator, 60, 50, awt.Graphics.Color.rgb(0.30, 0.70, 0.40))).container.component);
+    try nimbus.BorderLayout.add(setup.container, .center, &(try coloredLeaf(ctx.allocator, 50, 50, awt.Graphics.Color.rgb(0.55, 0.55, 0.55))).container.component);
 
     setup.paint();
 }
@@ -210,10 +206,10 @@ fn paintBorderFiveRegions(ctx: PaintContext) anyerror!void {
 /// Three CheckBoxes stacked vertically: one unchecked, one checked, one
 /// disabled (so the disabled rendering is visible too).
 pub const toggle_checkboxes = Scene{
-    .name   = "toggle_checkboxes",
-    .width  = 300,
+    .name = "toggle_checkboxes",
+    .width = 300,
     .height = 120,
-    .paint  = paintToggleCheckboxes,
+    .paint = paintToggleCheckboxes,
 };
 
 fn paintToggleCheckboxes(ctx: PaintContext) anyerror!void {
@@ -239,10 +235,10 @@ fn paintToggleCheckboxes(ctx: PaintContext) anyerror!void {
 
 /// Three RadioButtons in a group, with the middle one selected.
 pub const toggle_radios = Scene{
-    .name   = "toggle_radios",
-    .width  = 300,
+    .name = "toggle_radios",
+    .width = 300,
     .height = 120,
-    .paint  = paintToggleRadios,
+    .paint = paintToggleRadios,
 };
 
 fn paintToggleRadios(ctx: PaintContext) anyerror!void {
@@ -268,10 +264,10 @@ fn paintToggleRadios(ctx: PaintContext) anyerror!void {
 /// down chevron. The popup is not exercised here (it would require an
 /// open Window with overlay support).
 pub const toggle_combobox_closed = Scene{
-    .name   = "toggle_combobox_closed",
-    .width  = 300,
+    .name = "toggle_combobox_closed",
+    .width = 300,
     .height = 60,
-    .paint  = paintToggleComboboxClosed,
+    .paint = paintToggleComboboxClosed,
 };
 
 fn paintToggleComboboxClosed(ctx: PaintContext) anyerror!void {

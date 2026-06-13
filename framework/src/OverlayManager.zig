@@ -23,25 +23,25 @@ pub const OverlayPolicy = enum {
 /// `parent` is null; `absoluteOriginInWindow` includes that position so
 /// window-local mouse coords hit-test correctly.
 pub const OverlayEntry = struct {
-    component:  *Component,
+    component: *Component,
     /// Opaque owner (Menu / PopupMenu / a ghost component) for dismiss / remove.
-    owner:      *anyopaque,
+    owner: *anyopaque,
     /// Called when a modal overlay is dismissed (outside-press / ESC) so the
     /// owner can update its `open` state.
     on_dismiss: *const fn (*anyopaque) void,
     /// Input model. Default modal (the common popup case).
-    policy:     OverlayPolicy = .modal_popup,
+    policy: OverlayPolicy = .modal_popup,
 };
 
 /// Registration order: bottom = first opened, top = most recent.
-entries:          std.ArrayList(OverlayEntry),
-allocator:        std.mem.Allocator,
+entries: std.ArrayList(OverlayEntry),
+allocator: std.mem.Allocator,
 /// Borrowed from the owning Window (set in `wire`, after the Window installs
 /// its notify/controller). Used to wire modal overlays so their descendants'
 /// repaint / requestFocus bubble to the Window, and (via `dirty_notify`) to
 /// mark the Window dirty after a change. Held as the generic property types
 /// (not `*Window`) so this manager does not depend on Window.
-dirty_notify:     *Component.DirtyNotify,
+dirty_notify: *Component.DirtyNotify,
 focus_controller: *Component.FocusController,
 
 pub fn init(allocator: std.mem.Allocator) OverlayManager {

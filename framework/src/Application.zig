@@ -24,6 +24,7 @@ const Menu = @import("Menu.zig");
 const MenuItem = @import("MenuItem.zig");
 const MenuBar = @import("MenuBar.zig");
 const CheckBoxMenuItem = @import("CheckBoxMenuItem.zig");
+const RadioButtonMenuItem = @import("RadioButtonMenuItem.zig");
 const PopupMenu = @import("PopupMenu.zig");
 const MenuSeparator = @import("MenuSeparator.zig");
 const TextField = @import("TextField.zig");
@@ -35,23 +36,23 @@ const lucide = @import("lucide/icons.zig");
 const Application = @This();
 
 const WindowEntry = struct {
-    window:  *Window,
+    window: *Window,
     /// Free the outer widget (Frame 等) that contains the Window.
     /// Called when the window closes or Application.deinit runs. For caller-
     /// owned Dialogs this is a no-op (see `dialog`); the loop routes their
     /// close to `Dialog.close` instead of destroying them.
-    outer:   *anyopaque,
+    outer: *anyopaque,
     destroy: *const fn (*anyopaque, std.mem.Allocator) void,
     /// Non-null when this entry is a Dialog. Lets the close-reaper route a
     /// close request to `Dialog.close(.none)` instead of destroying (Dialogs
     /// are owned by the caller, not by Application).
-    dialog:  ?*Dialog = null,
+    dialog: ?*Dialog = null,
     /// Window geometry last synced with the OS. Compared against the Window's
     /// desired `win_pos`/`win_size` at each loop tail; a mismatch is pushed to
     /// the OS and recorded here. OS-driven resizes update this via
     /// `noteOsGeometry` so the diff does not bounce back. See
     /// `application.md`「OS との同期」.
-    synced_pos:  awt.Window.Point,
+    synced_pos: awt.Window.Point,
     synced_size: awt.Window.Size,
 };
 
@@ -61,13 +62,13 @@ pub const TimerId = u32;
 pub const TimerCallback = *const fn (*anyopaque) void;
 
 const Timer = struct {
-    id:        TimerId,
+    id: TimerId,
     /// Monotonic `awt.time()` (seconds since `awt.init`) at which this
     /// timer next fires.
-    due_time:  f64,
+    due_time: f64,
     /// Repeat period in milliseconds. 0 → one-shot (removed after firing).
     period_ms: u32,
-    cb:        TimerCallback,
+    cb: TimerCallback,
     user_data: *anyopaque,
 };
 
@@ -77,40 +78,40 @@ const Timer = struct {
 /// without real sleeps. See `framework/doc/robot.md`「仮想クロック」.
 pub const ClockMode = enum { real, virtual };
 
-allocator:    std.mem.Allocator,
-device:       awt.Device,
-context:      awt.Graphics.Context,
+allocator: std.mem.Allocator,
+device: awt.Device,
+context: awt.Graphics.Context,
 default_font: awt.Font,
-event_queue:  *awt.EventQueue,
-windows:      std.ArrayList(WindowEntry),
+event_queue: *awt.EventQueue,
+windows: std.ArrayList(WindowEntry),
 /// Active modal Dialog windows, bottom→top. Non-empty means a modal is up:
 /// only the top window receives input (`refreshModalBlocking`). Supports
 /// nested modals (a dialog opened from a dialog).
-modal_stack:  std.ArrayList(*Window),
-timers:       std.ArrayList(Timer),
+modal_stack: std.ArrayList(*Window),
+timers: std.ArrayList(Timer),
 next_timer_id: TimerId,
 /// Time source. Real mode (default) follows `awt.time()`; virtual mode is set
 /// by the headless factory so `advanceClock` drives time deterministically.
-clock_mode:   ClockMode,
-virtual_now:  f64,
+clock_mode: ClockMode,
+virtual_now: f64,
 /// Lazily-decoded GPU images for built-in lucide icons. Slot is null until
 /// the first `icon(.foo)` call decodes the PNG and uploads the texture.
 /// All slots are freed in `deinit`.
-icon_cache:   [lucide.Icon.count]?awt.Image,
+icon_cache: [lucide.Icon.count]?awt.Image,
 /// Color catalog for the default look. Fixed at startup (`initWithTheme`);
 /// every factory-created component points at this copy (`&app.theme`).
 /// See `framework/doc/theme.md`.
-theme:        Theme,
+theme: Theme,
 
 // Owned program / buffer objects (Graphics.Context holds pointers to these).
 _color_program: awt.programs.Color,
 _image_program: awt.programs.Image,
 _rrect_program: awt.programs.RoundedRect,
-_text_program:  awt.programs.Text,
-_vertex_ring:   awt.VertexRing,
-_uniforms:      awt.UniformBuffer,
-_quad_index:    awt.QuadIndexBuffer,
-_atlas:         awt.GlyphAtlas,
+_text_program: awt.programs.Text,
+_vertex_ring: awt.VertexRing,
+_uniforms: awt.UniformBuffer,
+_quad_index: awt.QuadIndexBuffer,
+_atlas: awt.GlyphAtlas,
 
 /// Initialize the application. The default font is the bundled Noto Sans JP
 /// regular (see `framework/src/noto/`); callers do not need to supply font
@@ -160,14 +161,14 @@ pub fn init(allocator: std.mem.Allocator, io: std.Io) !*Application {
     errdefer app._atlas.deinit();
 
     app.context = .{
-        .vertex_ring   = &app._vertex_ring,
-        .uniforms      = &app._uniforms,
-        .quad_index    = &app._quad_index,
-        .atlas         = &app._atlas,
+        .vertex_ring = &app._vertex_ring,
+        .uniforms = &app._uniforms,
+        .quad_index = &app._quad_index,
+        .atlas = &app._atlas,
         .color_program = &app._color_program,
         .image_program = &app._image_program,
         .rrect_program = &app._rrect_program,
-        .text_program  = &app._text_program,
+        .text_program = &app._text_program,
     };
 
     app.default_font = try awt.Font.init(noto.noto_sans_jp_regular, 0);
@@ -376,11 +377,11 @@ fn noopDestroy(_: *anyopaque, _: std.mem.Allocator) void {}
 /// are caller-owned.
 pub fn registerDialog(self: *Application, d: *Dialog) !void {
     try self.windows.append(self.allocator, .{
-        .window  = &d.window,
-        .outer   = @ptrCast(d),
+        .window = &d.window,
+        .outer = @ptrCast(d),
         .destroy = noopDestroy,
-        .dialog  = d,
-        .synced_pos  = d.window.getPos(),
+        .dialog = d,
+        .synced_pos = d.window.getPos(),
         .synced_size = d.window.getSize(),
     });
     // Respect any modal currently in effect (block the freshly-shown window
@@ -488,10 +489,10 @@ fn addTimer(
     self.next_timer_id +%= 1;
     const delay_s: f64 = @as(f64, @floatFromInt(delay_ms)) / 1000.0;
     try self.timers.append(self.allocator, .{
-        .id        = id,
-        .due_time  = self.now() + delay_s,
+        .id = id,
+        .due_time = self.now() + delay_s,
         .period_ms = period_ms,
-        .cb        = cb,
+        .cb = cb,
         .user_data = user_data,
     });
     // Wake the run loop so the wait deadline is recomputed (the new timer
@@ -572,11 +573,11 @@ pub fn frame(self: *Application, title: []const u8, w: u32, h: u32) !*Frame {
     }.destroy;
 
     try self.windows.append(self.allocator, .{
-        .window  = &f.window,
-        .outer   = @ptrCast(f),
+        .window = &f.window,
+        .outer = @ptrCast(f),
         .destroy = dtor,
         // Model == OS at creation: seed synced from the window's initial geometry.
-        .synced_pos  = f.window.getPos(),
+        .synced_pos = f.window.getPos(),
         .synced_size = f.window.getSize(),
     });
 
@@ -606,10 +607,10 @@ pub fn frameHeadless(self: *Application, title: []const u8, w: u32, h: u32) !*Fr
     }.destroy;
 
     try self.windows.append(self.allocator, .{
-        .window  = &f.window,
-        .outer   = @ptrCast(f),
+        .window = &f.window,
+        .outer = @ptrCast(f),
         .destroy = dtor,
-        .synced_pos  = f.window.getPos(),
+        .synced_pos = f.window.getPos(),
         .synced_size = f.window.getSize(),
     });
 
@@ -858,6 +859,12 @@ pub fn checkBoxMenuItem(self: *Application, text: []const u8) !*CheckBoxMenuItem
     const cmi = try CheckBoxMenuItem.create(self.allocator, text, self.menuFont(), self.theme.text);
     self.applyTheme(&cmi.component);
     return cmi;
+}
+
+pub fn radioButtonMenuItem(self: *Application, text: []const u8) !*RadioButtonMenuItem {
+    const rbmi = try RadioButtonMenuItem.create(self.allocator, text, self.menuFont(), self.theme.text);
+    self.applyTheme(&rbmi.component);
+    return rbmi;
 }
 
 pub fn menuBar(self: *Application) !*MenuBar {

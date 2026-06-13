@@ -32,8 +32,8 @@ pub const GroupHook = struct {
 /// `model.button.setPressed(...)` etc. directly — there are no
 /// delegation wrappers for these (Zig idiom, `component.md`「派生型から
 /// Component メソッドへのアクセス」 と同じ方針).
-button:     ButtonModel,
-selected:   bool = false,
+button: ButtonModel,
+selected: bool = false,
 /// At most one group may own a model (Swing semantics). Null when the
 /// model is not part of any `ButtonGroup`.
 group_hook: ?GroupHook = null,

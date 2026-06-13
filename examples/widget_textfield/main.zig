@@ -24,7 +24,7 @@ const nimbus = @import("nimbus");
 const State = struct {
     field: *nimbus.TextField,
     label: *nimbus.Label,
-    buf:   [256]u8 = undefined,
+    buf: [256]u8 = undefined,
 };
 
 fn refreshLabel(state: *State) void {

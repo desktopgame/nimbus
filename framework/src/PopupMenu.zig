@@ -17,29 +17,29 @@ const PopupMenu = @This();
 // border (frame). See `framework/doc/theme.md`.
 
 popup_root: Component,
-items:      std.ArrayList(*Component),
-open:       bool,
-open_child: ?*Menu,            // hovered submenu, if any
-window:     ?*Window,
-allocator:  std.mem.Allocator,
+items: std.ArrayList(*Component),
+open: bool,
+open_child: ?*Menu, // hovered submenu, if any
+window: ?*Window,
+allocator: std.mem.Allocator,
 
 const popup_vtable = Component.VTable{
-    .install      = popupInstall,
-    .uninstall    = popupUninstall,
-    .paint        = popupPaint,
+    .install = popupInstall,
+    .uninstall = popupUninstall,
+    .paint = popupPaint,
     .processEvent = popupProcessEvent,
-    .destroy      = popupDestroyNoop,
+    .destroy = popupDestroyNoop,
 };
 
 pub fn create(allocator: std.mem.Allocator) !*PopupMenu {
     const pm = try allocator.create(PopupMenu);
     pm.* = .{
         .popup_root = Component.init(allocator, &popup_vtable),
-        .items      = .empty,
-        .open       = false,
+        .items = .empty,
+        .open = false,
         .open_child = null,
-        .window     = null,
-        .allocator  = allocator,
+        .window = null,
+        .allocator = allocator,
     };
     pm.popup_root.role = .popup_menu;
     return pm;
@@ -94,7 +94,7 @@ pub fn show(self: *PopupMenu, w: *Window, x: f32, y: f32) !void {
         popup_h += item.min_size.height;
     }
     popup_w = @max(popup_w, 80);
-    popup_h += 2;  // border
+    popup_h += 2; // border
 
     const win_size = w.getSize();
     const win_w: f32 = @floatFromInt(win_size.width);

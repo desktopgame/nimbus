@@ -23,47 +23,47 @@ const log = @import("log.zig");
 
 const ComboBox = @This();
 
-const PADDING_X: f32      = 8;
-const PADDING_Y: f32      = 4;
-const CHEVRON_W: f32      = 16;
+const PADDING_X: f32 = 8;
+const PADDING_Y: f32 = 4;
+const CHEVRON_W: f32 = 16;
 const ITEM_PADDING_Y: f32 = 4;
-const BORDER_WIDTH: f32   = 1;
+const BORDER_WIDTH: f32 = 1;
 
 // Colors come from `component.theme`: field/popup bg = surface_input
 // (surface_disabled when disabled), frame = border (accent when focused),
 // chevron = text, hovered item = accent bg + text_on_accent fg.
 
-component:        Component,
+component: Component,
 /// Standalone Component used as the popup root. Lives inside ComboBox
 /// itself (not in a Container), registered with Window.addOverlay when
 /// the popup opens.
-popup_root:       Component,
-items:            std.ArrayList([]const u8),  // owned UTF-8 dups
-selected_index:   usize,
-hovered_index:    ?usize,
-open:             bool,
-window:           ?*Window,
-has_focus:        bool,
-enabled:          bool,
-font:             awt.Graphics.TextFont,
-color:            awt.Graphics.Color,
+popup_root: Component,
+items: std.ArrayList([]const u8), // owned UTF-8 dups
+selected_index: usize,
+hovered_index: ?usize,
+open: bool,
+window: ?*Window,
+has_focus: bool,
+enabled: bool,
+font: awt.Graphics.TextFont,
+color: awt.Graphics.Color,
 change_listeners: ChangeListenerList,
-allocator:        std.mem.Allocator,
+allocator: std.mem.Allocator,
 
 pub const vtable = Component.VTable{
-    .install      = install,
-    .uninstall    = uninstall,
-    .paint        = paint,
+    .install = install,
+    .uninstall = uninstall,
+    .paint = paint,
     .processEvent = processEvent,
-    .destroy      = destroy,
+    .destroy = destroy,
 };
 
 const popup_vtable = Component.VTable{
-    .install      = popupInstall,
-    .uninstall    = popupUninstall,
-    .paint        = popupPaint,
+    .install = popupInstall,
+    .uninstall = popupUninstall,
+    .paint = popupPaint,
     .processEvent = popupProcessEvent,
-    .destroy      = popupDestroyNoop,
+    .destroy = popupDestroyNoop,
 };
 
 pub fn create(

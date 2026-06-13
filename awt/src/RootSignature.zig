@@ -9,7 +9,7 @@ const RootSignature = @This();
 
 pub const BindingType = enum(c_uint) {
     constant_buffer = c.nmRootBindingTypeConstantBuffer,
-    texture         = c.nmRootBindingTypeTexture,
+    texture = c.nmRootBindingTypeTexture,
 };
 
 pub const Binding = struct {
@@ -32,8 +32,7 @@ pub fn init(device: Device, bindings: []const Binding) !RootSignature {
     }
     const ptr: ?[*]const c.nmRootBinding =
         if (bindings.len == 0) null else &stack_bindings;
-    const h = c.nmCreateRootSignature(device.handle, ptr, @intCast(bindings.len))
-        orelse return error.RootSignatureCreateFailed;
+    const h = c.nmCreateRootSignature(device.handle, ptr, @intCast(bindings.len)) orelse return error.RootSignatureCreateFailed;
     return .{ .handle = h };
 }
 

@@ -36,14 +36,14 @@ const ChangeEvent = nimbus.ChangeEvent;
 const ActionEvent = nimbus.ActionEvent;
 
 const State = struct {
-    status:  *nimbus.Label,
-    field:   *nimbus.TextField,
-    extras:  *nimbus.CheckBox,
-    rb_a:    *nimbus.RadioButton,
-    rb_b:    *nimbus.RadioButton,
-    slider:  *nimbus.Slider,
-    frame:   *nimbus.Frame,
-    buf:     [256]u8 = undefined,
+    status: *nimbus.Label,
+    field: *nimbus.TextField,
+    extras: *nimbus.CheckBox,
+    rb_a: *nimbus.RadioButton,
+    rb_b: *nimbus.RadioButton,
+    slider: *nimbus.Slider,
+    frame: *nimbus.Frame,
+    buf: [256]u8 = undefined,
 };
 
 fn setStatus(s: *State, comptime fmt: []const u8, args: anytype) void {

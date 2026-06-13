@@ -9,8 +9,7 @@ const Window = @This();
 handle: *c.struct_nmWindow,
 
 pub fn init(title: [:0]const u8, width: u32, height: u32) !Window {
-    const h = c.nmCreateWindow(title.ptr, @intCast(width), @intCast(height))
-        orelse return error.WindowCreateFailed;
+    const h = c.nmCreateWindow(title.ptr, @intCast(width), @intCast(height)) orelse return error.WindowCreateFailed;
     return .{ .handle = h };
 }
 
@@ -129,15 +128,15 @@ pub fn swapBuffers(self: Window) void {
     c.nmSwapBuffers(self.handle);
 }
 
-pub const ResizeCallback       = c.nmWindowResizeCallback;
-pub const RefreshCallback      = c.nmWindowRefreshCallback;
-pub const MoveCallback         = c.nmWindowMoveCallback;
-pub const MouseButtonCallback  = c.nmMouseButtonCallback;
-pub const CursorPosCallback    = c.nmCursorPosCallback;
-pub const ScrollCallback       = c.nmScrollCallback;
-pub const KeyCallback          = c.nmKeyCallback;
-pub const CharCallback         = c.nmCharCallback;
-pub const CompositionCallback  = c.nmCompositionCallback;
+pub const ResizeCallback = c.nmWindowResizeCallback;
+pub const RefreshCallback = c.nmWindowRefreshCallback;
+pub const MoveCallback = c.nmWindowMoveCallback;
+pub const MouseButtonCallback = c.nmMouseButtonCallback;
+pub const CursorPosCallback = c.nmCursorPosCallback;
+pub const ScrollCallback = c.nmScrollCallback;
+pub const KeyCallback = c.nmKeyCallback;
+pub const CharCallback = c.nmCharCallback;
+pub const CompositionCallback = c.nmCompositionCallback;
 
 pub fn setResizeCallback(self: Window, cb: ResizeCallback, user_data: ?*anyopaque) void {
     c.nmSetWindowResizeCallback(self.handle, cb, user_data);

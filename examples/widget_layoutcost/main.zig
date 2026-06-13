@@ -33,9 +33,9 @@ const Color = nimbus.awt.Graphics.Color;
 const PAINT_STRIDE = 37;
 
 const Params = struct {
-    depth:  u32 = 9,
+    depth: u32 = 9,
     fanout: u32 = 3,
-    iters:  u32 = 20,
+    iters: u32 = 20,
 };
 
 fn parseArgs(argv: []const [:0]const u8) Params {

@@ -48,8 +48,8 @@ test "horizontal: 3 fixed-size children pack from the left" {
 
     // Each child takes its min/max width on the main axis. Cross axis
     // collapses to max=h (stretch clamped). Pack-left → x cumulates.
-    try expectBounds(&l1.container.component,   0, 0, 50, 30);
-    try expectBounds(&l2.container.component,  50, 0, 80, 40);
+    try expectBounds(&l1.container.component, 0, 0, 50, 30);
+    try expectBounds(&l2.container.component, 50, 0, 80, 40);
     try expectBounds(&l3.container.component, 130, 0, 60, 25);
 }
 
@@ -75,9 +75,9 @@ test "horizontal: single grow child eats leftover space" {
     root.doLayout();
 
     // sum_min = 40 + 20 + 40 = 100, excess = 200 → all goes to `mid`.
-    try expectBounds(&left.container.component,   0, 0,  40, 30);
-    try expectBounds(&mid.container.component,   40, 0, 220, 30);
-    try expectBounds(&right.container.component, 260, 0,  40, 30);
+    try expectBounds(&left.container.component, 0, 0, 40, 30);
+    try expectBounds(&mid.container.component, 40, 0, 220, 30);
+    try expectBounds(&right.container.component, 260, 0, 40, 30);
 }
 
 test "horizontal: grow split by weight" {
@@ -101,7 +101,7 @@ test "horizontal: grow split by weight" {
     root.doLayout();
 
     // sum_min = 0, distributable = 400. Split 1:3 → 100 / 300.
-    try expectBounds(&c1.container.component,   0, 0, 100, 20);
+    try expectBounds(&c1.container.component, 0, 0, 100, 20);
     try expectBounds(&c2.container.component, 100, 0, 300, 20);
 }
 
@@ -130,8 +130,8 @@ test "vertical: 3 fixed-size children pack from the top" {
     root.setLayout(BoxLayout.vertical());
 
     const l1 = try leaf(a, 100, 20);
-    const l2 = try leaf(a,  80, 30);
-    const l3 = try leaf(a,  60, 15);
+    const l2 = try leaf(a, 80, 30);
+    const l3 = try leaf(a, 60, 15);
     try root.add(&l1.container.component);
     try root.add(&l2.container.component);
     try root.add(&l3.container.component);
@@ -139,9 +139,9 @@ test "vertical: 3 fixed-size children pack from the top" {
     root.setBounds(.{ .x = 0, .y = 0, .width = 200, .height = 300 });
     root.doLayout();
 
-    try expectBounds(&l1.container.component, 0,  0, 100, 20);
-    try expectBounds(&l2.container.component, 0, 20,  80, 30);
-    try expectBounds(&l3.container.component, 0, 50,  60, 15);
+    try expectBounds(&l1.container.component, 0, 0, 100, 20);
+    try expectBounds(&l2.container.component, 0, 20, 80, 30);
+    try expectBounds(&l3.container.component, 0, 50, 60, 15);
 }
 
 test "vertical: cross-axis alignment (start / center / end / stretch)" {
@@ -152,10 +152,22 @@ test "vertical: cross-axis alignment (start / center / end / stretch)" {
 
     // 4 children, width 40, height 20. Cross axis is x.
     const inline_children = .{
-        .{ Component.Alignment.start,   0.0,   },
-        .{ Component.Alignment.center,  80.0,  }, // (200-40)/2 = 80
-        .{ Component.Alignment.end,     160.0, }, // 200-40
-        .{ Component.Alignment.stretch, 0.0,   }, // expands to full width
+        .{
+            Component.Alignment.start,
+            0.0,
+        },
+        .{
+            Component.Alignment.center,
+            80.0,
+        }, // (200-40)/2 = 80
+        .{
+            Component.Alignment.end,
+            160.0,
+        }, // 200-40
+        .{
+            Component.Alignment.stretch,
+            0.0,
+        }, // expands to full width
     };
 
     var added: [4]*Panel = undefined;
@@ -177,10 +189,10 @@ test "vertical: cross-axis alignment (start / center / end / stretch)" {
     // center:  x=80,  width=40
     // end:     x=160, width=40
     // stretch: x=0,   width=200
-    try expectBounds(&added[0].container.component,   0,  0,  40, 20);
-    try expectBounds(&added[1].container.component,  80, 20,  40, 20);
-    try expectBounds(&added[2].container.component, 160, 40,  40, 20);
-    try expectBounds(&added[3].container.component,   0, 60, 200, 20);
+    try expectBounds(&added[0].container.component, 0, 0, 40, 20);
+    try expectBounds(&added[1].container.component, 80, 20, 40, 20);
+    try expectBounds(&added[2].container.component, 160, 40, 40, 20);
+    try expectBounds(&added[3].container.component, 0, 60, 200, 20);
 }
 
 test "nested: vertical box with a horizontal row reports correct min size" {

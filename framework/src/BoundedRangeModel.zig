@@ -11,9 +11,9 @@ fn fireChange(self: *BoundedRangeModel) void {
     self.change_listeners.fire(&.{ .source = self });
 }
 
-min:    i32,
-value:  i32,
-max:    i32,
+min: i32,
+value: i32,
+max: i32,
 extent: i32,
 change_listeners: ChangeListenerList,
 
@@ -43,9 +43,15 @@ pub fn setValue(self: *BoundedRangeModel, v: i32) void {
     self.fireChange();
 }
 
-pub fn getMin(self: *const BoundedRangeModel) i32 { return self.min; }
-pub fn getMax(self: *const BoundedRangeModel) i32 { return self.max; }
-pub fn getExtent(self: *const BoundedRangeModel) i32 { return self.extent; }
+pub fn getMin(self: *const BoundedRangeModel) i32 {
+    return self.min;
+}
+pub fn getMax(self: *const BoundedRangeModel) i32 {
+    return self.max;
+}
+pub fn getExtent(self: *const BoundedRangeModel) i32 {
+    return self.extent;
+}
 
 pub fn setRange(self: *BoundedRangeModel, min: i32, max: i32) void {
     if (self.min == min and self.max == max) return;

@@ -50,8 +50,8 @@ test "north + south + center: edges keep min size, center fills the rest" {
     const south = try leaf(a, 50, 32);
     const center = try leaf(a, 50, 50);
 
-    try BorderLayout.add(root, .north,  &north.container.component);
-    try BorderLayout.add(root, .south,  &south.container.component);
+    try BorderLayout.add(root, .north, &north.container.component);
+    try BorderLayout.add(root, .south, &south.container.component);
     try BorderLayout.add(root, .center, &center.container.component);
 
     root.setBounds(.{ .x = 0, .y = 0, .width = 300, .height = 200 });
@@ -60,9 +60,9 @@ test "north + south + center: edges keep min size, center fills the rest" {
     // north: full width, height = north.min.height = 24
     // south: full width, height = south.min.height = 32, y = H - sh
     // center: full width, sits between north and south
-    try expectBounds(&north.container.component,  0,   0, 300, 24);
-    try expectBounds(&south.container.component,  0, 168, 300, 32);
-    try expectBounds(&center.container.component, 0,  24, 300, 144);
+    try expectBounds(&north.container.component, 0, 0, 300, 24);
+    try expectBounds(&south.container.component, 0, 168, 300, 32);
+    try expectBounds(&center.container.component, 0, 24, 300, 144);
 }
 
 test "all 5 regions partition correctly" {
@@ -71,16 +71,16 @@ test "all 5 regions partition correctly" {
     defer root.component.vtable.destroy(&root.component, a);
     root.setLayout(BorderLayout.get());
 
-    const north  = try leaf(a, 50, 20);
-    const south  = try leaf(a, 50, 30);
-    const west   = try leaf(a, 40, 50);
-    const east   = try leaf(a, 60, 50);
+    const north = try leaf(a, 50, 20);
+    const south = try leaf(a, 50, 30);
+    const west = try leaf(a, 40, 50);
+    const east = try leaf(a, 60, 50);
     const center = try leaf(a, 50, 50);
 
-    try BorderLayout.add(root, .north,  &north.container.component);
-    try BorderLayout.add(root, .south,  &south.container.component);
-    try BorderLayout.add(root, .west,   &west.container.component);
-    try BorderLayout.add(root, .east,   &east.container.component);
+    try BorderLayout.add(root, .north, &north.container.component);
+    try BorderLayout.add(root, .south, &south.container.component);
+    try BorderLayout.add(root, .west, &west.container.component);
+    try BorderLayout.add(root, .east, &east.container.component);
     try BorderLayout.add(root, .center, &center.container.component);
 
     root.setBounds(.{ .x = 0, .y = 0, .width = 400, .height = 300 });
@@ -89,11 +89,11 @@ test "all 5 regions partition correctly" {
     // nh=20, sh=30, ww=40, ew=60
     // mid_h = 300 - 20 - 30 = 250
     // mid_w = 400 - 40 - 60 = 300
-    try expectBounds(&north.container.component,    0,   0, 400,  20);
-    try expectBounds(&south.container.component,    0, 270, 400,  30);
-    try expectBounds(&west.container.component,     0,  20,  40, 250);
-    try expectBounds(&east.container.component,   340,  20,  60, 250);
-    try expectBounds(&center.container.component,  40,  20, 300, 250);
+    try expectBounds(&north.container.component, 0, 0, 400, 20);
+    try expectBounds(&south.container.component, 0, 270, 400, 30);
+    try expectBounds(&west.container.component, 0, 20, 40, 250);
+    try expectBounds(&east.container.component, 340, 20, 60, 250);
+    try expectBounds(&center.container.component, 40, 20, 300, 250);
 }
 
 test "edges with nested Container report size via effectiveMinSize" {
@@ -124,6 +124,6 @@ test "edges with nested Container report size via effectiveMinSize" {
     // north_row.effectiveMinSize.height = max(24, 24) = 24, so the north
     // strip should be 24 tall — *not* 0 (which is what `north.min_size.height`
     // alone would have returned before the effectiveMinSize wiring).
-    try expectBounds(&north_row.component, 0,  0, 300,  24);
+    try expectBounds(&north_row.component, 0, 0, 300, 24);
     try expectBounds(&center.container.component, 0, 24, 300, 76);
 }

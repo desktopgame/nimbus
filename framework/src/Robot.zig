@@ -19,17 +19,17 @@ const Robot = @This();
 /// One node of the curated `tree` snapshot. `name` / `text` borrow the source
 /// component's strings — valid only while that component is alive.
 pub const NodeSnapshot = struct {
-    role:      Component.Role,
-    name:      ?[]const u8, // Component.name (debug name); null if unset
-    text:      ?[]const u8, // accessible name via Component.a11y; null if unset
-    rect:      Component.Rect, // window-local absolute rect
+    role: Component.Role,
+    name: ?[]const u8, // Component.name (debug name); null if unset
+    text: ?[]const u8, // accessible name via Component.a11y; null if unset
+    rect: Component.Rect, // window-local absolute rect
     focusable: bool,
-    focused:   bool, // this component is the window's focus owner
-    children:  []NodeSnapshot, // paint order (back → front)
+    focused: bool, // this component is the window's focus owner
+    children: []NodeSnapshot, // paint order (back → front)
 };
 
-app:    *Application, // borrowed
-window: *Window,      // borrowed; the target window
+app: *Application, // borrowed
+window: *Window, // borrowed; the target window
 /// Last synthesized cursor position (window-local). `mouseDown` / `mouseUp` /
 /// `scroll` emit at this point; `moveMouse` / `click` update it.
 cursor: Component.Point,

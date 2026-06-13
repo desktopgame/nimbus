@@ -20,20 +20,20 @@ const nimbus = @import("nimbus");
 const Event = nimbus.ActionEvent;
 
 const State = struct {
-    app:      *nimbus.Application,
-    modal:    *nimbus.Dialog,
+    app: *nimbus.Application,
+    modal: *nimbus.Dialog,
     modeless: *nimbus.Dialog,
-    label:    *nimbus.Label,
-    buf:      [128]u8 = undefined,
+    label: *nimbus.Label,
+    buf: [128]u8 = undefined,
 };
 
 fn onOpenModal(s: *State, _: *const Event) void {
     const result = s.modal.showModal(); // blocks until the dialog closes
     const name = switch (result) {
-        .ok     => "ok",
+        .ok => "ok",
         .cancel => "cancel",
-        .none   => "none",
-        else    => "?",
+        .none => "none",
+        else => "?",
     };
     const text = std.fmt.bufPrint(&s.buf, "last result: {s}", .{name}) catch return;
     s.label.setText(text) catch {};

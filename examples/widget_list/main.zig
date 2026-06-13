@@ -35,19 +35,19 @@ const Row = struct {
 /// Factory context: the factory needs the List (to delete rows) and the
 /// Application (to build widgets). `list` is filled in after List creation.
 const Ctx = struct {
-    app:  *nimbus.Application,
+    app: *nimbus.Application,
     list: *nimbus.List = undefined,
 };
 
 /// One real cell instance. Reused across rows via `update` (recycle).
 const TaskCell = struct {
-    panel:     *nimbus.Panel,
-    check:     *nimbus.CheckBox,
-    label:     *nimbus.Label,
-    del:       *nimbus.Button,
-    list:      *nimbus.List,
-    cur_row:   ?*Row = null,   // row data currently bound (write-back target)
-    cur_index: usize = 0,      // its index (delete target)
+    panel: *nimbus.Panel,
+    check: *nimbus.CheckBox,
+    label: *nimbus.Label,
+    del: *nimbus.Button,
+    list: *nimbus.List,
+    cur_row: ?*Row = null, // row data currently bound (write-back target)
+    cur_index: usize = 0, // its index (delete target)
 
     /// JavaFX updateItem: bind this cell to one row. Projection only —
     /// content + persistent state come from the row data.
@@ -109,8 +109,8 @@ fn createCell(ud: *anyopaque, allocator: std.mem.Allocator) anyerror!nimbus.List
 
     return .{
         .component = &panel.container.component,
-        .update    = TaskCell.update,
-        .destroy   = TaskCell.destroyCell,
+        .update = TaskCell.update,
+        .destroy = TaskCell.destroyCell,
         .user_data = tc,
     };
 }

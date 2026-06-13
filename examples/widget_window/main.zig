@@ -30,7 +30,7 @@ const State = struct {
     label: *nimbus.Label,
     moved: bool = false,
     grown: bool = false,
-    buf:   [128]u8 = undefined,
+    buf: [128]u8 = undefined,
 };
 
 fn refreshLabel(s: *State) void {

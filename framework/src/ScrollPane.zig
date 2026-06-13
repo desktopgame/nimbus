@@ -31,38 +31,38 @@ const DEFAULT_MIN: f32 = 48;
 // `container` MUST be the first field: the public Component is
 // `container.component`, and methods recover `*ScrollPane` via
 // `@fieldParentPtr("container", ...)`.
-container:      Container,
-layout:         ScrollLayout,
-view:           *Component,        // owned (lives inside `viewport`)
-viewport:       *Container,        // child of `container`; owns `view`
-hbar:           *ScrollBar,        // child of `container`; borrows `h_model`
-vbar:           *ScrollBar,        // child of `container`; borrows `v_model`
+container: Container,
+layout: ScrollLayout,
+view: *Component, // owned (lives inside `viewport`)
+viewport: *Container, // child of `container`; owns `view`
+hbar: *ScrollBar, // child of `container`; borrows `h_model`
+vbar: *ScrollBar, // child of `container`; borrows `v_model`
 /// Scroll state. Owned here (not by the bars) so teardown order is safe: the
 /// bars are destroyed first by `container.deinit`, then these are deinited.
-h_model:        BoundedRangeModel,
-v_model:        BoundedRangeModel,
-h_policy:       Policy,
-v_policy:       Policy,
+h_model: BoundedRangeModel,
+v_model: BoundedRangeModel,
+h_policy: Policy,
+v_policy: Policy,
 unit_increment: f32,
 /// Installed as a property on `viewport.component` so the scrolled view can
 /// request `scrollRectToVisible` (e.g. TextArea caret follow). See Component.
 scroll_controller: Component.ScrollController,
-allocator:      std.mem.Allocator,
+allocator: std.mem.Allocator,
 
 const ScrollLayout = struct {
     base: LayoutManager,
 };
 
 pub const vtable = Component.VTable{
-    .install      = install,
-    .uninstall    = uninstall,
-    .paint        = Container.vtable.paint, // paint children (viewport + bars)
+    .install = install,
+    .uninstall = uninstall,
+    .paint = Container.vtable.paint, // paint children (viewport + bars)
     .processEvent = processEvent,
-    .destroy      = destroy,
+    .destroy = destroy,
 };
 
 const scroll_layout_vtable = LayoutManager.VTable{
-    .doLayout       = layoutDoLayout,
+    .doLayout = layoutDoLayout,
     .computeMinSize = layoutComputeMinSize,
     .computeMaxSize = layoutComputeMaxSize,
 };
@@ -72,19 +72,19 @@ pub fn create(allocator: std.mem.Allocator, view: *Component) !*ScrollPane {
     errdefer allocator.destroy(sp);
 
     sp.* = .{
-        .container      = Container.init(allocator),
-        .layout         = .{ .base = .{ .vtable = &scroll_layout_vtable } },
-        .view           = view,
-        .viewport        = undefined,
-        .hbar            = undefined,
-        .vbar            = undefined,
-        .h_model        = BoundedRangeModel.init(allocator, 0, 0, 0),
-        .v_model        = BoundedRangeModel.init(allocator, 0, 0, 0),
-        .h_policy       = .as_needed,
-        .v_policy       = .as_needed,
+        .container = Container.init(allocator),
+        .layout = .{ .base = .{ .vtable = &scroll_layout_vtable } },
+        .view = view,
+        .viewport = undefined,
+        .hbar = undefined,
+        .vbar = undefined,
+        .h_model = BoundedRangeModel.init(allocator, 0, 0, 0),
+        .v_model = BoundedRangeModel.init(allocator, 0, 0, 0),
+        .h_policy = .as_needed,
+        .v_policy = .as_needed,
         .unit_increment = DEFAULT_UNIT_INCREMENT,
         .scroll_controller = .{ .user_data = undefined, .scroll_rect_to_visible = scrollRectToVisibleImpl },
-        .allocator      = allocator,
+        .allocator = allocator,
     };
     sp.scroll_controller.user_data = @ptrCast(sp);
     errdefer {

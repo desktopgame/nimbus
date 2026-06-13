@@ -13,33 +13,33 @@ const ToggleButtonModel = @import("ToggleButtonModel.zig");
 
 const CheckBox = @This();
 
-const BOX_SIZE: f32   = 16;
-const BOX_GAP: f32    = 6;        // indicator → label gap
-const PADDING_X: f32  = 4;
-const PADDING_Y: f32  = 4;
+const BOX_SIZE: f32 = 16;
+const BOX_GAP: f32 = 6; // indicator → label gap
+const PADDING_X: f32 = 4;
+const PADDING_Y: f32 = 4;
 const FOCUS_RING: f32 = 1;
 
 // Colors come from `component.theme` (see `framework/doc/theme.md`):
 // box bg = surface_input / surface_disabled / accent (checked), box border =
 // indicator_border (accent on hover), check glyph = text_on_accent.
 
-component:  Component,
-model:      *ToggleButtonModel,
+component: Component,
+model: *ToggleButtonModel,
 owns_model: bool,
-text:       []const u8,
-font:       awt.Graphics.TextFont,
-color:      awt.Graphics.Color,
+text: []const u8,
+font: awt.Graphics.TextFont,
+color: awt.Graphics.Color,
 /// True while this checkbox is the window's focus owner (FocusEvent-driven);
 /// drives the focus-ring paint.
-focused:    bool,
-allocator:  std.mem.Allocator,
+focused: bool,
+allocator: std.mem.Allocator,
 
 pub const vtable = Component.VTable{
-    .install      = install,
-    .uninstall    = uninstall,
-    .paint        = paint,
+    .install = install,
+    .uninstall = uninstall,
+    .paint = paint,
     .processEvent = processEvent,
-    .destroy      = destroy,
+    .destroy = destroy,
 };
 
 pub fn create(

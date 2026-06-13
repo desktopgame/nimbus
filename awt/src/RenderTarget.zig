@@ -14,8 +14,7 @@ handle: *c.struct_nmRenderTarget,
 /// Create an offscreen render target with the given dimensions. Caller must
 /// `deinit` it.
 pub fn create(device: Device, width: i32, height: i32) !RenderTarget {
-    const h = c.nmCreateRenderTarget(device.handle, width, height)
-        orelse return error.RenderTargetCreateFailed;
+    const h = c.nmCreateRenderTarget(device.handle, width, height) orelse return error.RenderTargetCreateFailed;
     return .{ .handle = h };
 }
 

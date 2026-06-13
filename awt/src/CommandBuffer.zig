@@ -13,8 +13,7 @@ const CommandBuffer = @This();
 handle: *c.struct_nmCommandBuffer,
 
 pub fn acquire(device: Device) !CommandBuffer {
-    const h = c.nmAcquireCommandBuffer(device.handle)
-        orelse return error.CommandBufferAcquireFailed;
+    const h = c.nmAcquireCommandBuffer(device.handle) orelse return error.CommandBufferAcquireFailed;
     return .{ .handle = h };
 }
 

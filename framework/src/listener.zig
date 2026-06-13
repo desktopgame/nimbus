@@ -30,11 +30,11 @@ pub fn ListenerList(comptime E: type) type {
         pub const ListenerFn = *const fn (user_data: *anyopaque, event: *const E) void;
 
         pub const Listener = struct {
-            fn_ptr:    ListenerFn,
+            fn_ptr: ListenerFn,
             user_data: *anyopaque,
         };
 
-        items:     std.ArrayList(Listener),
+        items: std.ArrayList(Listener),
         allocator: std.mem.Allocator,
 
         pub fn init(allocator: std.mem.Allocator) Self {

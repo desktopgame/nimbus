@@ -19,28 +19,28 @@ const CORNER_RADIUS: f32 = 6;
 const ICON_TEXT_GAP: f32 = 6;
 const FLAT_PADDING: f32 = 4;
 
-component:  Component,
-model:      *ButtonModel,
+component: Component,
+model: *ButtonModel,
 owns_model: bool,
-text:       []const u8,
-font:       awt.Graphics.TextFont,
-color:      awt.Graphics.Color,
-icon:       ?awt.Image,
-icon_size:  ?Component.Size,           // null = natural size; non-null = scaled
+text: []const u8,
+font: awt.Graphics.TextFont,
+color: awt.Graphics.Color,
+icon: ?awt.Image,
+icon_size: ?Component.Size, // null = natural size; non-null = scaled
 /// True while this button is the window's focus owner (tracked via
 /// FocusEvent); drives the focus-ring paint.
-focused:    bool,
+focused: bool,
 /// Byte index into `text` of the mnemonic character (underline paint),
 /// or null. Matching itself uses `component.mnemonic`.
 mnemonic_index: ?usize,
-allocator:  std.mem.Allocator,
+allocator: std.mem.Allocator,
 
 pub const vtable = Component.VTable{
-    .install      = install,
-    .uninstall    = uninstall,
-    .paint        = paint,
+    .install = install,
+    .uninstall = uninstall,
+    .paint = paint,
     .processEvent = processEvent,
-    .destroy      = destroy,
+    .destroy = destroy,
 };
 
 pub fn create(
@@ -115,8 +115,7 @@ fn applyMetrics(self: *Button) void {
     const has_text = self.text.len > 0;
     const has_icon = self.icon != null;
     const icon_sz = self.iconDrawSize();
-    const text_m = if (has_text) self.font.measureString(self.text)
-                   else awt.Font.TextSize{ .width = 0, .height = 0 };
+    const text_m = if (has_text) self.font.measureString(self.text) else awt.Font.TextSize{ .width = 0, .height = 0 };
 
     var w: f32 = 0;
     var h: f32 = 0;
@@ -151,34 +150,44 @@ pub fn setText(self: *Button, text: []const u8) !void {
     self.component.markLayoutDirty();
 }
 
-pub fn getFont(self: Button) awt.Graphics.TextFont { return self.font; }
+pub fn getFont(self: Button) awt.Graphics.TextFont {
+    return self.font;
+}
 pub fn setFont(self: *Button, font: awt.Graphics.TextFont) void {
     self.font = font;
     self.applyMetrics();
     self.component.markLayoutDirty();
 }
 
-pub fn getColor(self: Button) awt.Graphics.Color { return self.color; }
+pub fn getColor(self: Button) awt.Graphics.Color {
+    return self.color;
+}
 pub fn setColor(self: *Button, color: awt.Graphics.Color) void {
     self.color = color;
     self.component.repaint();
 }
 
-pub fn getIcon(self: Button) ?awt.Image { return self.icon; }
+pub fn getIcon(self: Button) ?awt.Image {
+    return self.icon;
+}
 pub fn setIcon(self: *Button, icon: ?awt.Image) void {
     self.icon = icon;
     self.applyMetrics();
     self.component.markLayoutDirty();
 }
 
-pub fn getIconSize(self: Button) ?Component.Size { return self.icon_size; }
+pub fn getIconSize(self: Button) ?Component.Size {
+    return self.icon_size;
+}
 pub fn setIconSize(self: *Button, size: ?Component.Size) void {
     self.icon_size = size;
     self.applyMetrics();
     self.component.markLayoutDirty();
 }
 
-pub fn getModel(self: Button) *ButtonModel { return self.model; }
+pub fn getModel(self: Button) *ButtonModel {
+    return self.model;
+}
 
 /// Programmatic activation: the single entry point shared by Space/Enter,
 /// mnemonics and the default-button binding (mouse keeps its own
@@ -269,8 +278,7 @@ fn paint(self: *Component, g: *awt.Graphics) void {
 
     // Content layout.
     const icon_sz = button.iconDrawSize();
-    const text_m = if (has_text) button.font.measureString(button.text)
-                   else awt.Font.TextSize{ .width = 0, .height = 0 };
+    const text_m = if (has_text) button.font.measureString(button.text) else awt.Font.TextSize{ .width = 0, .height = 0 };
 
     var content_w: f32 = 0;
     if (has_icon) content_w += icon_sz.width;
@@ -288,8 +296,7 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     }
     if (has_text) {
         const ty = (sz.height - text_m.height) / 2;
-        const text_color = if (button.model.enabled) button.color
-                          else t.text_disabled;
+        const text_color = if (button.model.enabled) button.color else t.text_disabled;
         g.setFont(button.font);
         g.setColor(text_color);
         g.drawString(button.text, x, ty);

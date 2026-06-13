@@ -40,6 +40,7 @@ pub const noto = @import("noto/fonts.zig");
 pub const log = @import("log.zig");
 pub const MenuItem = @import("MenuItem.zig");
 pub const CheckBoxMenuItem = @import("CheckBoxMenuItem.zig");
+pub const RadioButtonMenuItem = @import("RadioButtonMenuItem.zig");
 pub const Menu = @import("Menu.zig");
 pub const MenuBar = @import("MenuBar.zig");
 pub const PopupMenu = @import("PopupMenu.zig");

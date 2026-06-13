@@ -10,19 +10,19 @@ const Label = @This();
 const ICON_TEXT_GAP: f32 = 6;
 
 component: Component,
-text:      []const u8,         // Label owns (allocator.dupe'd)
-font:      awt.Graphics.TextFont,
-color:     awt.Graphics.Color,
-icon:      ?awt.Image,         // borrowed (e.g. Application's icon cache)
-icon_size: ?Component.Size,    // null = natural size; non-null = scaled
+text: []const u8, // Label owns (allocator.dupe'd)
+font: awt.Graphics.TextFont,
+color: awt.Graphics.Color,
+icon: ?awt.Image, // borrowed (e.g. Application's icon cache)
+icon_size: ?Component.Size, // null = natural size; non-null = scaled
 allocator: std.mem.Allocator,
 
 pub const vtable = Component.VTable{
-    .install      = install,
-    .uninstall    = uninstall,
-    .paint        = paint,
+    .install = install,
+    .uninstall = uninstall,
+    .paint = paint,
     .processEvent = processEvent,
-    .destroy      = destroy,
+    .destroy = destroy,
 };
 
 pub fn init(
@@ -33,10 +33,10 @@ pub fn init(
 ) !Label {
     var l = Label{
         .component = Component.init(allocator, &vtable),
-        .text      = try allocator.dupe(u8, text),
-        .font      = font,
-        .color     = color,
-        .icon      = null,
+        .text = try allocator.dupe(u8, text),
+        .font = font,
+        .color = color,
+        .icon = null,
         .icon_size = null,
         .allocator = allocator,
     };
@@ -46,7 +46,7 @@ pub fn init(
 }
 
 pub fn deinit(self: *Label) void {
-    self.component.deinit();                 // uninstall + property cleanup
+    self.component.deinit(); // uninstall + property cleanup
     self.allocator.free(self.text);
 }
 
@@ -129,7 +129,7 @@ fn contentMinSize(self: *const Label) Component.Size {
     if (self.icon == null) return .{ .width = m.width, .height = m.height };
     const gap: f32 = if (self.text.len > 0) ICON_TEXT_GAP else 0;
     return .{
-        .width  = icon_sz.width + gap + m.width,
+        .width = icon_sz.width + gap + m.width,
         .height = @max(icon_sz.height, m.height),
     };
 }

@@ -29,40 +29,40 @@ const DEFAULT_DIVIDER_SIZE: f32 = 6;
 // `container` MUST be the first field: the public Component is
 // `container.component`, and methods recover `*SplitPane` via
 // `@fieldParentPtr("container", ...)`.
-container:        Container,
-layout:           SplitLayout,
-first:            *Component,   // owned (left / top pane)
-second:           *Component,   // owned (right / bottom pane)
-orientation:      Orientation,
+container: Container,
+layout: SplitLayout,
+first: *Component, // owned (left / top pane)
+second: *Component, // owned (right / bottom pane)
+orientation: Orientation,
 /// Main-axis size of `first` in px. Null until the first layout, which seeds
 /// it from `first.effectiveMinSize()`. Always re-clamped by the layout so a
 /// value set before the pane has a size is applied (clamped) on first layout.
 divider_location: ?f32,
-divider_size:     f32,
+divider_size: f32,
 /// Share of a container resize delta given to `first` (see doc). 0 keeps
 /// `first` at its px size (sidebar default), 1 gives it the whole delta.
-resize_weight:    f32,
-drag:             ?DragState,
-rollover:         bool,
+resize_weight: f32,
+drag: ?DragState,
+rollover: bool,
 /// Main-axis space (minus divider) at the previous layout; the delta against
 /// the current space is what `resize_weight` distributes.
-last_main:        ?f32,
-allocator:        std.mem.Allocator,
+last_main: ?f32,
+allocator: std.mem.Allocator,
 
 const SplitLayout = struct {
     base: LayoutManager,
 };
 
 pub const vtable = Component.VTable{
-    .install      = Container.vtable.install,
-    .uninstall    = Container.vtable.uninstall,
-    .paint        = paint,
+    .install = Container.vtable.install,
+    .uninstall = Container.vtable.uninstall,
+    .paint = paint,
     .processEvent = processEvent,
-    .destroy      = destroy,
+    .destroy = destroy,
 };
 
 const split_layout_vtable = LayoutManager.VTable{
-    .doLayout       = layoutDoLayout,
+    .doLayout = layoutDoLayout,
     .computeMinSize = layoutComputeMinSize,
     .computeMaxSize = layoutComputeMaxSize,
 };
@@ -82,18 +82,18 @@ pub fn create(
     errdefer allocator.destroy(sp);
 
     sp.* = .{
-        .container        = Container.init(allocator),
-        .layout           = .{ .base = .{ .vtable = &split_layout_vtable } },
-        .first            = first,
-        .second           = second,
-        .orientation      = orientation,
+        .container = Container.init(allocator),
+        .layout = .{ .base = .{ .vtable = &split_layout_vtable } },
+        .first = first,
+        .second = second,
+        .orientation = orientation,
         .divider_location = null,
-        .divider_size     = DEFAULT_DIVIDER_SIZE,
-        .resize_weight    = 0,
-        .drag             = null,
-        .rollover         = false,
-        .last_main        = null,
-        .allocator        = allocator,
+        .divider_size = DEFAULT_DIVIDER_SIZE,
+        .resize_weight = 0,
+        .drag = null,
+        .rollover = false,
+        .last_main = null,
+        .allocator = allocator,
     };
     // Wire the embedded container to behave as the SplitPane component.
     sp.container.component.vtable = &vtable;
@@ -157,7 +157,7 @@ fn fromComponent(self: *Component) *SplitPane {
 fn mainAxis(self: *const SplitPane, size: Component.Size) f32 {
     return switch (self.orientation) {
         .horizontal => size.width,
-        .vertical   => size.height,
+        .vertical => size.height,
     };
 }
 
@@ -229,11 +229,11 @@ fn layoutComputeMinSize(_: *LayoutManager, container: *const Container) Componen
     const b = self.second.effectiveMinSize();
     return switch (self.orientation) {
         .horizontal => .{
-            .width  = a.width + self.divider_size + b.width,
+            .width = a.width + self.divider_size + b.width,
             .height = @max(a.height, b.height),
         },
         .vertical => .{
-            .width  = @max(a.width, b.width),
+            .width = @max(a.width, b.width),
             .height = a.height + self.divider_size + b.height,
         },
     };
@@ -253,7 +253,7 @@ fn paint(self: *Component, g: *awt.Graphics) void {
         const start = sp.dividerStart();
         const strip: Component.Rect = switch (sp.orientation) {
             .horizontal => .{ .x = start, .y = 0, .width = sp.divider_size, .height = sz.height },
-            .vertical   => .{ .x = 0, .y = start, .width = sz.width, .height = sp.divider_size },
+            .vertical => .{ .x = 0, .y = start, .width = sz.width, .height = sp.divider_size },
         };
         g.setColor(t.surface_window);
         g.fillRect(strip);
@@ -262,7 +262,7 @@ fn paint(self: *Component, g: *awt.Graphics) void {
         g.setColor(if (sp.drag != null or sp.rollover) t.border else t.separator);
         const line: Component.Rect = switch (sp.orientation) {
             .horizontal => .{ .x = start + sp.divider_size / 2 - 0.5, .y = 0, .width = 1, .height = sz.height },
-            .vertical   => .{ .x = 0, .y = start + sp.divider_size / 2 - 0.5, .width = sz.width, .height = 1 },
+            .vertical => .{ .x = 0, .y = start + sp.divider_size / 2 - 0.5, .width = sz.width, .height = 1 },
         };
         g.fillRect(line);
     }
@@ -276,7 +276,7 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
             const origin = self.absoluteOriginInWindow();
             const main: f32 = switch (sp.orientation) {
                 .horizontal => m.x - origin.x,
-                .vertical   => m.y - origin.y,
+                .vertical => m.y - origin.y,
             };
             switch (m.action) {
                 .press => {

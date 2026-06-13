@@ -18,8 +18,8 @@ const awt = @import("awt");
 /// absent in v1 — that is widget-internal keymap territory.
 pub const Mods = packed struct {
     command: bool = false,
-    shift:   bool = false,
-    alt:     bool = false,
+    shift: bool = false,
+    alt: bool = false,
 };
 
 /// A key chord: physical key + abstract modifiers.
@@ -69,7 +69,7 @@ pub const KeyStroke = struct {
 /// is comptime-built per (T, f), so the same (T, f, ctx) triple produces an
 /// identical Handler — usable for compare-and-remove if ever needed.
 pub const Handler = struct {
-    ctx:    *anyopaque,
+    ctx: *anyopaque,
     invoke: *const fn (*anyopaque) void,
 
     pub fn typed(comptime T: type, comptime f: fn (*T) void, ctx: *T) Handler {
@@ -96,11 +96,11 @@ pub fn letterOf(code: awt.Event.KeyCode) ?u8 {
 /// wins, and `KeyStroke` needs no hash implementation.
 pub const KeyBindings = struct {
     pub const Entry = struct {
-        stroke:  KeyStroke,
+        stroke: KeyStroke,
         handler: Handler,
     };
 
-    entries:   std.ArrayList(Entry),
+    entries: std.ArrayList(Entry),
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) KeyBindings {

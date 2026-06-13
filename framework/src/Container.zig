@@ -8,14 +8,14 @@ const LayoutManager = @import("LayoutManager.zig");
 const Container = @This();
 
 pub const LayoutElement = struct {
-    component:    *Component,
-    hint:         ?*anyopaque = null,
+    component: *Component,
+    hint: ?*anyopaque = null,
     hint_destroy: ?*const fn (*anyopaque, std.mem.Allocator) void = null,
 };
 
 component: Component,
-children:  std.ArrayList(LayoutElement),
-layout:    ?*LayoutManager,
+children: std.ArrayList(LayoutElement),
+layout: ?*LayoutManager,
 allocator: std.mem.Allocator,
 /// Memoized layout-computed min/max size (the result of the layout manager's
 /// `computeMinSize`/`computeMaxSize`, which walks the whole subtree). Null when
@@ -30,18 +30,18 @@ max_cache: ?Component.Size = null,
 last_hovered: ?*Component = null,
 
 pub const vtable = Component.VTable{
-    .install      = install,
-    .uninstall    = uninstall,
-    .paint        = paint,
+    .install = install,
+    .uninstall = uninstall,
+    .paint = paint,
     .processEvent = processEvent,
-    .destroy      = destroy,
+    .destroy = destroy,
 };
 
 pub fn init(allocator: std.mem.Allocator) Container {
     return .{
         .component = Component.init(allocator, &vtable),
-        .children  = .empty,
-        .layout    = null,
+        .children = .empty,
+        .layout = null,
         .allocator = allocator,
     };
 }
@@ -78,8 +78,8 @@ pub fn addWithHint(
     hint_destroy: ?*const fn (*anyopaque, std.mem.Allocator) void,
 ) !void {
     try self.children.append(self.allocator, .{
-        .component    = child,
-        .hint         = hint,
+        .component = child,
+        .hint = hint,
         .hint_destroy = hint_destroy,
     });
     child.parent = &self.component;
@@ -131,7 +131,7 @@ pub fn getMinSize(self: *const Container) Component.Size {
         break :blk m;
     } else .{ .width = 0, .height = 0 };
     return .{
-        .width  = @max(self.component.min_size.width, lm_min.width),
+        .width = @max(self.component.min_size.width, lm_min.width),
         .height = @max(self.component.min_size.height, lm_min.height),
     };
 }
@@ -156,7 +156,7 @@ pub fn getMaxSize(self: *const Container) Component.Size {
     // ("both bounds must hold"), so an explicit `setMaxSize` actually
     // caps the layout's contribution.
     return .{
-        .width  = @min(self.component.max_size.width, lm_max.width),
+        .width = @min(self.component.max_size.width, lm_max.width),
         .height = @min(self.component.max_size.height, lm_max.height),
     };
 }
