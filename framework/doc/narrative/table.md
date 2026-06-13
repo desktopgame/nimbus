@@ -38,6 +38,29 @@ nimbus は List で確立した「セルは実コンポーネントで、 行 it
 そのまま借用できる。将来 ListModel を独立モジュールに昇格させる余地はある
 (現状は List.zig 内の定義を Table が参照する)。
 
+## TableColumnModel を独立モデルにせず Table に畳んだ理由
+Swing の JTable は珍しく 4 つのモデルに割れている: TableModel (データ)、
+**TableColumnModel** (列の構造を view オブジェクトとして持つ — 各 TableColumn が幅 /
+レンダラ / ヘッダ値等を保持し、列のドラッグ並べ替え・幅変更・表示非表示はデータモデルに
+触れずここで起きる)、ListSelectionModel (選択)、RowSorter (行の並び替え写像)。
+JList に対して JTable が余分に持つ「view モデル」の本体はこの TableColumnModel である。
+
+nimbus v1 は **データモデル (`Model = List.ListModel`) だけを独立に保ち、残り 3 つ
+(列の構造・選択・並び) は Table 自身のフィールドに畳んだ**:
+* 列の構造 → `columns: []ColumnState` (Table 所有。幅はドラッグで変わる実行時状態込み)
+* 選択 → `selected: ?usize` (List と同じく内蔵)
+* 並び → 持たない (アプリがデータモデルを並べ替える。「ソートを Table がやらない理由」)
+
+TableColumnModel を独立の差し替え可能オブジェクトにする利点は、(1) 1 つの列構成を複数
+テーブルで共有する、(2) 列の動的な追加 / 削除 / 並べ替え、の 2 つ。どちらも v1 の実需に無い。
+列を Table に焼き込めば単純になり、要るものは何も失わない。
+
+後で独立化したくなっても安い (additive): データモデルと同じく `createWithColumnModel`
+相当を `createWithModel` と並べて足し、`getColumnWidth` 等は内部の列モデルへ委譲できる。
+公開シグネチャは温存される。これは「データモデルだけは今分離する」判断 (ListModel を
+全シグネチャに織り込むのは後で変えると break) との対比で、列モデルは subset→superset で
+追える側だから今は畳んでよい、という整理。
+
 ## ヘッダーを Table 自身が描く理由 (ScrollPane columnHeader を待たない)
 Swing は JScrollPane の columnHeader 領域に JTableHeader を置く方式だが、nimbus の
 ScrollPane に行 / 列ヘッダー領域はまだ無い (scrollpane.md 機能要望)。v1 は Table が

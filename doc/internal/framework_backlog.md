@@ -484,7 +484,7 @@ List の `addContextMenuListener` を廃止するか並存させるか。
 廃止 API があれば利用箇所（app_filer 等)も移行済みでテスト緑。
 
 ## #9 Table ウィジェット（複数カラム + ヘッダー）
-- 状態: 未着手
+- 状態: 実装中（コア実装済み・111/111 緑。詳細表示の example/ファイラー組み込みが残）
 - 優先度: 高
 - 影響範囲: framework 新規モジュール（Table / TableModel / 列定義）、theme、example、FileChooser 設計
 - 更新日: 2026-06-12
@@ -501,10 +501,14 @@ TableModel の形（行 = `*anyopaque` 借用は List 踏襲でよいか、列�
 ソートの所在（モデルが並べ替えるか view が index 写像を持つか）、
 選択モデルを List と共有するか（#10 と要調整）、行ヘッダー / セル単位選択をスコープ外にするか。
 
-→ doc ドラフト提出済み (2026-06-12、作者レビュー待ち): `framework/doc/table.md` + `narrative/table.md`。
-ドラフトの提案: Model = List.ListModel 同一型 / 列ごと CellFactory で値プロトコル無し /
-ソートは view 写像を持たず「ヘッダークリック通知 + インジケータのみ、並べ替えはアプリ」/
-ヘッダーは Table 自身が上端固定描画 (ScrollPane columnHeader を待たない) / セル編集は v1 外。
+→ doc 提出 + コア実装完了 (2026-06-12): `framework/doc/table.md` + `narrative/table.md` (作者レビュー待ち unsafe)、
+`framework/src/Table.zig` (埋め込みテスト7本)、`app.table` / `app.tableWithModel` ファクトリ、Component.Role に table。
+確定した設計: Model = List.ListModel 同一型 / 列ごと CellFactory で値プロトコル無し /
+ソートは view 写像を持たず「ヘッダークリック通知 (SortEvent) + インジケータのみ、並べ替えはアプリ」/
+ヘッダーは Table 自身が上端固定描画 (スクロールオフセットを打ち消す) / 列幅ドラッグ (min_width クランプ・連続レイアウト) /
+単一選択・行アクティベーション・コンテキストメニューは List と同形のリスナー。
+v1 外 (機能要望): セル編集・複数選択 (#10)・列の自動フィル (←ファイラー詳細表示で最初に欲しがる見込み)・
+列のドラッグ並べ替え。残: 詳細表示の example かファイラー M5 への組み込み (実機で自動フィルの要否を見る)。
 
 ### 完了条件
 ファイラーの詳細表示が Table で動き、ヘッダーソートと列幅ドラッグが操作できる。doc + テスト + example。

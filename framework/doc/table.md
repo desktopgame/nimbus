@@ -134,12 +134,16 @@ pub const ContextMenuEvent = struct {
 pub fn create(
     allocator: std.mem.Allocator,
     columns: []const Column,
+    font: awt.Graphics.TextFont,
 ) !*Table;
 ```
 
 空の `Model` を内部生成して所有し (`owns_model = true`)、`columns` の内容をコピーして
 (`title` は dupe、`factory` は借用) `Table` をヒープに返す。
+`font` はヘッダーのタイトル描画に使う (本体が文字を描く唯一の箇所。セルのフォントは各セルが factory 経由で持つ)。
+ヘッダーの文字色は `component.theme.text` を読む (色は theme、フォントだけ引数なのは theme がフォントを持たないため)。
 `selected` / `sort_column` は none、`row_height` は既定値、プールは空で始まる。
+`app.table(columns)` ファクトリは `font` に既定フォントを注入する。
 
 ファクトリ:
 ```zig
@@ -162,10 +166,12 @@ pub fn createWithModel(
     allocator: std.mem.Allocator,
     model: *Model,
     columns: []const Column,
+    font: awt.Graphics.TextFont,
 ) !*Table;
 ```
 
 利用者が事前に作った `model` を借用する (`owns_model = false`)。`destroy` で解放しない。
+`app.tableWithModel(model, columns)` ファクトリが既定フォントを注入する。
 
 ### 破棄
 `vtable.destroy(table.asComponent(), allocator)` で破棄する。

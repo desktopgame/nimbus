@@ -75,7 +75,7 @@ pub const Role = enum {
     none,
     button, toggle_button, checkbox, radio_button,
     label, slider, combobox, text_field, text_area,
-    list, scroll_bar, scroll_pane, split_pane, panel,
+    list, table, scroll_bar, scroll_pane, split_pane, panel,
     menu, menu_item, checkbox_menu_item, menu_bar, popup_menu, separator,
     window,
 };

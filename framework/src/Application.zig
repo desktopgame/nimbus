@@ -12,6 +12,7 @@ const RadioButton = @import("RadioButton.zig");
 const ButtonGroup = @import("ButtonGroup.zig");
 const ComboBox = @import("ComboBox.zig");
 const List = @import("List.zig");
+const Table = @import("Table.zig");
 const ScrollBar = @import("ScrollBar.zig");
 const ScrollPane = @import("ScrollPane.zig");
 const SplitPane = @import("SplitPane.zig");
@@ -738,6 +739,23 @@ pub fn listWithModel(self: *Application, model: *List.ListModel, factory: List.C
     const l = try List.createWithModel(self.allocator, model, factory);
     self.applyTheme(&l.component);
     return l;
+}
+
+/// Multi-column table. `columns` is borrowed only for the call (copied
+/// internally; titles are duped, each `factory` is kept by reference and must
+/// outlive the Table). The Table creates and owns an empty model — add row
+/// items to `table.model`.
+pub fn table(self: *Application, columns: []const Table.Column) !*Table {
+    const t = try Table.create(self.allocator, columns, .{ .face = self.default_font, .pixel_size = 14 });
+    self.applyTheme(&t.component);
+    return t;
+}
+
+/// Like `table`, but borrows a caller-supplied model (shareable with a List).
+pub fn tableWithModel(self: *Application, model: *Table.Model, columns: []const Table.Column) !*Table {
+    const t = try Table.createWithModel(self.allocator, model, columns, .{ .face = self.default_font, .pixel_size = 14 });
+    self.applyTheme(&t.component);
+    return t;
 }
 
 pub fn slider(
