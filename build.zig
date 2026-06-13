@@ -227,8 +227,32 @@ pub fn build(b: *std.Build) void {
     // see examples/readme.md「cnimbus_editor」.
     addCExample(b, "cnimbus_editor", libnimbus, target, optimize);
 
+    // ── formatting gate ──────────────────────────────────────────
+    // First-party Zig only; vendored sources under vendor/ are excluded by
+    // listing paths explicitly. `zig build fmt` rewrites in place;
+    // `zig build fmt-check` only verifies and fails on drift. `test` depends
+    // on the check so `zig build test` rejects unformatted code.
+    const fmt_paths: []const []const u8 = &.{
+        "build.zig",
+        "build",
+        "awt/src",
+        "awt/tests",
+        "framework/src",
+        "framework/tests",
+        "examples",
+        "tools/apigen",
+    };
+    const fmt_fix = b.addFmt(.{ .paths = fmt_paths });
+    const fmt_step = b.step("fmt", "Format all first-party Zig source in place");
+    fmt_step.dependOn(&fmt_fix.step);
+
+    const fmt_check = b.addFmt(.{ .paths = fmt_paths, .check = true });
+    const fmt_check_step = b.step("fmt-check", "Check first-party Zig formatting (fix with `zig build fmt`)");
+    fmt_check_step.dependOn(&fmt_check.step);
+
     // ── tests ────────────────────────────────────────────────────
     const test_step = b.step("test", "Run all unit tests");
+    test_step.dependOn(&fmt_check.step);
 
     // apigen parser / emitter unit tests (host tool; pure, no I/O).
     const apigen_test_mod = b.createModule(.{

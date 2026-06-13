@@ -67,13 +67,14 @@ CLAUDE.md「doc と実装の追従関係」とも整合する）。
 よく使うコマンド:
 
 ```powershell
-zig fmt <changed .zig files>
+zig build fmt
 zig build test
 npm run lint
 ```
 
-Zig ファイルを変更した場合は、テスト前に対象ファイルへ `zig fmt` をかける。
-広範囲の整形を明示的に行う場合は、vendor 以外の Zig ファイル全体へ `zig fmt` をかける。
+Zig の整形は `zig build test` が `fmt-check` ゲートで検査し、未整形があればテストの前に落ちる
+（対象は一次コードのみ。vendor 配下は除外）。整形そのものは `zig build fmt` で一括修正できる。
+`zig build fmt-check` で検査だけを単独実行できる。
 
 `awt/doc/`、`awt-c/doc/`、`framework/doc/`（利用者向け仕様）配下の Markdown を書いた、
 または更新した場合は `doc/internal/writing_style_hint.md` を参照し、対象ファイルに対して以下を実行する。
