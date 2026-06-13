@@ -8,6 +8,6 @@
       "no-exclamation-question-mark": false,
       "arabic-kanji-numbers": false
     },
-    "max-display-width": true
+    "prh": { "rulePaths": ["tools/textlint/prh.yml"] }
   }
 }

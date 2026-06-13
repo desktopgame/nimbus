@@ -1,0 +1,55 @@
+# prh dictionary: unify terminology across the docs.
+# Seeded from api-document-style-guide.md "表記の統一" plus a few safe terms.
+# English words that have an established Japanese form are rewritten to it.
+# Inline code and code blocks are separate AST nodes, so they are never touched.
+# Word boundaries (\b) keep identifiers like "vertexBuffer"/"EventQueue" safe.
+version: 1
+rules:
+  # --- graphics / framework terms (from 表記の統一) ---
+  - expected: 頂点
+    pattern: '/\bvertex\b/i'
+  - expected: 定数
+    pattern: '/\bconstants?\b/i'
+  - expected: バインド
+    pattern: '/\bbind\b/i'
+  - expected: パイプライン
+    pattern: '/\bpipelines?\b/i'
+  - expected: バッファ
+    pattern: '/\bbuffers?\b/i'
+  - expected: テクスチャ
+    pattern: '/\btextures?\b/i'
+  # "static sampler" is kept verbatim, so exclude that case.
+  - expected: サンプラー
+    pattern: '/(?<![Ss]tatic )\bsamplers?\b/i'
+  - expected: レンダーターゲット
+    pattern: '/\brender[ -]targets?\b/i'
+  - expected: ウィジェット
+    pattern: '/\bwidgets?\b/i'
+  - expected: ビューポート
+    pattern: '/\bviewports?\b/i'
+  - expected: シザー
+    pattern: '/\bscissor\b/i'
+  - expected: スロット
+    pattern: '/\bslots?\b/i'
+  - expected: バインディング
+    pattern: '/\bbindings?\b/i'
+  # Singular only: plural "windows" is usually the OS, leave it alone.
+  - expected: ウィンドウ
+    pattern: '/\bwindow\b/i'
+  - expected: ダイアログ
+    pattern: '/\bdialogs?\b/i'
+  - expected: モーダル
+    pattern: '/\bmodal\b/i'
+  - expected: モードレス
+    pattern: '/\bmodeless\b/i'
+  - expected: イベント
+    pattern: '/\bevents?\b/i'
+  - expected: モデル
+    pattern: '/\bmodels?\b/i'
+  - expected: リスナー
+    pattern: '/\blisteners?\b/i'
+  # --- additional safe terms (hint: 日本語に寄せる) ---
+  - expected: レイテンシ
+    pattern: '/\blatency\b/i'
+  - expected: アクセシビリティ
+    pattern: '/\baccessibility\b/i'
