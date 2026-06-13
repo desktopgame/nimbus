@@ -1,4 +1,4 @@
-//! Vertical single-selection list. See `framework/doc/list.md`.
+//! Vertical list with single or multiple selection. See `framework/doc/list.md`.
 //!
 //! Cells are real Component subtrees, materialized only for the visible range
 //! (plus a small buffer) and recycled as the list scrolls — the JavaFX
@@ -10,6 +10,7 @@
 const std = @import("std");
 const awt = @import("awt");
 const Component = @import("Component.zig");
+const SelectionModel = @import("SelectionModel.zig");
 const listener = @import("listener.zig");
 const ChangeListenerList = listener.ChangeListenerList;
 const ChangeEvent = listener.ChangeEvent;
@@ -188,7 +189,7 @@ component:        Component,
 model:            *ListModel,
 owns_model:       bool,
 factory:          CellFactory,
-selected:         ?usize,
+selection:        SelectionModel,
 row_height:       f32,
 pool:             std.ArrayList(PooledCell),
 has_focus:        bool,
@@ -236,7 +237,7 @@ fn createInternal(allocator: std.mem.Allocator, model: *ListModel, owns_model: b
         .model = model,
         .owns_model = owns_model,
         .factory = factory,
-        .selected = null,
+        .selection = SelectionModel.init(allocator),
         .row_height = DEFAULT_ROW_HEIGHT,
         .pool = .empty,
         .has_focus = false,
@@ -271,23 +272,39 @@ pub fn asComponent(self: *List) *Component {
     return &self.component;
 }
 
+/// The lead (current) row, or null. For the full multi-selection use
+/// `getSelectedIndices`.
 pub fn getSelected(self: List) ?usize {
-    return self.selected;
+    return self.selection.getLead();
 }
 
+/// Select exactly `idx` (clearing any other selection); null clears it.
 pub fn setSelected(self: *List, idx: ?usize) void {
     var clamped = idx;
     if (clamped) |i| {
         if (i >= self.model.getSize()) clamped = null;
     }
-    if (eqOpt(self.selected, clamped)) return;
-    const old = self.selected;
-    self.selected = clamped;
-    // Re-project selection onto the two affected visible cells.
-    if (old) |r| if (self.findCellRowIndex(r)) |i| self.bindCell(i, r);
-    if (clamped) |r| if (self.findCellRowIndex(r)) |i| self.bindCell(i, r);
-    self.change_listeners.fire(&.{ .source = self });
-    self.component.repaint();
+    const changed = self.selection.selectOnly(clamped) catch return;
+    self.applySelectionChange(changed);
+}
+
+/// Selected row indices, sorted ascending. Borrowed; valid until the next
+/// selection change.
+pub fn getSelectedIndices(self: List) []const usize {
+    return self.selection.indices();
+}
+
+pub fn isSelected(self: List, i: usize) bool {
+    return self.selection.isSelected(i);
+}
+
+pub fn clearSelection(self: *List) void {
+    self.applySelectionChange(self.selection.clear());
+}
+
+pub fn setSelectionMode(self: *List, mode: SelectionModel.Mode) void {
+    const changed = self.selection.setMode(mode) catch return;
+    self.applySelectionChange(changed);
 }
 
 pub fn getRowHeight(self: List) f32 {
@@ -441,8 +458,8 @@ fn cellContext(self: *List, row: usize) ?CellContext {
         .list = self,
         .value = value,
         .index = row,
-        .selected = eqOpt(self.selected, row),
-        .focused = self.has_focus and eqOpt(self.selected, row),
+        .selected = self.selection.isSelected(row),
+        .focused = self.has_focus and eqOpt(self.selection.getLead(), row),
     };
 }
 
@@ -450,6 +467,21 @@ fn bindCell(self: *List, idx: usize, row: usize) void {
     const ctx = self.cellContext(row) orelse return;
     const pc = &self.pool.items[idx];
     pc.cell.update(pc.cell.user_data, ctx);
+}
+
+/// Re-bind every materialized cell to its current row (selection styling may
+/// have changed across an arbitrary range).
+fn reprojectVisible(self: *List) void {
+    for (self.pool.items, 0..) |pc, i| {
+        if (pc.row) |r| self.bindCell(i, r);
+    }
+}
+
+fn applySelectionChange(self: *List, changed: bool) void {
+    if (!changed) return;
+    self.reprojectVisible();
+    self.change_listeners.fire(&.{ .source = self });
+    self.component.repaint();
 }
 
 fn layoutCell(self: *List, idx: usize, row: usize, width: f32) void {
@@ -519,15 +551,20 @@ fn reconcile(self: *List) void {
     }
 }
 
-fn moveSelection(self: *List, delta: i32) void {
+fn moveSelection(self: *List, delta: i32, extend: bool) void {
     const n = self.model.getSize();
     if (n == 0) return;
-    const cur: i32 = if (self.selected) |s| @intCast(s) else -1;
+    const cur: i32 = if (self.selection.getLead()) |s| @intCast(s) else -1;
     var next = cur + delta;
     if (next < 0) next = 0;
     if (next >= @as(i32, @intCast(n))) next = @as(i32, @intCast(n)) - 1;
-    self.setSelected(@intCast(next));
-    self.scrollToRow(@intCast(next));
+    const row: usize = @intCast(next);
+    const changed = if (extend)
+        self.selection.extendTo(row) catch return
+    else
+        self.selection.selectOnly(row) catch return;
+    self.applySelectionChange(changed);
+    self.scrollToRow(row);
 }
 
 /// Mirror of `Container.updateHover` for the manually-managed cell pool: when
@@ -572,14 +609,7 @@ fn uninstall(self: *Component) void {
 /// so drop all bindings and let the next reconcile rebind from scratch.
 fn onModelChange(list: *List, _: *const ChangeEvent) void {
     for (list.pool.items) |*pc| pc.row = null;
-    const n = list.model.getSize();
-    if (list.selected) |s| {
-        if (n == 0) {
-            list.selected = null;
-        } else if (s >= n) {
-            list.selected = n - 1;
-        }
-    }
+    _ = list.selection.clampToSize(list.model.getSize());
     list.syncContentHeight();
     list.component.repaint();
 }
@@ -591,9 +621,9 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     g.setColor(self.theme.surface_input);
     g.fillRect(.{ .x = 0, .y = 0, .width = self.size.width, .height = self.size.height });
 
-    // Selection background behind the cell content.
-    if (list.selected) |r| {
-        g.setColor(self.theme.selection_bg);
+    // Selection background behind the cell content (every selected row).
+    g.setColor(self.theme.selection_bg);
+    for (list.selection.indices()) |r| {
         g.fillRect(.{
             .x = 0,
             .y = @as(f32, @floatFromInt(r)) * list.row_height,
@@ -653,16 +683,26 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
                 if (!ev.isConsumed()) {
                     self.requestFocus();
                     if (hit_row) |r| {
-                        list.setSelected(r);
-                        const start = switch (list.edit_trigger) {
-                            .double_click, .double_click_or_enter => dbl,
-                            .enter, .manual => false,
-                        };
-                        if (start) list.edit(r);
-                        // Double-click that did not begin an edit (read-only
-                        // cell / non-double-click trigger) activates the row.
-                        if (dbl and list.editing == null)
-                            list.action_listeners.fire(&.{ .source = list });
+                        // Selection gesture: ctrl toggles, shift extends a range,
+                        // a plain click selects only the row.
+                        const changed = if (m.modifiers.ctrl)
+                            list.selection.toggle(r) catch return
+                        else if (m.modifiers.shift)
+                            list.selection.extendTo(r) catch return
+                        else
+                            list.selection.selectOnly(r) catch return;
+                        list.applySelectionChange(changed);
+                        // ctrl / shift are selection-only; only a plain click may
+                        // start editing or activate the row.
+                        if (!m.modifiers.ctrl and !m.modifiers.shift) {
+                            const start = switch (list.edit_trigger) {
+                                .double_click, .double_click_or_enter => dbl,
+                                .enter, .manual => false,
+                            };
+                            if (start) list.edit(r);
+                            if (dbl and list.editing == null)
+                                list.action_listeners.fire(&.{ .source = list });
+                        }
                     }
                 }
             } else if (m.action == .press and (m.button orelse .left) == .right) {
@@ -676,7 +716,13 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
                 }
                 if (!ev.isConsumed()) {
                     self.requestFocus();
-                    if (hit_row) |r| list.setSelected(r);
+                    // Right-press on an unselected row selects just it; on an
+                    // already-selected row it keeps the (possibly multi)
+                    // selection so the menu can act on every selected row.
+                    if (hit_row) |r| {
+                        if (!list.selection.isSelected(r))
+                            list.applySelectionChange(list.selection.selectOnly(r) catch return);
+                    }
                     list.context_listeners.fire(&.{
                         .source = list,
                         .row = hit_row,
@@ -691,11 +737,11 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
             if (k.action == .press or k.action == .repeat) {
                 switch (k.code) {
                     .arrow_down => {
-                        list.moveSelection(1);
+                        list.moveSelection(1, k.modifiers.shift);
                         ev.consume();
                     },
                     .arrow_up => {
-                        list.moveSelection(-1);
+                        list.moveSelection(-1, k.modifiers.shift);
                         ev.consume();
                     },
                     .enter => {
@@ -706,7 +752,7 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
                         // and handles Enter itself, so List never sees Enter
                         // in that state.
                         if (list.editing == null) {
-                            if (list.selected) |s| {
+                            if (list.selection.getLead()) |s| {
                                 const want = switch (list.edit_trigger) {
                                     .enter, .double_click_or_enter => true,
                                     .double_click, .manual => false,
@@ -724,7 +770,7 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
         },
         .focus => |f| {
             list.has_focus = f.gained;
-            if (list.selected) |r| if (list.findCellRowIndex(r)) |i| list.bindCell(i, r);
+            list.reprojectVisible();
             self.repaint();
         },
         .char, .composition => {},
@@ -741,6 +787,7 @@ fn destroy(self: *Component, allocator: std.mem.Allocator) void {
     list.change_listeners.deinit();
     list.action_listeners.deinit();
     list.context_listeners.deinit();
+    list.selection.deinit();
     if (list.owns_model) {
         list.model.deinit();
         allocator.destroy(list.model);

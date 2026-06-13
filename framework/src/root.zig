@@ -29,6 +29,7 @@ pub const ButtonGroup = @import("ButtonGroup.zig");
 pub const ComboBox = @import("ComboBox.zig");
 pub const List = @import("List.zig");
 pub const Table = @import("Table.zig");
+pub const SelectionModel = @import("SelectionModel.zig");
 pub const dnd = @import("dnd.zig");
 pub const ScrollBar = @import("ScrollBar.zig");
 pub const ScrollPane = @import("ScrollPane.zig");

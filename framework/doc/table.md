@@ -8,8 +8,8 @@ unsafe: true
 モデル・セルの契約も `List` と意図的に揃えている。設計の経緯・却下案は [narrative/table.md](narrative/table.md) を参照。
 
 v1 のスコープ: 列定義 / ヘッダー描画 / ヘッダークリックのソート通知 / 列幅ドラッグ /
-単一行選択 / 行アクティベーション / コンテキストメニュー。
-セル編集・複数選択・伸縮列はスコープ外 (「機能要望」)。
+単一 / 複数行選択 / 行アクティベーション / コンテキストメニュー / セル編集。
+伸縮列はスコープ外 (「機能要望」)。
 
 ## 型定義
 ```zig
@@ -18,7 +18,7 @@ pub const Table = struct {
     model:             *Model,            // 観測可能な行ソース (List.ListModel と同一型)
     owns_model:        bool,              // create 経由なら true、 createWithModel なら false
     columns:           []ColumnState,     // 列の定義 + 実行時状態 (Table が所有。 内部に列ごとのセルプール)
-    selected:          ?usize,            // 単一行選択 (none = 未選択)
+    selection:         SelectionModel,    // 選択状態 (単一 / 複数。 List と共有)
     row_height:        f32,               // 固定行高 (v1)
     sort_column:       ?usize,            // ソートインジケータ表示中の列 (none = 非表示)
     sort_direction:    SortDirection,
@@ -184,16 +184,22 @@ pub fn asComponent(self: *Table) *Component;
 ```
 
 ### 選択の取得 / 設定
+`List` と同じく選択は `SelectionModel` が持つ (共有型。 `selection_model.md` 参照)。
+
 ```zig
-pub fn getSelected(self: Table) ?usize;
-pub fn setSelected(self: *Table, idx: ?usize) void;
+pub fn getSelected(self: Table) ?usize;             // lead (現在行)
+pub fn setSelected(self: *Table, idx: ?usize) void; // その 1 行だけを選択
+pub fn getSelectedIndices(self: Table) []const usize; // 昇順。 借用、 次の選択変更まで有効
+pub fn isSelected(self: Table, i: usize) bool;
+pub fn clearSelection(self: *Table) void;
+pub fn setSelectionMode(self: *Table, mode: SelectionModel.Mode) void; // .single (既定) / .multiple
 ```
 
-`List` と同じ契約: 範囲外は none に丸め、変化したときだけ `change_listeners` 発火 + 再描画。
-行 index は**モデル順そのもの** (view 側の並び替え写像は存在しない。narrative 参照)。
-アプリがソートでモデルを並べ替えた場合、選択 index の指す行は変わる —
-選択を維持したいアプリは並べ替え後に item を探して選択し直す (app_filer の
-リネーム後再選択と同じ手)。
+範囲外は none に丸め、 選択が変化したときだけ `change_listeners` 発火 + 再描画する。
+入力ジェスチャ (ctrl トグル / shift 範囲 / 右 click は選択済み行を保つ) は List と同じ。
+行 index はモデル順そのもの (view 側の並び替え写像は存在しない。 narrative 参照)。
+アプリがソートでモデルを並べ替えると選択 index の指す行は変わるので、
+選択を保ちたいアプリは並べ替え後に item を探して選択し直す (app_filer のリネーム後再選択と同じ手)。
 
 ### 行高の取得 / 設定
 ```zig
@@ -321,7 +327,6 @@ sp.asComponent().setGrowY(1);
 
 ## 機能要望
 * セル単位の 2 次元編集 + Tab での隣セル移動 (現状は単一セル編集 = 案A)
-* 複数選択 (framework#10。List と選択モデルを共有する形で)
 * 伸縮列 (列に grow を与え、 余り幅を配る。 ファイラーの Name 列が欲しがる)
 * 列のドラッグ並べ替え / 表示・非表示の切り替え
 * `ListModel.move` 級のモデル並べ替え op (`sortInPlace` 等) — 現状の clear + add 再投入は

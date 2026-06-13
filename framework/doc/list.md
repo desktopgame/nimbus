@@ -3,7 +3,7 @@ unsafe: true
 ---
 
 # list
-item を縦に並べて表示し、 1 項目を選択できるウィジェット。
+item を縦に並べて表示し、 項目を選択できるウィジェット (単一 / 複数)。
 Swing の `JList` 相当だが、 セルの実現方法は JavaFX の `ListView` (内部の VirtualFlow) に倣う。
 
 セルは実体のあるコンポーネント部分木で、 **可視範囲＋少しのバッファぶんだけ生成**する。
@@ -11,7 +11,7 @@ Swing の `JList` 相当だが、 セルの実現方法は JavaFX の `ListView`
 これによりメモリは総行数 N ではなく可視行数に比例し (O(可視))、 かつセルが実体なので描画もイベント処理もウィジェット本来の機構をそのまま使える。
 
 v1 スコープ:
-* 単一選択のみ (複数選択は機能要望)
+* 単一 / 複数選択 (`SelectionModel` を共有。 既定は単一)
 * 固定の行高 (可変行高は機能要望)
 * セルは既定で 読み取り専用 (項目の値をセルへ投影するだけ)。 セル内のボタン等は押せる。
   加えて、 `Cell.edit` を与えたセルは編集モード (セル内テキスト編集) を持てる (「セルの編集 (CellEditor)」を参照)
@@ -23,7 +23,7 @@ pub const List = struct {
     model:            *ListModel,         // 観測可能な item ソース
     owns_model:       bool,               // create 経由なら true、 createWithModel なら false
     factory:          CellFactory,        // 実セルを生成する binder (借用)
-    selected:         ?usize,             // 単一選択 (none = 未選択)
+    selection:        SelectionModel,    // 選択状態 (単一 / 複数。 Table と共有)
     row_height:       f32,                // 固定行高 (v1)
     pool:             std.ArrayList(PooledCell), // 可視範囲を覆う実セル群 (List が所有)
     has_focus:        bool,               // キーボードフォーカス保持中か (ctx.focused 用)
@@ -136,7 +136,7 @@ pub fn create(
 ```
 
 空の `ListModel` を内部生成して所有し (`owns_model = true`)、 `factory` を借用して `List` をヒープに返す。
-`selected` は none、 `row_height` は既定値、 `pool` は空で始まる (最初のレイアウトで可視範囲ぶん生成する)。
+`selection` は空、 `row_height` は既定値、 `pool` は空で始まる (最初のレイアウトで可視範囲ぶん生成する)。
 失敗時は途中で確保した分をすべて解放する。
 
 ファクトリ:
@@ -173,15 +173,27 @@ pub fn asComponent(self: *List) *Component;
 公開 `Component` (`&self.component`) を返す。 `ScrollPane` に入れる / レイアウトに追加する際に使う。
 
 ## 選択の取得 / 設定
+選択は `SelectionModel` が持つ (Table と共有する型。 `selection_model.md` 参照)。
+List はその薄いラッパとして単一・複数の API を出す。
+
 ```zig
-pub fn getSelected(self: List) ?usize;
-pub fn setSelected(self: *List, idx: ?usize) void;
+pub fn getSelected(self: List) ?usize;             // lead (現在行)
+pub fn setSelected(self: *List, idx: ?usize) void; // その 1 行だけを選択 (他を解除)
+pub fn getSelectedIndices(self: List) []const usize; // 昇順。 借用、 次の選択変更まで有効
+pub fn isSelected(self: List, i: usize) bool;
+pub fn clearSelection(self: *List) void;
+pub fn setSelectionMode(self: *List, mode: SelectionModel.Mode) void; // .single (既定) / .multiple
 ```
 
-`setSelected` は範囲外なら none に丸める。
-値が変化したときだけ `change_listeners` を発火 + repaint する (不変なら no-op)。
-変化があれば、 影響する可視セル (旧選択行・新選択行) を **その場で `update` し直して** 選択表示を投影する。
-加えて List 自身が選択行の背景ハイライトを描く (「描画」参照)。
+選択が変化したときだけ `change_listeners` を発火 + repaint する (不変なら no-op)。
+変化時は可視セルを `update` し直して選択表示を投影し、 List 自身が選択行の背景を描く (「描画」参照)。
+範囲外の index は none に丸める。
+
+入力ジェスチャ (既定 `.single` では常に単一に畳まれる):
+* プレーン click / ↑ ↓ — その行だけを選択 (lead 移動)
+* ctrl+click — その行の選択をトグル
+* shift+click / shift+↑ ↓ — anchor からの範囲を選択
+* 右 click — 未選択行ならその行だけ選択。 選択済み行なら選択を保つ (一括操作のため)
 
 ## 行高の取得 / 設定
 ```zig
@@ -198,7 +210,7 @@ pub fn addChangeListener   (self: *List, comptime T: type, comptime f: fn (*T, *
 pub fn removeChangeListener(self: *List, comptime T: type, comptime f: fn (*T, *const ChangeEvent) void, user_data: *T) void;
 ```
 
-`selected` が変化した瞬間に発火する。
+選択が変化した瞬間に発火する。
 hover やセル内ボタンの押下では発火しない (それらはセルが配線したコールバックの領分)。
 
 ## 行アクティベーションリスナー
@@ -373,7 +385,6 @@ for (rows) |*r| try list.model.add(@ptrCast(r));
 チェックボックスの永続状態 (`done`) を行データへ書き戻す例を含む、 完全に動く実装は `{REPO_ROOT}/examples/widget_list` を参照。
 
 ## 機能要望
-* 複数選択 (`SelectionModel`、 Swing の `ListSelectionModel` 相当)
 * 可変行高 (累積高 / 推定で可視範囲を求める。 固定行高より可視範囲算出が複雑になる)
 * 行全体の hover ハイライト (現状は選択行のみ背景を描く。 セル内ウィジェットの rollover は「hover の解除」機構で機能するが、 行をまたぐ hover 表示は未対応)
 * 細粒度の変更通知 (`ListDataListener` 相当、 挿入 / 削除レンジを引数で渡す)

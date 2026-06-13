@@ -305,6 +305,14 @@ const Filer = struct {
         }
     }
 
+    /// Selected row indices of the active view (sorted ascending). Borrowed.
+    fn selectedIndices(self: *Filer) []const usize {
+        return switch (self.view_mode) {
+            .list => self.list.getSelectedIndices(),
+            .details => self.table.getSelectedIndices(),
+        };
+    }
+
     fn setViewMode(self: *Filer, mode: ViewMode) void {
         if (self.view_mode == mode) return;
         const carry = self.selectedIndex();
@@ -377,17 +385,17 @@ const Filer = struct {
     }
 
     fn confirmDelete(self: *Filer) void {
-        const idx = self.selectedIndex() orelse return;
-        const e = self.selectedEntry() orelse return;
-
-        var name_buf: [NAME_BUF]u8 = undefined;
-        const n = @min(e.name.len, name_buf.len);
-        @memcpy(name_buf[0..n], e.name[0..n]);
-        const name = name_buf[0..n];
-        const was_dir = e.is_dir;
+        const sel_live = self.selectedIndices();
+        if (sel_live.len == 0) return;
+        // Snapshot the indices: the live selection mutates on reload below.
+        const sel = self.allocator.dupe(usize, sel_live) catch return;
+        defer self.allocator.free(sel);
 
         var msg_buf: [NAME_BUF + 32]u8 = undefined;
-        const msg = std.fmt.bufPrint(&msg_buf, "Delete \"{s}\"?", .{name}) catch return;
+        const msg = if (sel.len == 1) one: {
+            const e = self.entries.items[sel[0]];
+            break :one std.fmt.bufPrint(&msg_buf, "Delete \"{s}\"?", .{e.name}) catch return;
+        } else std.fmt.bufPrint(&msg_buf, "Delete {d} items?", .{sel.len}) catch return;
         self.confirm_msg.setText(msg) catch {};
         if (self.confirm.showModal() != .ok) return;
 
@@ -396,18 +404,30 @@ const Filer = struct {
             return;
         };
         defer d.close(self.io);
-        const res = if (was_dir) d.deleteDir(self.io, name) else d.deleteFile(self.io, name);
-        res catch |err| {
-            self.setStatus("delete failed: {s} ({s})", .{ name, @errorName(err) });
-            return;
-        };
+
+        var ok: usize = 0;
+        var failed: usize = 0;
+        for (sel) |idx| {
+            if (idx >= self.entries.items.len) continue;
+            const e = self.entries.items[idx];
+            const res = if (e.is_dir) d.deleteDir(self.io, e.name) else d.deleteFile(self.io, e.name);
+            if (res) |_| {
+                ok += 1;
+            } else |_| {
+                failed += 1;
+            }
+        }
 
         self.loadDir(self.curPath());
+        const keep = std.mem.min(usize, sel);
         self.setActiveSelected(if (self.entries.items.len == 0)
             null
         else
-            @min(idx, self.entries.items.len - 1));
-        self.setStatus("deleted {s}", .{name});
+            @min(keep, self.entries.items.len - 1));
+        if (failed == 0)
+            self.setStatus("deleted {d}", .{ok})
+        else
+            self.setStatus("deleted {d}, {d} failed", .{ ok, failed });
     }
 
     fn renamed(self: *Filer, new_name: []const u8) void {
@@ -428,6 +448,50 @@ const Filer = struct {
         };
         self.setStatus("moved {s} -> {s}", .{ entry.name, dest_dir });
         self.scheduleReload();
+    }
+
+    /// Move several entries (by index in the current dir) into `dest_dir`.
+    fn moveEntriesTo(self: *Filer, dest_dir: []const u8, idxs: []const usize) void {
+        var ok: usize = 0;
+        var failed: usize = 0;
+        for (idxs) |i| {
+            if (i >= self.entries.items.len) continue;
+            const entry = self.entries.items[i];
+            const old_p = std.fs.path.join(self.allocator, &.{ self.curPath(), entry.name }) catch continue;
+            defer self.allocator.free(old_p);
+            const new_p = std.fs.path.join(self.allocator, &.{ dest_dir, entry.name }) catch continue;
+            defer self.allocator.free(new_p);
+            if (std.Io.Dir.renameAbsolute(old_p, new_p, self.io)) |_| {
+                ok += 1;
+            } else |_| {
+                failed += 1;
+            }
+        }
+        if (failed == 0)
+            self.setStatus("moved {d} -> {s}", .{ ok, dest_dir })
+        else
+            self.setStatus("moved {d}, {d} failed", .{ ok, failed });
+        self.scheduleReload();
+    }
+
+    /// DnD move: if the dragged entry is part of a multi-selection, move the
+    /// whole selection; otherwise just the dragged entry.
+    fn moveDraggedTo(self: *Filer, dragged: *Entry, dest_dir: []const u8) void {
+        const sel = self.list.getSelectedIndices();
+        var in_sel = false;
+        for (sel) |i| {
+            if (i < self.entries.items.len and self.entries.items[i] == dragged) {
+                in_sel = true;
+                break;
+            }
+        }
+        if (in_sel and sel.len > 1) {
+            const idxs = self.allocator.dupe(usize, sel) catch return self.moveEntryTo(dragged, dest_dir);
+            defer self.allocator.free(idxs);
+            self.moveEntriesTo(dest_dir, idxs);
+        } else {
+            self.moveEntryTo(dragged, dest_dir);
+        }
     }
 
     // ── listeners ────────────────────────────────────────────────────────
@@ -885,7 +949,7 @@ const Mover = struct {
         if (!target.is_dir or target == entry) return;
         const dest = std.fs.path.join(filer.allocator, &.{ filer.curPath(), target.name }) catch return;
         defer filer.allocator.free(dest);
-        filer.moveEntryTo(entry, dest);
+        filer.moveDraggedTo(entry, dest);
     }
 
     fn placesOnOver(ud: *anyopaque, e: *const dnd.DragEvent) bool {
@@ -918,7 +982,7 @@ const Mover = struct {
         if (row >= filer.places.items.len) return;
         const place = filer.places.items[row];
         if (std.mem.eql(u8, place.path, filer.curPath())) return;
-        filer.moveEntryTo(entry, place.path);
+        filer.moveDraggedTo(entry, place.path);
     }
 };
 
@@ -1001,6 +1065,7 @@ pub fn main(init: std.process.Init) !void {
     filer.list = lst;
     lst.setRowHeight(ROW_HEIGHT);
     lst.setEditTrigger(.manual);
+    lst.setSelectionMode(.multiple);
     try lst.addActionListener(Filer, Filer.onActivate, &filer);
     try lst.addContextMenuListener(Filer, Filer.onListContextMenu, &filer);
     const lsp = try app.scrollPane(lst.asComponent());
@@ -1014,6 +1079,7 @@ pub fn main(init: std.process.Init) !void {
     });
     filer.table = tbl;
     tbl.setRowHeight(ROW_HEIGHT);
+    tbl.setSelectionMode(.multiple);
     tbl.setSortIndicator(0, .ascending);
     try tbl.addActionListener(Filer, Filer.onActivate, &filer);
     try tbl.addContextMenuListener(Filer, Filer.onTableContextMenu, &filer);

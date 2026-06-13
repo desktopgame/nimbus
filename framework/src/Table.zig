@@ -13,6 +13,7 @@ const std = @import("std");
 const awt = @import("awt");
 const Component = @import("Component.zig");
 const List = @import("List.zig");
+const SelectionModel = @import("SelectionModel.zig");
 const listener = @import("listener.zig");
 const ChangeListenerList = listener.ChangeListenerList;
 const ActionListenerList = listener.ActionListenerList;
@@ -138,7 +139,7 @@ model:             *Model,
 owns_model:        bool,
 columns:           []ColumnState,
 header_font:       awt.Graphics.TextFont,
-selected:          ?usize,
+selection:         SelectionModel,
 editing:           ?EditPos,
 row_height:        f32,
 sort_column:       ?usize,
@@ -216,7 +217,7 @@ fn createInternal(
         .owns_model = owns_model,
         .columns = cols,
         .header_font = font,
-        .selected = null,
+        .selection = SelectionModel.init(allocator),
         .editing = null,
         .row_height = DEFAULT_ROW_HEIGHT,
         .sort_column = null,
@@ -253,7 +254,7 @@ pub fn asComponent(self: *Table) *Component {
 }
 
 pub fn getSelected(self: Table) ?usize {
-    return self.selected;
+    return self.selection.getLead();
 }
 
 pub fn setSelected(self: *Table, idx: ?usize) void {
@@ -261,13 +262,27 @@ pub fn setSelected(self: *Table, idx: ?usize) void {
     if (clamped) |i| {
         if (i >= self.model.getSize()) clamped = null;
     }
-    if (eqOpt(self.selected, clamped)) return;
-    const old = self.selected;
-    self.selected = clamped;
-    self.reprojectRow(old);
-    self.reprojectRow(clamped);
-    self.change_listeners.fire(&.{ .source = self });
-    self.component.repaint();
+    const changed = self.selection.selectOnly(clamped) catch return;
+    self.applySelectionChange(changed);
+}
+
+/// Selected row indices, sorted ascending. Borrowed; valid until the next
+/// selection change.
+pub fn getSelectedIndices(self: Table) []const usize {
+    return self.selection.indices();
+}
+
+pub fn isSelected(self: Table, i: usize) bool {
+    return self.selection.isSelected(i);
+}
+
+pub fn clearSelection(self: *Table) void {
+    self.applySelectionChange(self.selection.clear());
+}
+
+pub fn setSelectionMode(self: *Table, mode: SelectionModel.Mode) void {
+    const changed = self.selection.setMode(mode) catch return;
+    self.applySelectionChange(changed);
 }
 
 pub fn getRowHeight(self: Table) f32 {
@@ -467,8 +482,8 @@ fn cellContext(self: *Table, row: usize, ci: usize, value: *anyopaque) CellConte
         .value = value,
         .row = row,
         .col = ci,
-        .selected = eqOpt(self.selected, row),
-        .focused = self.has_focus and eqOpt(self.selected, row),
+        .selected = self.selection.isSelected(row),
+        .focused = self.has_focus and eqOpt(self.selection.getLead(), row),
     };
 }
 
@@ -496,6 +511,23 @@ fn reprojectRow(self: *Table, row_opt: ?usize) void {
     for (self.columns, 0..) |*col, ci| {
         if (findCellRowIndex(col, row)) |i| self.bindCell(col, i, row, ci);
     }
+}
+
+/// Re-bind every materialized cell across all columns (selection styling may
+/// have changed across an arbitrary range).
+fn reprojectVisible(self: *Table) void {
+    for (self.columns, 0..) |*col, ci| {
+        for (col.pool.items, 0..) |pc, i| {
+            if (pc.row) |r| self.bindCell(col, i, r, ci);
+        }
+    }
+}
+
+fn applySelectionChange(self: *Table, changed: bool) void {
+    if (!changed) return;
+    self.reprojectVisible();
+    self.change_listeners.fire(&.{ .source = self });
+    self.component.repaint();
 }
 
 fn reconcile(self: *Table) void {
@@ -553,15 +585,20 @@ fn reconcile(self: *Table) void {
     }
 }
 
-fn moveSelection(self: *Table, delta: i32) void {
+fn moveSelection(self: *Table, delta: i32, extend: bool) void {
     const n = self.model.getSize();
     if (n == 0) return;
-    const cur: i32 = if (self.selected) |s| @intCast(s) else -1;
+    const cur: i32 = if (self.selection.getLead()) |s| @intCast(s) else -1;
     var next = cur + delta;
     if (next < 0) next = 0;
     if (next >= @as(i32, @intCast(n))) next = @as(i32, @intCast(n)) - 1;
-    self.setSelected(@intCast(next));
-    self.scrollToRow(@intCast(next));
+    const row: usize = @intCast(next);
+    const changed = if (extend)
+        self.selection.extendTo(row) catch return
+    else
+        self.selection.selectOnly(row) catch return;
+    self.applySelectionChange(changed);
+    self.scrollToRow(row);
 }
 
 fn scrollToRow(self: *Table, row: usize) void {
@@ -642,14 +679,7 @@ fn onModelChange(table: *Table, _: *const ChangeEvent) void {
     for (table.columns) |*col| {
         for (col.pool.items) |*pc| pc.row = null;
     }
-    const n = table.model.getSize();
-    if (table.selected) |s| {
-        if (n == 0) {
-            table.selected = null;
-        } else if (s >= n) {
-            table.selected = n - 1;
-        }
-    }
+    _ = table.selection.clampToSize(table.model.getSize());
     table.syncContentSize();
     table.component.repaint();
 }
@@ -662,8 +692,8 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     g.setColor(self.theme.surface_input);
     g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = sz.height });
 
-    if (table.selected) |r| {
-        g.setColor(self.theme.selection_bg);
+    g.setColor(self.theme.selection_bg);
+    for (table.selection.indices()) |r| {
         g.fillRect(.{
             .x = 0,
             .y = HEADER_HEIGHT + @as(f32, @floatFromInt(r)) * table.row_height,
@@ -797,14 +827,25 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
                 if (!ev.isConsumed()) {
                     self.requestFocus();
                     if (hit_row) |r| {
-                        table.setSelected(r);
-                        if (dbl) table.action_listeners.fire(&.{ .source = table });
+                        const changed = if (m.modifiers.ctrl)
+                            table.selection.toggle(r) catch return
+                        else if (m.modifiers.shift)
+                            table.selection.extendTo(r) catch return
+                        else
+                            table.selection.selectOnly(r) catch return;
+                        table.applySelectionChange(changed);
+                        if (dbl and !m.modifiers.ctrl and !m.modifiers.shift)
+                            table.action_listeners.fire(&.{ .source = table });
                     }
                 }
             } else if (m.action == .press and (m.button orelse .left) == .right) {
                 if (!ev.isConsumed()) {
                     self.requestFocus();
-                    if (hit_row) |r| table.setSelected(r);
+                    // Keep a multi-selection if right-pressing an already-selected row.
+                    if (hit_row) |r| {
+                        if (!table.selection.isSelected(r))
+                            table.applySelectionChange(table.selection.selectOnly(r) catch return);
+                    }
                     table.context_listeners.fire(&.{ .source = table, .row = hit_row, .x = m.x, .y = m.y });
                     ev.consume();
                 }
@@ -814,18 +855,18 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
             if (k.action == .press or k.action == .repeat) {
                 switch (k.code) {
                     .arrow_down => {
-                        table.moveSelection(1);
+                        table.moveSelection(1, k.modifiers.shift);
                         ev.consume();
                     },
                     .arrow_up => {
-                        table.moveSelection(-1);
+                        table.moveSelection(-1, k.modifiers.shift);
                         ev.consume();
                     },
                     .enter => {
                         // While editing, the scratch field owns focus and
                         // handles Enter itself, so the table never sees it here.
                         if (table.editing == null) {
-                            if (table.selected) |_| {
+                            if (table.selection.getLead()) |_| {
                                 table.action_listeners.fire(&.{ .source = table });
                                 ev.consume();
                             }
@@ -837,7 +878,7 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
         },
         .focus => |f| {
             table.has_focus = f.gained;
-            if (table.selected) |r| table.reprojectRow(r);
+            table.reprojectVisible();
             self.repaint();
         },
         .char, .composition => {},
@@ -857,6 +898,7 @@ fn destroy(self: *Component, allocator: std.mem.Allocator) void {
     table.action_listeners.deinit();
     table.context_listeners.deinit();
     table.sort_listeners.deinit();
+    table.selection.deinit();
     if (table.owns_model) {
         table.model.deinit();
         allocator.destroy(table.model);
