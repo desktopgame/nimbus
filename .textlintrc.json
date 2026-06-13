@@ -6,7 +6,12 @@
       "ja-no-mixed-period": false,
       "max-kanji-continuous-len": false,
       "no-exclamation-question-mark": false,
-      "arabic-kanji-numbers": false
+      "arabic-kanji-numbers": false,
+      "no-mix-dearu-desumasu": {
+        "preferInHeader": "",
+        "preferInBody": "である",
+        "preferInList": "である"
+      }
     },
     "prh": { "rulePaths": ["tools/textlint/prh.yml"] }
   }

@@ -39,7 +39,7 @@ pub fn create(
 ) !*Label;
 ```
 
-allocator で `Label` を確保し、`text` を dup して所有し、vtable をセット、install まで実行して返す。
+`allocator` で `Label` を確保し、`text` を dup して所有し、vtable をセット、install まで実行して返す。
 `component.min_size` は `font.measureString(text)` から算出してセットされる。
 
 ### 事前条件
@@ -166,11 +166,13 @@ label.component.setBounds(.{ .x = 30, .y = 30, .width = 400, .height = 32 });
 // あとは container に add するか、直接 paintAt(&g) で描画
 ```
 
-Component メソッド（`setBounds` 等）は委譲を生やしていないので、`label.component.setBounds(...)` の形で親フィールド経由で呼ぶ（component.md「派生型から Component メソッドへのアクセス」参照）。
+Component メソッド（`setBounds` 等）は委譲を生やしていないので、
+`label.component.setBounds(...)` の形で親フィールド経由で呼ぶ
+（component.md「派生型から Component メソッドへのアクセス」参照）。
 
 ## 機能要望
 * 改行 (`\n`) 対応 — 現状 `drawString` が無視するため対応なし。複数行は別ウィジェットで扱う
 * horizontal / vertical alignment — SwingConstants 相当を導入
 * HTML / rich text — 当面スコープ外
-* mnemonic / accelerator — キーイベント整備後
+* ニーモニック / アクセラレータ — キーイベント整備後
 * `setTextBorrowed(text)` — 利用者が寿命を保証できるケースで dup を回避するための入口

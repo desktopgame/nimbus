@@ -4,7 +4,7 @@ unsafe: true
 
 # table
 複数カラム + ヘッダー付きの行テーブル (Swing `JTable` 相当の v1)。
-行の仮想化 (可視範囲ぶんの実セル + recycle) は `List` と同じ VirtualFlow 方式で、
+行の仮想化 (可視範囲ぶんの実セル + リサイクル) は `List` と同じ VirtualFlow 方式で、
 モデル・セルの契約も `List` と意図的に揃えている。設計の経緯・却下案は [narrative/table.md](narrative/table.md) を参照。
 
 v1 のスコープ: 列定義 / ヘッダー描画 / ヘッダークリックのソート通知 / 列幅ドラッグ /
@@ -54,7 +54,7 @@ pub const Column = struct {
 };
 ```
 
-セルの契約は `List` と同形 (実コンポーネントのサブツリー + `update` 投影 + recycle)。
+セルの契約は `List` と同形 (実コンポーネントのサブツリー + `update` 投影 + リサイクル)。
 `CellContext` に列番号が加わる点だけが違う。セルは**自分がどの列か知っている**ので、
 行 item (`value`) から自分の列ぶんの表示を取り出すのはセルの仕事 — Table 本体は
 行の中身を一切解釈しない (値取り出しのプロトコルを持たない。理由は narrative)。
@@ -106,10 +106,10 @@ pub const ContextMenuEvent = struct {
 
 ### レイアウトと仮想化
 * 内容は上から「ヘッダー行 (高さ固定) + データ行 × N」。行高は固定 (`row_height`)。
-* 行は List と同じ可視範囲 + recycle。プールは**列ごと**に持ち、セル (row, col) は
+* 行は List と同じ可視範囲 + リサイクル。プールは**列ごと**に持ち、セル (row, col) は
   `x = 列の累積幅, y = ヘッダー高 + row × row_height, w = 列幅, h = row_height` に置かれる。
-* `min_size` は幅 = 全列幅の合計、高さ = ヘッダー高 + 行数 × 行高。幅は viewport に追従**しない**
-  (`scrollable` ヒントなし) — 列幅の合計が viewport を超えたら ScrollPane が横スクロールを出す。
+* `min_size` は幅 = 全列幅の合計、高さ = ヘッダー高 + 行数 × 行高。幅は ビューポート に追従**しない**
+  (`scrollable` ヒントなし) — 列幅の合計が ビューポート を超えたら ScrollPane が横スクロールを出す。
 * ScrollPane に入れて縦スクロールしても**ヘッダーは上端に固定表示**される
   (固定の仕掛けは内部実装。利用者は ScrollPane に入れるだけでよい)。
 
@@ -275,10 +275,10 @@ pub fn getEditing (self: Table) ?EditPos;
 `commitEdit` はセルに `edit.commit` を呼ばせてスクラッチを item へ書き戻し、表示モードへ戻して
 再投影する。`cancelEdit` は `edit.cancel` で破棄 (item 不変)。どちらも終了後フォーカスを Table 本体へ戻す。
 
-編集中のセルは reconcile で recycle されない (スクラッチが他行に流用されない)。
+編集中のセルは reconcile で リサイクルされない (スクラッチが他行に流用されない)。
 編集中の行が可視域外へスクロールしたら commit する。編集行の外を press する / ヘッダーを
 クリックすると commit する (focus-lost = commit)。編集中のキーは固定で **Enter** = commit /
-**Escape** = cancel — ただしこれらはスクラッチ入力 (例: TextField) が処理するので、セル側が
+**Escape** = cancel。ただしこれらはスクラッチ入力 (例: TextField) が処理するので、セル側が
 入力の submit / cancel を `commitEdit` / `cancelEdit` に配線する (List と同じ流儀)。
 動く例は app_filer の詳細ビューのリネーム (`{REPO_ROOT}/examples/app_filer`)。
 

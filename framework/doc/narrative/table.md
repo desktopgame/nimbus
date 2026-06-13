@@ -6,14 +6,14 @@ unsafe: true
 spec は [../table.md](../table.md)。ここには設計判断の理由と却下案を残す。
 
 ## ソートを Table がやらない理由
-JTable は view 側に行の並び替え写像 (RowSorter、view index ↔ model index 変換) を持つ。
+JTable は ビュー側に行の並び替え写像 (RowSorter、ビュー index ↔ モデル index 変換) を持つ。
 nimbus v1 ではこれを採らず、「Table はヘッダークリックを通知してインジケータを出すだけ。
 並べ替えは行 item の所有者 (アプリ) がモデルに対して行う」とした。理由:
 
 * **モデルは借用**である (行 = `*anyopaque`、実メモリはアプリ所有)。Table が値を比較するには
   列ごとの比較プロトコル (comparator 登録) が要り、「Table は行の中身を解釈しない」という
   List から続く設計が崩れる。
-* **写像は複雑さの税金が高い**。view index と model index の二重系ができると、選択・活性化・
+* **写像は複雑さの税金が高い**。ビュー index と モデル index の二重系ができると、選択・活性化・
   コンテキストメニュー・セル束縛・将来の編集まで全 API が「どちらの index か」を背負う。
   JTable がまさにこの税金を払っている (RowSorter 導入時に互換の罠が多発した)。
 * nimbus の実需 (ファイラー) では**アプリが既に自前でソートしている** (フォルダ先行 +
@@ -39,11 +39,15 @@ nimbus は List で確立した「セルは実コンポーネントで、 行 it
 (現状は List.zig 内の定義を Table が参照する)。
 
 ## TableColumnModel を独立モデルにせず Table に畳んだ理由
-Swing の JTable は珍しく 4 つのモデルに割れている: TableModel (データ)、
-**TableColumnModel** (列の構造を view オブジェクトとして持つ — 各 TableColumn が幅 /
-レンダラ / ヘッダ値等を保持し、列のドラッグ並べ替え・幅変更・表示非表示はデータモデルに
-触れずここで起きる)、ListSelectionModel (選択)、RowSorter (行の並び替え写像)。
-JList に対して JTable が余分に持つ「view モデル」の本体はこの TableColumnModel である。
+Swing の JTable は珍しく 4 つのモデルに割れている。
+- TableModel (データ)
+- **TableColumnModel** — 列の構造を ビューオブジェクトとして持つ。
+  各 TableColumn が幅 / レンダラ / ヘッダ値等を保持し、
+  列のドラッグ並べ替え・幅変更・表示非表示はデータモデルに触れずここで起きる
+- ListSelectionModel (選択)
+- RowSorter (行の並び替え写像)
+
+JList に対して JTable が余分に持つ「ビューモデル」の本体はこの TableColumnModel である。
 
 nimbus v1 は **データモデル (`Model = List.ListModel`) だけを独立に保ち、残り 3 つ
 (列の構造・選択・並び) は Table 自身のフィールドに畳んだ**:
@@ -72,7 +76,7 @@ ScrollPane に行 / 列ヘッダー領域はまだ無い (scrollpane.md 機能�
 ## セル編集の範囲 (案A: 単一セル)
 当初 v1 から外していたが、ファイラー M5 で詳細ビューのリネーム実需が出たため
 framework#14 (案A) として追加した。List の CellEdit (start / commit / cancel +
-recycle 除外 + フォーカス喪失決着) をそのまま移植し、編集対象は **1 セル**に限定する
+リサイクル 除外 + フォーカス喪失決着) をそのまま移植し、編集対象は **1 セル**に限定する
 (`edit(row, col)`)。編集可能列はその列のセルが `edit` を持つかで決まる。
 
 案B (セル単位の 2 次元編集 + Tab で隣セルへ移動、スプレッドシート的) は採らなかった:
