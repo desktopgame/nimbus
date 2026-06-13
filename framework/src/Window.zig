@@ -842,10 +842,13 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
                 return;
             }
 
-            // Stages 2-3: key_bindings on the focus owner's ancestors, ending
-            // at the root (window-wide bindings: default button, dialog ESC).
-            // No focus owner -> the walk starts (and ends) at the root.
-            var node: ?*Component = if (self.focus_owner) |fo| fo.parent else &self.container.component;
+            // Stages 2-4: key_bindings walked from the focus owner up to the
+            // root. Including the focus owner itself is the WHEN_FOCUSED scope
+            // (a binding installed on the focused widget fires after its own
+            // processEvent declined, before any ancestor's) — more specific
+            // wins. Ancestors are the WHEN_ANCESTOR / window-wide scopes
+            // (default button, dialog ESC). No focus owner -> starts at root.
+            var node: ?*Component = self.focus_owner orelse &self.container.component;
             while (node) |cur| : (node = cur.parent) {
                 if (cur.key_bindings) |kb| {
                     if (kb.lookup(k.code, k.modifiers)) |h| {

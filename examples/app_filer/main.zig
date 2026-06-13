@@ -1111,9 +1111,15 @@ pub fn main(init: std.process.Init) !void {
     filer.status = status;
     try nimbus.BorderLayout.add(&frame.window.container, .south, &status.component);
 
-    // Keys: Backspace / F5 anywhere; F2 / Delete on whichever view is focused.
-    try frame.window.container.component.bindKey(nimbus.KeyStroke.of(.backspace), nimbus.KeyHandler.typed(Filer, Filer.onBackspace, &filer));
-    try frame.window.container.component.bindKey(nimbus.KeyStroke.of(.f5), nimbus.KeyHandler.typed(Filer, Filer.onReloadKey, &filer));
+    // Backspace / F5 are window-wide → root. F2 / Delete are scoped to the
+    // file views (WHEN_FOCUSED): bound on the list and table so they fire only
+    // when one of those has focus, and so the rename TextField (focus owner
+    // while editing) gets Delete first to remove a char. Key dispatch now walks
+    // key_bindings from the focus owner up, so a binding on the focused widget
+    // itself fires (see narrative/keybinding.md).
+    const root = &frame.window.container.component;
+    try root.bindKey(nimbus.KeyStroke.of(.backspace), nimbus.KeyHandler.typed(Filer, Filer.onBackspace, &filer));
+    try root.bindKey(nimbus.KeyStroke.of(.f5), nimbus.KeyHandler.typed(Filer, Filer.onReloadKey, &filer));
     for ([_]*nimbus.Component{ lst.asComponent(), tbl.asComponent() }) |c| {
         try c.bindKey(nimbus.KeyStroke.of(.f2), nimbus.KeyHandler.typed(Filer, Filer.onRenameKey, &filer));
         try c.bindKey(nimbus.KeyStroke.of(.delete), nimbus.KeyHandler.typed(Filer, Filer.onDeleteKey, &filer));

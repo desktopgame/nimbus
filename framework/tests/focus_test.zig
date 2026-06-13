@@ -144,6 +144,53 @@ test "no focus owner: keys do not reach widgets (fan-out is gone)" {
     try std.testing.expect(!cb.isSelected());
 }
 
+test "WHEN_FOCUSED: a binding on the focused widget fires and beats an ancestor's" {
+    // The focus owner's own key_bindings are consulted (after its processEvent
+    // declines), and win over an ancestor binding for the same key — more
+    // specific scope wins. This is what lets app_filer bind F2 on the List.
+    const app = try newApp();
+    defer app.deinit();
+    const frame = try app.frameHeadless("t", 300, 120);
+    const btn = try app.button("B");
+    try nimbus.BorderLayout.add(&frame.window.container, .center, &btn.component);
+
+    const Ctx = struct {
+        root_fired: u32 = 0,
+        own_fired: u32 = 0,
+        fn onRoot(self: *@This()) void {
+            self.root_fired += 1;
+        }
+        fn onOwn(self: *@This()) void {
+            self.own_fired += 1;
+        }
+    };
+    var ctx: Ctx = .{};
+
+    const root = &frame.window.container.component;
+    try root.bindKey(nimbus.KeyStroke.of(.f2), nimbus.KeyHandler.typed(Ctx, Ctx.onRoot, &ctx));
+    // Same key on the button itself: it is closer to focus, so it wins.
+    try btn.component.bindKey(nimbus.KeyStroke.of(.f2), nimbus.KeyHandler.typed(Ctx, Ctx.onOwn, &ctx));
+
+    var robot = nimbus.Robot.init(app, &frame.window);
+    robot.pump();
+    frame.window.requestFocusFor(&btn.component); // button is the focus owner
+    try std.testing.expect(frame.window.focus_owner == &btn.component);
+
+    robot.keyDown(.f2, .{}); // Button doesn't consume F2 → its own binding fires
+    robot.pump();
+
+    try std.testing.expectEqual(@as(u32, 1), ctx.own_fired);
+    try std.testing.expectEqual(@as(u32, 0), ctx.root_fired); // ancestor not reached
+
+    // With the focused widget's binding removed, the same key falls through to
+    // the ancestor (root) — the WHEN_ANCESTOR / window-wide scope.
+    btn.component.unbindKey(nimbus.KeyStroke.of(.f2));
+    robot.keyDown(.f2, .{});
+    robot.pump();
+    try std.testing.expectEqual(@as(u32, 1), ctx.root_fired);
+    try std.testing.expectEqual(@as(u32, 1), ctx.own_fired); // unchanged
+}
+
 test "mnemonic: Alt+letter activates a button window-wide" {
     const app = try newApp();
     defer app.deinit();

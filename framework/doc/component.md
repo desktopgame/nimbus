@@ -325,9 +325,11 @@ pub fn bindKey(self: *Component, stroke: keybinding.KeyStroke, handler: keybindi
 ```
 
 このコンポーネントに `stroke` を束縛する (`key_bindings` を初回に遅延生成)。
-束縛は、このコンポーネントがフォーカスオーナーの祖先チェーン上にあるとき
-(または root のときウィンドウ全体の束縛として) キー配送に参加する。
-同じ `stroke` への再 bind は置き換え。詳細は [keybinding.md](keybinding.md)。
+束縛は、このコンポーネントが**フォーカスオーナー自身、またはその祖先チェーン上**にあるとき
+(root のときはウィンドウ全体の束縛として) キー配送に参加する。フォーカス中ウィジェット自身に
+束縛したものも発火する (自分の `processEvent` が consume しなかった場合、祖先より先に＝
+焦点に近いほど勝つ。Swing の WHEN_FOCUSED 相当)。
+同じ `stroke` への再 bind は置き換え。詳細は [narrative/keybinding.md](narrative/keybinding.md)「配送 — 遡り 1 本」。
 
 ## キー束縛の削除
 ```zig

@@ -121,25 +121,38 @@ pub fn unbindKey(self: *Component, stroke: KeyStroke) void;
 
 ```
 1. focus_owner.processEvent(ev)              // 自前処理 + widget-local。consume なら終了
-2. ev 未 consume なら focus_owner から親へ:    // 遡り
-       node = focus_owner.parent
+2. ev 未 consume なら focus_owner から root へ: // 遡り (focus_owner 自身を含む)
+       node = focus_owner   (focus_owner == null のときは root)
        while node: if node.key_bindings.lookup(...) |h| { h.invoke(); ev.consume(); return }
                    node = node.parent
-3. root.key_bindings.lookup(...)             // ウィンドウ紐づけの束縛 (既定ボタン / Dialog の Esc)
+3. (上の遡りが root に到達して終わる ── ウィンドウ紐づけの束縛 = 既定ボタン / Dialog の Esc も同じ走査で拾われる)
 4. アクセラレータ走査                         // メニューツリーを setAccelerator 値で照合 → 項目を起動
 5. ニーモニック走査 (Alt+文字のときのみ)       // コンポーネントツリーを mnemonic 値で照合 → doClick
 ```
 段 4・5 は登録された束縛の lookup ではなく、配送時にツリーを走査する built-in 段
 (理由は「root 登録と走査の線引き」)。
 
-これは Swing の WHEN_FOCUSED → WHEN_ANCESTOR_OF_FOCUSED_COMPONENT → WHEN_IN_FOCUSED_WINDOW を「遡り 1 本」に畳んだもの。2 段目 (祖先) と 3 段目 (ウィンドウ全体) の違いは「遡り先が親か root か」だけなので、**スコープという分類自体を持たず**、root を遡りの終点にすることで両者を統合する。
+これは Swing の WHEN_FOCUSED → WHEN_ANCESTOR_OF_FOCUSED_COMPONENT → WHEN_IN_FOCUSED_WINDOW を「遡り 1 本」に畳んだもの。3 つのスコープの違いは「遡りのどこで一致するか」だけ ── focus_owner 自身 (WHEN_FOCUSED)、その祖先 (WHEN_ANCESTOR)、root (WHEN_IN_FOCUSED_WINDOW) ── なので、**スコープという分類自体を持たず**、focus_owner を起点・root を終点とする 1 本の遡りに統合する。
 
-最初に一致した `KeyBindings` が consume して止まる。フォーカス中ウィジェットが食えば祖先・グローバルより優先される (例: フォーカス中のテキスト部品の Cmd+C は、メニューの Cmd+C アクセラレータより先に勝つ = 直感どおり)。
+最初に一致した `KeyBindings` が consume して止まる。**焦点に近いほど勝つ**: focus_owner 自身の束縛が祖先・root より優先され、祖先が root より優先される (より具体的なスコープが勝つ = 直感どおり)。
+さらに段 1 の processEvent が先に走るので、フォーカス中ウィジェットの自前処理 (例: テキスト部品の Cmd+C) は自分の束縛より先に勝つ。
 `menu_bar` の特別扱いは段 4 のアクセラレータ走査へ解消され、固定段が減る。
+
+### focus_owner 自身の束縛も遡りに含む (WHEN_FOCUSED)
+遡りの起点は `focus_owner.parent` ではなく **`focus_owner` 自身**である。つまりフォーカス中ウィジェットに
+`bindKey` した束縛も発火する (自分の `processEvent` が consume しなかった場合、祖先より先に)。
+これにより、ウィジェットのソースを変えずに「このウィジェットがフォーカス中のときだけ効くショートカット」を
+宣言的に付けられる (Swing の `getInputMap(WHEN_FOCUSED)` 相当)。動く例は app_filer の List への F2 / Delete。
+
+> 旧仕様では起点が `focus_owner.parent` で、focus_owner 自身の束縛は無視されていた
+> (「自分のキーは processEvent で処理せよ、bindKey は祖先専用」という線引き)。実際に
+> 「focusable な自分自身に bindKey して黙って無反応」という踏みやすい罠になったため、
+> focus_owner を遡りに含める方針へ変更した (2026-06-12)。
 
 ### processEvent に `.key` が届く範囲
 raw なキーイベント (`processEvent` への `.key`) を受け取るのは **focus_owner (とモーダルオーバーレイの top) だけ**である。
-遡り段の祖先は `key_bindings.lookup` でのみ参加し、`processEvent` は呼ばれない。
+遡り段の祖先は `key_bindings.lookup` でのみ参加し、`processEvent` は呼ばれない (focus_owner だけが
+processEvent と key_bindings の両方で参加する。祖先は宣言的な束縛のみ)。
 Swing と同型 (祖先コンポーネントは `processKeyEvent` を受けない。祖先の関与はバインディングという宣言的な仕組みに限る)。
 「祖先の `processEvent` にも `.key` が来るかもしれない」という曖昧さを契約から排除するための明文化。
 
