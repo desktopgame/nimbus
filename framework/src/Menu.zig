@@ -288,12 +288,17 @@ fn onItemAction(self: *Menu, _: *const ActionEvent) void {
 
 fn modelOf(c: *Component) ?*ButtonModel {
     const CheckBoxMenuItem = @import("CheckBoxMenuItem.zig");
+    const RadioButtonMenuItem = @import("RadioButtonMenuItem.zig");
     if (c.vtable == &MenuItem.vtable) {
         const it: *MenuItem = @fieldParentPtr("component", c);
         return it.model;
     }
     if (c.vtable == &CheckBoxMenuItem.vtable) {
         const it: *CheckBoxMenuItem = @fieldParentPtr("component", c);
+        return &it.model.button;
+    }
+    if (c.vtable == &RadioButtonMenuItem.vtable) {
+        const it: *RadioButtonMenuItem = @fieldParentPtr("component", c);
         return &it.model.button;
     }
     return null;
@@ -306,7 +311,7 @@ fn modelOf(c: *Component) ?*ButtonModel {
 // activation is what doClick guards). Separators have no model and are skipped.
 
 /// Button model of a navigable popup row: MenuItem / CheckBoxMenuItem /
-/// submenu Menu. Null for separators (not navigable).
+/// RadioButtonMenuItem / submenu Menu. Null for separators (not navigable).
 fn navModel(c: *Component) ?*ButtonModel {
     if (c.vtable == &Menu.vtable) {
         const sub: *Menu = @fieldParentPtr("component", c);
@@ -658,12 +663,16 @@ fn popupProcessEvent(self: *Component, ev: *Component.Event) void {
 /// highlighted (keyboard flow continues into the submenu).
 fn activateItem(menu: *Menu, item: *Component) void {
     const CheckBoxMenuItem = @import("CheckBoxMenuItem.zig");
+    const RadioButtonMenuItem = @import("RadioButtonMenuItem.zig");
     if (item.vtable == &MenuItem.vtable) {
         const mi: *MenuItem = @fieldParentPtr("component", item);
         mi.doClick();
     } else if (item.vtable == &CheckBoxMenuItem.vtable) {
         const cmi: *CheckBoxMenuItem = @fieldParentPtr("component", item);
         cmi.doClick();
+    } else if (item.vtable == &RadioButtonMenuItem.vtable) {
+        const rbmi: *RadioButtonMenuItem = @fieldParentPtr("component", item);
+        rbmi.doClick();
     } else if (item.vtable == &Menu.vtable) {
         const sub: *Menu = @fieldParentPtr("component", item);
         menu.openSubmenu(sub);

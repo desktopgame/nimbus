@@ -28,3 +28,20 @@ Menu の `paint` は親 Container を判定して 2 種類の描画を出し分�
 親が Menu の popup の場合：**hover**で展開（同「メニューはホバーで要素を展開」）。
 
 行内 hover で 200ms 程度の遅延を設けて誤展開を防ぐ実装余地あり（機能要望）。
+
+## leaf 項目の型分岐と共通化の保留
+Menu / PopupMenu は子の leaf 項目（MenuItem / CheckBoxMenuItem / RadioButtonMenuItem）を
+vtable identity で判定し、モデルの取得（`modelOf`）と起動（`activateItem`）を出し分ける。
+新しい leaf 型を足すときは、これらの分岐箇所すべてに追加する必要がある。
+追加漏れはコンパイルも単体テストも通り、メニューに入れて初めて壊れる
+（auto-dismiss が効かない、キーボードで飛ばされる、など）。
+そのため担保は単体テストではなく、メニュー統合テスト（`focus_test.zig`）で行う。
+
+共通化の案は 2 つある。
+分岐を 1 つの helper に集約する案と、Component に optional な facet
+（モデルを返す・起動する能力。DropTarget と同じ opt-in 構造体）を持たせて leaf 自身に登録させる案である。
+後者なら更新漏れが構造的に起きない。
+
+ただし現状は保留する。
+メニュー配下に置く leaf の組み合わせは限られ、型ごとの特殊対応のコストが小さいためである。
+分岐箇所の更新が負担になるほど leaf が増えたら、上記いずれかで再検討する。

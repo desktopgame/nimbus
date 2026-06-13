@@ -150,12 +150,17 @@ fn onItemAction(self: *PopupMenu, _: *const ActionEvent) void {
 
 fn modelOf(c: *Component) ?*ButtonModel {
     const CheckBoxMenuItem = @import("CheckBoxMenuItem.zig");
+    const RadioButtonMenuItem = @import("RadioButtonMenuItem.zig");
     if (c.vtable == &MenuItem.vtable) {
         const it: *MenuItem = @fieldParentPtr("component", c);
         return it.model;
     }
     if (c.vtable == &CheckBoxMenuItem.vtable) {
         const it: *CheckBoxMenuItem = @fieldParentPtr("component", c);
+        return &it.model.button;
+    }
+    if (c.vtable == &RadioButtonMenuItem.vtable) {
+        const it: *RadioButtonMenuItem = @fieldParentPtr("component", c);
         return &it.model.button;
     }
     return null;

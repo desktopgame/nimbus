@@ -18,6 +18,7 @@ font: awt.Graphics.TextFont,
 color: awt.Graphics.Color,
 model: *ToggleButtonModel,
 owns_model: bool,
+mnemonic_index: ?usize,
 allocator: std.mem.Allocator,
 
 pub const vtable = Component.VTable{
@@ -72,6 +73,7 @@ fn createInternal(
         .color = color,
         .model = model,
         .owns_model = owns_model,
+        .mnemonic_index = null,
         .allocator = allocator,
     };
     item.component.role = .radio_button_menu_item;
@@ -98,6 +100,9 @@ pub fn setText(self: *RadioButtonMenuItem, text: []const u8) !void {
     const new_text = try self.allocator.dupe(u8, text);
     self.allocator.free(self.text);
     self.text = new_text;
+    if (self.component.mnemonic) |m| {
+        self.mnemonic_index = std.ascii.indexOfIgnoreCase(new_text, &[1]u8{m});
+    }
     self.applyMetrics();
 }
 
@@ -120,6 +125,14 @@ pub fn doClick(self: *RadioButtonMenuItem) void {
     if (!self.model.button.enabled) return;
     if (!self.model.isSelected()) self.model.setSelected(true);
     self.model.fireAction();
+}
+
+/// Menu-local mnemonic: while the parent menu is open, the plain letter
+/// activates this row. Window-wide Alt+letter only opens top-level menus.
+pub fn setMnemonic(self: *RadioButtonMenuItem, ch: u8) void {
+    self.component.mnemonic = std.ascii.toLower(ch);
+    self.mnemonic_index = std.ascii.indexOfIgnoreCase(self.text, &[1]u8{ch});
+    self.component.repaint();
 }
 
 // ── vtable impl ─────────────────────────────────────────────────────────
@@ -176,6 +189,13 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     const tx = MenuItem.PADDING_X + MenuItem.ICON_SLOT_WIDTH;
     const ty = (sz.height - m.height) / 2;
     g.drawString(item.text, tx, ty);
+    if (item.mnemonic_index) |mi| {
+        if (mi < item.text.len) {
+            const prefix_w = item.font.measureString(item.text[0..mi]).width;
+            const ch_w = item.font.measureString(item.text[mi .. mi + 1]).width;
+            g.fillRect(.{ .x = tx + prefix_w, .y = ty + m.height - 1, .width = ch_w, .height = 1 });
+        }
+    }
 }
 
 fn drawRadioDot(g: *awt.Graphics, x0: f32, row_h: f32, color: awt.Graphics.Color) void {

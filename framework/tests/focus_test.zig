@@ -407,6 +407,62 @@ test "menu keyboard navigation: arrows, wrap, disabled stop, Enter (#6b)" {
     try std.testing.expectEqual(@as(u32, 0), count_a.count);
 }
 
+test "radio button menu item integrates with menu click and keyboard activation" {
+    const app = try newApp();
+    defer app.deinit();
+    const frame = try app.frameHeadless("t", 400, 200);
+    const bar = try app.menuBar();
+    const view_menu = try app.menu("View");
+    view_menu.setMnemonic('V');
+    const list_item = try app.radioButtonMenuItem("List");
+    const detail_item = try app.radioButtonMenuItem("Details");
+    detail_item.setMnemonic('D');
+    try view_menu.add(&list_item.component);
+    try view_menu.add(&detail_item.component);
+    try bar.add(view_menu);
+    try frame.setMenuBar(bar);
+
+    var list_count = Counter{};
+    var detail_count = Counter{};
+    try list_item.getModel().button.addActionListener(Counter, Counter.onAction, &list_count);
+    try detail_item.getModel().button.addActionListener(Counter, Counter.onAction, &detail_count);
+
+    var robot = nimbus.Robot.init(app, &frame.window);
+    robot.pump();
+
+    robot.keyDown(.v, .{ .alt = true });
+    robot.pump();
+    try std.testing.expect(view_menu.open);
+    try std.testing.expect(list_item.getModel().button.rollover);
+
+    robot.keyDown(.enter, .{});
+    robot.pump();
+    try std.testing.expect(list_item.isSelected());
+    try std.testing.expect(!view_menu.open);
+    try std.testing.expectEqual(@as(u32, 1), list_count.count);
+
+    robot.keyDown(.v, .{ .alt = true });
+    robot.pump();
+    try std.testing.expect(view_menu.open);
+
+    robot.keyDown(.d, .{});
+    robot.pump();
+    try std.testing.expect(detail_item.isSelected());
+    try std.testing.expect(!view_menu.open);
+    try std.testing.expectEqual(@as(u32, 1), detail_count.count);
+
+    robot.keyDown(.v, .{ .alt = true });
+    robot.pump();
+    try std.testing.expect(view_menu.open);
+
+    const p = detail_item.component.absoluteOriginInWindow();
+    robot.click(p.x + 8, p.y + detail_item.component.size.height / 2, .left);
+    robot.pump();
+    try std.testing.expect(detail_item.isSelected());
+    try std.testing.expect(!view_menu.open);
+    try std.testing.expectEqual(@as(u32, 2), detail_count.count);
+}
+
 test "submenu: right opens highlighted, left closes one level, ESC is staged (#6b)" {
     const app = try newApp();
     defer app.deinit();
