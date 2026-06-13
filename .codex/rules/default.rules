@@ -1,0 +1,111 @@
+# Repository-local Codex exec policy for nimbus.
+#
+# Ported from .claude/settings.json as far as Codex command rules can express.
+# Codex Rules apply to shell command execution. They do not directly govern
+# model file-read tools, WebFetch, environment variables, or Claude hooks.
+
+prefix_rule(
+    pattern = ["git", "status"],
+    decision = "allow",
+    justification = "Working tree inspection is safe and frequently needed for reviews.",
+    match = [
+        "git status",
+        "git status --short",
+    ],
+)
+
+prefix_rule(
+    pattern = ["git", "diff"],
+    decision = "allow",
+    justification = "Diff inspection is safe and needed for code review.",
+    match = [
+        "git diff",
+        "git diff --stat",
+        "git diff HEAD",
+    ],
+)
+
+prefix_rule(
+    pattern = ["git", "log", "-n"],
+    decision = "allow",
+    justification = "Recent commit inspection is safe and read-only.",
+    match = [
+        "git log -n 5",
+        "git log -n 20 --oneline",
+    ],
+)
+
+prefix_rule(
+    pattern = ["git", "add"],
+    decision = "allow",
+    justification = "Staging changes is part of the normal local workflow.",
+    match = [
+        "git add build.zig",
+        "git add framework/src/Component.zig",
+    ],
+)
+
+prefix_rule(
+    pattern = ["git", "commit"],
+    decision = "allow",
+    justification = "Local commits are allowed by the existing Claude policy.",
+    match = [
+        "git commit -m update",
+        "git commit --amend --no-edit",
+    ],
+)
+
+prefix_rule(
+    pattern = ["zig", "build"],
+    decision = "allow",
+    justification = "Zig build and test commands are the standard verification flow for this repository.",
+    match = [
+        "zig build",
+        "zig build test",
+        "zig build run-widget_simple",
+    ],
+)
+
+prefix_rule(
+    pattern = ["git", "push"],
+    decision = "prompt",
+    justification = "Pushing changes affects the remote repository and should be confirmed.",
+    match = [
+        "git push origin main",
+    ],
+)
+
+prefix_rule(
+    pattern = ["git", "pull"],
+    decision = "prompt",
+    justification = "Pulling can modify the working tree and should be confirmed.",
+    match = [
+        "git pull",
+        "git pull --rebase",
+    ],
+)
+
+# Approximate command-level protections for files denied in .claude/settings.json.
+# These do not replace Codex file-read/tool policy; they only affect shell commands.
+prefix_rule(
+    pattern = [["cat", "type", "Get-Content"], [".env", "./.env"]],
+    decision = "forbidden",
+    justification = "Environment files may contain secrets.",
+    match = [
+        "cat .env",
+        "type .env",
+        "Get-Content .env",
+    ],
+)
+
+prefix_rule(
+    pattern = [["cat", "type", "Get-Content"], ["debug.log", "./debug.log"]],
+    decision = "forbidden",
+    justification = "debug.log is denied in the existing Claude policy.",
+    match = [
+        "cat debug.log",
+        "type debug.log",
+        "Get-Content debug.log",
+    ],
+)
+
