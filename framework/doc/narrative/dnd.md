@@ -10,7 +10,7 @@ DnD のために `Component.VTable` にメソッドを足さない。
 `drag_source` / `drop_target` は `scrollable` と同じく**コンポーネントが任意で持つインライン optional フィールド**にする。
 
 * VTable は全ウィジェット共通の必須インターフェースで、 オプショナルな能力を足すたびに膨らむのは避けたい (`component.md` の方針)。
-* DnD に参加するかどうかは、 ウィジェット型ごとに静的に決まる **intrinsic な属性**で、 ちょうど `scrollable` (折り返し追従するか) と同類。
+* DnD に参加するかどうかは、 ウィジェット型ごとに静的に決まる intrinsic な属性で、 ちょうど `scrollable` (折り返し追従するか) と同類。
   動的なのはスロットの中身 (`onOver` 等の判定) であってスロットの有無ではない。
 * 祖先が後付けする能力 (`ScrollController` のような property + `enclosing...` 探索) とは違い、 DnD 能力は**そのコンポーネント自身が宣言**する。
   だから property バッグではなくフィールドが合う。
@@ -32,28 +32,28 @@ fn cancelDrag(self: *Window) void;                              // 受理せず�
 
 司令塔の責務:
 
-* **受け側の解決** — `win_point` 下のコンポーネントから祖先方向へ歩き、 最初に `drop_target` を持つものを候補にする (`enclosingScrollController` と同型の探索)。
+* 受け側の解決 — `win_point` 下のコンポーネントから祖先方向へ歩き、 最初に `drop_target` を持つものを候補にする (`enclosingScrollController` と同型の探索)。
   その候補の `onOver` の戻り値が受理を決める。 v1 では候補は 1 つだけで、 拒否されてもさらに祖先へは遡らない (bubbling は機能要望)。
-* **enter / over / leave** — 候補が前フレームから変わったら、 旧候補に `onLeave`、 新候補に `onEnter` を投げる。
+* enter / over / leave — 候補が前フレームから変わったら、 旧候補に `onLeave`、 新候補に `onEnter` を投げる。
   候補が同じで移動しているあいだは毎フレーム `onOver` を呼ぶ。 これは hover の解除 (合成 move) と同型の追跡 (`container.md`)。
-* **フィードバック** — nimbus はゴーストを描かない。
+* フィードバック — nimbus はゴーストを描かない。
   送り側が `onDrag` で自分のゴースト (passthrough overlay) を動かし、 受け側が `onOver` で挿入線を描く (「描画 (ゴースト / 挿入先)」)。
   受理中か否かでカーソルを変えるのは機能要望。
-* **アクション** — 修飾キーから `action` (`copy` / `move`) を決め、 `DragEvent` に載せて受け側へ渡す。
+* アクション — 修飾キーから `action` (`copy` / `move`) を決め、 `DragEvent` に載せて受け側へ渡す。
 
 ## ライフサイクル (アプリ内 DnD)
-1. **開始** — `drag_source` を持つコンポーネント上で press し、 閾値を超えて move したらジェスチャ成立。
+1. 開始 — `drag_source` を持つコンポーネント上で press し、 閾値を超えて move したらジェスチャ成立。
    `onDragStart(x, y)` を呼び、 返った `Transfer` で `beginDrag` する。 null が返ればドラッグしない。
-2. **移動** — move のたび `updateDrag(win_point, action)`。 受け側解決・enter/leave・`onOver` によるフィードバック更新と受理判定。
-3. **確定** — 受理中の受け側の上で release したら `finishDrag`。 受け側の `onDrop(e)` を先に呼び (受け側が荷物を取り込む)、
+2. 移動 — move のたび `updateDrag(win_point, action)`。 受け側解決・enter/leave・`onOver` によるフィードバック更新と受理判定。
+3. 確定 — 受理中の受け側の上で release したら `finishDrag`。 受け側の `onDrop(e)` を先に呼び (受け側が荷物を取り込む)、
    そのあと move かつ受理されたときに限りドラッグ元の `onDragDone(.move)` を呼ぶ (元を消す)。 copy なら `onDragDone(.copy)`。
-4. **取り消し** — Escape、 または受理されない場所での release は `cancelDrag`。 ドラッグ元には `onDragDone(null)` を通知し、 元は残す。
+4. 取り消し — Escape、 または受理されない場所での release は `cancelDrag`。 ドラッグ元には `onDragDone(null)` を通知し、 元は残す。
 
 `onDrop` → `onDragDone` の順序を守るのは、 move で「先に入れてから消す」を保証するため。
 受理されなかった場合に `onDragDone(null)` を渡すのは、 move 元が「結局ドロップされなかったので消さない」と判断できるようにするため。
 
 ## 自分にドロップする (並べ替え)
-1 つのコンポーネントが `drag_source` と `drop_target` を**両方**持てる。
+1 つのコンポーネントが `drag_source` と `drop_target` を両方持てる。
 これにより「自分からドラッグして自分に落とす」= リスト行の並べ替えなどが成立する。
 司令塔の受け側解決は `win_point` からのヒットテストなので、 解決結果がドラッグ元自身でも特別扱いは要らない。
 受け側は `e.transfer.source == &self.component` で「自分から来た荷物」を判定し、
@@ -66,10 +66,10 @@ cross-component move は「`onDrop` で受け側が入れ、 `onDragDone(.move)`
 `source == target` のときは **同じ backing 構造体が `onDrop` と `onDragDone` の両方を受け取る** (`user_data` が同一インスタンス) ので、
 自分のフィールドで調停できる。 推奨パターン:
 
-* **並べ替えは `onDrop` で完結させる** — `e.transfer.source == &self.component` なら、 ドロップ位置から行を求めて `remove` + `insert` をここで一括で行う。
+* 並べ替えは `onDrop` で完結させる — `e.transfer.source == &self.component` なら、 ドロップ位置から行を求めて `remove` + `insert` をここで一括で行う。
   挿入と削除の index は相互依存するため、 1 箇所でやらないと off-by-one を生む。
   そのうえで「済んだ」フラグを立てる。
-* **`onDragDone` はそのフラグを見て no-op** にする。 外部へ move されたときだけ元を消す。
+* `onDragDone` はそのフラグを見て no-op にする。 外部へ move されたときだけ元を消す。
 
 ドロップ位置 (行間のどこに落ちたか) の算出や、 端へドラッグしたときの autoscroll は List 側の統合の領分で、 「機能要望」に挙げる。
 
@@ -84,7 +84,7 @@ cross-component move は「`onDrop` で受け側が入れ、 `onDragDone(.move)`
 passthrough はヒットテストと dismiss の対象外なので、 受け側解決や capture / フォーカスと干渉しない。 アプリ側の手順:
 
 * `onDragStart` でゴーストの Component を用意し、 `window.overlays.addPassthrough(ghost)` で登録する。
-* `onDrag(x, y)` (ドラッグ中 move ごと、 **ウィンドウ座標**) でゴーストの `position` を更新する。
+* `onDrag(x, y)` (ドラッグ中 move ごと、 ウィンドウ座標) でゴーストの `position` を更新する。
   ドラッグ中はアプリのコンポーネントへ通常の move が届かない (司令塔が握る) ため、 位置はこの per-move フックで受け取る。
 * `onDragDone` で `removeOverlay` する (ドロップ・取り消しのどちらでも呼ばれる)。
 
@@ -126,9 +126,9 @@ OS ドロップを後付けしたとき、 `files` の paths 文字列は awt �
 ## OS ドロップを後付けする (additive である理由)
 OS からのファイルドロップは後段で足すが、 上記の型を**一切変えずに**乗る。
 
-* **Phase 1 (glfw)** — glfw の drop コールバック (`glfwSetDropCallback`) はドロップ確定時にパス配列だけをくれる (ホバー中のイベントは無い)。
+* Phase 1 (glfw) — glfw の drop コールバック (`glfwSetDropCallback`) はドロップ確定時にパス配列だけをくれる (ホバー中のイベントは無い)。
   awt がこれを `Transfer{ flavor = .files, ctx = &paths, source = null }` に包み、 ドロップ位置で 同じ `finishDrag` を呼ぶ。 ホバー演出は無し。
-* **Phase 2 (native)** — Windows の `IDropTarget` / macOS の `NSDraggingDestination` を awt-c に実装する。
+* Phase 2 (native) — Windows の `IDropTarget` / macOS の `NSDraggingDestination` を awt-c に実装する。
   これにより DragEnter / DragOver が 同じ `updateDrag` (→ `onEnter` / `onOver`) を駆動でき、 演出が点灯する。
 
 ここがキモ: OS ドロップは `DropTarget` / `DragSource` に**新メソッドを足さない**。
@@ -139,7 +139,7 @@ awt 層に唯一足りないのは、 OS ドロップを EventQueue へ届ける
 アプリ内 DnD はこれを必要としない (既存のマウスイベントから framework 内で合成するため)。
 
 ## 制約
-* **同時に成立するドラッグは高々 1 つ** (司令塔が単一の状態を持つ)。
-* **受け側の解決は単一候補** — `win_point` 下の最近傍の `drop_target` のみ。 内側が拒否しても祖先の別の受け側へは渡さない (bubbling は機能要望)。
-* **座標は受け側ローカル** — `DragEvent` の `x` / `y` は受け側コンポーネント原点基準。
-* **単一 UI スレッド** — DnD は他のイベント処理と同じ UI スレッドで完結する (`CLAUDE.md` のスレッドモデル)。
+* 同時に成立するドラッグは高々 1 つ (司令塔が単一の状態を持つ)。
+* 受け側の解決は単一候補 — `win_point` 下の最近傍の `drop_target` のみ。 内側が拒否しても祖先の別の受け側へは渡さない (bubbling は機能要望)。
+* 座標は受け側ローカル — `DragEvent` の `x` / `y` は受け側コンポーネント原点基準。
+* 単一 UI スレッド — DnD は他のイベント処理と同じ UI スレッドで完結する (`CLAUDE.md` のスレッドモデル)。

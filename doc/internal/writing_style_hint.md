@@ -14,7 +14,7 @@
 
 - 表示幅: 1 行が 160 桁（全角 2 / 半角 1）を超えると警告。折り返し対策。
   実装は `tools/textlint/rules/max-display-width.js`、閾値はその定数。
-- 強調の数: 1 行に強調（`**` / `*`）は 1 個まで、見出しは 2 個まで。
+- 強調の数: 1 行に 1 個まで、見出し配下の本文（セクション）は 2 個まで。強調は `**` / `*`。
   実装は `tools/textlint/rules/max-emphasis-per-line.js`。
 - 用語統一: 小文字の英語形を所定のカタカナ・日本語へ寄せる。PascalCase（型名）は対象外。
   辞書は `tools/textlint/prh.yml`、規約は `.claude/rules/api-document-style-guide.md`「表記の統一」。

@@ -157,7 +157,7 @@ add / remove で refcount を ±1 するのは標準パターン。
 * **Lua / Ruby / Swift バインディング**: 同じパターンで動く
 * **L&F の実装**: 元 vtable を property に保存して、新 vtable から super 呼び出しできる機構が成立する。
   「`setVTable` は full replace」という制約が super_vt convention を使えば緩む
-* **テスト**: paint を mock vtable に差し替えて呼び出し回数を検証、等が同じ仕組みで書ける
+* テスト: paint を mock vtable に差し替えて呼び出し回数を検証、等が同じ仕組みで書ける
 
 ## 関連 doc
 * `component.md` — vtable / setVTable / properties / destroy の詳細

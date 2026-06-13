@@ -8,7 +8,7 @@ Model の役割・共有モデル・標準実装パターン・通知設計。
 ## Model の役割
 Model は次の 3 つを担う。
 
-1. **状態の保持** — 値そのもの（slider なら min/value/max、button なら pressed/armed/enabled 等）
+1. 状態の保持 — 値そのもの（slider なら min/value/max、button なら pressed/armed/enabled 等）
 2. **観測可能性** — 変更を外部から検知できる仕組み（ChangeListener 登録）
 3. **共有可能性** — 複数のウィジェットが同じ Model を参照して同じ状態を共有できる
 
@@ -43,7 +43,7 @@ setter の中で「変化しなかったら発火しない」が重要(無駄な
 `if (new_value == self.value) return;` の早期 return を入れる。
 
 ## ウィジェットとの連携（install / uninstall で配線する）
-ウィジェット本体は Model を**参照するだけ**でリスナー登録のコードは持たない。
+ウィジェット本体は Model を参照するだけでリスナー登録のコードは持たない。
 リスナーの登録は `Component.vtable.install` で行い、`uninstall` で外す。
 
 これにより：

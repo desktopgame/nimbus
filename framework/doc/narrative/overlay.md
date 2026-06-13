@@ -14,7 +14,7 @@ OverlayManager の描画・イベント/dismiss・座標と所有権・用途・
 `modal_popup` のオーバーレイが 1 つでも開いている間、入力は次のように扱われる。
 
 * **ヒットテストは登録の逆順（新 → 古）**。最初に bounds 内へ当たったオーバーレイへ dispatch する。
-* bounds の**外**で press → `dismissAllOverlays`（cascade した全 popup が閉じる）。外側の hover / scroll も飲み込む（モーダルな手触り）。
+* bounds の外で press → `dismissAllOverlays`（cascade した全 popup が閉じる）。外側の hover / scroll も飲み込む（モーダルな手触り）。
 * ESC → 全 dismiss。
 * オーバーレイ内の MenuItem が action を発火 → owner のリスナーが `dismissAllOverlays` を呼ぶ。
 

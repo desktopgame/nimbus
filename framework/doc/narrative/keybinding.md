@@ -191,7 +191,7 @@ DOM / WPF / JavaFX が持つ「ルート → target の前置き走査 (祖先�
 現行実装には遡りと別系統のキー配送が残っている。
 `Window.dispatchInput` は focus_owner がいないときキーイベントをルートコンテナに渡す。
 すると `Container.processEvent` の `.key, .char` 分岐が
-ヒットテストもフォーカスも見ずに**子全員へ追加順にブロードキャストする** (誰かが consume するまでツリー全体に撒く)。
+ヒットテストもフォーカスも見ずに子全員へ追加順にブロードキャストする (誰かが consume するまでツリー全体に撒く)。
 v1 で Button / List 等が focusable でなく、キーを欲しがるウィジェットを特定する手段が無かった時代の代替品である。
 
 これは**壊れており、削除する**(作者承認済み):
@@ -207,7 +207,7 @@ v1 で Button / List 等が focusable でなく、キーを欲しがるウィジ
 (P1 後はクリックか Tab でフォーカスを取ってから操作する、という一貫した形になる)。
 
 削除対象は `Container.processEvent` の `.key, .char` 分岐と、`Window.dispatchInput` の
-focus_owner 不在時にルートコンテナへ渡す fallback の 2 か所。**P1 の focusable 拡大が前提条件**なので、
+focus_owner 不在時にルートコンテナへ渡す fallback の 2 か所。P1 の focusable 拡大が前提条件なので、
 削除はそれと同時かそれ以降に行う (先に消すと現行の List 矢印キー等が操作不能になる)。
 
 ## ルート登録と走査の線引き
@@ -221,11 +221,11 @@ focus_owner 不在時にルートコンテナへ渡す fallback の 2 か所。*
   メニューバー配下のメニューツリーを走査し、一致した項目を起動する。
 
 走査を選ぶのはコスト判断である。登録式は 2 つの構造的な罠を持つ:
-- **順序罠** — 「作る → 設定する → add する」という自然な書き順では、`setMnemonic` / `setAccelerator` の
+- 順序罠 — 「作る → 設定する → add する」という自然な書き順では、`setMnemonic` / `setAccelerator` の
   時点で parent chain がルートに到達できない。遅延登録 (install でバインド) も、install はコンテナ配置時に
   発火するため未接続サブツリーで同じ問題が再発し、正しく解くには「サブツリーがルートに接続された瞬間」を
   全子孫へ伝搬する新機構が要る。
-- **寿命罠** — 束縛の置き場所 (ルート) と対象の寿命 (ウィジェット本人) が分離し、unbind を忘れると
+- 寿命罠 — 束縛の置き場所 (ルート) と対象の寿命 (ウィジェット本人) が分離し、unbind を忘れると
   対象破棄後の dangling handler (UAF) になる。
 
 一方、配送時の走査はキー押下というコールドパスでの小さな木の走査 1 回で、コストは無視できる。
@@ -237,15 +237,15 @@ focus_owner 不在時にルートコンテナへ渡す fallback の 2 か所。*
 - Dialog のキャンセル → ルートに `Esc → cancel` を登録 (ESC のオーバーレイ閉じは構造挙動として built-in のまま。Dialog はそれと別に登録する)。
 
 これらはウィンドウが存在する時点でしか呼べないので順序罠は起きない。ただし寿命罠は残る:
-**ルート登録がコンポーネントを参照する場合 (既定ボタン等)、そのコンポーネントの破棄時に unbind する**のが
+ルート登録がコンポーネントを参照する場合 (既定ボタン等)、そのコンポーネントの破棄時に unbind するのが
 登録側の責任 (uninstall 時にルートへ到達できるか、teardown 順に注意)。
 
 Swing の WHEN_IN_FOCUSED_WINDOW は任意コンポーネントに登録でき親チェーン外でも効くが、本モデルは親チェーン + 走査段で解決する。差は上記の線引きで吸収する。
 
 ## フォーカストラバーサル
-- **focusable を拡大する**: Button / CheckBox / RadioButton / Slider / ComboBox / List を
+- focusable を拡大する: Button / CheckBox / RadioButton / Slider / ComboBox / List を
   `focusable = true` にする。v1 の「ボタン等はマウス専用」を意図的に覆す判断。Label は据え置き。
-- **トラバーサル順 = コンテナ子の追加順の DFS**。
+- トラバーサル順 = コンテナ子の追加順の DFS。
   Swing の差し替え可能な `FocusTraversalPolicy` は持たない (過剰)。レイアウトが子を順に並べる前提なら視覚順と一致する。
 ```zig
 // Window
@@ -253,12 +253,12 @@ pub fn focusNext(self: *Window) void;   // Tab
 pub fn focusPrev(self: *Window) void;   // Shift+Tab
 ```
 focusable を DFS で列挙し、`focus_owner` の次 / 前へ移す。端で wrap する。
-- **BorderLayout と追加順の規約**: BoxLayout は追加順＝視覚順なので常に一致する。
+- BorderLayout と追加順の規約: BoxLayout は追加順＝視覚順なので常に一致する。
   BorderLayout は配置が region ヒントで決まり、追加順は配置に影響しない。
   よってタブオーダーを読み順 (north → west → center → east → south 等) にしたければ
   add をその順に呼べばよい。幾何ソートは持たない。
   この規約は利用者向け doc (spec 昇格時) に明記する。
-- **スキップ条件 = 静的 `focusable` + 動的 `FocusQuery`**: トラバーサルが止まるのは
+- スキップ条件 = 静的 `focusable` + 動的 `FocusQuery`: トラバーサルが止まるのは
   「`focusable == true` かつ (`focus_query == null` または `isEligible()` が true)」のウィジェットだけ。
   disabled なボタンに Tab が止まらないようにするための動的判定である。
   enabled がモデル側 (`ButtonModel` 等) にあり Component 層から見えない問題を opt-in capability で埋める
@@ -273,13 +273,13 @@ focus_query: ?FocusQuery = null,
   モデルを持つウィジェットが `install` で設定し、`@fieldParentPtr` で自分へ戻って `model.enabled` を返す。
   不採用: Component に `enabled: bool` を複製してモデル変化時に同期する案 (同期忘れの余地があり、
   真実が 2 か所になる)。
-- **フォーカス喪失時の行き先は null**: フォーカス中のウィジェットが削除 / 無効化されたら
+- フォーカス喪失時の行き先は null: フォーカス中のウィジェットが削除 / 無効化されたら
   `focus_owner = null` に戻すだけ。Swing 的な「次の候補へ自動移動」はしない (次の Tab で
   先頭から再スタートすれば十分)。
-- **列挙の一本化 (実装制約)**: focusable の DFS 列挙は 1 つの関数に集約し、`focusNext` /
+- 列挙の一本化 (実装制約): focusable の DFS 列挙は 1 つの関数に集約し、`focusNext` /
   `focusPrev` / 初期フォーカスのすべてがそれを共有する。将来の Order 値 (「後付け余地」参照) の
   差し込み点をこの 1 か所に保つため。DFS を複数箇所に複製しない。
-- **オーバーレイ開放中の Tab = 外クリックと同じ扱いで閉じて移動**: モーダルオーバーレイ
+- オーバーレイ開放中の Tab = 外クリックと同じ扱いで閉じて移動: モーダルオーバーレイ
   (ComboBox のドロップダウン / ポップアップメニュー等) が開いている間に Tab が来たら、
   `Window.dispatchInput` の ESC 処理と同じ場所で拾い、`dismissAll` (= キャンセル、ComboBox の値は
   変えない) してから通常の `focusNext` / `focusPrev` を実行する。
@@ -287,11 +287,11 @@ focus_query: ?FocusQuery = null,
   (外クリックと Tab で閉じ方の意味を統一する)。
   - 不採用: 案A (Tab を飲み込む = 現状の挙動)。Tab 連打でフォームを移動する操作が
     ドロップダウンで引っかかる。
-  - 実需待ち: 案C (Windows 流にハイライト中の項目を**確定**してから閉じて移動)。
+  - 実需待ち: 案C (Windows 流にハイライト中の項目を確定してから閉じて移動)。
     オーバーレイ機構に「閉じ方の意味 (commit / cancel)」の契約を持ち込む必要がある。
     後付けコスト: 消費点は同じ分岐 1 か所なので、ComboBox で違和感の実需が出たら
     そこだけ commit 化すればよい (時間で増えない型)。
-- **Tab 移動時のスクロールイン (scrollRectToVisible 相当) は v1 に入れる**: `focusNext` /
+- Tab 移動時のスクロールイン (scrollRectToVisible 相当) は v1 に入れる: `focusNext` /
   `focusPrev` でフォーカスが移った先が ScrollPane の視界外にあるとき、視界内へスクロールさせる。
   配管は既存の `Component.ScrollController` (汎用 rect API、TextArea キャレット追従用に実装済み) を
   そのまま使う: `scrollIntoView(component)` ヘルパーを 1 つ書き、component の bounds を
@@ -300,14 +300,14 @@ focus_query: ?FocusQuery = null,
     プログラム由来の `requestFocus` での自動スクロールは利用者コードと喧嘩する余地があるため、
     `requestFocusFor` には入れない (不採用)。
   - ネストした ScrollPane は最寄りの 1 段だけ (外側への連鎖は実需が出たら)。
-- **Tab の扱い**: まず `focus_owner.processEvent` に渡す (将来 TextArea が Tab を文字として食う余地を残す)。
+- Tab の扱い: まず `focus_owner.processEvent` に渡す (将来 TextArea が Tab を文字として食う余地を残す)。
   食わなければ Window が `focusNext` / `focusPrev`。
   これは現状の「focus_owner 先取り → fallback」構造にそのまま乗る。
-- **初期フォーカス**: ウィンドウ open 時に最初の focusable へ。
-- **Space / Enter 起動**: フォーカス中ウィジェット自身の `processEvent` で処理する (`widget-local`)。
+- 初期フォーカス: ウィンドウ open 時に最初の focusable へ。
+- Space / Enter 起動: フォーカス中ウィジェット自身の `processEvent` で処理する (`widget-local`)。
   Button は Space で起動。共通の起動口として各ボタン系に `doClick()` を新設する
   (press + fireAction + release を模す。マウス / Space / Enter / ニーモニックすべての入口)。
-- **フォーカスリング描画**: ウィジェットは既に受け取っている `FocusEvent{ gained }` で
+- フォーカスリング描画: ウィジェットは既に受け取っている `FocusEvent{ gained }` で
   `focused: bool` を保持し、`paint` でリングを描く。`Window.focus_owner` への逆参照は不要。
 
 ## ニーモニック (Component のフィールド + 走査で解決)
@@ -323,11 +323,11 @@ pub fn setMnemonic(self: *Self, ch: u8) void;
 コンポーネントツリーを走査して `mnemonic == ch` のウィジェットを探し `doClick()` する
 (メニューバー直下の Menu なら開く)。登録が無いので順序罠も寿命罠も無い (「ルート登録と走査の線引き」参照)。
 
-- **重複は先勝ち** (走査順 = ツリーの DFS 順で最初の一致)。Windows 流の「重複時は起動せず該当コントロール間を
+- 重複は先勝ち (走査順 = ツリーの DFS 順で最初の一致)。Windows 流の「重複時は起動せず該当コントロール間を
   フォーカス巡回」は実需待ち (走査方式なら全一致を集めるだけなので後付けは容易)。
-- **disabled は発火しない**。ガードは走査側ではなく `doClick()` 自身が持つ — `model.enabled == false` なら
+- disabled は発火しない。ガードは走査側ではなく `doClick()` 自身が持つ — `model.enabled == false` なら
   no-op。マウス / Space / Enter / ニーモニックのどの入口から来ても同じ 1 か所で守られる。
-- **MenuItem のニーモニックはルート走査の対象外**。スコープは「親メニューが開いている間だけ」、照合は
+- MenuItem のニーモニックはルート走査の対象外。スコープは「親メニューが開いている間だけ」、照合は
   Alt なしの素の文字キー。開いたメニューはモーダルオーバーレイとしてキーを最初に受けるので、メニュー自身の
   processEvent が表示中項目の `mnemonic` と突き合わせる (オーバーレイ内ローカル処理)。ルート走査に含めると
   メニューが閉じていても発火してしまい、それはニーモニックではなくアクセラレータの挙動になる。
@@ -339,11 +339,11 @@ Label の `labelFor` (ラベルのニーモニックで別フィールドにフ�
 
 ## 後付け余地
 配送契約 (食う/食わない) が防火壁になるので、以下は今の決定を壊さず後から積める。
-- **Action / Command**: `Handler.invoke` の先を Command モデル
+- Action / Command: `Handler.invoke` の先を Command モデル
   (`enabled` / `label` / `icon` / `on_invoke` + リスナー) にする。
   メニュー項目・ツールバーボタン・アクセラレータが 1 つの Command を指し、
   `enabled = false` で一斉グレーアウトが無料で付く。既存の Model パターンに乗る。今は不要。
-- **ActionMap**: 「名前 → Action」の片割れ。InputMap (名前経由) を入れるときだけ意味を持つ。フレームワーク全体にも特定ウィジェット内にも入れられる。
+- ActionMap: 「名前 → Action」の片割れ。InputMap (名前経由) を入れるときだけ意味を持つ。フレームワーク全体にも特定ウィジェット内にも入れられる。
   **要る判定の引き金**: 利用者アプリの「ショートカットのユーザーカスタマイズ + 永続化」の実需が出たとき。
   Handler (関数ポインタ) はシリアライズできないので、設定ファイルへの保存・設定画面での一覧表示には
   `"save" → Ctrl+S` のような安定した名前が必須になる — それが名前間接層でなければ買えない唯一のもの
@@ -351,21 +351,21 @@ Label の `labelFor` (ラベルのニーモニックで別フィールドにフ�
   抽象 `command` 修飾キー、mac テキスト編集キー差はウィジェット内部 InputMap で、それぞれ名前なしで賄える)。
   それまでは入れない。後付けの形: KeyBindings はそのまま、上に「名前 → Handler」レジストリと
   `bind-by-name` の砂糖衣を載せるだけ (配送契約は不変)。
-- **InputMap で TextArea を再実装**: TextArea の `processEvent` 内部だけの話。
+- InputMap で TextArea を再実装: TextArea の `processEvent` 内部だけの話。
   配送から見れば相変わらず「食う/食わない」を返すだけなので、いつでもローカルに差し替えられる。
   テキスト編集キーを利用者がリバインドできるようにしたいときにやる。
   Swing の InputMap の親チェーン (共通ベース編集キーマップ) も、
   1 つのウィジェットが「食うか決める内部処理」に閉じるので別途入れられる。
-- **明示タブオーダー (Order 値)**: HTML `tabindex` / WinForms `TabIndex` 相当の上書き値。入れるなら
-  **コンテナ内ローカル**のソートキーにする — 兄弟間で `(order, 追加index)` の安定ソート、既定 `order = 0`
+- 明示タブオーダー (Order 値): HTML `tabindex` / WinForms `TabIndex` 相当の上書き値。入れるなら
+  コンテナ内ローカルのソートキーにする — 兄弟間で `(order, 追加index)` の安定ソート、既定 `order = 0`
   (= 未設定なら純粋な追加順のまま)。グローバル番号 (HTML の正の tabindex) は「1 個挟むだけで全部
   振り直し」の罠があるので採らない。**v1 では実装しない**: BoxLayout は追加順＝視覚順で常に一致し、
   BorderLayout は追加順が配置に影響しないので add の並べ替えで常に直せる = 実需となるケースが無い。
   唯一の衝突は「追加順が z オーダー (描画順 / ヒットテスト逆順) を兼ねていて動かせない」場合だが、
   重なり合う兄弟はオーバーレイ以外では稀。その実需が出たときにこの形で足す。
-  **後付けコストの見積もり** (実需待ちの条件として記録): ① `Component` にフィールド 1 個
-  (既定 0 = 挙動不変、利用者側マイグレーション無し)、② トラバーサルの列挙関数 1 か所に
-  兄弟の安定ソートを挿入、③ setter + apigen 1 行 (ただし C ABI 露出は capi のスカラー引数対応待ち)。
+  後付けコストの見積もり (実需待ちの条件として記録)。① `Component` にフィールド 1 個
+  (既定 0 = 挙動不変、利用者側マイグレーション無し)。② トラバーサルの列挙関数 1 か所に
+  兄弟の安定ソートを挿入。③ setter + apigen 1 行 (ただし C ABI 露出は capi のスカラー引数対応待ち)。
   消費点が列挙関数 1 つに閉じているため、繰り延べコストは時間で増えない (LAF のような
   「不在が多数の paint に焼き込まれる」型と逆)。
   前提条件: 下記「列挙の一本化」が守られていること。
