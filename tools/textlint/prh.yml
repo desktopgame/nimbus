@@ -56,3 +56,15 @@ rules:
     pattern: '/\blatency\b/'
   - expected: アクセシビリティ
     pattern: '/\baccessibility\b/'
+  - expected: 順序
+    pattern: '/\bordering\b/'
+  - expected: ツール
+    pattern: '/\btools?\b/'
+  - expected: ルート
+    pattern: '/\broot\b/'
+  - expected: トグル
+    pattern: '/\btoggles?\b/'
+  - expected: ニーモニック
+    pattern: '/\bmnemonics?\b/'
+  - expected: アロケーター
+    pattern: '/\ballocators?\b/'
