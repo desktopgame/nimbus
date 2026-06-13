@@ -9,7 +9,8 @@
     "example": "examples"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "lint": "textlint",
+    "lint_all": "textlint \"**/doc/**/*.md\""
   },
   "repository": {
     "type": "git",
