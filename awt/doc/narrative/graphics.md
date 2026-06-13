@@ -35,14 +35,16 @@ baseline 派の API が必要になったら `drawStringAtBaseline(s, x, baselin
 複数行レンダリングが必要なら呼び出し側で行ごとに `drawString` を呼ぶ。
 
 ## drawString と HiDPI
-利用者が指定する `Font.pixel_size` は **論理ポイント** だが、freetype に渡す値は **物理ピクセル** でなければクッキリ rasterize されない (= 論理サイズで rasterize すると Retina で米粒大になる)。
+利用者が指定する `Font.pixel_size` は **論理ポイント** だが、
+freetype に渡す値は物理ピクセルでなければクッキリ rasterize されない (= 論理サイズで rasterize すると Retina で米粒大になる)。
 `drawString` は内部で `scale = fb_w / window_w` を計算し、`pixel_size × scale` を freetype に渡す。
 
 得られたグリフのメトリクス (bitmap 幅 / 高さ / bearing / advance) はすべて物理単位なので、quad 配置時には `1/scale` を掛けて論理に戻す。
 このおかげで:
 - グリフのテクスチャは物理ピクセル等倍 (= 鮮明)
 - quad の頂点座標は論理ポイント (= NDC 変換と整合)
-- viewport がフレームバッファ全体に張ってあるので、NDC → ピクセル変換で自動的に物理スケールにマップされる (= 1 物理ピクセル = 1 物理ピクセルの bilinear なし)
+- ビューポートがフレームバッファ全体に張ってあるので、NDC → ピクセル変換で自動的に物理スケールにマップされる
+  (= 1 物理ピクセル = 1 物理ピクセルの bilinear なし)
 
 `GlyphAtlas` のキャッシュキーは物理 pixel size を含めるので、同じフォントが複数スケール環境に居ても衝突しない。
 
@@ -58,7 +60,8 @@ JTattoo 風のリッチなルックアンドフィールを、描画バックエ
 
 ### 1 プリミティブ原則
 画像系の描画はすべて `programs.Image` (テクスチャ付きクアッド + uniform tint + アルファ合成) 1 本に乗せる。
-サブ画像 / アトラス / 9-slice / タイル / グラデーションは、**Graphics 側が頂点の dst 矩形・src UV・tint をどう積むか** だけで表現し、新しい program (= バックエンドごとのシェーダ + パイプライン) を増やさない。
+サブ画像 / アトラス / 9-slice / タイル / グラデーションは、**Graphics 側が頂点の dst 矩形・src UV・tint をどう積むか** だけで表現する。
+新しい program (= バックエンドごとのシェーダ + パイプライン) を増やさない。
 これにより「バックエンドに要請するインターフェイス」を太らせずに表現力だけを足せる。
 
 現状の `drawImageScaled` は UV を 0..1 にハードコードしているが、これを「src 矩形 (画像ピクセル単位) → UV」に一般化するだけで万能プリミティブになる。
@@ -99,7 +102,8 @@ pub const Insets = struct { left: f32, top: f32, right: f32, bottom: f32 };
 `Insets` は awt.Graphics 内に定義し、framework 層の同種の型には依存させない (レイヤーをまたがせない)。
 
 ### `drawImageScaled` の Rect 化
-現行シグネチャ `(image, x, y, w, h)` を `(image, dst: Rect)` に寄せ、他の draw 系 (`drawImageRegion` / `drawImageTinted` / `drawImageNineSlice` / `drawImageTiled`) と一貫させる。
+現行シグネチャ `(image, x, y, w, h)` を `(image, dst: Rect)` に寄せ、
+他の draw 系 (`drawImageRegion` / `drawImageTinted` / `drawImageNineSlice` / `drawImageTiled`) と一貫させる。
 既存呼び出し側に小さな移行が入るが、作者承認済み。
 
 ### 表現力の対応
@@ -121,8 +125,10 @@ pub const Insets = struct { left: f32, top: f32, right: f32, bottom: f32 };
 「グラデーション = 引き伸ばされた極小テクスチャ」という性質をそのまま設計に落とす形。テーマは起動時に数枚作って使い回す。詳細は `narrative/image.md`。
 
 ### タイルの端処理とサンプラー
-`drawImageTiled` は「端を `src` でクランプした原寸クアッドを敷き詰める」実装とし、wrap アドレッシングのサンプラーを要求しない (契約を増やさないため)。
-1 draw で済ませたい最適化が欲しくなった場合のみ wrap の static sampler を 1 つ追加する — これが画像系で **唯一の未決のバックエンド判断**。デフォルトは追加しない側。
+`drawImageTiled` は「端を `src` でクランプした原寸クアッドを敷き詰める」実装とし、
+wrap アドレッシングのサンプラーを要求しない (契約を増やさないため)。
+1 draw で済ませたい最適化が欲しくなった場合のみ wrap の static sampler を 1 つ追加する — これが画像系で **唯一の未決のバックエンド判断**。
+デフォルトは追加しない側。
 
 ### 線形フィルタ依存
 スケールやグラデーション伸ばしの滑らかさは、static sampler が linear であることに依存する。
@@ -137,5 +143,7 @@ pub const Insets = struct { left: f32, top: f32, right: f32, bottom: f32 };
   * 角丸 / 円のような滑らかな形状は 1px の AA を持つ。
 * **テキスト**: 同じグリフが繰り返し現れる前提で、再ラスタライズが起きないよう設計する (キャッシュが効くこと)。
 * **Graphics 自体**: 値型として軽量に複製可能であること (`clip` で子 paint に渡すため、ヒープアロケーションが入らない)。
-* **GPU リソースのフレームライフサイクル**: 1 フレーム内の draw が参照する頂点 / uniform データは、次に `nmAcquireCommandBuffer` が返るタイミングまで GPU から読まれ続ける前提でメモリを保持する。`nmAcquireCommandBuffer` は前フレームの GPU 完了を保証するため (`command_buffer.md` 参照)、それ以降は同じ領域を新しいフレームで安全に上書きできる。
+* **GPU リソースのフレームライフサイクル**:
+  1 フレーム内の draw が参照する頂点 / uniform データは、次に `nmAcquireCommandBuffer` が返るタイミングまで GPU から読まれ続ける前提でメモリを保持する。
+  `nmAcquireCommandBuffer` は前フレームの GPU 完了を保証するため (`command_buffer.md` 参照)、それ以降は同じ領域を新しいフレームで安全に上書きできる。
 * **リソース集約**: 同種のデータ (頂点 / uniform 等) は可能な限り単一のバッファに詰めて、heap オブジェクト数とバインド切替を減らす。

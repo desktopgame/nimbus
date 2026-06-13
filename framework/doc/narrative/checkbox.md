@@ -25,8 +25,8 @@ TODO: drawCheckをもう少し最適化できないか。（そもそも画像�
 | 入力 | 動作 |
 |---|---|
 | マウス left press (内側) | `pressed` / `armed` セット、 `requestCapture` でドラッグを掴む、 `requestFocus` でフォーカス取得 |
-| マウス left release (armed のまま内側) | toggle → ActionListener 発火 |
+| マウス left release (armed のまま内側) | トグル → ActionListener 発火 |
 | マウス move | drag 中なら `armed` を内外で更新、 `rollover` も追従 |
-| Space キー press (focus がこの widget のとき) | toggle → ActionListener 発火 |
+| Space キー press (focus がこのウィジェットのとき) | トグル → ActionListener 発火 |
 
 `enabled == false` のときは入力を全て無視する。

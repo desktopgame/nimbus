@@ -6,9 +6,9 @@ unsafe: true
 チェック状態を持つメニュー項目。
 Swing の `JCheckBoxMenuItem` 相当。
 クリックで checked 状態がトグルし、ActionListener が発火する。
-icon slot にチェックマーク（チェック時のみ）を描画する。
+icon スロットにチェックマーク（チェック時のみ）を描画する。
 
-`MenuItem` と多くを共有するが、icon slot の使い方とトグル挙動が違うので別型にする。
+`MenuItem` と多くを共有するが、icon スロットの使い方とトグル挙動が違うので別型にする。
 
 ## 型定義
 ```zig
@@ -32,7 +32,7 @@ pub const CheckBoxMenuItem = struct {
 ```
 
 `ToggleButtonModel.selected: bool` を checked 状態として使う（`toggle_button_model.md`）。
-通常の `MenuItem` と違って `icon` フィールドは持たない（icon slot をチェックマークが占有するため、追加アイコンを置く余地はない）。
+通常の `MenuItem` と違って `icon` フィールドは持たない（icon スロットをチェックマークが占有するため、追加アイコンを置く余地はない）。
 
 ## CheckBoxMenuItem の生成
 ```zig
@@ -44,9 +44,9 @@ pub fn create(
 ) !*CheckBoxMenuItem;
 ```
 
-allocator で CheckBoxMenuItem を確保し、内部 ButtonModel を生成して所有する（`owns_model = true`）。
+`allocator` で CheckBoxMenuItem を確保し、内部 ButtonModel を生成して所有する（`owns_model = true`）。
 初期状態は checked = false（`model.selected = false`）。
-`text` を dup して保持し、`font` / `color` を保持し、`component.min_size` を icon slot 幅 + テキスト寸法 + accel slot 幅 + padding から算出する。
+`text` を dup して保持し、`font` / `color` を保持し、`component.min_size` を icon スロット幅 + テキスト寸法 + accel スロット幅 + padding から算出する。
 vtable をセットして install まで実行する。
 
 ### 失敗時の保証
@@ -64,7 +64,8 @@ pub fn createWithModel(
 ```
 
 利用者が事前に作った `ButtonModel` を借用する。
-同じ Model を複数の CheckBoxMenuItem で共有することで「同期した checked 状態を持つ複数項目」を作れる（例: メニューと toolbar 両方に「Show Grid」チェックを置く）。
+同じ Model を複数の CheckBoxMenuItem で共有することで「同期した checked 状態を持つ複数項目」を作れる
+（例: メニューと toolbar 両方に「Show Grid」チェックを置く）。
 
 ## CheckBoxMenuItem の破棄
 ```zig
@@ -72,7 +73,7 @@ fn destroy(self: *Component, allocator: std.mem.Allocator) void;
 ```
 
 `CheckBoxMenuItem.vtable.destroy` として登録される。
-`uninstall` で model のリスナーを外し、text バッファを解放、`owns_model` が true なら model を deinit + 解放、最後に CheckBoxMenuItem 本体を free する。
+`uninstall` で `model` のリスナーを外し、text バッファを解放、`owns_model` が true なら `model` を deinit + 解放、最後に CheckBoxMenuItem 本体を free する。
 
 ## テキストの取得 / 設定
 ```zig

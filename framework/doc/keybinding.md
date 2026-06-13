@@ -111,6 +111,6 @@ try frame.window.setDefaultButton(ok_button);
 ```
 
 ## 機能要望
-- per-binding の repeat 抑制フラグ (`Entry.repeat: bool = true`)。実需待ち。
+- バインディング単位の repeat 抑制フラグ (`Entry.repeat: bool = true`)。実需待ち。
 - release バインド。稀なので後回し。
 - リテラル Ctrl 修飾 (macOS の emacs 風バインド用)。ウィジェット内部 InputMap の領分。

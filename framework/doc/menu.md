@@ -43,7 +43,7 @@ pub const Menu = struct {
 };
 ```
 
-`popup_root` は通常コンポーネントツリーに含まれず、`show` 時に Window の overlays 層に登録される独立 root。
+`popup_root` は通常コンポーネントツリーに含まれず、`show` 時に Window の overlays 層に登録される独立ルート。
 `mode` は親コンテキスト (MenuBar / 親 Menu) が `setMode` でセットする。
 
 ## Menu の生成
@@ -56,8 +56,9 @@ pub fn create(
 ) !*Menu;
 ```
 
-allocator で Menu を確保、内部 ButtonModel を生成して所有する。
-`text` を dup して保持し、`font` / `color` を保持し、`component.min_size` をテキスト寸法 + アイコン slot + padding + サブメニュー矢印分（コンテキストにより）から算出する。
+`allocator` で Menu を確保、内部 ButtonModel を生成して所有する。
+`text` を dup して保持し、`font` / `color` を保持し、`component.min_size` を
+テキスト寸法 + アイコンスロット + padding + サブメニュー矢印分（コンテキストにより）から算出する。
 vtable をセットして install まで実行する。
 
 ### 失敗時の保証
@@ -69,7 +70,8 @@ fn destroy(self: *Component, allocator: std.mem.Allocator) void;
 ```
 
 `Menu.vtable.destroy` として登録される。
-保持している全 child item を destroy 経由で解放、`text` バッファ・`icon`（所有していれば）・`popup` Container（あれば）を解放、`owns_model` が true なら model を deinit + 解放、最後に Menu 本体を free する。
+保持している全 child item を destroy 経由で解放、`text` バッファ・`icon`（所有していれば）・`popup` Container（あれば）を解放する。
+`owns_model` が true ならモデルを deinit + 解放し、最後に Menu 本体を free する。
 
 ## item の追加
 ```zig
@@ -104,7 +106,7 @@ pub fn getIcon(self: Menu) ?awt.Image;
 pub fn setIcon(self: *Menu, icon: ?awt.Image) void;
 ```
 
-`MenuItem` と同じ規則（borrow、null 可、slot 幅は揃う）。
+`MenuItem` と同じ規則（borrow、null 可、スロット幅は揃う）。
 
 ## Model の取得
 ```zig
@@ -156,7 +158,7 @@ pub fn hide(self: *Menu) void;
 popup を Window の overlays 層から外す。
 `open = false` にする。
 popup Container は破棄せず再利用のため保持する（次回 show 時に再表示）。
-親が MenuBar の場合、MenuBar 側の `open` も連動して `null` に戻す（callback 経由）。
+親が MenuBar の場合、MenuBar 側の `open` も連動して `null` に戻す（コールバック経由）。
 
 ## キーボード操作
 開いた popup (= top のモーダルオーバーレイ) はキーを最初に受け、以下を処理する。
@@ -181,7 +183,7 @@ popup Container は破棄せず再利用のため保持する（次回 show 時�
 * MenuBar.add(menu) / Menu.add(submenu_as_component) で menu の所有権が親に移る
 * 親の destroy で連鎖的に menu も destroy される
 * popup の Container は menu が所有（hide 後も再利用）
-* model は内部生成され menu が所有する（Menu は外部 model を受け取らない）
+* モデルは内部生成され menu が所有する（Menu は外部モデルを受け取らない）
 
 ## レイアウト属性
 親が MenuBar の時：
@@ -190,7 +192,7 @@ popup Container は破棄せず再利用のため保持する（次回 show 時�
 * `grow_x` / `grow_y`: 0
 
 親が popup の時：
-* `min_size`: icon slot + テキスト寸法 + arrow slot + padding
+* `min_size`: icon スロット + テキスト寸法 + arrow スロット + padding
 * `max_size`: width=inf, height=min_size.height
 * `grow_x` / `grow_y`: 0（popup 内 BoxLayout で full width に揃う）
 

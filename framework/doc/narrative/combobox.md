@@ -55,6 +55,7 @@ ComboBox は `popup_root` を自身の中に embed しており、 open 時の�
 `uninstall` / `destroy` 時に open 中なら自動で `hide()` (= `Window.removeOverlay`) を呼ぶので、 利用者が手動で close する必要はない。
 
 `popup_root` はどの Container にも属さない独立 Component なので、 ツリー側からは deinit されない。
-`Window.addOverlay` が初回 open 時に `popup_root` のプロパティマップ (DirtyNotify / FocusController) を遅延確保するため、 `destroy` では本体 Component に加えて `popup_root` も明示的に deinit してこのマップを解放する。
+`Window.addOverlay` は初回 open 時に `popup_root` のプロパティマップ (DirtyNotify / FocusController) を遅延確保する。
+そのため `destroy` では本体 Component に加えて `popup_root` も明示的に deinit し、 このマップを解放する。
 
 各 item の文字列は `items` (ArrayList of dup) として所有しており、 `destroy` で全部 free。

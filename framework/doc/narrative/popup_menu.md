@@ -20,12 +20,13 @@ API として分かれているのは **トリガと所有モデル**が違う�
 
 ## 外クリックでの dismiss
 popup の外がクリックされたら自動で `hide` する。
-これは Window 側の overlay dispatch が「modal overlay 外のクリックは dismiss」として実装することを想定（`doc/internal/menu-bar-requirements.md`「モーダル性」「dismiss 条件」参照）。
-PopupMenu 自身は dismiss callback を受け取って `hide` を呼ぶだけ。
+これは Window 側の overlay dispatch が「モーダル overlay 外のクリックは dismiss」として実装することを想定
+（`doc/internal/menu-bar-requirements.md`「モーダル性」「dismiss 条件」参照）。
+PopupMenu 自身は dismiss コールバックを受け取って `hide` を呼ぶだけ。
 
 ## item クリックでの自動 dismiss
 PopupMenu の item が ActionListener を発火したら自動的に `hide` する。
-これは PopupMenu の `add` 内部で item の model に内部 ActionListener を登録することで実現する。
-利用者が ActionListener を追加する時、PopupMenu の listener と独立に動く（fire は両方に飛ぶ）。
+これは PopupMenu の `add` 内部で item のモデルに内部 ActionListener を登録することで実現する。
+利用者が ActionListener を追加する時、PopupMenu のリスナーと独立に動く（fire は両方に飛ぶ）。
 
 サブメニュー（Menu を popup の中に入れた場合）は item ではなく Menu なので、Menu 自身の popup を開くだけで PopupMenu は閉じない（カスケード popup を維持する）。

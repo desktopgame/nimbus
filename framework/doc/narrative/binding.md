@@ -17,7 +17,7 @@ Zig は struct embedding（擬似継承）、動的言語は真の継承を持�
 | override | `setVTable` で C 関数ポインタ差替 | サブクラスでメソッド再定義 |
 
 ## アップキャストの扱い
-`&frame.window` は `&frame` と一致しない（window が Frame の先頭フィールドでも、偶然一致するだけで保証ではない）。
+`&frame.window` は `&frame` と一致しない（`window` が Frame の先頭フィールドでも、偶然一致するだけで保証ではない）。
 C ABI と Python のクラス階層を素直に対応させるには、offset 解決を C ABI レベルで露出する必要がある。
 
 C ABI 側で派生型ごとに `asXxx` を提供する。
@@ -145,7 +145,7 @@ add / remove で refcount を ±1 するのは標準パターン。
 | インスタンス毎の side data | ✓ `Component.properties`（PyRef、super_vt を入れる） |
 | vtable 解放フック | ✓ `Component.VTable.destroy` |
 | 派生型のアップキャスト | △ 派生型ごとに `asXxx`（Zig は `&self.foo.bar` を返す薄い関数） |
-| **現在の vtable を読む getter** | ✗ **`Component.getVTable()` を追加する必要あり** |
+| **現在の vtable を読む getter** | ✗ `Component.getVTable()` を追加する必要あり |
 | vtable 経由でない直接 invoke 補助 | △ 元 vt の関数ポインタを取り出して直接 call できるので、ヘルパは無くても良い |
 
 つまり nimbus core への追加は **`getVTable` を 1 個生やすだけ**で Python（および他言語）の継承拡張が機能する。
@@ -155,7 +155,8 @@ add / remove で refcount を ±1 するのは標準パターン。
 この機構は Python だけでなく以下にも効く。
 
 * **Lua / Ruby / Swift バインディング**: 同じパターンで動く
-* **L&F の実装**: 元 vtable を property に保存して、新 vtable から super 呼び出しできる機構が成立する。「`setVTable` は full replace」という制約が super_vt convention を使えば緩む
+* **L&F の実装**: 元 vtable を property に保存して、新 vtable から super 呼び出しできる機構が成立する。
+  「`setVTable` は full replace」という制約が super_vt convention を使えば緩む
 * **テスト**: paint を mock vtable に差し替えて呼び出し回数を検証、等が同じ仕組みで書ける
 
 ## 関連 doc

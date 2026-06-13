@@ -43,7 +43,9 @@ pub const Window = struct {
 };
 ```
 
-オーバーレイ管理 (`OverlayEntry` 型、登録 / 解除 / dismiss / 描画) は `OverlayManager` モジュールへ切り出した。`Window` はそれを `overlays` フィールドとして持ち、`install` で `overlays.wire(...)` し、描画 / イベント dispatch から `window.overlays` を参照するだけ。API と詳細は `overlay.md`。
+オーバーレイ管理 (`OverlayEntry` 型、登録 / 解除 / dismiss / 描画) は `OverlayManager` モジュールへ切り出した。
+`Window` はそれを `overlays` フィールドとして持ち、`install` で `overlays.wire(...)` し、
+描画 / イベント dispatch から `window.overlays` を参照するだけ。API と詳細は `overlay.md`。
 
 ## 子の追加
 ```zig
@@ -151,7 +153,12 @@ bar の `parent` は内部で `null` にセットされ、Window の dirty 伝�
 通常は利用者が直接呼ばず `Frame.setMenuBar` 経由で呼ばれる。
 
 ## オーバーレイ
-オーバーレイの登録 / 解除 / dismiss は `OverlayManager` のメソッドで、`window.overlays.add(component, owner, on_dismiss)` / `.addPassthrough(component)` / `.remove(owner)` / `.dismissAll()` / `.dismissTop()` と呼ぶ。型・契約・入力ポリシーは `overlay.md`。`Window` 側はこれらを直接持たず、描画（`overlays.paintAll`）とイベント dispatch から参照する — 外クリック / Tab / アクセラレータ和音は `.dismissAll`、ESC は `.dismissTop`（段階クローズ）。
+オーバーレイの登録 / 解除 / dismiss は `OverlayManager` のメソッドで呼ぶ。
+`window.overlays.add(component, owner, on_dismiss)` / `.addPassthrough(component)` /
+`.remove(owner)` / `.dismissAll()` / `.dismissTop()` と呼ぶ。
+型・契約・入力ポリシーは `overlay.md`。
+`Window` 側はこれらを直接持たず、描画（`overlays.paintAll`）とイベント dispatch から参照する。
+外クリック / Tab / アクセラレータ和音は `.dismissAll`、ESC は `.dismissTop`（段階クローズ）。
 
 ## フォーカスオーナーの設定
 ```zig
@@ -165,7 +172,7 @@ pub fn requestFocusFor(self: *Window, c: ?*Component) void;
 `c` を `null` にするとフォーカスを解除する（テキスト入力先がない状態）。
 現オーナーと等しい `c` を渡したときは no-op。
 
-通常は利用者が直接呼ばず、widget が `Component.requestFocus()` を呼ぶことで間接的に呼ばれる。
+通常は利用者が直接呼ばず、ウィジェットが `Component.requestFocus()` を呼ぶことで間接的に呼ばれる。
 
 ## フォーカストラバーサル
 ```zig
@@ -190,12 +197,12 @@ BoxLayout は追加順＝視覚順なので Tab 順は常に見た目と一致�
 pub fn setDefaultButton(self: *Window, btn: ?*Button) !void;
 ```
 
-ウィンドウ全体の Enter を `btn.doClick()` に束縛する (root の `key_bindings` へ登録)。
+ウィンドウ全体の Enter を `btn.doClick()` に束縛する (ルートの `key_bindings` へ登録)。
 フォーカス中のウィジェットが Enter を自分で消費する場合 (フォーカスされた Button 等)
 はそちらが勝つ。`null` で解除。
 
 ### 事前条件
-* root 登録束縛は `btn` を参照するが所有しない。ウィンドウ破棄より前に `btn` だけを
+* ルート登録束縛は `btn` を参照するが所有しない。ウィンドウ破棄より前に `btn` だけを
   ツリーから外す場合は、先に `setDefaultButton(null)` を呼ぶこと (怠ると dangling)。
 
 ## 利用例

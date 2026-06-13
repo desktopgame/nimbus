@@ -40,7 +40,9 @@ pub fn init(allocator: std.mem.Allocator, io: std.Io) !*Application;
 ```
 
 awt の初期化（GLFW）、Device の生成、Graphics.Context（programs / rings / atlas）の構築、デフォルトフォントの読み込み、EventQueue の生成までを一括で行う。
-デフォルトフォントは framework に同梱された Noto Sans JP（`framework/src/noto/`、`nimbus.noto.noto_sans_jp_regular` でも参照可）を `@embedFile` で焼き込んで使う。利用者がフォントバイトを渡す必要は無い。
+デフォルトフォントは framework に同梱された Noto Sans JP
+（`framework/src/noto/`、`nimbus.noto.noto_sans_jp_regular` でも参照可）を
+`@embedFile` で焼き込んで使う。利用者がフォントバイトを渡す必要は無い。
 失敗時は途中まで確保したリソースを全部解放する（強い例外保証）。
 テーマはビルトイン既定（`Theme.default`）で動作する。
 
@@ -76,7 +78,7 @@ pub fn run(self: *Application) !void;
 5. close フラグが立った Window を `windows` リストから外して `destroy`
 
 OS と Window state の同期（位置 / サイズ）はループ末尾で `syncWindowGeometry` が行う。
-`WindowEntry.synced_pos` / `synced_size` を model と diff し、差があるところだけ awt に push する（詳細は narrative の「OS との同期」参照）。
+`WindowEntry.synced_pos` / `synced_size` をモデルと diff し、差があるところだけ awt に push する（詳細は narrative の「OS との同期」参照）。
 タイトルは頻度が低いため `Window.setTitle` 内で直接 push する。
 
 最後のウィンドウが閉じたらループ抜け（「最後のウィンドウを閉じたら exit」セマンティクス）。
@@ -95,7 +97,7 @@ pub fn getEventQueue(self: *Application) *awt.EventQueue;
 pub fn frame(self: *Application, title: []const u8, w: u32, h: u32) !*Frame;
 ```
 
-`Frame` を allocator で確保 → `Frame.init` → `windows` リストに WindowEntry を append、までを行う。
+`Frame` を `allocator` で確保 → `Frame.init` → `windows` リストに WindowEntry を append、までを行う。
 利用者は戻り値の `*Frame` で setter / add を呼ぶだけ。
 
 ## ダイアログの生成
@@ -109,7 +111,7 @@ pub fn dialog(
 ) !*Dialog;
 ```
 
-`Dialog` を allocator で確保 → `Dialog.init` を呼ぶ。
+`Dialog` を `allocator` で確保 → `Dialog.init` を呼ぶ。
 `owner` は親ウィンドウ (典型的には `frame.window`)。
 所有権は呼び出し側で、最後に `dialog.deinit()` + `allocator.destroy(dialog)` する必要がある (複数回の `showModal` 間で使い回せるため Application は管理しない)。
 詳細は `dialog.md`。
@@ -162,12 +164,12 @@ pub fn comboBox    (self: *Application, items: []const []const u8) !*ComboBox;
 pub fn buttonGroup (self: *Application) !*ButtonGroup;
 ```
 
-それぞれ対応する widget の `create` をラップする。
+それぞれ対応するウィジェットの `create` をラップする。
 `checkBox` / `radioButton` / `comboBox` には default font (`pixel_size = 14`) と黒色を注入する。
 `buttonGroup` はラジオボタンの相互排他選択を束ねるためのコンテナで、利用者所有。
 
 `comboBox` の `items` は呼び出し中だけ借用され、内部で copy される。
-共有モデルを使いたい場合は各 widget の `createWithModel` を直接呼ぶ。
+共有モデルを使いたい場合は各ウィジェットの `createWithModel` を直接呼ぶ。
 
 ## スライダーの生成
 ```zig
@@ -245,7 +247,10 @@ pub fn toolBar(self: *Application) !*Panel;
 * レイアウト: `BoxLayout.horizontal()`
 * 高さ: 32px 固定（`min_size.height` / `max_size.height` 共に 32）
 
-返り値は普通の `*Panel` なので、`tb.container.add(&btn.component)` で子ボタンを追加して、`BorderLayout.add(window.container, .north, &tb.container.component)` で Frame 上部（メニューバーがあればその下）に取り付ける。
+返り値は普通の `*Panel` である。
+`tb.container.add(&btn.component)` で子ボタンを追加する。
+`BorderLayout.add(window.container, .north, &tb.container.component)` で
+Frame 上部（メニューバーがあればその下）に取り付ける。
 専用型 `ToolBar` は作らない（Panel + BoxLayout のレシピに名前を付けただけ）。
 
 ## メニュー系の生成
@@ -258,11 +263,11 @@ pub fn popupMenu        (self: *Application) !*PopupMenu;
 pub fn menuSeparator    (self: *Application) !*MenuSeparator;
 ```
 
-各 widget の `create` をラップする。
+各ウィジェットの `create` をラップする。
 `menu` / `menuItem` / `checkBoxMenuItem` / `menuBar` は default font (`pixel_size = 14`) と濃いグレー (`rgb(0.1, 0.1, 0.1)`) を注入する。
 `popupMenu` / `menuSeparator` は font / color を取らないので素通しのラッパー。
 
-専用フォント・色を使いたい場合は各 widget の `create` / `createWithModel` を直接呼ぶ。
+専用フォント・色を使いたい場合は各ウィジェットの `create` / `createWithModel` を直接呼ぶ。
 
 利用例:
 ```zig
@@ -304,7 +309,7 @@ pub fn setTimeout(self: *Application, ms: u32, cb: TimerCallback, user_data: *an
 ```
 
 `ms` ミリ秒経過後に `cb(user_data)` を **UI スレッドで一度だけ**呼ぶよう登録する。
-返り値の `TimerId` は `clearTimer` でキャンセルに使える（発火前に widget が destroy される場合など）。
+返り値の `TimerId` は `clearTimer` でキャンセルに使える（発火前にウィジェットが destroy される場合など）。
 発火後は内部リストから自動的に外れる。
 内部で `awt.postEmptyEvent()` を呼んで run ループを起こすので、別スレッドから安全には呼べない（タイマーは UI スレッドで呼び出す前提）。
 

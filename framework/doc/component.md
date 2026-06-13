@@ -50,7 +50,8 @@ pub const Component = struct {
 ```
 
 ### SizeQuery
-幅で内容の高さが変わるウィジェット (折り返し `TextArea` 等) が、レイアウトに「この幅での最小高さ」を聞かれるための opt-in 能力構造体。`DragSource` / `DropTarget` と同じく `Component` のオプショナルフィールドとして持ち、`VTable` を増やさない。
+幅で内容の高さが変わるウィジェット (折り返し `TextArea` 等) が、レイアウトに「この幅での最小高さ」を聞かれるための opt-in 能力構造体。
+`DragSource` / `DropTarget` と同じく `Component` のオプショナルフィールドとして持ち、`VTable` を増やさない。
 
 ```zig
 pub const SizeQuery = struct {
@@ -58,12 +59,17 @@ pub const SizeQuery = struct {
 };
 ```
 
-`*const Component` を受け取る純粋クエリ。同じ widget 状態と同じ `w` に対して同じ結果を返し、観測可能な状態 (`min_size` 等) を変更しない。内部 cache (折り返し結果の memoization 等) の更新は `@constCast` 経由で許される。
+`*const Component` を受け取る純粋クエリ。
+同じウィジェット状態と同じ `w` に対して同じ結果を返し、観測可能な状態 (`min_size` 等) を変更しない。
+内部 cache (折り返し結果の memoization 等) の更新は `@constCast` 経由で許される。
 
-`w` は親レイアウトが当該ウィジェットに与えようとしている外側の幅 (padding / border 込み)。`null` のとき呼び出し側は `min_size.height` をそのまま使う。
+`w` は親レイアウトが当該ウィジェットに与えようとしている外側の幅 (padding / border 込み)。
+`null` のとき呼び出し側は `min_size.height` をそのまま使う。
 
 ### Role
-a11y / 自動化のための「ウィジェット種別」。Robot / Driver レイヤーが座標やピクセルでなく**意味**でウィジェットを名指し・観測するために使う (`robot.md` 参照)。デバッグ用の `name` (ルックアップ非想定) とは別系統。
+a11y / 自動化のための「ウィジェット種別」。
+Robot / Driver レイヤーが座標やピクセルでなく**意味**でウィジェットを名指し・観測するために使う (`robot.md` 参照)。
+デバッグ用の `name` (ルックアップ非想定) とは別系統。
 
 ```zig
 pub const Role = enum {
@@ -76,10 +82,13 @@ pub const Role = enum {
 };
 ```
 
-各ウィジェットが `create` 内で自分の `role` をセットする (Button なら `.button`)。既定は `.none`。関数ポインタを持たない素のデータなので、`VTable` でも能力構造体でもなく単なるフィールドとして持つ。
+各ウィジェットが `create` 内で自分の `role` をセットする (Button なら `.button`)。既定は `.none`。
+関数ポインタを持たない素のデータなので、`VTable` でも能力構造体でもなく単なるフィールドとして持つ。
 
 ### A11y
-アクセシブル名を Robot / Driver に見せるための opt-in 能力構造体。`DragSource` / `SizeQuery` と同じく `Component` のオプショナルフィールドとして持ち、`VTable` を増やさない。`null` はアクセシブル名を持たないウィジェット (Filler / Separator 等。`role` は素のフィールドなので別途有効)。
+アクセシブル名を Robot / Driver に見せるための opt-in 能力構造体。
+`DragSource` / `SizeQuery` と同じく `Component` のオプショナルフィールドとして持ち、`VTable` を増やさない。
+`null` はアクセシブル名を持たないウィジェット (Filler / Separator 等。`role` は素のフィールドなので別途有効)。
 
 ```zig
 pub const A11y = struct {
@@ -87,7 +96,10 @@ pub const A11y = struct {
 };
 ```
 
-`name` はウィジェットのアクセシブル名 (Button のラベル等) を返すアクセサ。型消去された `*const Component` からは comptime リフレクションで実体のテキストに届かないため、ウィジェット側がこのアクセサを与える (`@fieldParentPtr` で実体に戻してテキストを返す)。テキストを持たなければ `null` を返す。
+`name` はウィジェットのアクセシブル名 (Button のラベル等) を返すアクセサ。
+型消去された `*const Component` からは comptime リフレクションで実体のテキストに届かない。
+そのためウィジェット側がこのアクセサを与える (`@fieldParentPtr` で実体に戻してテキストを返す)。
+テキストを持たなければ `null` を返す。
 
 詳細ダンプ用の `dump` アクセサは後段で `A11y` に追加予定 (現状は最小投入のため省略。`narrative/robot.md`「a11y ファセット」参照)。
 
@@ -205,14 +217,18 @@ pub fn effectiveMaxSize(self: *const Component) Size;
 ```
 
 レイアウトマネージャ (BoxLayout 等) が子の min/max を見るときに使うべきヘルパー。
-plain な Component に対しては `min_size` / `max_size` の値をそのまま返すが、Container を embed したコンポーネントに対しては `Container.getMinSize` / `getMaxSize` を呼び出し、レイアウト計算済みのサイズを取得する。
+plain な Component に対しては `min_size` / `max_size` の値をそのまま返す。
+Container を embed したコンポーネントに対しては `Container.getMinSize` / `getMaxSize` を呼び出し、レイアウト計算済みのサイズを取得する。
 
 これにより、空 Panel やネストした Container を BoxLayout の子に置いたとき、内側の子から自動的にサイズが伝播する。
-利用者が `setMinSize` / `setMaxSize` で明示的に値をセットしていれば、Container の場合「min は明示値と計算値の大きい方」「max は明示値と計算値の小さい方」が採用される (両方の制約を同時に満たす)。
+利用者が `setMinSize` / `setMaxSize` で明示的に値をセットしていれば、Container の場合は両方の制約を同時に満たす値が採用される。
+すなわち「min は明示値と計算値の大きい方」「max は明示値と計算値の小さい方」となる。
 
 計算量は実質 `O(N)` (N = subtree のノード数)。
-Container 側で `min_cache` / `max_cache` に memoize されており、 同じ layout サイクル内で複数回呼ばれてもキャッシュヒットで即座に返る (詳細は `container.md`、 `layout.md`「キャッシュ」参照)。
-キャッシュは `markLayoutDirty` が経路上の Container に対して `invalidateSizeCache` を呼ぶことで自動的に落ちる。 LayoutManager / 利用者から見るとキャッシュは透過。
+Container 側で `min_cache` / `max_cache` に memoize されており、 同じ layout サイクル内で複数回呼ばれてもキャッシュヒットで即座に返る。
+詳細は `container.md`、 `layout.md`「キャッシュ」参照。
+キャッシュは `markLayoutDirty` が経路上の Container に対して `invalidateSizeCache` を呼ぶことで自動的に落ちる。
+LayoutManager / 利用者から見るとキャッシュは透過。
 
 利用者が直接呼ぶ機会はほぼなく、layout 実装者向けのフック。
 
@@ -326,10 +342,10 @@ pub fn bindKey(self: *Component, stroke: keybinding.KeyStroke, handler: keybindi
 
 このコンポーネントに `stroke` を束縛する (`key_bindings` を初回に遅延生成)。
 束縛は、このコンポーネントが**フォーカスオーナー自身、またはその祖先チェーン上**にあるとき
-(root のときはウィンドウ全体の束縛として) キー配送に参加する。フォーカス中ウィジェット自身に
+(ルートのときはウィンドウ全体の束縛として) キー配送に参加する。フォーカス中ウィジェット自身に
 束縛したものも発火する (自分の `processEvent` が consume しなかった場合、祖先より先に＝
 焦点に近いほど勝つ。Swing の WHEN_FOCUSED 相当)。
-同じ `stroke` への再 bind は置き換え。詳細は [narrative/keybinding.md](narrative/keybinding.md)「配送 — 遡り 1 本」。
+同じ `stroke` への再バインドは置き換え。詳細は [narrative/keybinding.md](narrative/keybinding.md)「配送 — 遡り 1 本」。
 
 ## キー束縛の削除
 ```zig
@@ -345,7 +361,7 @@ pub fn releaseFocus(self: *Component) void;
 
 ウィンドウのフォーカスを null に戻す。フォーカスオーナーであるウィジェット自身が
 破棄される際に `uninstall` から呼ぶ（「フォーカス喪失時の行き先は null」の実装）。
-親チェーンが `FocusController` 付き root に届かない場合は no-op。
+親チェーンが `FocusController` 付きルートに届かない場合は no-op。
 
 ### 事前条件
 * 呼び出し側 (ウィジェット) が自分の focused フラグで「自分がオーナーである」ことを
@@ -358,7 +374,7 @@ pub fn scrollIntoView(self: *Component) void;
 
 最寄りの ScrollPane (祖先の `ScrollController`) に、このコンポーネントが視界に入る
 よう依頼する。bounds を view ローカル座標へ変換しながら遡る。
-自分自身が scrolled view (List / TextArea 等、viewport 直下) の場合は no-op —
+自分自身が scrolled view (List / TextArea 等、ビューポート 直下) の場合は no-op —
 そうした view は自分のスクロールを自分で管理する。ネストした ScrollPane は最寄りの
 1 段のみ。ScrollPane 配下にいなければ no-op。
 
@@ -425,4 +441,5 @@ try label.component.setVTable(&my_vt);
 ## 機能要望
 * `PropertyChangeListener` 相当 — setter からの変更通知。Swing PCE と同等
 * Component 単位の `dirty` フラグ — 現状は Frame 単位で持つ（`{REPO_ROOT}/doc/internal/layout-design.md` 参照）
-* `key_bindings: ?*KeyBindings` capability + `bindKey` / `unbindKey` — 計画中。キーストローク/ニーモニックを `DragSource` 等と同じ opt-in フィールドとして持つ（`VTable` は増やさない）。設計は `narrative/keybinding.md`
+* `key_bindings: ?*KeyBindings` capability + `bindKey` / `unbindKey` — 計画中。
+  キーストローク/ニーモニックを `DragSource` 等と同じ opt-in フィールドとして持つ（`VTable` は増やさない）。設計は `narrative/keybinding.md`

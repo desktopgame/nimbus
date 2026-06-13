@@ -13,6 +13,6 @@
         "preferInList": "である"
       }
     },
-    "prh": { "rulePaths": ["tools/textlint/prh.yml"] }
+    "prh": { "rulePaths": ["tools/textlint/prh.yml"], "checkHeader": false }
   }
 }

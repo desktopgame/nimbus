@@ -3,16 +3,23 @@ unsafe: true
 ---
 
 # overlay
-ウィンドウ内で、通常のレイアウト階層の**上**に浮かべる UI 層。ポップアップメニュー、コンボボックスのドロップダウン、（将来の）ツールチップやドラッグ中のゴーストなどに使う。
+ウィンドウ内で、通常のレイアウト階層の**上**に浮かべる UI 層。
+ポップアップメニュー、コンボボックスのドロップダウン、（将来の）ツールチップやドラッグ中のゴーストなどに使う。
 
-オーバーレイは `OverlayManager`（各 `Window` が `window.overlays` として 1 つ持つ）が登録リストとして保持し、container / menu_bar の上に重ねて描画する。レイアウトの外（`parent = null`、ウィンドウローカル座標）に置かれるので、親のクリップや境界に縛られず画面の任意位置に出せる。
+オーバーレイは `OverlayManager`（各 `Window` が `window.overlays` として 1 つ持つ）が登録リストとして保持し、
+container / menu_bar の上に重ねて描画する。
+レイアウトの外（`parent = null`、ウィンドウローカル座標）に置かれるので、
+親のクリップや境界に縛られず画面の任意位置に出せる。
 
 オーバーレイには**入力モデルが 2 種類**あり、`OverlayEntry.policy` で区別する。
 
 * `modal_popup` — ヒットテストの対象。外側クリック / ESC で dismiss される。メニュー・コンボボックスのような「開いている間は他をブロックする」ポップアップ。
 * `passthrough` — 非インタラクティブ。ヒットテストも dismiss もされず、描画だけ。ドラッグ中のゴーストやツールチップのような「上に浮かぶが操作対象でない」もの。
 
-API は `OverlayManager` のメソッドで、`window.overlays.add(...)` のように呼ぶ。`OverlayManager` は Component + awt にしか依存しないので（`Window` を知らない）、Window から切り離して扱える。`Window` は `install` 時に `overlays.wire(...)` で dirty-notify / focus-controller を渡し、描画 / イベント dispatch から `window.overlays` を参照する（`window.md`）。
+API は `OverlayManager` のメソッドで、`window.overlays.add(...)` のように呼ぶ。
+`OverlayManager` は Component + awt にしか依存しないので（`Window` を知らない）、Window から切り離して扱える。
+`Window` は `install` 時に `overlays.wire(...)` で dirty-notify / focus-controller を渡し、
+描画 / イベント dispatch から `window.overlays` を参照する（`window.md`）。
 
 ## 型定義
 1 つの浮動 UI を表すエントリ。`OverlayManager` が登録順のリストで保持する（top = 最新）。
@@ -31,7 +38,9 @@ pub const OverlayPolicy = enum {
 };
 ```
 
-`root` の `position` はウィンドウローカルの絶対座標で、`parent` は `null`。`Component.absoluteOriginInWindow` が root の `position` を含めて足すので、オーバーレイ内の子も正しくヒットテストできる（`component.md`）。
+`root` の `position` はウィンドウローカルの絶対座標で、`parent` は `null`。
+`Component.absoluteOriginInWindow` が `root` の `position` を含めて足すので、
+オーバーレイ内の子も正しくヒットテストできる（`component.md`）。
 
 ## オーバーレイの登録
 ```zig
@@ -43,9 +52,13 @@ pub fn add(
 ) !void;
 ```
 
-`modal_popup` ポリシーのオーバーレイを登録する。`component.parent` は内部で `null` にされ、dirty 伝搬が Window に接続される。`component.position` は登録前にウィンドウローカル座標へセットしておくこと。
+`modal_popup` ポリシーのオーバーレイを登録する。
+`component.parent` は内部で `null` にされ、dirty 伝搬が Window に接続される。
+`component.position` は登録前にウィンドウローカル座標へセットしておくこと。
 
-`owner` / `on_dismiss` は dismiss 時のコールバック用。外クリック / ESC で全 overlay を dismiss する際、各 entry の `on_dismiss(owner)` が呼ばれ、owner が `open = false` 等の状態を更新できる。
+`owner` / `on_dismiss` は dismiss 時のコールバック用。
+外クリック / ESC で全 overlay を dismiss する際、各 entry の `on_dismiss(owner)` が呼ばれ、
+owner が `open = false` 等の状態を更新できる。
 
 通常は Menu / PopupMenu / ComboBox の `show` から `w.overlays.add(...)` の形で呼ばれる（`menu.md` / `popup_menu.md` / `combobox.md`）。
 
@@ -61,21 +74,29 @@ pub fn remove(self: *OverlayManager, owner: *anyopaque) void;
 pub fn dismissAll(self: *OverlayManager) void;
 ```
 
-登録されている `modal_popup` をすべて top から解除し、各 `on_dismiss(owner)` を呼ぶ。外クリック / オーバーレイ中の Tab・和音キーのとき Window 内部で呼ばれる。cascade したメニュー（File → Find → submenu）が一発で全部閉じる。`passthrough` エントリ（ドラッグゴースト）は残す。
+登録されている `modal_popup` をすべて top から解除し、各 `on_dismiss(owner)` を呼ぶ。
+外クリック / オーバーレイ中の Tab・和音キーのとき Window 内部で呼ばれる。
+cascade したメニュー（File → Find → submenu）が一発で全部閉じる。
+`passthrough` エントリ（ドラッグゴースト）は残す。
 
 ## 最上段オーバーレイの dismiss
 ```zig
 pub fn dismissTop(self: *OverlayManager) void;
 ```
 
-最上段の `modal_popup` だけを 1 段解除し、その `on_dismiss(owner)` を呼ぶ。ESC の段階クローズ（サブメニュー → 親 popup の順に 1 押下 1 段）のために Window 内部で呼ばれる。モーダルオーバーレイが無ければ no-op。`passthrough` エントリは対象外。
+最上段の `modal_popup` だけを 1 段解除し、その `on_dismiss(owner)` を呼ぶ。
+ESC の段階クローズ（サブメニュー → 親 popup の順に 1 押下 1 段）のために Window 内部で呼ばれる。
+モーダルオーバーレイが無ければ no-op。`passthrough` エントリは対象外。
 
 ## passthrough オーバーレイの登録
 ```zig
 pub fn addPassthrough(self: *OverlayManager, component: *Component) !void;
 ```
 
-`passthrough` ポリシーのオーバーレイ（ドラッグゴースト・ツールチップ等の非インタラクティブ浮遊物）を登録する。`component.parent` は内部で `null` にされる。`owner` / `on_dismiss` は不要（dismiss されない）。`component.position` を更新すればカーソル追従などに使える（再描画は司令塔が促す）。解除は `remove(@ptrCast(component))`（owner はコンポーネントのポインタ自身）。
+`passthrough` ポリシーのオーバーレイ（ドラッグゴースト・ツールチップ等の非インタラクティブ浮遊物）を登録する。
+`component.parent` は内部で `null` にされる。`owner` / `on_dismiss` は不要（dismiss されない）。
+`component.position` を更新すればカーソル追従などに使える（再描画は司令塔が促す）。
+解除は `remove(@ptrCast(component))`（owner はコンポーネントのポインタ自身）。
 
 ヒットテストにも dismiss にもかからないので、下の `modal_popup` / container の操作を妨げない。
 

@@ -27,11 +27,13 @@ pub const Result = enum(i32) {
 };
 ```
 
-`Result` を非網羅 enum にしているのは、`ok` / `cancel` 以外の選択肢（"yes" / "no" / "apply" や、リスト選択のインデックス等）を利用者が独自コードで表現できるようにするため。
+`Result` を非網羅 enum にしているのは、`ok` / `cancel` 以外の選択肢
+（"yes" / "no" / "apply" や、リスト選択のインデックス等）を利用者が独自コードで表現できるようにするため。
 `i32` backing なので、`close(@enumFromInt(my_code))` のように任意コードも流せる。
 
 `Dialog` は `Frame` と同じく `Window` を embed する。
-共通機能（タイトル、close、resize、root container、repaint）はすべて `Window` 側にあり、`Dialog` はそこに「オーナー」と「モダリティ」を足しただけの薄い派生（`window.md`「階層と依存関係」参照）。
+共通機能（タイトル、close、resize、ルート container、repaint）はすべて `Window` 側にあり、
+`Dialog` はそこに「オーナー」と「モダリティ」を足しただけの薄い派生（`window.md`「階層と依存関係」参照）。
 
 ## ダイアログの生成
 ```zig
@@ -106,7 +108,7 @@ OS ウィンドウを非表示にし、windows リストから外す（破棄は
 既に閉じている（`shown == false`）なら no-op。
 
 `Esc` キーは `close(.cancel)` に束縛されている（`showModal` / `show` 時にダイアログの
-root へ bind）。フォーカス中のウィジェットが Esc を自分で消費する場合
+ルートへバインド）。フォーカス中のウィジェットが Esc を自分で消費する場合
 （ComboBox が自分の popup を閉じる等）はそちらが勝ち、次の Esc でダイアログが閉じる。
 
 ## 結果の取得

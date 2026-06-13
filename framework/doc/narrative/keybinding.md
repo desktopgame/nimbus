@@ -5,12 +5,15 @@ unsafe: true
 # keybinding
 キーボード操作 — フォーカストラバーサル・キーストローク・ニーモニック — の設計ノート。
 3 つは「キー入力 → 対象を決める → 動かす」という 1 本の連鎖で、フォーカスが背骨になる。
-**実装済み** (2026-06-11)。確定したシグネチャは各 spec へ昇格済み:
-`keybinding.md` (モジュール本体) / `component.md` (FocusQuery / bindKey / releaseFocus / scrollIntoView) /
-`window.md` (focusNext / focusPrev / setDefaultButton / 初期フォーカス) /
-`button.md` `checkbox.md` `radio_button.md` (doClick / フォーカスとキー操作) /
-`menu.md` `menu_item.md` `checkbox_menu_item.md` (doClick / setMnemonic / setAccelerator) /
-`slider.md` (キー操作) / `dialog.md` (Esc)。
+**実装済み** (2026-06-11)。確定したシグネチャは各 spec へ昇格済み。
+
+- `keybinding.md` (モジュール本体)。
+- `component.md` (FocusQuery / bindKey / releaseFocus / scrollIntoView)。
+- `window.md` (focusNext / focusPrev / setDefaultButton / 初期フォーカス)。
+- `button.md` `checkbox.md` `radio_button.md` (doClick / フォーカスとキー操作)。
+- `menu.md` `menu_item.md` `checkbox_menu_item.md` (doClick / setMnemonic / setAccelerator)。
+- `slider.md` (キー操作) / `dialog.md` (Esc)。
+
 検証は `framework/tests/focus_test.zig` (トラバーサル / 走査 / fan-out 削除の回帰)。
 本ファイルは設計判断の記録として残る。
 
@@ -66,13 +69,13 @@ pub const KeyStroke = struct {
 ```
 発火は **press と repeat の両方** (区別しない)。Swing / Win32 と同じで、ツールキットとしての
 リピートポリシーは持たない — OS がイベントを繰り返すなら束縛も繰り返し発火する。
-undo / paste / キャレット移動はリピート発火が望ましい側であり、連射されて困るハンドラ
+アンドゥ / paste / キャレット移動はリピート発火が望ましい側であり、連射されて困るハンドラ
 (べき等でない処理) の自衛はハンドラ側の責任とする。
 将来「この束縛だけリピート発火させたくない」が出たら `Entry` に `repeat: bool = true` を足すだけ
 (消費点は lookup 1 か所、既定 true で挙動不変の後付け)。
 release バインドは稀なので後回し。
 
-### Handler — typed callback
+### Handler — typed コールバック
 `listener.zig` の thunk と同型 ((T, f) ごとに安定 identity の thunk を comptime 生成し、登録解除で同じ関数ポインタが得られる)。
 ```zig
 pub const Handler = struct {
@@ -99,7 +102,10 @@ pub const KeyBindings = struct {
 };
 ```
 HashMap ではなく ArrayList を使う: 1 コンポーネントあたり束縛は数個で線形走査で足り、`KeyStroke` のハッシュ実装も要らない。
-**可変 map である**ことが「Swing の InputMap が別レイヤーで存在する理由 = 実行時リバインド」を最初から満たす保険になる。名前間接 (ActionMap 相当) が要るのは「1 つの行為を複数キーで」「ハンドラ実体を触らず差し替え」をやりたくなったときだけ。
+**可変 map である**ことが「Swing の InputMap が別レイヤーで存在する理由 = 実行時リバインド」を
+最初から満たす保険になる。
+名前間接 (ActionMap 相当) が要るのは「1 つの行為を複数キーで」
+「ハンドラ実体を触らず差し替え」をやりたくなったときだけ。
 
 照合での `command` 解決:
 ```zig
@@ -114,7 +120,9 @@ key_bindings: ?*KeyBindings = null,   // 既定 null (DragSource / A11y 等と�
 pub fn bindKey(self: *Component, stroke: KeyStroke, handler: Handler) !void;  // 初回 lazy 生成
 pub fn unbindKey(self: *Component, stroke: KeyStroke) void;
 ```
-`Component.deinit` で `key_bindings` を解放する。フィールド方式は `a11y` / `drag_source` と同じで、関数ポインタ数個ぶんしか増えないので `VTable` は増やさない (`component.md`「VTable を増やすな」方針)。
+`Component.deinit` で `key_bindings` を解放する。
+フィールド方式は `a11y` / `drag_source` と同じで、関数ポインタ数個ぶんしか増えないので
+`VTable` は増やさない (`component.md`「VTable を増やすな」方針)。
 
 ## 配送 — 遡り 1 本
 `Window.dispatchInput` の `.key` を、現状の `focus_owner → menu_bar → fan-out` から次へ一般化する:
@@ -130,11 +138,17 @@ pub fn unbindKey(self: *Component, stroke: KeyStroke) void;
 5. ニーモニック走査 (Alt+文字のときのみ)       // コンポーネントツリーを mnemonic 値で照合 → doClick
 ```
 段 4・5 は登録された束縛の lookup ではなく、配送時にツリーを走査する built-in 段
-(理由は「root 登録と走査の線引き」)。
+(理由は「ルート登録と走査の線引き」)。
 
-これは Swing の WHEN_FOCUSED → WHEN_ANCESTOR_OF_FOCUSED_COMPONENT → WHEN_IN_FOCUSED_WINDOW を「遡り 1 本」に畳んだもの。3 つのスコープの違いは「遡りのどこで一致するか」だけ ── focus_owner 自身 (WHEN_FOCUSED)、その祖先 (WHEN_ANCESTOR)、root (WHEN_IN_FOCUSED_WINDOW) ── なので、**スコープという分類自体を持たず**、focus_owner を起点・root を終点とする 1 本の遡りに統合する。
+これは Swing の WHEN_FOCUSED → WHEN_ANCESTOR_OF_FOCUSED_COMPONENT → WHEN_IN_FOCUSED_WINDOW を
+「遡り 1 本」に畳んだもの。
+3 つのスコープの違いは「遡りのどこで一致するか」だけである。
+focus_owner 自身 (WHEN_FOCUSED)、その祖先 (WHEN_ANCESTOR)、ルート (WHEN_IN_FOCUSED_WINDOW) の差にすぎない。
+よって**スコープという分類自体を持たず**、focus_owner を起点・ルートを終点とする 1 本の遡りに統合する。
 
-最初に一致した `KeyBindings` が consume して止まる。**焦点に近いほど勝つ**: focus_owner 自身の束縛が祖先・root より優先され、祖先が root より優先される (より具体的なスコープが勝つ = 直感どおり)。
+最初に一致した `KeyBindings` が consume して止まる。
+**焦点に近いほど勝つ**: focus_owner 自身の束縛が祖先・ルートより優先され、
+祖先がルートより優先される (より具体的なスコープが勝つ = 直感どおり)。
 さらに段 1 の processEvent が先に走るので、フォーカス中ウィジェットの自前処理 (例: テキスト部品の Cmd+C) は自分の束縛より先に勝つ。
 `menu_bar` の特別扱いは段 4 のアクセラレータ走査へ解消され、固定段が減る。
 
@@ -154,28 +168,29 @@ raw なキーイベント (`processEvent` への `.key`) を受け取るのは *
 遡り段の祖先は `key_bindings.lookup` でのみ参加し、`processEvent` は呼ばれない (focus_owner だけが
 processEvent と key_bindings の両方で参加する。祖先は宣言的な束縛のみ)。
 Swing と同型 (祖先コンポーネントは `processKeyEvent` を受けない。祖先の関与はバインディングという宣言的な仕組みに限る)。
-「祖先の `processEvent` にも `.key` が来るかもしれない」という曖昧さを契約から排除するための明文化。
+「祖先の `processEvent` にも `.key` が届きうる」という曖昧さを契約から排除するための明文化。
 
 ### 遡りの実体は parent ポインタの鎖
-遡りは `focus_owner.parent` を root まで辿るだけで、コンテナの子リストは走査しない。
+遡りは `focus_owner.parent` をルートまで辿るだけで、コンテナの子リストは走査しない。
 よって List のセルのようにコンテナツリーの外で実体化されるコンポーネントでも、
-`parent` が root まで繋がってさえいれば配送は正しく機能する
+`parent` がルートまで繋がってさえいれば配送は正しく機能する
 (`Window.findFocusableAt` のヒットテストから見えない実体でも、フォーカスさえ取れば遡りは成立する)。
 逆に Tab トラバーサル (コンテナ子の DFS) からは見えないままだが、
 それは「セル内エディタはクリックでフォーカスを取る」という既存の割り切りと整合する。
 
 ### 却下案: キャプチャ段 (トンネリング)
-DOM / WPF / JavaFX が持つ「root → target の前置き走査 (祖先がターゲットより先に横取りできる段)」は採らない。
-キーイベントには座標がなく、階層から配送先を導けない以上、root から降ろしても
-ターゲットに着くまで全員が素通しする線形 walk になるだけで純粋な無駄。
+DOM / WPF / JavaFX が持つ「ルート → target の前置き走査 (祖先がターゲットより先に横取りできる段)」は採らない。
+キーイベントには座標がなく、階層から配送先を導けない。
+よってルートから降ろしても、ターゲットに着くまで全員が素通しする線形 walk になるだけで純粋な無駄。
 「祖先が必ず勝つべき」構造的挙動は、汎用のキャプチャ段ではなく `Window.dispatchInput` の固定前段として処理する
 (実例: ドラッグ中の ESC / キー全飲み込み、モーダルオーバーレイの最優先 + 非伝播)。
 将来「ウィンドウ全体でキーを横取りしたい」類の需要が出たときの答えも、固定前段を 1 つ足すことであり、
 キャプチャ段の導入ではない。
 
 ### 削除予定: フォーカス不在時の fan-out (一斉配布)
-現行実装には遡りと別系統のキー配送が残っている。`Window.dispatchInput` は focus_owner がいないとき
-キーイベントを root コンテナに渡し、`Container.processEvent` の `.key, .char` 分岐が
+現行実装には遡りと別系統のキー配送が残っている。
+`Window.dispatchInput` は focus_owner がいないときキーイベントをルートコンテナに渡す。
+すると `Container.processEvent` の `.key, .char` 分岐が
 ヒットテストもフォーカスも見ずに**子全員へ追加順にブロードキャストする** (誰かが consume するまでツリー全体に撒く)。
 v1 で Button / List 等が focusable でなく、キーを欲しがるウィジェットを特定する手段が無かった時代の代替品である。
 
@@ -185,65 +200,68 @@ v1 で Button / List 等が focusable でなく、キーを欲しがるウィジ
 - P1 (focusable 拡大) 後は「フォーカスを持てないのにキーが欲しいウィジェット」が存在しなくなり、
   存在理由そのものが消える。
 
-削除後の定義: **focus_owner == null のときは遡りの起点を root にする** (= ステップ 3〜5 のみ実行)。
-root の束縛 (既定ボタン / Dialog の Esc) と走査段 (アクセラレータ / ニーモニック) だけが評価され、
+削除後の定義: **focus_owner == null のときは遡りの起点をルートにする** (= ステップ 3〜5 のみ実行)。
+ルートの束縛 (既定ボタン / Dialog の Esc) と走査段 (アクセラレータ / ニーモニック) だけが評価され、
 それ以外のキーは捨てられる。
 フォーカスが誰にもない状態で矢印キーが List に届くような現行の暗黙挙動は消える
 (P1 後はクリックか Tab でフォーカスを取ってから操作する、という一貫した形になる)。
 
 削除対象は `Container.processEvent` の `.key, .char` 分岐と、`Window.dispatchInput` の
-focus_owner 不在時に root コンテナへ渡す fallback の 2 か所。**P1 の focusable 拡大が前提条件**なので、
+focus_owner 不在時にルートコンテナへ渡す fallback の 2 か所。**P1 の focusable 拡大が前提条件**なので、
 削除はそれと同時かそれ以降に行う (先に消すと現行の List 矢印キー等が操作不能になる)。
 
-## root 登録と走査の線引き
+## ルート登録と走査の線引き
 キーが遡りで消費されなかったあとの「ウィンドウ全体」の解決は 2 つに分かれる。
 
 > **コンポーネントに紐づく意味 (ニーモニック / アクセラレータ) は登録せず、配送時に走査で解決する。**
-> **ウィンドウ自身への呼び出し (既定ボタン / Dialog の Esc) だけが root の `key_bindings` に登録する。**
+> **ウィンドウ自身への呼び出し (既定ボタン / Dialog の Esc) だけがルートの `key_bindings` に登録する。**
 
-- ニーモニック: Component の mnemonic フィールド。段 5 でコンポーネントツリーを走査 (詳細「ニーモニック」)。
+- ニーモニック: Component の `mnemonic` フィールド。段 5 でコンポーネントツリーを走査 (詳細「ニーモニック」)。
 - アクセラレータ: MenuItem の accelerator フィールド (`setAccelerator` は保存のみ)。段 4 で
   メニューバー配下のメニューツリーを走査し、一致した項目を起動する。
 
 走査を選ぶのはコスト判断である。登録式は 2 つの構造的な罠を持つ:
 - **順序罠** — 「作る → 設定する → add する」という自然な書き順では、`setMnemonic` / `setAccelerator` の
-  時点で parent chain が root に到達できない。遅延登録 (install で bind) も、install はコンテナ配置時に
-  発火するため未接続サブツリーで同じ問題が再発し、正しく解くには「サブツリーが root に接続された瞬間」を
+  時点で parent chain がルートに到達できない。遅延登録 (install でバインド) も、install はコンテナ配置時に
+  発火するため未接続サブツリーで同じ問題が再発し、正しく解くには「サブツリーがルートに接続された瞬間」を
   全子孫へ伝搬する新機構が要る。
-- **寿命罠** — 束縛の置き場所 (root) と対象の寿命 (ウィジェット本人) が分離し、unbind を忘れると
+- **寿命罠** — 束縛の置き場所 (ルート) と対象の寿命 (ウィジェット本人) が分離し、unbind を忘れると
   対象破棄後の dangling handler (UAF) になる。
 
 一方、配送時の走査はキー押下というコールドパスでの小さな木の走査 1 回で、コストは無視できる。
 走査なら生きている木が常に真実であり、順序罠も寿命罠も構造的に存在しない。
 この判断はコスト前提に依存する: 走査が高くつく状況が現実になったら登録式を再検討する。
 
-root に登録が残るのはウィンドウ自身に対する呼び出しだけ:
-- `Window.setDefaultButton(btn)` → root に `Enter → btn.doClick` を登録。
-- Dialog のキャンセル → root に `Esc → cancel` を登録 (ESC のオーバーレイ閉じは構造挙動として built-in のまま。Dialog はそれと別に登録する)。
+ルートに登録が残るのはウィンドウ自身に対する呼び出しだけ:
+- `Window.setDefaultButton(btn)` → ルートに `Enter → btn.doClick` を登録。
+- Dialog のキャンセル → ルートに `Esc → cancel` を登録 (ESC のオーバーレイ閉じは構造挙動として built-in のまま。Dialog はそれと別に登録する)。
 
 これらはウィンドウが存在する時点でしか呼べないので順序罠は起きない。ただし寿命罠は残る:
-**root 登録がコンポーネントを参照する場合 (既定ボタン等)、そのコンポーネントの破棄時に unbind する**のが
-登録側の責任 (uninstall 時に root へ到達できるか、teardown 順に注意)。
+**ルート登録がコンポーネントを参照する場合 (既定ボタン等)、そのコンポーネントの破棄時に unbind する**のが
+登録側の責任 (uninstall 時にルートへ到達できるか、teardown 順に注意)。
 
 Swing の WHEN_IN_FOCUSED_WINDOW は任意コンポーネントに登録でき親チェーン外でも効くが、本モデルは親チェーン + 走査段で解決する。差は上記の線引きで吸収する。
 
 ## フォーカストラバーサル
-- **focusable を拡大する**: Button / CheckBox / RadioButton / Slider / ComboBox / List を `focusable = true` にする。v1 の「ボタン等はマウス専用」を意図的に覆す判断。Label は据え置き。
-- **トラバーサル順 = コンテナ子の追加順の DFS**。Swing の差し替え可能な `FocusTraversalPolicy` は持たない (過剰)。レイアウトが子を順に並べる前提なら視覚順と一致する。
+- **focusable を拡大する**: Button / CheckBox / RadioButton / Slider / ComboBox / List を
+  `focusable = true` にする。v1 の「ボタン等はマウス専用」を意図的に覆す判断。Label は据え置き。
+- **トラバーサル順 = コンテナ子の追加順の DFS**。
+  Swing の差し替え可能な `FocusTraversalPolicy` は持たない (過剰)。レイアウトが子を順に並べる前提なら視覚順と一致する。
 ```zig
 // Window
 pub fn focusNext(self: *Window) void;   // Tab
 pub fn focusPrev(self: *Window) void;   // Shift+Tab
 ```
 focusable を DFS で列挙し、`focus_owner` の次 / 前へ移す。端で wrap する。
-- **BorderLayout と追加順の規約**: BoxLayout は追加順＝視覚順なので常に一致する。BorderLayout は
-  配置が region ヒントで決まり**追加順は配置に影響しない**ので、タブオーダーを読み順 (north → west →
-  center → east → south 等) にしたければ add をその順に呼べばよい。幾何ソートは持たない。
+- **BorderLayout と追加順の規約**: BoxLayout は追加順＝視覚順なので常に一致する。
+  BorderLayout は配置が region ヒントで決まり、追加順は配置に影響しない。
+  よってタブオーダーを読み順 (north → west → center → east → south 等) にしたければ
+  add をその順に呼べばよい。幾何ソートは持たない。
   この規約は利用者向け doc (spec 昇格時) に明記する。
 - **スキップ条件 = 静的 `focusable` + 動的 `FocusQuery`**: トラバーサルが止まるのは
   「`focusable == true` かつ (`focus_query == null` または `isEligible()` が true)」のウィジェットだけ。
-  disabled なボタンに Tab が止まらないようにするための動的判定で、enabled がモデル側
-  (`ButtonModel` 等) にあり Component 層から見えない問題を opt-in capability で埋める
+  disabled なボタンに Tab が止まらないようにするための動的判定である。
+  enabled がモデル側 (`ButtonModel` 等) にあり Component 層から見えない問題を opt-in capability で埋める
   (`A11y` / `SizeQuery` と同型のフィールド方式、VTable は増やさない)。
 ```zig
 pub const FocusQuery = struct {
@@ -282,48 +300,62 @@ focus_query: ?FocusQuery = null,
     プログラム由来の `requestFocus` での自動スクロールは利用者コードと喧嘩する余地があるため、
     `requestFocusFor` には入れない (不採用)。
   - ネストした ScrollPane は最寄りの 1 段だけ (外側への連鎖は実需が出たら)。
-- **Tab の扱い**: まず `focus_owner.processEvent` に渡す (将来 TextArea が Tab を文字として食う余地を残す)。食わなければ Window が `focusNext` / `focusPrev`。これは現状の「focus_owner 先取り → fallback」構造にそのまま乗る。
+- **Tab の扱い**: まず `focus_owner.processEvent` に渡す (将来 TextArea が Tab を文字として食う余地を残す)。
+  食わなければ Window が `focusNext` / `focusPrev`。
+  これは現状の「focus_owner 先取り → fallback」構造にそのまま乗る。
 - **初期フォーカス**: ウィンドウ open 時に最初の focusable へ。
-- **Space / Enter 起動**: フォーカス中ウィジェット自身の `processEvent` で処理する (widget-local)。Button は Space で起動。共通の起動口として **各ボタン系に `doClick()` を新設**する (press + fireAction + release を模す。マウス / Space / Enter / ニーモニックすべての入口)。
-- **フォーカスリング描画**: ウィジェットは既に受け取っている `FocusEvent{ gained }` で `focused: bool` を保持し、`paint` でリングを描く。`Window.focus_owner` への逆参照は不要。
+- **Space / Enter 起動**: フォーカス中ウィジェット自身の `processEvent` で処理する (`widget-local`)。
+  Button は Space で起動。共通の起動口として各ボタン系に `doClick()` を新設する
+  (press + fireAction + release を模す。マウス / Space / Enter / ニーモニックすべての入口)。
+- **フォーカスリング描画**: ウィジェットは既に受け取っている `FocusEvent{ gained }` で
+  `focused: bool` を保持し、`paint` でリングを描く。`Window.focus_owner` への逆参照は不要。
 
 ## ニーモニック (Component のフィールド + 走査で解決)
 ```zig
 // Button / Menu / MenuItem 等
 pub fn setMnemonic(self: *Self, ch: u8) void;
 ```
-`setMnemonic` は**登録を行わない**。コンポーネント自身に 2 つを保存するだけ:
+`setMnemonic` は**登録しない**。コンポーネント自身に 2 つを保存するだけ:
 1. ニーモニック文字 (照合用)。
 2. ラベル中の該当文字の index (`paint` で下線を引く用)。
 
-起動は配送の段 5 で行う。`Alt+文字` が root まで消費されずに落ちてきたら、Window が
+起動は配送の段 5 で行う。`Alt+文字` がルートまで消費されずに落ちてきたら、Window が
 コンポーネントツリーを走査して `mnemonic == ch` のウィジェットを探し `doClick()` する
-(メニューバー直下の Menu なら開く)。登録が無いので順序罠も寿命罠も無い (「root 登録と走査の線引き」参照)。
+(メニューバー直下の Menu なら開く)。登録が無いので順序罠も寿命罠も無い (「ルート登録と走査の線引き」参照)。
 
 - **重複は先勝ち** (走査順 = ツリーの DFS 順で最初の一致)。Windows 流の「重複時は起動せず該当コントロール間を
   フォーカス巡回」は実需待ち (走査方式なら全一致を集めるだけなので後付けは容易)。
 - **disabled は発火しない**。ガードは走査側ではなく `doClick()` 自身が持つ — `model.enabled == false` なら
   no-op。マウス / Space / Enter / ニーモニックのどの入口から来ても同じ 1 か所で守られる。
-- **MenuItem のニーモニックは root 走査の対象外**。スコープは「親メニューが開いている間だけ」、照合は
+- **MenuItem のニーモニックはルート走査の対象外**。スコープは「親メニューが開いている間だけ」、照合は
   Alt なしの素の文字キー。開いたメニューはモーダルオーバーレイとしてキーを最初に受けるので、メニュー自身の
-  processEvent が表示中項目の mnemonic と突き合わせる (オーバーレイ内ローカル処理)。root 走査に含めると
+  processEvent が表示中項目の `mnemonic` と突き合わせる (オーバーレイ内ローカル処理)。ルート走査に含めると
   メニューが閉じていても発火してしまい、それはニーモニックではなくアクセラレータの挙動になる。
 
-下線表示は v1 は **常時表示**。Alt 押下中のみ出す Windows 流 (Alt-reveal) は Alt キー状態の追跡 + 変化時 repaint が要るので後回し (将来「Alt タップでメニューバーにフォーカス」と一緒に入れるのが自然)。
+下線表示は v1 は **常時表示**。
+Alt 押下中のみ出す Windows 流 (Alt-reveal) は Alt キー状態の追跡 + 変化時 repaint が要るので後回し
+(将来「Alt タップでメニューバーにフォーカス」と一緒に入れるのが自然)。
 Label の `labelFor` (ラベルのニーモニックで別フィールドにフォーカス) は Label→対象の紐付けが要るので後回し。
 
 ## 後付け余地
 配送契約 (食う/食わない) が防火壁になるので、以下は今の決定を壊さず後から積める。
-- **Action / Command**: `Handler.invoke` の先を Command モデル (`enabled` / `label` / `icon` / `on_invoke` + リスナー) にする。メニュー項目・ツールバーボタン・アクセラレータが 1 つの Command を指し、`enabled = false` で一斉グレーアウトが無料で付く。既存の Model パターンに乗る。今は不要。
+- **Action / Command**: `Handler.invoke` の先を Command モデル
+  (`enabled` / `label` / `icon` / `on_invoke` + リスナー) にする。
+  メニュー項目・ツールバーボタン・アクセラレータが 1 つの Command を指し、
+  `enabled = false` で一斉グレーアウトが無料で付く。既存の Model パターンに乗る。今は不要。
 - **ActionMap**: 「名前 → Action」の片割れ。InputMap (名前経由) を入れるときだけ意味を持つ。フレームワーク全体にも特定ウィジェット内にも入れられる。
   **要る判定の引き金**: 利用者アプリの「ショートカットのユーザーカスタマイズ + 永続化」の実需が出たとき。
   Handler (関数ポインタ) はシリアライズできないので、設定ファイルへの保存・設定画面での一覧表示には
   `"save" → Ctrl+S` のような安定した名前が必須になる — それが名前間接層でなければ買えない唯一のもの
-  (リバインドは KeyBindings の可変性、複数キー→同一動作は同じ Handler の複数 bind、プラットフォーム差は
+  (リバインドは KeyBindings の可変性、複数キー→同一動作は同じ Handler の複数バインド、プラットフォーム差は
   抽象 `command` 修飾キー、mac テキスト編集キー差はウィジェット内部 InputMap で、それぞれ名前なしで賄える)。
   それまでは入れない。後付けの形: KeyBindings はそのまま、上に「名前 → Handler」レジストリと
-  bind-by-name の砂糖衣を載せるだけ (配送契約は不変)。
-- **InputMap で TextArea を再実装**: TextArea の `processEvent` 内部だけの話。配送から見れば相変わらず「食う/食わない」を返すだけなので、いつでもローカルに差し替えられる。テキスト編集キーを利用者がリバインドできるようにしたいときにやる。Swing の InputMap の親チェーン (共通ベース編集キーマップ) も、1 つのウィジェットが「食うか決める内部処理」に閉じるので別途入れられる。
+  `bind-by-name` の砂糖衣を載せるだけ (配送契約は不変)。
+- **InputMap で TextArea を再実装**: TextArea の `processEvent` 内部だけの話。
+  配送から見れば相変わらず「食う/食わない」を返すだけなので、いつでもローカルに差し替えられる。
+  テキスト編集キーを利用者がリバインドできるようにしたいときにやる。
+  Swing の InputMap の親チェーン (共通ベース編集キーマップ) も、
+  1 つのウィジェットが「食うか決める内部処理」に閉じるので別途入れられる。
 - **明示タブオーダー (Order 値)**: HTML `tabindex` / WinForms `TabIndex` 相当の上書き値。入れるなら
   **コンテナ内ローカル**のソートキーにする — 兄弟間で `(order, 追加index)` の安定ソート、既定 `order = 0`
   (= 未設定なら純粋な追加順のまま)。グローバル番号 (HTML の正の tabindex) は「1 個挟むだけで全部
@@ -340,8 +372,8 @@ Label の `labelFor` (ラベルのニーモニックで別フィールドにフ�
 
 ## 確定済みの方針 (作者承認)
 - P1: キーボード操作可能な UI にする (focusable 拡大 + Tab トラバーサル + Space/Enter 起動)。対象は上記一覧。
-- P2: スコープ 3 種ではなく「遡り 1 本 + ウィンドウ全体は root 登録 / 走査の線引きで解決」
-  (「root 登録と走査の線引き」参照)。
+- P2: スコープ 3 種ではなく「遡り 1 本 + ウィンドウ全体はルート登録 / 走査の線引きで解決」
+  (「ルート登録と走査の線引き」参照)。
 - P3: 抽象コマンド修飾キー (`command` = Win/Linux は Ctrl、macOS は Cmd)。macOS 対応は必須で、awt の super 対応は `awt_backlog.md` #8。
 - `doClick()` を全ボタン系に新設。
 - フォーカスリングは各ウィジェットが `focused` を持って自前描画。
@@ -358,20 +390,22 @@ Label の `labelFor` (ラベルのニーモニックで別フィールドにフ�
   確定して閉じる Windows 流 (案C) は実需待ち。
 - Tab 移動時のスクロールインは v1 に入れる。フックは `focusNext` / `focusPrev` のみ、
   既存 `ScrollController` を流用、ネストは最寄り 1 段。
-- ニーモニック / アクセラレータは root 登録ではなく配送最終段の走査で解決 (`setMnemonic` /
-  `setAccelerator` は保存のみ)。根拠はコスト判断 — 配送時走査はコールドパスで無視できる、
-  登録式は順序罠と寿命罠を持つ。コスト前提が変われば再判断 (「root 登録と走査の線引き」参照)。
-- root の `key_bindings` に登録するのはウィンドウ自身への呼び出し (既定ボタン / Dialog の Esc) だけ。
-  コンポーネントを参照する root 登録は当該コンポーネント破棄時に unbind する (寿命契約)。
-- MenuItem のニーモニックは開いている親メニューのローカル照合 (素の文字キー)。root 走査の対象外。
+- ニーモニック / アクセラレータはルート登録ではなく配送最終段の走査で解決する
+  (`setMnemonic` / `setAccelerator` は保存のみ)。
+  根拠はコスト判断 — 配送時走査はコールドパスで無視できる、
+  登録式は順序罠と寿命罠を持つ。コスト前提が変われば再判断 (「ルート登録と走査の線引き」参照)。
+- ルートの `key_bindings` に登録するのはウィンドウ自身への呼び出し (既定ボタン / Dialog の Esc) だけ。
+  コンポーネントを参照するルート登録は当該コンポーネント破棄時に unbind する (寿命契約)。
+- MenuItem のニーモニックは開いている親メニューのローカル照合 (素の文字キー)。ルート走査の対象外。
 - ニーモニック重複は先勝ち。Windows 流フォーカス巡回は実需待ち。
 - `doClick()` は `model.enabled == false` なら no-op (マウス / Space / Enter / ニーモニック共通のガード)。
 - 束縛の発火は press と repeat の両方 (区別しない。Swing / Win32 と同じ「リピートポリシーを持たない」)。
-  per-binding の repeat 抑制フラグは実需待ち、release バインドは後回し。
-- メニュー開放中のアクセラレータ和音は「popup を全部閉じてから遂行」(backlog framework#6a。
-  Tab 案B と同じ「明確な別意図のキーは transient UI を閉じて遂行」原理。現行 Windows / macOS と同挙動)。
+  束縛ごとの repeat 抑制フラグは実需待ち、release バインドは後回し。
+- メニュー開放中のアクセラレータ和音は「popup を全部閉じてから遂行」(backlog framework#6a)。
+  Tab 案B と同じ「明確な別意図のキーは transient UI を閉じて遂行」原理で、現行 Windows / macOS と同挙動。
   オーバーレイ中の ESC は `dismissTop` による段階クローズ (1 押下 1 段。外クリック / Tab は引き続き全閉)。
-- メニュー内キーボードナビゲーション実装済み (backlog framework#6b 案A: ハイライトは
-  `ButtonModel.rollover` 共用で真実 1 つ・後から動かした入力が勝つ、disabled 行は止まるが
-  起動しない、端で wrap、`←` で 1 段戻る、キーボードで開いた popup は先頭ハイライト)。
+- メニュー内キーボードナビゲーション実装済み (backlog framework#6b 案A)。
+  ハイライトは `ButtonModel.rollover` 共用で真実 1 つ・後から動かした入力が勝つ、
+  disabled 行は止まるが起動しない、端で wrap、`←` で 1 段戻る、
+  キーボードで開いた popup は先頭ハイライト。
   仕様は `menu.md`「キーボード操作」。

@@ -39,10 +39,12 @@ pub const TextFont = struct {
 `Font` および `Font.TextSize` (`width: f32, height: f32`) は `font.md` を参照。
 
 `TextFont` 自体は値型で軽量に複製可能。
-`face` は `awt.Font` を値で保持するが、`awt.Font` の中身は awt-c の handle ポインタなので、実体の所有権は handle の最初の作成者 (典型的には Application の default_font) にある (詳細は `setFont` の項を参照)。
+`face` は `awt.Font` を値で保持するが、`awt.Font` の中身は awt-c の handle ポインタなので、
+実体の所有権は handle の最初の作成者 (典型的には Application の default_font) にある (詳細は `setFont` の項を参照)。
 `measureString` は Graphics が手元に無い場面 (レイアウト計算時など) でも文字幅を測れるよう、TextFont 側に置く。
 
-なお `Component.Size` (`width: f32, height: f32`) と `Font.TextSize` は構造的に同じだが、レイヤーごとに別型として持つ (Graphics は文字寸法を `Font.TextSize`、framework のレイアウトは `Component.Size` で扱う)。
+なお `Component.Size` (`width: f32, height: f32`) と `Font.TextSize` は構造的に同じだが、レイヤーごとに別型として持つ。
+Graphics は文字寸法を `Font.TextSize`、framework のレイアウトは `Component.Size` で扱う。
 
 ## クリッピング (子 paint への引き渡しを兼ねる)
 ```zig
@@ -56,7 +58,9 @@ pub fn clip(self: Graphics, r: Rect) Graphics;
 * 自身のクリップは親のクリップとの **積集合** (絶対座標で計算)。
 * color / font などその他の状態は親から copy-on-call。
 
-呼び出し元 (親) の Graphics は変更されない。子の paint が終わったあと、親は元の Graphics でそのまま描画を続けられる。これで `save` / `restore` を持たずにネストしたクリップを実現する。
+呼び出し元 (親) の Graphics は変更されない。
+子の paint が終わったあと、親は元の Graphics でそのまま描画を続けられる。
+これで `save` / `restore` を持たずにネストしたクリップを実現する。
 
 ```zig
 fn paintComponent(self: *Self, g: *Graphics) void {
@@ -120,7 +124,7 @@ pub fn drawImageScaled(self: *Graphics, image: awt.Image, x: f32, y: f32, w: f32
 | `setAntiAlias` | 暗黙対応 (rect は AA 不要、滑らか形状は常時 1px AA) のため明示 API なし |
 | `save` / `restore` | `clip` で値返しすることで不要 |
 | `drawImageRegion` (src 部分指定) | 計画中。万能プリミティブとして src 矩形 → dst を描く。`programs.Image` 1 本に乗る。設計は `narrative/graphics.md` |
-| `drawImageTinted` / `drawImageNineSlice` / `drawImageTiled` | 計画中。すべて `drawImageRegion` への畳み込みで実装し、バックエンド契約を増やさない。設計は `narrative/graphics.md` |
+| `drawImageTinted` / `drawImageNineSlice` / `drawImageTiled` | 計画中。すべて `drawImageRegion` に畳み込み、契約を増やさない。設計は `narrative/graphics.md` |
 | `drawImageScaled` の Rect 化 | 計画中。`(image, x, y, w, h)` → `(image, dst: Rect)` に寄せて draw 系を一貫させる |
 | 複数行 `drawString` (`\n` の自動レイアウト) | テキストレイアウトは別レイヤーで対応予定 |
 | グラデーション塗り | `Image.linearGradient` で画像として生成し `drawImageScaled` で描く方針。設計は `narrative/image.md` |

@@ -31,7 +31,7 @@ PopupMenu それ自体は `Component` の派生では**ない** (`component:` �
 pub fn create(allocator: std.mem.Allocator) !*PopupMenu;
 ```
 
-allocator で PopupMenu を確保して初期化する。
+`allocator` で PopupMenu を確保して初期化する。
 `items` は空、`open` は false、`popup` は null で開始する。
 
 ### 失敗時の保証
@@ -71,7 +71,7 @@ pub fn addSeparator(self: *PopupMenu) !void;
 pub fn show(self: *PopupMenu, window: *Window, x: f32, y: f32) !void;
 ```
 
-`(x, y)` を左上として popup を開く（window ローカル座標）。
+`(x, y)` を左上として popup を開く（ウィンドウローカル座標）。
 内部で `popup_root.position` を `(x, y)` にセットし、`items` を縦並びに配置、Window の overlays 層に登録する。
 画面端で見切れる場合は反対側に反転（v1 はクライアント領域内に収まるよう reposition）。
 

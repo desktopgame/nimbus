@@ -6,14 +6,15 @@ unsafe: true
 item を縦に並べて表示し、 1 項目を選択できるウィジェット。
 Swing の `JList` 相当だが、 セルの実現方法は JavaFX の `ListView` (内部の VirtualFlow) に倣う。
 
-セルは **実体のあるコンポーネント部分木**で、 **可視範囲＋少しのバッファぶんだけ生成**する。
-スクロールで画面外に出たセルは破棄せず、 新しく現れた行へ **再利用 (recycle)** する。
+セルは実体のあるコンポーネント部分木で、 **可視範囲＋少しのバッファぶんだけ生成**する。
+スクロールで画面外に出たセルは破棄せず、 新しく現れた行へ **再利用 (リサイクル)** する。
 これによりメモリは総行数 N ではなく可視行数に比例し (O(可視))、 かつセルが実体なので描画もイベント処理もウィジェット本来の機構をそのまま使える。
 
 v1 スコープ:
 * 単一選択のみ (複数選択は機能要望)
 * 固定の行高 (可変行高は機能要望)
-* セルは既定で **読み取り専用** (項目の値をセルへ投影するだけ)。 セル内のボタン等は押せる。 加えて、 `Cell.edit` を与えたセルは **編集モード** (セル内テキスト編集) を持てる (「セルの編集 (CellEditor)」を参照)
+* セルは既定で **読み取り専用** (項目の値をセルへ投影するだけ)。 セル内のボタン等は押せる。
+  加えて、 `Cell.edit` を与えたセルは編集モード (セル内テキスト編集) を持てる (「セルの編集 (CellEditor)」を参照)
 
 ## 型定義
 ```zig
@@ -57,7 +58,7 @@ pub const CellFactory = struct {
 
 1 つの実セル。
 `component` がセル部分木のルートで、 leaf (Label 等) でも `Container` (ラベル + ボタン等) でもよい。
-`update` は JavaFX の `updateItem` 相当で、 そのセルを **ある行のデータに束縛し直す**ときに呼ばれる (生成直後と recycle 時)。
+`update` は JavaFX の `updateItem` 相当で、 そのセルを **ある行のデータに束縛し直す**ときに呼ばれる (生成直後とリサイクル時)。
 `edit` は編集可能セルだけが持つ任意の編集ライフサイクルで、 読み取り専用セルは null のまま (「セルの編集 (CellEditor)」を参照)。
 
 ```zig
@@ -153,7 +154,7 @@ pub fn createWithModel(
 ```
 
 利用者が事前に作った `model` を借用する (`owns_model = false`)。
-`model.md`「Model の所有モデル」に従い、 借用した model は `destroy` で解放しない。
+`model.md`「Model の所有モデル」に従い、 借用したモデルは `destroy` で解放しない。
 
 ## List の破棄
 ```zig
@@ -179,7 +180,8 @@ pub fn setSelected(self: *List, idx: ?usize) void;
 
 `setSelected` は範囲外なら none に丸める。
 値が変化したときだけ `change_listeners` を発火 + repaint する (不変なら no-op)。
-変化があれば、 影響する可視セル (旧選択行・新選択行) を **その場で `update` し直して** 選択表示を投影する。 加えて List 自身が選択行の背景ハイライトを描く (「描画」参照)。
+変化があれば、 影響する可視セル (旧選択行・新選択行) を **その場で `update` し直して** 選択表示を投影する。
+加えて List 自身が選択行の背景ハイライトを描く (「描画」参照)。
 
 ## 行高の取得 / 設定
 ```zig
@@ -232,8 +234,9 @@ List 上の**右プレス**で発火する。発火前に List は次を済ま�
 * フォーカスを取り、 ヒットした行があればそれを選択する
 
 メニュー自体は List は持たない。 アプリ側がリスナー内で自前の `PopupMenu` を
-`popup.show(window, e.x, e.y)` で出す (現状 `Component` は生のマウスリスナーを公開していないため、
-右クリックのフックは List が提供している。 コンポーネント横断の汎用化は検討中 — framework バックログ参照)。
+`popup.show(window, e.x, e.y)` で出す。
+現状 `Component` は生のマウスリスナーを公開していないため、 右クリックのフックは List が提供している。
+コンポーネント横断の汎用化は検討中 — framework バックログ参照。
 動く例は `{REPO_ROOT}/examples/app_filer`。
 
 ## セルの編集 (CellEditor)
@@ -246,11 +249,19 @@ pub fn setEditTrigger    (self: *List, t: EditTrigger) void;
 pub fn setFocusLostPolicy(self: *List, p: FocusLostPolicy) void;
 ```
 
-`edit` は `idx` 行の編集を開始する。 別の行が編集中なら先に確定 (`commitEdit`) し、 対象行を可視範囲へスクロール + 実体化してからそのセルの `edit.start` を呼ぶ。 範囲外、 またはセルの `edit` が null (読み取り専用) なら no-op。
-`commitEdit` は編集中セルに `edit.commit` を呼ばせてスクラッチを item へ書き戻し、 表示モードへ戻して再投影する。 `cancelEdit` は `edit.cancel` でスクラッチを破棄し、 item は変えない。 どちらも編集中でなければ no-op で、 終了後はフォーカスを List 本体へ戻す (矢印キー操作のため)。
+`edit` は `idx` 行の編集を開始する。
+別の行が編集中なら先に確定 (`commitEdit`) し、 対象行を可視範囲へスクロール + 実体化してからそのセルの `edit.start` を呼ぶ。
+範囲外、 またはセルの `edit` が null (読み取り専用) なら no-op。
+`commitEdit` は編集中セルに `edit.commit` を呼ばせてスクラッチを item へ書き戻し、 表示モードへ戻して再投影する。
+`cancelEdit` は `edit.cancel` でスクラッチを破棄し、 item は変えない。
+どちらも編集中でなければ no-op で、 終了後はフォーカスを List 本体へ戻す (矢印キー操作のため)。
 `getEditing` は編集中の行 (なければ none)。 `setEditTrigger` / `setFocusLostPolicy` は開始トリガ / フォーカス喪失時の決着を変更する。
 
-同時に編集状態になるセルは高々 1 つ。 編集中の行は reconcile で投影 (`update`) をスキップし、 プールへ返さない (recycle しない) ため、 キャレットや IME 未確定文字が投影で消えたりセルが別行へ束縛し直されたりしない (設計の根拠は narrative 参照)。 編集中のキーは固定で **Enter** = commit、 **Escape** = cancel。 動く例は `{REPO_ROOT}/examples/widget_listedit`。
+同時に編集状態になるセルは高々 1 つ。
+編集中の行は reconcile で投影 (`update`) をスキップし、 プールへ返さない (リサイクルしない)。
+そのため、 キャレットや IME 未確定文字が投影で消えたりセルが別行へ束縛し直されたりしない (設計の根拠は narrative 参照)。
+編集中のキーは固定で `Enter` = commit、 `Escape` = cancel。
+動く例は `{REPO_ROOT}/examples/widget_listedit`。
 
 ---
 
@@ -367,8 +378,15 @@ for (rows) |*r| try list.model.add(@ptrCast(r));
 * 行全体の hover ハイライト (現状は選択行のみ背景を描く。 セル内ウィジェットの rollover は「hover の解除」機構で機能するが、 行をまたぐ hover 表示は未対応)
 * 細粒度の変更通知 (`ListDataListener` 相当、 挿入 / 削除レンジを引数で渡す)
 * 抽象 `ListModel` (vtable 化して computed / 仮想モデルを許す)
-* レイアウト方向 / wrap グリッド表示 (Swing `JList.setLayoutOrientation` 相当の `VERTICAL` / `HORIZONTAL_WRAP` / `VERTICAL_WRAP`)。 **1 次元モデルのまま**セルを折り返してグリッド状に並べる (アイコンビュー風)。 これは行 × 列の 2 次元モデルを持つ Table とは別物 — セルはどれも「1 要素 = 1 セル」で列ごとの型 / 幅の概念は無い。 可視範囲算出を行インデックス → (col, row) の 2 次元に拡張する必要があり、 recycle / 可視範囲ロジックに影響する
-* 同じセル機構の 2 次元 (行 / 列) **モデル**拡張としての Table、 階層版としての Tree。 上の wrap グリッドと違い、 こちらは列ごとに renderer / editor / 幅を持つ本物の表 (Swing `JTable` / `TableModel` 相当)
+* レイアウト方向 / wrap グリッド表示 (Swing `JList.setLayoutOrientation` 相当の `VERTICAL` / `HORIZONTAL_WRAP` / `VERTICAL_WRAP`)。
+  **1 次元モデルのまま**セルを折り返してグリッド状に並べる (アイコンビュー風)。
+  これは行 × 列の 2 次元モデルを持つ Table とは別物 — セルはどれも「1 要素 = 1 セル」で列ごとの型 / 幅の概念は無い。
+  可視範囲算出を行インデックス → (col, row) の 2 次元に拡張する必要があり、 リサイクル / 可視範囲ロジックに影響する
+* 同じセル機構の 2 次元 (行 / 列) **モデル**拡張としての Table、 階層版としての Tree。
+  上の wrap グリッドと違い、 こちらは列ごとに renderer / editor / 幅を持つ本物の表 (Swing `JTable` / `TableModel` 相当)
 * incremental search (キー入力で先頭一致する item へジャンプ)
-* `ListModel` への任意位置挿入 `insert(idx, item)` — 現状 `add` は末尾追加のみ。 行間挿入が要るとき用 (`move` は実装済み)。 モデル層の追加で List ウィジェット本体は非変更
-* drop-indicator フック — 行間の挿入線を描くための組み込みの便宜フック。 必須ではない: `List` ソースを変えずとも vtable 装飾 (元の `paint` を呼んでから線を描く) か passthrough overlay で出せる (`dnd.md`「List の行並べ替え」)。 頻用するなら標準化する候補という位置づけ
+* `ListModel` への任意位置挿入 `insert(idx, item)` — 現状 `add` は末尾追加のみ。
+  行間挿入が要るとき用 (`move` は実装済み)。 モデル層の追加で List ウィジェット本体は非変更
+* drop-indicator フック — 行間の挿入線を描くための組み込みの便宜フック。
+  必須ではない: `List` ソースを変えずとも vtable 装飾 (元の `paint` を呼んでから線を描く) か passthrough overlay で出せる (`dnd.md`「List の行並べ替え」)。
+  頻用するなら標準化する候補という位置づけ

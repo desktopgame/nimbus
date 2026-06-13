@@ -54,7 +54,7 @@ setter の中で「変化しなかったら発火しない」が重要(無駄な
 これは Swing の `ComponentUI.installUI` / `uninstallUI` が `BoundedRangeModel.addChangeListener` を行うパターンと同じ。
 
 ## Model の所有モデル
-ウィジェットは Model を内部生成して所有することも、外部から受け取って借用することもできる。
+ウィジェットは Model を内部生成して所有するか、外部から受け取って借用するかを選べる。
 両方の入口を提供する。
 
 | 入口 | Model の出所 | 所有者 |
@@ -89,12 +89,13 @@ Model 自体は同期発火の単純な仕様に留める。
 
 両者は同一レイアウト（`source` だけ）だが**別の型**であり、ハンドラのシグネチャがどちらを
 受け取るかを表す。当初は `kind` タグ付きの単一 `Event` で兼ねていたが（「いまはこれでよい」と
-した暫定形）、型で区別する本来の形に分割した。共通プリミティブ `ListenerList(E)` を
-イベント型 `E` でジェネリック化し、`ChangeListenerList = ListenerList(ChangeEvent)` /
-`ActionListenerList = ListenerList(ActionEvent)` として具体化している。
+した暫定形）、型で区別する本来の形に分割した。
+共通プリミティブ `ListenerList(E)` をイベント型 `E` でジェネリック化している。
+具体化は `ChangeListenerList = ListenerList(ChangeEvent)` /
+`ActionListenerList = ListenerList(ActionEvent)` として行う。
 
 イベントが運ぶのは `source`（発火した Model）だけ。「何が変わったか」を伝える必要があれば、
-リスナーは source（または user_data）経由で Model のポインタを受け取り、Model の現在値を直接読む。
+リスナーは `source`（または user_data）経由で Model のポインタを受け取り、Model の現在値を直接読む。
 Swing は変更内容を `DocumentEvent.getOffset()` のように伝えるが、nimbus はシンプルにする。
 「変わった、現在値はこれ」だけを観測する。
 

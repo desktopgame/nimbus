@@ -5,7 +5,7 @@ unsafe: true
 # menu_item
 クリック可能なメニュー項目（リーフ）。
 Swing の `JMenuItem` 相当。
-左に icon slot、中央にラベル、右にアクセラレータ表示（将来）の 3 カラム構成。
+左に icon スロット、中央にラベル、右にアクセラレータ表示（将来）の 3 カラム構成。
 クリック完了で ActionListener が発火する。
 
 ## 型定義
@@ -40,8 +40,8 @@ pub fn create(
 ) !*MenuItem;
 ```
 
-allocator で MenuItem を確保し、内部 `ButtonModel` を生成して所有する（`owns_model = true`）。
-`text` を dup して保持し、`font` / `color` を保持し、`component.min_size` を icon slot 幅 + テキスト寸法 + accel slot 幅 + padding から算出する。
+`allocator` で MenuItem を確保し、内部 `ButtonModel` を生成して所有する（`owns_model = true`）。
+`text` を dup して保持し、`font` / `color` を保持し、`component.min_size` を icon スロット幅 + テキスト寸法 + accel スロット幅 + padding から算出する。
 vtable をセットして install まで実行する。
 
 ### 失敗時の保証
@@ -67,7 +67,7 @@ fn destroy(self: *Component, allocator: std.mem.Allocator) void;
 ```
 
 `MenuItem.vtable.destroy` として登録される。
-`uninstall` で model のリスナーを外し、text バッファを解放、`owns_model` が true なら model を deinit + 解放、最後に MenuItem 本体を free する。
+`uninstall` で `model` のリスナーを外し、text バッファを解放、`owns_model` が true なら `model` を deinit + 解放、最後に MenuItem 本体を free する。
 `icon` の Image は所有していないので解放しない。
 
 ## テキストの取得 / 設定
@@ -166,7 +166,7 @@ try context_menu.add(&save_in_ctx.component);
 ```
 
 ## 機能要望
-* アクセラレータの表示（`Ctrl+S` 等を右側 slot に描画）
+* アクセラレータの表示（`Ctrl+S` 等を右側スロットに描画）
 * tooltip
 * テキスト + アイコン以外のカスタム描画（vtable.paint オーバライド経由で既に可能だが、専用 API が欲しい）
 * HTML レンダリング（Swing が対応している、優先度低）
