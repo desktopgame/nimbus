@@ -56,10 +56,10 @@ frameworkのAPIを使用して、向きが階層ごとに交互に変わる BoxL
 frameworkのキーボード操作を一通り試すフォーム。Tab / Shift+Tab のフォーカス巡回（disabled ボタンはスキップ、端で wrap）、Space / Enter / 矢印キーでの操作、ニーモニック（Alt+F でメニューを開く、開いたメニュー内は素の S/O/Q、Alt+A / Alt+R でボタン起動。下線表示つき）、メニュー内キーボードナビゲーション（↑↓ でハイライト移動・wrap・disabled で停止、Enter で起動、→/← でサブメニューの出入り、Esc は1段ずつ閉じる）、アクセラレータ（メニューが閉じていても Ctrl/Cmd+S・Ctrl/Cmd+O が効き、メニュー展開中なら閉じてから実行）、既定ボタン（Enter で OK。ただしフォーカス中の TextField は Enter を submit として消費する＝フォーカスが勝つ実例）、ドロップダウン展開中の Tab（外クリック同様に閉じて次へ移動）をデモする。`framework/doc/narrative/keybinding.md` の検証シーン。
 
 ## app_filer
-ドッグフーディングの実用アプリ第1号: ファイラー。現在は M4（DnD 移動）。
-行をドラッグしてフォルダ行（リング表示でハイライト）またはサイドバーの場所へドロップすると移動する。ゴースト（アイコン+名前）がカーソルに追従し、Escape で取り消し。移動は純粋な rename なのでドライブを跨ぐ移動は失敗してステータスに出る（コピーfallback未実装）。
-左ペインは場所一覧（Home + 存在するドライブ）で、シングルクリックで右ペインがそこへ移動する。右ペインはディレクトリの中身をアイコン付きの List で表示し（フォルダ先行・大文字小文字無視ソート）、ダブルクリック / Enter でフォルダに入る。行の右クリックでコンテキストメニュー（Open / Rename / Delete）。F2（またはメニュー）でインプレースリネーム — 行が TextField に切り替わり、Enter で実際にディスク上をリネームして確定、Escape で取り消し。Delete はモーダルダイアログで確認してからファイル / 空フォルダを削除する（再帰削除はしない）。F5 で再読み込み、ツールバーの↑ボタンまたは Backspace で親ディレクトリへ。ディバイダーはドラッグでき、リサイズ時は左ペインが幅を維持する。起動時はカレントディレクトリから始まる。
-SplitPane、List の行アクティベーション / コンテキストメニュー（`addActionListener` / `addContextMenuListener`）、CellEditor の手動トリガ運用（`setEditTrigger(.manual)`）、`EventQueue.invokeLater` による編集確定後の安全な再読み込み、Label のアイコン表示、ペインを跨ぐ DnD（drag_source / drop_target の外付け + vtable 装飾ハイライト + passthrough overlay ゴースト）の検証シーンも兼ねる。
+ドッグフーディングの実用アプリ第1号: ファイラー。現在は M5（リスト / 詳細ビュー）。
+右ペインは**1つの共有モデル**（`Model = List.ListModel`）に対する2ビューを切り替えられる。ツールバーの「Details」/「List」ボタンで、リストビュー（アイコン+名前、インプレースリネーム + DnD 移動）と詳細ビュー（Name / Size / Modified 列の Table、ヘッダークリックでソート、列境界ドラッグで列幅変更）を切り替える。非アクティブなビューは小さな CardLayout（カスタム LayoutManager）でゼロサイズにし、両方を holder に所有させたまま隠す。左ペインは場所一覧（シングルクリックで移動）。ダブルクリック / Enter で開く、行の右クリックでコンテキストメニュー（Open / Rename / Delete）、F2 でインプレースリネーム、Delete でモーダル確認してからファイル / 空フォルダ削除、F5 で再読み込み、↑ボタン / Backspace で親へ。起動時はカレントディレクトリ。
+既知の M5 ギャップ（Table は v1）: 詳細ビューにはインプレースリネームが無く（Rename はリストビューに切り替えてから実行）、DnD も無い（DnD はリストビューのみ。Table への DnD はヘッダーオフセットが内部なので y→行の公開アクセサが要る）。どちらも framework#9 にフィードバック。
+SplitPane、Table（複数カラム / ヘッダーソート / 列幅ドラッグ）、共有モデルによる List⇄Table 両ビュー、CardLayout 風のカスタム LayoutManager、List の行アクティベーション / コンテキストメニュー、CellEditor の手動トリガ、`EventQueue.invokeLater`、Label のアイコン、ペイン跨ぎ DnD の検証シーンを兼ねる。
 
 ## cnimbus_editor
 nimbus の C ABI（`include/nimbus.h` + `libnimbus`）だけを使い、**C 言語**でエディタ風の画面を組むサンプル（Zig を一切使わない）。メニューバー（File / Edit）、上部のツールバー（north）、スクロールペインに入れたテキストエリア（center）を BorderLayout で配置する。将来の Python / JS バインディングが C ABI をどう叩くかの実証も兼ねる。
