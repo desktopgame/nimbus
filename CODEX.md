@@ -27,7 +27,7 @@ Claude が実装することもあるし、Codex が設計相談やコードレ�
 たとえば以下を含む。
 
 - `git reset --hard`
-- 広範囲の recursive delete
+- 広範囲の再帰的なファイル削除
 - force push
 
 リモート状態に影響する操作や、ローカル作業を書き換える可能性がある操作は事前に確認する。
@@ -55,7 +55,7 @@ zig build test
 npm run lint
 ```
 
-描画、レイアウト、widget に関わる変更では、関連する snapshot test や examples の確認も検討する。
+描画、レイアウト、ウィジェットに関わる変更では、関連する snapshot test や examples の確認も検討する。
 
 作業完了時には以下を簡潔に報告する。
 
