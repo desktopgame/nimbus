@@ -578,7 +578,7 @@ List の「縦 1 列 × 行高固定」を「行 × 列」へ一般化するか�
 ファイラーで表示モードをリスト / グリッドに切り替えられ、数千ファイルのフォルダでスクロールが滑らか。
 
 ## #14 Table のセル編集（インプレース）
-- 状態: 未着手
+- 状態: 完了（案A・113/113 緑。app_filer 詳細ビューのリネームに組み込み済み）
 - 優先度: 高
 - 影響範囲: framework の `Table.zig`（CellEdit 相当の追加）、`table.md`、app_filer（詳細ビューのリネーム）
 - 更新日: 2026-06-12
@@ -609,6 +609,15 @@ recycle しない + フォーカス喪失時の決着）と同形を移植する
 
 ### 完了条件
 ファイラー詳細ビューでセルを直接リネームできる（リストビューへ切り替えずに）。doc + テスト。
+
+### 完了メモ（2026-06-12）
+案A で実装。`Table.CellEdit`（start/commit/cancel）+ `Cell.edit: ?CellEdit` + `EditPos{row,col}` +
+`edit(row,col)` / `commitEdit` / `cancelEdit` / `getEditing`。編集可能列はその列のセルが `edit` を
+持つかで決まる（列定義に editable フラグは置かず、List と同じ「cell.edit が非 null」方式）。
+開始トリガは持たず manual のみ（アプリが F2/メニューから `edit(row,col)` を呼ぶ）。
+reconcile で編集セルを recycle 除外 + 行が可視域外なら commit、編集行の外 press / ヘッダ click で
+commit（focus-lost=commit）。app_filer 詳細ビューの Name 列に組み込み（list/details 両ビューで
+インプレースリネーム可能に）。table.md / narrative/table.md 追記。埋め込みテスト2本追加。
 
 ## #15 Table の列の自動フィル
 - 状態: 未着手

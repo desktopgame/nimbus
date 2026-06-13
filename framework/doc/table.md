@@ -253,6 +253,35 @@ pub fn removeSortListener(self: *Table, comptime T: type, comptime f: fn (*T, *c
 リスナーは `e.column` / `e.direction` に従ってモデルを並べ替える
 (モデル変更通知で Table は自動で再投影される)。
 
+### セルの編集 (単一セル)
+```zig
+pub const CellEdit = struct {
+    start:  *const fn (self: *anyopaque, ctx: CellContext) void,
+    commit: *const fn (self: *anyopaque) void,
+    cancel: *const fn (self: *anyopaque) void,
+};
+pub const EditPos = struct { row: usize, col: usize };
+
+pub fn edit       (self: *Table, row: usize, col: usize) void;
+pub fn commitEdit (self: *Table) void;
+pub fn cancelEdit (self: *Table) void;
+pub fn getEditing (self: Table) ?EditPos;
+```
+
+`List.CellEdit` と同形の単一セル編集 (案A: 編集対象は 1 セル、行内 Tab 移動は持たない)。
+編集可能にしたい列は、その列の `Cell` に `edit` (非 null) を持たせる (読み取り専用列は null)。
+`edit(row, col)` は対象を可視域へスクロール + 実体化してから、そのセルの `edit.start` を呼ぶ。
+別のセルが編集中なら先に `commitEdit`。範囲外や読み取り専用列 (cell.edit が null) なら no-op。
+`commitEdit` はセルに `edit.commit` を呼ばせてスクラッチを item へ書き戻し、表示モードへ戻して
+再投影する。`cancelEdit` は `edit.cancel` で破棄 (item 不変)。どちらも終了後フォーカスを Table 本体へ戻す。
+
+編集中のセルは reconcile で recycle されない (スクラッチが他行に流用されない)。
+編集中の行が可視域外へスクロールしたら commit する。編集行の外を press する / ヘッダーを
+クリックすると commit する (focus-lost = commit)。編集中のキーは固定で **Enter** = commit /
+**Escape** = cancel — ただしこれらはスクラッチ入力 (例: TextField) が処理するので、セル側が
+入力の submit / cancel を `commitEdit` / `cancelEdit` に配線する (List と同じ流儀)。
+動く例は app_filer の詳細ビューのリネーム (`{REPO_ROOT}/examples/app_filer`)。
+
 ---
 
 ## 利用例
@@ -291,7 +320,7 @@ sp.asComponent().setGrowY(1);
 ```
 
 ## 機能要望
-* セル編集 (List の CellEdit 相当。ファイラー詳細表示でのインプレースリネームに必要)
+* セル単位の 2 次元編集 + Tab での隣セル移動 (現状は単一セル編集 = 案A)
 * 複数選択 (framework#10。List と選択モデルを共有する形で)
 * 伸縮列 (列に grow を与え、 余り幅を配る。 ファイラーの Name 列が欲しがる)
 * 列のドラッグ並べ替え / 表示・非表示の切り替え

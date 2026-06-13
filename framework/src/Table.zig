@@ -50,12 +50,29 @@ pub const CellContext = struct {
     focused:  bool,
 };
 
+/// Optional edit lifecycle for a cell (single-cell editing — see table.md /
+/// narrative). Non-null only on cells of editable columns; null = read-only.
+/// Mirrors `List.CellEdit`.
+pub const CellEdit = struct {
+    // Enter edit mode: swap the subtree to a scratch input, seed from the item,
+    // request focus on the input.
+    start:  *const fn (self: *anyopaque, ctx: CellContext) void,
+    // Commit: write the scratch value back to the item, return to display mode.
+    commit: *const fn (self: *anyopaque) void,
+    // Cancel: discard the scratch, return to display mode (item unchanged).
+    cancel: *const fn (self: *anyopaque) void,
+};
+
 pub const Cell = struct {
     component: *Component,
     update:    *const fn (self: *anyopaque, ctx: CellContext) void,
     destroy:   *const fn (self: *anyopaque, allocator: std.mem.Allocator) void,
+    edit:      ?CellEdit = null,
     user_data: *anyopaque,
 };
+
+/// Which cell is being edited (at most one). See `edit` / `commitEdit`.
+pub const EditPos = struct { row: usize, col: usize };
 
 pub const CellFactory = struct {
     create:    *const fn (self: *anyopaque, allocator: std.mem.Allocator) anyerror!Cell,
@@ -122,6 +139,7 @@ owns_model:        bool,
 columns:           []ColumnState,
 header_font:       awt.Graphics.TextFont,
 selected:          ?usize,
+editing:           ?EditPos,
 row_height:        f32,
 sort_column:       ?usize,
 sort_direction:    SortDirection,
@@ -199,6 +217,7 @@ fn createInternal(
         .columns = cols,
         .header_font = font,
         .selected = null,
+        .editing = null,
         .row_height = DEFAULT_ROW_HEIGHT,
         .sort_column = null,
         .sort_direction = .ascending,
@@ -288,6 +307,61 @@ pub fn getSortDirection(self: Table) SortDirection {
 pub fn setSortIndicator(self: *Table, column: ?usize, direction: SortDirection) void {
     self.sort_column = column;
     self.sort_direction = direction;
+    self.component.repaint();
+}
+
+// ── editing (single cell; List.CellEdit ported) ─────────────────────────────
+
+pub fn getEditing(self: Table) ?EditPos {
+    return self.editing;
+}
+
+/// Begin editing the cell at (`row`, `col`). Finishes any current edit first
+/// (commit). No-op if out of range or the column's cell is read-only
+/// (`Cell.edit == null`). Materializes the row (scrolls it into view).
+pub fn edit(self: *Table, row: usize, col: usize) void {
+    if (row >= self.model.getSize() or col >= self.columns.len) return;
+    if (self.editing != null) self.commitEdit();
+
+    self.scrollToRow(row);
+    self.reconcile();
+    const colp = &self.columns[col];
+    const ci = findCellRowIndex(colp, row) orelse return;
+    const cell = colp.pool.items[ci].cell;
+    const e = cell.edit orelse return; // read-only column: nothing to edit
+    const value = self.model.getElementAt(row) orelse return;
+
+    self.editing = .{ .row = row, .col = col };
+    e.start(cell.user_data, self.cellContext(row, col, value));
+    self.component.repaint();
+}
+
+/// Commit the in-progress edit (if any): the cell writes its scratch back and
+/// returns to display mode; the display re-projects the item.
+pub fn commitEdit(self: *Table) void {
+    const pos = self.editing orelse return;
+    self.editing = null;
+    const colp = &self.columns[pos.col];
+    if (findCellRowIndex(colp, pos.row)) |ci| {
+        const cell = colp.pool.items[ci].cell;
+        if (cell.edit) |e| e.commit(cell.user_data);
+        self.bindCell(colp, ci, pos.row, pos.col);
+    }
+    self.component.requestFocus(); // back to the table for arrow keys
+    self.component.repaint();
+}
+
+/// Cancel the in-progress edit (if any): discard the scratch; item unchanged.
+pub fn cancelEdit(self: *Table) void {
+    const pos = self.editing orelse return;
+    self.editing = null;
+    const colp = &self.columns[pos.col];
+    if (findCellRowIndex(colp, pos.row)) |ci| {
+        const cell = colp.pool.items[ci].cell;
+        if (cell.edit) |e| e.cancel(cell.user_data);
+        self.bindCell(colp, ci, pos.row, pos.col);
+    }
+    self.component.requestFocus();
     self.component.repaint();
 }
 
@@ -447,11 +521,20 @@ fn reconcile(self: *Table) void {
     if (last > n) last = n;
     if (first > n) first = n;
 
+    // An edit on a row that scrolled out of the window ends (commit): the
+    // editing cell is never recycled, so it must finish before its cell could
+    // be reused (mirrors List).
+    if (self.editing) |e| {
+        if (e.row < first or e.row >= last) self.commitEdit();
+    }
+
     for (self.columns, 0..) |*col, ci| {
-        // 1. Release cells that scrolled out of the window.
+        // 1. Release cells that scrolled out of the window — but never the
+        // editing cell (it stays bound so its scratch survives).
         for (col.pool.items) |*pc| {
             if (pc.row) |r| {
-                if (r < first or r >= last) pc.row = null;
+                const is_editing = if (self.editing) |e| (e.row == r and e.col == ci) else false;
+                if ((r < first or r >= last) and !is_editing) pc.row = null;
             }
         }
         // 2. Bind a cell to every visible row not already covered.
@@ -525,6 +608,7 @@ fn updateResize(self: *Table, hd: HeaderDrag, lx: f32) void {
 }
 
 fn handleHeaderPress(self: *Table, ev: *Component.Event, lx: f32) void {
+    if (self.editing != null) self.commitEdit(); // clicking the header ends an edit
     if (self.columnAtBoundary(lx)) |ci| {
         const right = self.columnX(ci) + self.columns[ci].width;
         self.header_drag = .{ .col = ci, .grab = lx - right };
@@ -694,6 +778,15 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
             }
             if (m.action == .move) table.updateHover(hit_cell, m.x, m.y);
 
+            // A press off the editing row ends the current edit (focus-lost =
+            // commit). A press inside the editing cell was already forwarded to
+            // the scratch above (same row → no commit).
+            if (m.action == .press) {
+                if (table.editing) |e| {
+                    if (hit_row == null or hit_row.? != e.row) table.commitEdit();
+                }
+            }
+
             if (m.action == .press and (m.button orelse .left) == .left) {
                 const now = awt.time();
                 const dbl = hit_row != null and
@@ -729,9 +822,13 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
                         ev.consume();
                     },
                     .enter => {
-                        if (table.selected) |_| {
-                            table.action_listeners.fire(&.{ .source = table });
-                            ev.consume();
+                        // While editing, the scratch field owns focus and
+                        // handles Enter itself, so the table never sees it here.
+                        if (table.editing == null) {
+                            if (table.selected) |_| {
+                                table.action_listeners.fire(&.{ .source = table });
+                                ev.consume();
+                            }
                         }
                     },
                     else => {},
@@ -933,6 +1030,107 @@ test "table: body click selects row; Enter activates" {
     var enter = Component.Event{ .payload = .{ .key = .{ .code = .enter, .action = .press, .modifiers = .{} } } };
     t.component.vtable.processEvent(&t.component, &enter);
     try std.testing.expectEqual(@as(u32, 1), ctx.fired);
+}
+
+// Editable stub cell: records which lifecycle calls fired (no real widgets).
+const EditState = struct {
+    var started: u32 = 0;
+    var committed: u32 = 0;
+    var canceled: u32 = 0;
+    fn reset() void {
+        started = 0;
+        committed = 0;
+        canceled = 0;
+    }
+};
+
+const EditFactory = struct {
+    fn create(_: *anyopaque, allocator: std.mem.Allocator) anyerror!Cell {
+        const p = try Panel.create(allocator);
+        return .{
+            .component = &p.container.component,
+            .update = upd,
+            .destroy = des,
+            .edit = .{ .start = start, .commit = commit, .cancel = cancel },
+            .user_data = @ptrCast(p),
+        };
+    }
+    fn upd(_: *anyopaque, _: CellContext) void {}
+    fn start(_: *anyopaque, _: CellContext) void {
+        EditState.started += 1;
+    }
+    fn commit(_: *anyopaque) void {
+        EditState.committed += 1;
+    }
+    fn cancel(_: *anyopaque) void {
+        EditState.canceled += 1;
+    }
+    fn des(ud: *anyopaque, allocator: std.mem.Allocator) void {
+        const p: *Panel = @ptrCast(@alignCast(ud));
+        p.container.component.vtable.destroy(&p.container.component, allocator);
+    }
+};
+
+test "table: edit() starts on an editable cell; commit / cancel end it" {
+    const a = std.testing.allocator;
+    var dummy: u8 = 0;
+    const ro = CellFactory{ .create = TestFactory.create, .user_data = @ptrCast(&dummy) };
+    const rw = CellFactory{ .create = EditFactory.create, .user_data = @ptrCast(&dummy) };
+    const t = try create(a, &.{
+        .{ .title = "A", .width = 100, .factory = rw }, // editable
+        .{ .title = "B", .width = 60, .factory = ro }, // read-only
+    }, .{ .face = undefined, .pixel_size = 14 });
+    defer t.component.vtable.destroy(&t.component, a);
+
+    var items: [3]u32 = .{ 1, 2, 3 };
+    for (&items) |*it| try t.model.add(@ptrCast(it));
+    layoutAt(t, 200, 200);
+    EditState.reset();
+
+    // Editing a read-only column is a no-op.
+    t.edit(1, 1);
+    try std.testing.expect(t.getEditing() == null);
+    try std.testing.expectEqual(@as(u32, 0), EditState.started);
+
+    // Editing the editable column starts a session.
+    t.edit(1, 0);
+    try std.testing.expectEqual(@as(u32, 1), EditState.started);
+    try std.testing.expectEqual(@as(?EditPos, .{ .row = 1, .col = 0 }), t.getEditing());
+
+    // Commit ends it.
+    t.commitEdit();
+    try std.testing.expect(t.getEditing() == null);
+    try std.testing.expectEqual(@as(u32, 1), EditState.committed);
+
+    // Cancel path.
+    t.edit(2, 0);
+    t.cancelEdit();
+    try std.testing.expect(t.getEditing() == null);
+    try std.testing.expectEqual(@as(u32, 1), EditState.canceled);
+}
+
+test "table: pressing another row commits the active edit" {
+    const a = std.testing.allocator;
+    var dummy: u8 = 0;
+    const rw = CellFactory{ .create = EditFactory.create, .user_data = @ptrCast(&dummy) };
+    const t = try create(a, &.{
+        .{ .title = "A", .width = 100, .factory = rw },
+    }, .{ .face = undefined, .pixel_size = 14 });
+    defer t.component.vtable.destroy(&t.component, a);
+
+    var items: [3]u32 = .{ 1, 2, 3 };
+    for (&items) |*it| try t.model.add(@ptrCast(it));
+    layoutAt(t, 200, 200);
+    EditState.reset();
+
+    t.edit(0, 0);
+    try std.testing.expectEqual(@as(u32, 1), EditState.started);
+
+    // Left press on row 2 (content y in [HEADER+2*24, +3*24) = [74,98)).
+    var click = Component.Event{ .payload = .{ .mouse = .{ .x = 20, .y = 84, .action = .press, .button = .left } } };
+    t.component.vtable.processEvent(&t.component, &click);
+    try std.testing.expectEqual(@as(u32, 1), EditState.committed); // edit committed by the off-row press
+    try std.testing.expect(t.getEditing() == null);
 }
 
 test "table: right press selects the row and fires context menu" {

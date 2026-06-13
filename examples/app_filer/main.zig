@@ -12,14 +12,13 @@
 //!     zero-sized by a small CardLayout (both stay owned by the holder).
 //!   - double-click / Enter opens a folder; on a file it reports in status
 //!   - right-click a row for the context menu: Open / Rename / Delete
-//!   - F2 (or the menu) renames in place (list view; from details it first
-//!     switches to the list view). Delete asks in a modal, then removes the
+//!   - F2 (or the menu) renames in place in BOTH views (the Table's Name
+//!     column carries a CellEdit). Delete asks in a modal, then removes the
 //!     file / empty folder. F5 reloads; up-arrow / Backspace goes to parent.
 //!
-//! Known M5 gaps (Table is v1): the details view has no inline rename (Rename
-//! switches to the list view) and no drag-to-move (DnD is wired to the list
-//! view only — moving DnD onto the Table needs a public row-from-y accessor,
-//! since the header offset is internal). Both feed back into framework#9.
+//! Known gap (Table is v1): the details view has no drag-to-move yet (DnD is
+//! wired to the list view only — moving DnD onto the Table needs a public
+//! row-from-y accessor, since the header offset is internal: framework#16).
 //!
 //! Usage:
 //!     zig build run-app_filer
@@ -349,10 +348,32 @@ const Filer = struct {
     }
 
     fn renameSelected(self: *Filer) void {
-        // Inline rename lives in the list view (Table v1 has no cell editing),
-        // so renaming from details switches to the list view first.
-        if (self.view_mode == .details) self.setViewMode(.list);
-        if (self.list.getSelected()) |s| self.list.edit(s);
+        // Both views edit in place now: the list cell and the Table's Name
+        // column (col 0) each carry a CellEdit.
+        switch (self.view_mode) {
+            .list => if (self.list.getSelected()) |s| self.list.edit(s),
+            .details => if (self.table.getSelected()) |s| self.table.edit(s, 0),
+        }
+    }
+
+    /// Shared rename: validate, rename on disk, schedule a reload that keeps
+    /// the renamed row selected. Called by both views' edit cells on commit.
+    fn performRename(self: *Filer, entry: *Entry, new_name: []const u8) void {
+        if (new_name.len == 0 or std.mem.eql(u8, new_name, entry.name)) return;
+        if (std.mem.indexOfAny(u8, new_name, "/\\") != null) {
+            self.setStatus("invalid name: {s}", .{new_name});
+            return;
+        }
+        var d = std.Io.Dir.openDirAbsolute(self.io, self.curPath(), .{}) catch |err| {
+            self.setStatus("cannot open {s}: {s}", .{ self.curPath(), @errorName(err) });
+            return;
+        };
+        defer d.close(self.io);
+        d.rename(entry.name, d, new_name, self.io) catch |err| {
+            self.setStatus("rename failed: {s} ({s})", .{ entry.name, @errorName(err) });
+            return;
+        };
+        self.renamed(new_name);
     }
 
     fn confirmDelete(self: *Filer) void {
@@ -535,24 +556,7 @@ const FileCell = struct {
     fn commit(ud: *anyopaque) void {
         const self: *FileCell = @ptrCast(@alignCast(ud));
         self.swapTo(false);
-        const filer = self.filer;
-        const e = self.cur_entry orelse return;
-        const new_name = self.field.getText();
-        if (new_name.len == 0 or std.mem.eql(u8, new_name, e.name)) return;
-        if (std.mem.indexOfAny(u8, new_name, "/\\") != null) {
-            filer.setStatus("invalid name: {s}", .{new_name});
-            return;
-        }
-        var d = std.Io.Dir.openDirAbsolute(filer.io, filer.curPath(), .{}) catch |err| {
-            filer.setStatus("cannot open {s}: {s}", .{ filer.curPath(), @errorName(err) });
-            return;
-        };
-        defer d.close(filer.io);
-        d.rename(e.name, d, new_name, filer.io) catch |err| {
-            filer.setStatus("rename failed: {s} ({s})", .{ e.name, @errorName(err) });
-            return;
-        };
-        filer.renamed(new_name);
+        if (self.cur_entry) |e| self.filer.performRename(e, self.field.getText());
     }
 
     fn cancel(ud: *anyopaque) void {
@@ -680,20 +684,66 @@ fn createPlaceCell(ud: *anyopaque, allocator: std.mem.Allocator) anyerror!nimbus
 
 // ── details-view (Table) cells: one typed cell per column ───────────────────
 
+// Table Name-column cell: like the list FileCell (icon + name, with inline
+// rename via CellEdit — label / field swap).
 const NameCell = struct {
-    root:  *nimbus.Container,
-    label: *nimbus.Label,
-    filer: *Filer,
+    root:      *nimbus.Container,
+    label:     *nimbus.Label,
+    field:     *nimbus.TextField,
+    filer:     *Filer,
+    cur_entry: ?*Entry = null,
+    in_edit:   bool = false,
+
     fn update(ud: *anyopaque, ctx: nimbus.Table.CellContext) void {
         const self: *NameCell = @ptrCast(@alignCast(ud));
         const e: *Entry = @ptrCast(@alignCast(ctx.value));
+        self.cur_entry = e;
         self.label.setText(e.name) catch {};
         self.label.setIcon(if (e.is_dir) self.filer.icon_folder else self.filer.icon_file);
     }
+    fn start(ud: *anyopaque, ctx: nimbus.Table.CellContext) void {
+        const self: *NameCell = @ptrCast(@alignCast(ud));
+        const e: *Entry = @ptrCast(@alignCast(ctx.value));
+        self.cur_entry = e;
+        self.field.setText(e.name) catch {};
+        self.swapTo(true);
+        self.field.component.requestFocus();
+    }
+    fn commit(ud: *anyopaque) void {
+        const self: *NameCell = @ptrCast(@alignCast(ud));
+        self.swapTo(false);
+        if (self.cur_entry) |e| self.filer.performRename(e, self.field.getText());
+    }
+    fn cancel(ud: *anyopaque) void {
+        const self: *NameCell = @ptrCast(@alignCast(ud));
+        self.swapTo(false);
+    }
+    fn swapTo(self: *NameCell, edit_mode: bool) void {
+        if (edit_mode == self.in_edit) return;
+        if (edit_mode) {
+            self.root.remove(&self.label.component);
+            nimbus.BorderLayout.add(self.root, .center, &self.field.component) catch {};
+        } else {
+            self.root.remove(&self.field.component);
+            nimbus.BorderLayout.add(self.root, .center, &self.label.component) catch {};
+        }
+        self.in_edit = edit_mode;
+        self.root.doLayout();
+    }
+    fn onSubmit(self: *NameCell, _: *const ActionEvent) void {
+        self.filer.table.commitEdit();
+    }
+    fn onCancel(self: *NameCell, _: *const ActionEvent) void {
+        self.filer.table.cancelEdit();
+    }
     fn destroyCell(ud: *anyopaque, allocator: std.mem.Allocator) void {
         const self: *NameCell = @ptrCast(@alignCast(ud));
+        self.root.remove(&self.label.component);
+        self.root.remove(&self.field.component);
         const c = &self.root.component;
         c.vtable.destroy(c, allocator);
+        self.label.component.vtable.destroy(&self.label.component, allocator);
+        self.field.component.vtable.destroy(&self.field.component, allocator);
         allocator.destroy(self);
     }
 };
@@ -727,17 +777,24 @@ fn createNameCell(ud: *anyopaque, allocator: std.mem.Allocator) anyerror!nimbus.
     errdefer allocator.destroy(nc);
     const root = try app.container();
     errdefer root.component.vtable.destroy(&root.component, allocator);
-    root.setLayout(nimbus.BoxLayout.horizontal());
+    root.setLayout(nimbus.BorderLayout.get());
     const margin = try app.container();
     margin.component.setMinSize(.{ .width = 6, .height = 0 });
-    margin.component.setMaxSize(.{ .width = 6, .height = std.math.inf(f32) });
-    try root.add(&margin.component);
+    try nimbus.BorderLayout.add(root, .west, &margin.component);
     const label = try app.label("");
     label.setIconSize(.{ .width = ICON, .height = ICON });
-    label.component.setGrowX(1);
-    try root.add(&label.component);
-    nc.* = .{ .root = root, .label = label, .filer = filer };
-    return .{ .component = &root.component, .update = NameCell.update, .destroy = NameCell.destroyCell, .user_data = nc };
+    const field = try app.textField("");
+    try nimbus.BorderLayout.add(root, .center, &label.component);
+    nc.* = .{ .root = root, .label = label, .field = field, .filer = filer };
+    try field.addSubmitListener(NameCell, NameCell.onSubmit, nc);
+    try field.addCancelListener(NameCell, NameCell.onCancel, nc);
+    return .{
+        .component = &root.component,
+        .update    = NameCell.update,
+        .destroy   = NameCell.destroyCell,
+        .edit      = .{ .start = NameCell.start, .commit = NameCell.commit, .cancel = NameCell.cancel },
+        .user_data = nc,
+    };
 }
 
 fn createSizeCell(ud: *anyopaque, allocator: std.mem.Allocator) anyerror!nimbus.Table.Cell {
