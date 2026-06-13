@@ -55,6 +55,15 @@ zig build test
 npm run lint
 ```
 
+`doc/`、`awt/doc/`、`awt-c/doc/`、`framework/doc/` 配下の Markdown を書いた、
+または更新した場合は `doc/internal/writing_style_hint.md` を参照し、対象ファイルに対して以下を実行する。
+
+```powershell
+npm run lint -- <path/to/file.md>
+```
+
+これらの doc 配下を広範囲に変更した場合は `npm run lint_all` も検討する。
+
 描画、レイアウト、ウィジェットに関わる変更では、関連する snapshot test や examples の確認も検討する。
 
 作業完了時には以下を簡潔に報告する。
