@@ -68,3 +68,20 @@ rules:
     pattern: '/\bmnemonics?\b/'
   - expected: アロケーター
     pattern: '/\ballocators?\b/'
+  - expected: コードポイント
+    pattern: '/\bcode[ -]?points?\b/'
+  - expected: アンドゥ
+    pattern: '/\bundo\b/'
+  - expected: リドゥ
+    pattern: '/\bredo\b/'
+  - expected: スナップショット
+    pattern: '/\bsnapshots?\b/'
+  - expected: リサイクル
+    pattern: '/\brecycl(?:e|es|ed|ing)\b/'
+  - expected: コールバック
+    pattern: '/\bcallbacks?\b/'
+  # "source code" guard before bare "source" so it does not become "ソース code".
+  - expected: ソースコード
+    pattern: '/\bsource[ -]?code\b/'
+  - expected: ソース
+    pattern: '/\bsources?\b/'
