@@ -5,7 +5,10 @@
 // characters count as 2, everything else as 1. This targets visual line
 // wrapping, which raw character count (sentence-length) does not capture.
 
-const DEFAULT_MAX = 80;
+// The width limit, in display columns. textlint does not pass .textlintrc
+// options to rules loaded via --rulesdir (options arrive empty), so the
+// threshold lives here. Edit this constant to change the limit.
+const DEFAULT_MAX = 160;
 
 // East Asian Width "Wide" / "Fullwidth" code point ranges. A pragmatic subset
 // covering the scripts these docs actually use (CJK, kana, fullwidth forms).
