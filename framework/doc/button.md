@@ -25,7 +25,8 @@ pub const ButtonModel = struct {
 };
 ```
 
-選択状態 (`selected`) は CheckBox / RadioButton / ToggleButton 等が `ToggleButtonModel` (本モデルを embed する派生) 側に持つ。素の momentary button では使わないのでここには無い。
+選択状態 (`selected`) は CheckBox / RadioButton / ToggleButton 等が `ToggleButtonModel` (本モデルを embed する派生) 側に持つ。
+素の momentary button では使わないのでここには無い。
 
 ```zig
 pub const Button = struct {
@@ -341,7 +342,7 @@ btn.setIconSize(.{ .width = 16, .height = 16 });
 ## 機能要望
 * `doClick()` — 計画中。press + fireAction + release を模す共通起動口（マウス / Space / Enter / ニーモニック全部の入口）。設計は `narrative/keybinding.md`
 * キーボード操作（focusable 化 + Space / Enter で押下、フォーカスリング描画）— 計画中。設計は `narrative/keybinding.md`
-* ニーモニック（`setMnemonic(ch)` で Alt+ch を root に登録 → `doClick` + ラベル下線）— 計画中。下線は v1 常時表示。設計は `narrative/keybinding.md`
+* ニーモニック（`setMnemonic(ch)` で Alt+ch を ルート に登録 → `doClick` + ラベル下線）— 計画中。下線は v1 常時表示。設計は `narrative/keybinding.md`
 * トグルボタン（`selected` フラグを活用、ButtonGroup と組合せて排他選択）
 * デフォルトボタンの装飾（Enter で発火する強調表示。`Window.setDefaultButton` と連動）
 * アクセシビリティ用の追加属性（aria-label 相当）

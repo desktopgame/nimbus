@@ -108,7 +108,10 @@ pub fn setRangeProperties(
 適用順は `extent` を `[0, max - min]` に、続いて `value` を `[min, max - extent]` にクランプ。
 何か変化があれば `change_listeners.fire()` する。
 
-`setRange` + `setExtent` を順に呼ぶと、 中間状態で「`value > max` だが `setRange` がそれをクランプしないため、 続く `setExtent` で extent が縮められる」という縮退が起きうる (例: ScrollPane で大きく成長したコンテンツが縮んで `value` が古いまま残るケース)。
+`setRange` + `setExtent` を順に呼ぶと縮退が起きうる。
+中間状態で「`value > max` だが `setRange` がそれをクランプしないため、
+続く `setExtent` で extent が縮められる」というもの。
+(例: ScrollPane で大きく成長したコンテンツが縮んで `value` が古いまま残るケース)
 複数プロパティを同時に変えるときはこちらを使う。
 Swing の `DefaultBoundedRangeModel.setRangeProperties` 相当。
 
@@ -143,7 +146,7 @@ pub fn create(
 ) !*Slider;
 ```
 
-`BoundedRangeModel` を allocator で確保して内部生成する。
+`BoundedRangeModel` を `allocator` で確保して内部生成する。
 vtable をセットして install まで実行する。
 `owns_model = true` となり、`destroy` 時に Model も解放される。
 
@@ -170,7 +173,7 @@ fn destroy(self: *Component, allocator: std.mem.Allocator) void;
 
 `Slider.vtable.destroy` として登録される。
 `uninstall` 経由で Model からリスナーを外したのち、`owns_model` が true なら Model を deinit + 解放する。
-最後に Slider 本体を allocator で free する。
+最後に Slider 本体を `allocator` で free する。
 
 ## 方向の取得
 ```zig
@@ -195,7 +198,7 @@ pub fn getModel(self: Slider) *BoundedRangeModel;
 ## フォーカスとキー操作
 Slider は focusable (Tab トラバーサルの対象)。フォーカス中:
 * `→` / `↑` (press / repeat) → 値を +1
-* `←` / `↓` (press / repeat) → 値を -1 (クランプは model 側)
+* `←` / `↓` (press / repeat) → 値を -1 (クランプは Model 側)
 * フォーカスリング (枠線) を描画する
 
 ## レイアウト属性
@@ -252,4 +255,9 @@ model.setValue(75);
 * `setInverted(bool)` で方向反転（min 側を右 / 上に）
 * 範囲スライダー（2 つのツマミで `[a, b]` 区間を選ぶ）
 * ホイールスクロールで値変更
-* float / double 値の対応（現状 `BoundedRangeModel` は `i32` 固定 = Swing `JSlider` 準拠）。連続値（音量 / 不透明度 / 0.0〜1.0 の比率など）を扱いたいケース向け。pixel 位置 ↔ 値の写像はすでに float 計算なので、Model の値型を広げるのが本体。実装案: 別系統の浮動小数 Model（例 `BoundedFloatRangeModel`）を足すか、`BoundedRangeModel` を値型で総称化するか。ScrollBar が同じ `BoundedRangeModel` を共有しており、そちらは整数ステップが自然なので、共有 Model を総称化すると影響が広い点に注意（着手時に backlog 化して案を比較する）
+* float / double 値の対応（現状 `BoundedRangeModel` は `i32` 固定 = Swing `JSlider` 準拠）。
+  連続値（音量 / 不透明度 / 0.0〜1.0 の比率など）を扱いたいケース向け。
+  pixel 位置 ↔ 値の写像はすでに float 計算なので、Model の値型を広げるのが本体。
+  実装案: 別系統の浮動小数 Model（例 `BoundedFloatRangeModel`）を足すか、`BoundedRangeModel` を値型で総称化するか。
+  ScrollBar が同じ `BoundedRangeModel` を共有しており、そちらは整数ステップが自然なので、
+  共有 Model を総称化すると影響が広い点に注意（着手時に backlog 化して案を比較する）
