@@ -1,15 +1,15 @@
 # CODEX.md
 
-このファイルは、このリポジトリにおける Codex 固有の運用メモです。
+このファイルは、このリポジトリにおける Codex 固有の運用メモである。
 
 ## 役割
 
 Codex は主に実装、ローカル検証、差分整理に使う。ただし、この分担は排他的ではない。
-Claude が実装することもあるし、Codex が設計相談やコードレビューを行うこともある。
+Claude が実装することもあるし、Codex が設計相談やコードレビューをすることもある。
 
 ## 作業前に読むもの
 
-自明でない変更を行う前に、以下を確認する。
+自明でない変更をする前に、以下を確認する。
 
 - 共通のプロジェクト方針として `CLAUDE.md` を読む。
 - 関連するソースファイルと近くのドキュメントを読む。
@@ -17,6 +17,22 @@ Claude が実装することもあるし、Codex が設計相談やコードレ�
   - `awt-c`: C/Objective-C platform backend
   - `awt`: Zig wrapper and rendering/input primitives
   - `framework`: public widget/layout/application layer
+
+## doc を仕様として実装を頼まれたとき
+
+doc にはいくつか種別があり、パスと節で見分ける。
+
+- `framework/doc/<name>.md`（narrative 以外）= 実装仕様。これに従って実装する。
+- `framework/doc/narrative/<name>.md` = 設計判断の理由。仕様ではない。実装は縛らないが背景として読む。
+- 仕様 doc 内の「機能要望」節 = 未来の希望。今回のスコープ外。
+- `doc/internal/*_backlog.md` = 検討中 / 棚上げ。確定仕様ではない。
+
+doc と既存実装が食い違う場合は、既存実装を優先するか実装前に短く確認する。
+勝手に doc へ寄せて実装し直さない（doc の更新は作者が別途ハンドリングする。
+CLAUDE.md「doc と実装の追従関係」とも整合する）。
+依頼に「doc は変更しない」とあれば doc は触らない。
+
+実装後は export / factory / example / test の要否を確認する。
 
 ## 権限
 
