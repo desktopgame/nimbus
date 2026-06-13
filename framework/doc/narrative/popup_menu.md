@@ -21,7 +21,7 @@ API として分かれているのは **トリガと所有モデル**が違う�
 ## 外クリックでの dismiss
 popup の外がクリックされたら自動で `hide` する。
 これは Window 側の overlay dispatch が「モーダル overlay 外のクリックは dismiss」として実装することを想定
-（`doc/internal/menu-bar-requirements.md`「モーダル性」「dismiss 条件」参照）。
+（`menu_bar.md`「目指したもの」参照）。
 PopupMenu 自身は dismiss コールバックを受け取って `hide` を呼ぶだけ。
 
 ## item クリックでの自動 dismiss

@@ -708,3 +708,52 @@ textlint の検出対象ではない内容バグなので、その場では触�
 
 ### 完了条件
 セル / 列を選択して取得でき、 選択セルがハイライトされる。 doc + テスト。
+
+## #19 レイアウトの便利ユーティリティ（上の層に薄く足す）
+- 状態: 未着手
+- 優先度: 低
+- 影響範囲: `Application` ファクトリ or 自由関数（LayoutManager / Component のプリミティブは変えない）
+- 更新日: 2026-06-13
+
+### 何
+冗長になりがちな用途を、 プリミティブを増やさず上の層の糖衣で楽にする。
+* `setFixedSize(w, h)` — min == max の糖衣（ピン留めを 1 行に）。
+* `spacer(size)` / strut・glue 相当 — `filler()` の固定サイズ版。
+* `padded(child, insets)` — 内部で filler 余白の `Panel` を作って返す（`Insets` はプリミティブにしない）。
+
+### 却下（プリミティブにはしない）
+`setPreferredSize`（捨てた概念を戻す）、 `Component.insets`（全 LayoutManager に inset 解釈を強いる）。
+
+### なぜ今やらない
+冗長さが実際に痛くなってから足す（point-of-need）。 記録の目的は、 足すとき
+「上の層に薄く足す・プリミティブは増やさない」判断を再議論しないため。 関連: `doc/internal/typed_callbacks.md`。
+（旧 `doc/internal/layout_helpers.md` から移設）
+
+## #20 メニューのはみ出し対応（別ウィンドウ化）
+- 状態: 未着手
+- 優先度: 低
+- 影響範囲: メニュー系（popup の backend）、awt-c（GLFW フラグ）、`menu.md` / `narrative/menu_bar.md`
+- 更新日: 2026-06-13
+- 依存: 既存のメニュー overlay 実装
+
+### 何
+v1 はメニュー矩形をクライアント領域内に reposition / clip で収める。
+画面端ではみ出すケース向けに、 装飾無し（borderless / undecorated）の別ウィンドウで描く方向。
+GLFW の `GLFW_DECORATED` / `GLFW_FOCUS_ON_SHOW` / `GLFW_FLOATING` でほぼまかなえる前提。 タスクバー除外は native handle 経由。
+`Menu.show(anchor)` の利用者 API は backend（埋め込み / 別ウィンドウ）を意識せず使えるよう保つ。
+
+### なぜ今やらない
+通常の画面サイズでは reposition / clip で足りる。 実需（小さい画面 / 端での大きいメニュー）が出てから。
+（旧 `doc/internal/menu-bar-requirements.md` の v2 記述から移設）
+
+## #21 RadioButtonMenuItem
+- 状態: 未着手
+- 優先度: 低
+- 影響範囲: メニュー系（CheckBoxMenuItem と同型 + ButtonGroup 連携）、`menu_item.md` 周辺
+- 更新日: 2026-06-13
+
+### 何
+CheckBoxMenuItem はあるが Radio 版が無い。 ButtonGroup と組んで排他選択のメニュー項目を出す。
+
+### なぜ今やらない
+実需が無い（menu-bar-requirements の旧「未決事項」から移設）。 出たら CheckBoxMenuItem を雛形に足す。

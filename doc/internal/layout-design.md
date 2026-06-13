@@ -1,6 +1,6 @@
 # layout-design
 レイアウトの設計方針について。
-[layout-requirements](doc/internal/layout-requirements.md) から導かれた設計方針です。
+レイアウトエンジンの設計方針 (狙いは `framework/doc/narrative/layout.md`「目指したもの」)。
 
 ## コンポーネントごとに保持する属性
 

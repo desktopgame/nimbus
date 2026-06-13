@@ -1,9 +1,25 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # menu_bar
 MenuBar の描画・イベント処理・Window との連携・popup 発火。
+
+## 目指したもの
+メニューはクライアント領域に自前描画する (OS ネイティブメニューは使わない)。
+見た目とルックアンドフィールを nimbus 側で完全に制御するため。
+v1 ははみ出しをクライアント領域内に reposition / clip で収める (別ウィンドウ化は backlog)。
+
+設計上の狙い:
+
+* MenuBar / Menu / MenuItem / MenuSeparator / CheckBoxMenuItem / PopupMenu を最低限揃える。 Menu のネストは任意の深さ。
+* 典型的には決まった項目だけと想定しつつ、 任意のコンポーネントも入れられる
+  (利用者が多少ハックしてよい)。 `PopupMenuItem` のような派生型は作らない。
+* アイコン領域は MenuItem / CheckBoxMenuItem / サブメニュー間で共通幅を確保し、 アイコン無し項目とも縦に揃う。
+* メニューバーはクリックで開き、 メニューはホバーで開く。 ESC / 外クリックで閉じる。
+* 展開中は下層が入力を受け取らない。 dismiss を伴う外クリックは下層に届けない (dismiss のみ)。
+
+ネイティブメニューへ切り替える抽象は持たない (作者判断)。 自前コンポーネントを載せられることを優先する。
 
 ## 描画
 MenuBar は水平方向に Menu のラベルを並べる。
@@ -33,4 +49,4 @@ Window 側はメニューバーぶんの高さ（`bar.component.min_size.height`
 popup は Window の overlays 層に登録される（実装詳細は `menu.md`「popup の表示」と `window.md`「overlays 層」参照）。
 
 `open` フィールドはどの Menu が popup を持っているかを覚えるためのもの。
-popup が dismiss されたら `open = null` に戻る（popup 側から callback で通知）。
+popup が dismiss されたら `open = null` に戻る（popup 側からコールバックで通知）。

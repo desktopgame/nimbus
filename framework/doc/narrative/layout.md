@@ -1,9 +1,21 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # layout
 LayoutElement / hint の所有モデルと、LayoutManager の構造・Container との連携。
+
+## 目指したもの
+出発点は「Swing の便利さは継ぎつつ、 複雑なサイズ設定 (minimumSize / preferredSize / maximumSize の三つ組) は避ける」。
+具体的な狙い:
+
+* 必須: 最小 / 最大サイズ指定、 水平 / 垂直ボックス、 寄せ用の Filler、 BorderLayout 相当。
+* preferredSize を不要にする (min / max + grow の分配で代替し、 三つ組の悩みを消す)。
+* 少数のプリミティブから多様なレイアウトを合成する (レイアウト概念を増やさない)。
+
+以前 TUI 向けに作ったレイアウトエンジン (`MinimumSize` / `Layout` / `IsFlexibleWidth` だけの Control interface) は
+表現力が弱かった。 その反省で、 LayoutManager を差し替え可能にし、 hint で manager ごとの制約を渡す形にした。
+preferredSize 相当が要る利用者は wrap container + 独自 LayoutManager で足せる (コアは持たない)。
 
 ## LayoutElement
 Container は子コンポーネントを `*Component` のリストとして直接保持せず、`LayoutElement` のリストとして保持する。
@@ -28,7 +40,7 @@ LayoutManager 実装側は hint を `@ptrCast(@alignCast(...))` で自前の型�
 opt-in destroy hook 方式。
 
 * `hint_destroy = null`（デフォルト）: caller 所有。スタック変数や const のポインタを渡す。framework は hint に触らない
-* `hint_destroy = fn` を渡せば、Container の remove / destroy で自動的に hint の解放を行う
+* `hint_destroy = fn` を渡せば、Container の remove / destroy で自動的に hint を解放する
 
 ## LayoutManager の構造
 コンテナーが子の bounds を計算する責務をカプセル化したオブジェクト。

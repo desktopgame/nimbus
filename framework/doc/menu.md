@@ -143,7 +143,7 @@ pub fn show(self: *Menu, window: *Window, anchor: Component.Point) !void;
 * サブメニューとして呼ばれる時は「親 Menu 行の右上」が anchor
 
 内部で popup 用 Container を生成（既存があれば再利用）、`items` を縦並び BoxLayout で配置、Window の overlays 層に登録する。
-画面端で popup が見切れる場合は反対側に反転（v1 はクライアント領域内に収まるよう reposition、`doc/internal/menu-bar-requirements.md`「描画と当たり判定」参照）。
+画面端で popup が見切れる場合は反対側に反転（v1 はクライアント領域内に収まるよう reposition、`narrative/menu_bar.md`「目指したもの」参照）。
 
 `open = true` にする。
 

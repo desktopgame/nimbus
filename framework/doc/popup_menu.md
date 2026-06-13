@@ -8,7 +8,7 @@ Swing の `JPopupMenu` 相当。
 右クリックメニュー（コンテキストメニュー）や、ボタンからのドロップダウン等に使う。
 
 `MenuItem` / `CheckBoxMenuItem` / `MenuSeparator` / `Menu`（サブメニュー）をそのまま add できる。
-専用の `PopupMenuItem` のような派生型は**作らない**（`doc/internal/menu-bar-requirements.md` 参照）。
+専用の `PopupMenuItem` のような派生型は**作らない**（`narrative/menu_bar.md`「目指したもの」参照）。
 
 ## 型定義
 ```zig
