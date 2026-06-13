@@ -1,55 +1,58 @@
 # prh dictionary: unify terminology across the docs.
 # Seeded from api-document-style-guide.md "表記の統一" plus a few safe terms.
-# English words that have an established Japanese form are rewritten to it.
-# Inline code and code blocks are separate AST nodes, so they are never touched.
-# Word boundaries (\b) keep identifiers like "vertexBuffer"/"EventQueue" safe.
+#
+# Case convention: only the LOWERCASE English form is rewritten to Japanese.
+# A PascalCase word (e.g. "Window") is a type name and is left untouched, so
+# type names need no backticks in narrative. Patterns are case-sensitive
+# (no /i flag) for this reason. Inline code and code blocks are separate AST
+# nodes, so they are never touched. Word boundaries (\b) keep identifiers like
+# "vertexBuffer"/"EventQueue" safe.
 version: 1
 rules:
   # --- graphics / framework terms (from 表記の統一) ---
   - expected: 頂点
-    pattern: '/\bvertex\b/i'
+    pattern: '/\bvertex\b/'
   - expected: 定数
-    pattern: '/\bconstants?\b/i'
+    pattern: '/\bconstants?\b/'
   - expected: バインド
-    pattern: '/\bbind\b/i'
+    pattern: '/\bbind\b/'
   - expected: パイプライン
-    pattern: '/\bpipelines?\b/i'
+    pattern: '/\bpipelines?\b/'
   - expected: バッファ
-    pattern: '/\bbuffers?\b/i'
+    pattern: '/\bbuffers?\b/'
   - expected: テクスチャ
-    pattern: '/\btextures?\b/i'
+    pattern: '/\btextures?\b/'
   # "static sampler" is kept verbatim, so exclude that case.
   - expected: サンプラー
-    pattern: '/(?<![Ss]tatic )\bsamplers?\b/i'
+    pattern: '/(?<![Ss]tatic )\bsamplers?\b/'
   - expected: レンダーターゲット
-    pattern: '/\brender[ -]targets?\b/i'
+    pattern: '/\brender[ -]targets?\b/'
   - expected: ウィジェット
-    pattern: '/\bwidgets?\b/i'
+    pattern: '/\bwidgets?\b/'
   - expected: ビューポート
-    pattern: '/\bviewports?\b/i'
+    pattern: '/\bviewports?\b/'
   - expected: シザー
-    pattern: '/\bscissor\b/i'
+    pattern: '/\bscissor\b/'
   - expected: スロット
-    pattern: '/\bslots?\b/i'
+    pattern: '/\bslots?\b/'
   - expected: バインディング
-    pattern: '/\bbindings?\b/i'
-  # Singular only: plural "windows" is usually the OS, leave it alone.
+    pattern: '/\bbindings?\b/'
   - expected: ウィンドウ
-    pattern: '/\bwindow\b/i'
+    pattern: '/\bwindow\b/'
   - expected: ダイアログ
-    pattern: '/\bdialogs?\b/i'
+    pattern: '/\bdialogs?\b/'
   - expected: モーダル
-    pattern: '/\bmodal\b/i'
+    pattern: '/\bmodal\b/'
   - expected: モードレス
-    pattern: '/\bmodeless\b/i'
+    pattern: '/\bmodeless\b/'
   - expected: イベント
-    pattern: '/\bevents?\b/i'
+    pattern: '/\bevents?\b/'
   - expected: モデル
-    pattern: '/\bmodels?\b/i'
+    pattern: '/\bmodels?\b/'
   - expected: リスナー
-    pattern: '/\blisteners?\b/i'
+    pattern: '/\blisteners?\b/'
   # --- additional safe terms (hint: 日本語に寄せる) ---
   - expected: レイテンシ
-    pattern: '/\blatency\b/i'
+    pattern: '/\blatency\b/'
   - expected: アクセシビリティ
-    pattern: '/\baccessibility\b/i'
+    pattern: '/\baccessibility\b/'
