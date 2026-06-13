@@ -1,0 +1,30 @@
+{
+  "name": "nimbus",
+  "version": "1.0.0",
+  "private": true,
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "doc": "doc",
+    "example": "examples"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/desktopgame/nimbus.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/desktopgame/nimbus/issues"
+  },
+  "homepage": "https://github.com/desktopgame/nimbus#readme",
+  "devDependencies": {
+    "textlint": "15.7.1",
+    "textlint-rule-preset-ja-technical-writing": "12.0.2"
+  }
+}

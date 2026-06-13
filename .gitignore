@@ -14,6 +14,12 @@ vendor/**/*.o
 vendor/**/*.obj
 
 #
+# js
+#
+
+node_modules
+
+#
 # Zig
 #
 
