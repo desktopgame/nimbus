@@ -1,0 +1,14 @@
+# betterleaks 設定。
+# 重要: [extend] useDefault=true が無いと既定の検知ルールが全て無効になる。必ず残すこと。
+[extend]
+useDefault = true
+
+# スキャンから除外するパス（正規表現でファイルパスに照合）。速度対策。
+# 注意: pre-commit(--staged) では gitignore 済みディレクトリは元々スキャンされない。
+#       ここの除外が主に効くのは full スキャン（betterleaks dir / git 履歴）。
+[allowlist]
+paths = [
+  '''(^|/).zig-cache/''',
+  '''(^|/)zig-out/''',
+  '''(^|/)node_modules/''',
+]
