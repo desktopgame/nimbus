@@ -17,7 +17,6 @@ pub const TabbedPane = struct {
     font:             awt.Graphics.TextFont,
     change_listeners: ChangeListenerList,
     allocator:        std.mem.Allocator,
-    rollover_tab:     ?usize,
 };
 
 const Tab = struct {
@@ -90,6 +89,10 @@ pub fn getContentAt(self: TabbedPane, index: usize) *Component;
 
 `getTitleAt` の戻り値は借用である。次のタイトル変更、削除、破棄まで有効である。
 
+### 事前条件
+`getTitleAt` と `getContentAt` の `index` は `index < count()` でなければならない。
+範囲外の動作は未定義である。
+
 ### 選択
 ```zig
 pub fn getSelectedIndex(self: TabbedPane) ?usize;
@@ -101,8 +104,12 @@ pub fn setSelectedIndex(self: *TabbedPane, index: usize) void;
 
 ### 変更リスナー
 ```zig
-pub const ChangeListener = ChangeListenerList.Listener;
-pub fn addChangeListener(self: *TabbedPane, l: *ChangeListener) void;
+pub fn addChangeListener(
+    self: *TabbedPane,
+    comptime T: type,
+    comptime f: fn (*T, *const ChangeEvent) void,
+    user_data: *T,
+) !void;
 ```
 
 選択が変わったとき、またはタブ削除で選択状態が再計算されたときに発火する。

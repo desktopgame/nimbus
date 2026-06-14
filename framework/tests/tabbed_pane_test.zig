@@ -124,14 +124,12 @@ test "tabbed pane: selection changes fire change listeners" {
 
     const Ctx = struct {
         fired: u32 = 0,
-        fn onChange(ud: *anyopaque, _: *const ChangeEvent) void {
-            const self: *@This() = @ptrCast(@alignCast(ud));
+        fn onChange(self: *@This(), _: *const ChangeEvent) void {
             self.fired += 1;
         }
     };
     var ctx: Ctx = .{};
-    var l = TabbedPane.ChangeListener{ .fn_ptr = Ctx.onChange, .user_data = @ptrCast(&ctx) };
-    tp.addChangeListener(&l);
+    try tp.addChangeListener(Ctx, Ctx.onChange, &ctx);
 
     const one = try pane(a, 50, 20);
     const two = try pane(a, 60, 30);

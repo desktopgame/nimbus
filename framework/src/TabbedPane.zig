@@ -28,8 +28,6 @@ const TabLayout = struct {
     base: LayoutManager,
 };
 
-pub const ChangeListener = ChangeListenerList.Listener;
-
 // `container` MUST be the first field: the public Component is
 // `container.component`, and methods recover `*TabbedPane` via
 // `@fieldParentPtr("container", ...)`.
@@ -40,7 +38,6 @@ selected: ?usize,
 font: awt.Graphics.TextFont,
 change_listeners: ChangeListenerList,
 allocator: std.mem.Allocator,
-rollover_tab: ?usize,
 
 pub const vtable = Component.VTable{
     .install = Container.vtable.install,
@@ -68,7 +65,6 @@ pub fn create(allocator: std.mem.Allocator, font: awt.Graphics.TextFont) !*Tabbe
         .font = font,
         .change_listeners = ChangeListenerList.init(allocator),
         .allocator = allocator,
-        .rollover_tab = null,
     };
     errdefer tp.change_listeners.deinit();
 
@@ -117,14 +113,6 @@ pub fn removeTab(self: *TabbedPane, index: usize) void {
     _ = self.tabs.orderedRemove(index);
 
     self.selected = clampAfterRemove(old_selected, index, self.tabs.items.len);
-    if (self.rollover_tab) |r| {
-        self.rollover_tab = if (r == index)
-            null
-        else if (r > index)
-            r - 1
-        else
-            r;
-    }
     self.change_listeners.fire(&.{ .source = self });
     self.container.component.markLayoutDirty();
     self.container.component.repaint();
@@ -165,8 +153,8 @@ pub fn setSelectedIndex(self: *TabbedPane, index: usize) void {
     self.container.component.repaint();
 }
 
-pub fn addChangeListener(self: *TabbedPane, l: *ChangeListener) void {
-    self.change_listeners.add(l.fn_ptr, l.user_data) catch return;
+pub fn addChangeListener(self: *TabbedPane, comptime T: type, comptime f: fn (*T, *const ChangeEvent) void, user_data: *T) !void {
+    try self.change_listeners.addTyped(T, f, user_data);
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────
@@ -306,13 +294,7 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
                         }
                     }
                 },
-                .move => {
-                    const hit = tp.tabAt(lx, ly);
-                    if (hit != tp.rollover_tab) {
-                        tp.rollover_tab = hit;
-                        self.repaint();
-                    }
-                },
+                .move => {},
                 .release, .scroll => {},
             }
         },
