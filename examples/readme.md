@@ -57,7 +57,7 @@ frameworkのキーボード操作を一通り試すフォーム。Tab / Shift+Ta
 
 ## app_filer
 ドッグフーディングの実用アプリ第1号: ファイラー。現在は M5（リスト / 詳細ビュー）。
-右ペインは**1つの共有モデル**（`Model = List.ListModel`）に対する2ビューを切り替えられる。ツールバーの「Details」/「List」ボタンで、リストビュー（アイコン+名前、インプレースリネーム + DnD 移動）と詳細ビュー（Name / Size / Modified 列の Table、ヘッダークリックでソート、列境界ドラッグで列幅変更）を切り替える。非アクティブなビューは小さな CardLayout（カスタム LayoutManager）でゼロサイズにし、両方を holder に所有させたまま隠す。左ペインは場所一覧（シングルクリックで移動）。ダブルクリック / Enter で開く、行の右クリックでコンテキストメニュー（Open / Rename / Delete）、F2 でインプレースリネーム、Delete でモーダル確認してからファイル / 空フォルダ削除、F5 で再読み込み、↑ボタン / Backspace で親へ。起動時はカレントディレクトリ。
+右ペインは**1つの共有モデル**（`Model = List.ListModel`）に対する2ビューを切り替えられる。ツールバーの「Details」/「List」ボタンで、リストビュー（アイコン+名前、インプレースリネーム + DnD 移動）と詳細ビュー（Name / Size / Modified 列の Table、ヘッダークリックでソート、列境界ドラッグで列幅変更）を切り替える。非アクティブなビューは小さな CardLayout（カスタム LayoutManager）でゼロサイズにし、両方を holder に所有させたまま隠す。左ペインは場所一覧（シングルクリックで移動）。ダブルクリック / Enter で開く、行の右クリックでコンテキストメニュー（Open / Rename / Delete）、背景右クリックまたは Ctrl+Shift+N で New Folder 作成 + 即インプレースリネーム、F2 でインプレースリネーム、Delete でモーダル確認してからファイル / 空フォルダ削除、F5 で再読み込み、↑ボタン / Backspace で親へ。起動時はカレントディレクトリ。
 F2 リネームは両ビューでインプレース（詳細ビューは Table の Name 列が CellEdit を持つ。framework#14）。既知ギャップ: 詳細ビューにはまだ DnD が無い（DnD はリストビューのみ。Table への DnD はヘッダーオフセットが内部なので y→行の公開アクセサが要る。framework#16）。
 SplitPane、Table（複数カラム / ヘッダーソート / 列幅ドラッグ）、共有モデルによる List⇄Table 両ビュー、CardLayout 風のカスタム LayoutManager、List の行アクティベーション / コンテキストメニュー、CellEditor の手動トリガ、`EventQueue.invokeLater`、Label のアイコン、ペイン跨ぎ DnD の検証シーンを兼ねる。
 

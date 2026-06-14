@@ -12,6 +12,7 @@
 //!     zero-sized by a small CardLayout (both stay owned by the holder).
 //!   - double-click / Enter opens a folder; on a file it reports in status
 //!   - right-click a row for the context menu: Open / Rename / Delete
+//!   - background right-click or Ctrl+Shift+N creates "New Folder" and starts rename
 //!   - F2 (or the menu) renames in place in BOTH views (the Table's Name
 //!     column carries a CellEdit). Delete asks in a modal, then removes the
 //!     file / empty folder. F5 reloads; up-arrow / Backspace goes to parent.
@@ -113,6 +114,7 @@ const Filer = struct {
     status: *nimbus.Label = undefined,
     window: *nimbus.Window = undefined,
     popup: *nimbus.PopupMenu = undefined,
+    background_popup: *nimbus.PopupMenu = undefined,
     confirm: *nimbus.Dialog = undefined,
     confirm_msg: *nimbus.Label = undefined,
     entries: std.ArrayList(*Entry) = .empty,
@@ -124,6 +126,7 @@ const Filer = struct {
     sort_dir: nimbus.Table.SortDirection = .ascending,
     pending: [NAME_BUF]u8 = undefined,
     pending_len: usize = 0,
+    pending_edit: bool = false,
 
     fn curPath(self: *const Filer) []const u8 {
         return self.cur[0..self.cur_len];
@@ -266,6 +269,11 @@ const Filer = struct {
             self.pending_len = 0;
         }
         self.setActiveSelected(sel);
+        if (sel) |idx| {
+            if (self.pending_edit) self.startPendingEdit(idx);
+        } else {
+            self.pending_edit = false;
+        }
 
         if (!same_dir) {
             self.list_sp.setScrollY(0);
@@ -287,6 +295,17 @@ const Filer = struct {
 
     fn scheduleReload(self: *Filer) void {
         self.app.event_queue.invokeLater(reloadTask, @ptrCast(self)) catch {};
+    }
+
+    fn pendingEditTask(ud: *anyopaque) void {
+        const self: *Filer = @ptrCast(@alignCast(ud));
+        if (!self.pending_edit) return;
+        const idx = self.selectedIndex() orelse {
+            self.pending_edit = false;
+            return;
+        };
+        self.pending_edit = false;
+        self.editIndex(idx);
     }
 
     // ── active-view helpers (selection lives per view) ─────────────────────
@@ -358,10 +377,63 @@ const Filer = struct {
     fn renameSelected(self: *Filer) void {
         // Both views edit in place now: the list cell and the Table's Name
         // column (col 0) each carry a CellEdit.
+        const idx = self.selectedIndex() orelse return;
+        self.editIndex(idx);
+    }
+
+    fn editIndex(self: *Filer, idx: usize) void {
         switch (self.view_mode) {
-            .list => if (self.list.getSelected()) |s| self.list.edit(s),
-            .details => if (self.table.getSelected()) |s| self.table.edit(s, 0),
+            .list => self.list.edit(idx),
+            .details => self.table.edit(idx, 0),
         }
+    }
+
+    fn isEditingIndex(self: *const Filer, idx: usize) bool {
+        return switch (self.view_mode) {
+            .list => self.list.getEditing() == idx,
+            .details => if (self.table.getEditing()) |pos| pos.row == idx and pos.col == 0 else false,
+        };
+    }
+
+    fn startPendingEdit(self: *Filer, idx: usize) void {
+        self.pending_edit = false;
+        self.editIndex(idx);
+        if (!self.isEditingIndex(idx)) {
+            self.pending_edit = true;
+            self.app.event_queue.invokeLater(pendingEditTask, @ptrCast(self)) catch {
+                self.pending_edit = false;
+            };
+        }
+    }
+
+    fn createNewFolder(self: *Filer) void {
+        var d = std.Io.Dir.openDirAbsolute(self.io, self.curPath(), .{}) catch |err| {
+            self.setStatus("cannot open {s}: {s}", .{ self.curPath(), @errorName(err) });
+            return;
+        };
+        defer d.close(self.io);
+
+        var name_buf: [NAME_BUF]u8 = undefined;
+        var attempt: usize = 1;
+        while (attempt < 10_000) : (attempt += 1) {
+            const name = if (attempt == 1)
+                "New Folder"
+            else
+                std.fmt.bufPrint(&name_buf, "New Folder ({d})", .{attempt}) catch return;
+            d.createDir(self.io, name, .default_dir) catch |err| switch (err) {
+                error.PathAlreadyExists => continue,
+                else => {
+                    self.setStatus("new folder failed: {s} ({s})", .{ name, @errorName(err) });
+                    return;
+                },
+            };
+            self.setStatus("created {s}", .{name});
+            self.requestSelectName(name);
+            self.pending_edit = true;
+            self.scheduleReload();
+            return;
+        }
+        self.setStatus("new folder failed: too many existing names", .{});
     }
 
     /// Shared rename: validate, rename on disk, schedule a reload that keeps
@@ -501,13 +573,13 @@ const Filer = struct {
     }
 
     fn onListContextMenu(self: *Filer, e: *const nimbus.List.ContextMenuEvent) void {
-        if (e.row == null) return;
-        self.popup.show(self.window, e.x, e.y) catch {};
+        const menu = if (e.row == null) self.background_popup else self.popup;
+        menu.show(self.window, e.x, e.y) catch {};
     }
 
     fn onTableContextMenu(self: *Filer, e: *const nimbus.Table.ContextMenuEvent) void {
-        if (e.row == null) return;
-        self.popup.show(self.window, e.x, e.y) catch {};
+        const menu = if (e.row == null) self.background_popup else self.popup;
+        menu.show(self.window, e.x, e.y) catch {};
     }
 
     fn onSort(self: *Filer, e: *const nimbus.Table.SortEvent) void {
@@ -533,6 +605,9 @@ const Filer = struct {
     fn onMenuDelete(self: *Filer, _: *const ActionEvent) void {
         self.confirmDelete();
     }
+    fn onMenuNewFolder(self: *Filer, _: *const ActionEvent) void {
+        self.createNewFolder();
+    }
     fn onUpButton(self: *Filer, _: *const ActionEvent) void {
         self.goUp();
     }
@@ -554,6 +629,9 @@ const Filer = struct {
     }
     fn onReloadKey(self: *Filer) void {
         self.loadDir(self.curPath());
+    }
+    fn onNewFolderKey(self: *Filer) void {
+        self.createNewFolder();
     }
 
     fn onPlaceSelected(self: *Filer, _: *const ChangeEvent) void {
@@ -1142,6 +1220,15 @@ pub fn main(init: std.process.Init) !void {
     try mi_delete.getModel().addActionListener(Filer, Filer.onMenuDelete, &filer);
     try popup.add(&mi_delete.component);
 
+    // Background context menu (caller-owned, reused).
+    const background_popup = try app.popupMenu();
+    defer background_popup.destroy();
+    filer.background_popup = background_popup;
+    const mi_new_folder = try app.menuItem("New Folder");
+    mi_new_folder.setIcon(try app.icon(.folder_plus));
+    try mi_new_folder.getModel().addActionListener(Filer, Filer.onMenuNewFolder, &filer);
+    try background_popup.add(&mi_new_folder.component);
+
     // Delete confirmation (caller-owned).
     const confirm = try app.dialog(&frame.window, "Confirm", 320, 120);
     defer confirm.destroy();
@@ -1189,6 +1276,7 @@ pub fn main(init: std.process.Init) !void {
     for ([_]*nimbus.Component{ lst.asComponent(), tbl.asComponent() }) |c| {
         try c.bindKey(nimbus.KeyStroke.of(.f2), nimbus.KeyHandler.typed(Filer, Filer.onRenameKey, &filer));
         try c.bindKey(nimbus.KeyStroke.of(.delete), nimbus.KeyHandler.typed(Filer, Filer.onDeleteKey, &filer));
+        try c.bindKey(nimbus.KeyStroke.cmdShift(.n), nimbus.KeyHandler.typed(Filer, Filer.onNewFolderKey, &filer));
     }
 
     const home_var = if (builtin.os.tag == .windows) "USERPROFILE" else "HOME";
@@ -1201,7 +1289,7 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print(
         \\filer M5 — toolbar "Details"/"List" toggles the right-pane view.
         \\Details view: click a header to sort, drag a column boundary to resize.
-        \\Double-click/Enter opens, right-click for the menu, F2 renames, Delete removes, F5 reloads.
+        \\Double-click/Enter opens, right-click for the menu, Ctrl+Shift+N creates a folder, F2 renames, Delete removes, F5 reloads.
         \\
     , .{});
     try app.run();
