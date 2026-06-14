@@ -1,0 +1,14 @@
+#!/bin/sh
+# betterleaks staged シークレットスキャン（配布用ソース: dotgit/）。
+# 秘密が staged に混じったコミットをブロックする。
+# 有効化の方法は CLAUDE.md「シークレットスキャン」を参照。
+BL="tools/bin/betterleaks.exe"
+if [ ! -f "$BL" ]; then
+  echo "betterleaks 未導入（$BL が無い）。スキャンを skip。" >&2
+  exit 0
+fi
+"$BL" git --pre-commit --redact --staged --verbose || {
+  echo "🚫 betterleaks: コミットにシークレットの疑い。除去するか .betterleaks.toml で allowlist。" >&2
+  exit 1
+}
+exit 0
