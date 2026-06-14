@@ -213,6 +213,7 @@ pub fn build(b: *std.Build) void {
     addExample(b, "widget_list", framework_mod, null, target, optimize);
     addExample(b, "widget_listedit", framework_mod, null, target, optimize);
     addExample(b, "widget_listdnd", framework_mod, null, target, optimize);
+    addExample(b, "widget_tabbedpane", framework_mod, null, target, optimize);
     addExample(b, "widget_layoutcost", framework_mod, null, target, optimize);
     addExample(b, "widget_keyboard", framework_mod, null, target, optimize);
 

@@ -285,3 +285,60 @@ fn paintToggleComboboxClosed(ctx: PaintContext) anyerror!void {
     try setup.container.add(&combo.component);
     setup.paint();
 }
+
+// ── TabbedPane scene ───────────────────────────────────────────────────────
+
+/// TabbedPane with three tabs and the middle tab selected. The colored pages
+/// make it clear which content is currently visible.
+pub const tabbed_pane = Scene{
+    .name = "tabbed_pane",
+    .width = 420,
+    .height = 220,
+    .paint = paintTabbedPane,
+};
+
+fn tabPage(
+    allocator: std.mem.Allocator,
+    font: nimbus.awt.Graphics.TextFont,
+    title: []const u8,
+    detail: []const u8,
+    color: awt.Graphics.Color,
+) !*nimbus.Panel {
+    const p = try nimbus.Panel.create(allocator);
+    p.setBackground(color);
+    p.container.setLayout(null);
+
+    const label = try nimbus.Label.create(allocator, title, font, awt.Graphics.Color.rgb(0.10, 0.10, 0.10));
+    label.component.setBounds(.{ .x = 18, .y = 18, .width = 260, .height = 24 });
+    const body = try nimbus.Label.create(allocator, detail, font, awt.Graphics.Color.rgb(0.10, 0.10, 0.10));
+    body.component.setBounds(.{ .x = 18, .y = 52, .width = 340, .height = 24 });
+
+    try p.container.add(&label.component);
+    try p.container.add(&body.component);
+    return p;
+}
+
+fn paintTabbedPane(ctx: PaintContext) anyerror!void {
+    var setup = try Setup.init(ctx);
+    defer setup.deinit();
+    setup.container.setLayout(nimbus.BorderLayout.get());
+
+    const font = nimbus.awt.Graphics.TextFont{ .face = ctx.font, .pixel_size = 14 };
+    const tabs = try nimbus.TabbedPane.create(ctx.allocator, font);
+    try tabs.addTab(
+        "Overview",
+        &(try tabPage(ctx.allocator, font, "Overview", "General account information.", awt.Graphics.Color.rgb(0.86, 0.93, 0.99))).container.component,
+    );
+    try tabs.addTab(
+        "Activity",
+        &(try tabPage(ctx.allocator, font, "Activity", "Second tab is selected.", awt.Graphics.Color.rgb(0.90, 0.96, 0.88))).container.component,
+    );
+    try tabs.addTab(
+        "Settings",
+        &(try tabPage(ctx.allocator, font, "Settings", "Preferences and toggles.", awt.Graphics.Color.rgb(0.98, 0.91, 0.86))).container.component,
+    );
+    tabs.setSelectedIndex(1);
+
+    try nimbus.BorderLayout.add(setup.container, .center, tabs.asComponent());
+    setup.paint();
+}

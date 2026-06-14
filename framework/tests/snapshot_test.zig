@@ -63,6 +63,10 @@ test "snapshot: toggle_combobox_closed" {
     try runScene(scenes.toggle_combobox_closed);
 }
 
+test "snapshot: tabbed_pane" {
+    try runScene(scenes.tabbed_pane);
+}
+
 fn runScene(scene: scenes.Scene) !void {
     const allocator = std.testing.allocator;
 
