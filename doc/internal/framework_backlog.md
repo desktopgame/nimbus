@@ -484,10 +484,10 @@ List の `addContextMenuListener` を廃止するか並存させるか。
 廃止 API があれば利用箇所（app_filer 等)も移行済みでテスト緑。
 
 ## #9 Table ウィジェット（複数カラム + ヘッダー）
-- 状態: 実装中（コア実装済み・111/111 緑。詳細表示の example/ファイラー組み込みが残）
+- 状態: 完了（app_filer 詳細ビューで実運用。コア + example + テスト緑）
 - 優先度: 高
 - 影響範囲: framework 新規モジュール（Table / TableModel / 列定義）、theme、example、FileChooser 設計
-- 更新日: 2026-06-12
+- 更新日: 2026-06-14
 - 依存: なし（List の VirtualFlow 方式・CellFactory 資産を流用する想定）
 
 ### 何
@@ -516,6 +516,14 @@ v1 外 (機能要望): セル編集・複数選択 (#10)・列の自動フィル
 
 ### 完了条件
 ファイラーの詳細表示が Table で動き、ヘッダーソートと列幅ドラッグが操作できる。doc + テスト + example。
+
+### 完了メモ（2026-06-14）
+app_filer 詳細ビューで実運用。`examples/app_filer/main.zig` が `app.tableWithModel` で
+Name / Size / Modified の 3 列を構成し、ヘッダクリックでのソート（`addSortListener` +
+`setSortIndicator`）・列幅ドラッグ・セル編集（Name 列のインプレースリネーム、#14）・
+複数選択（`setSelectionMode(.multiple)`、#10）に対応。List ⇄ Table を共有モデルで切り替えて実証済み。
+Table の埋め込みテスト 10 本を含め `zig build test` は緑（132/132）。M5 で出た追加要望は #14（完了）/
+#15（自動フィル・未着手）/ #16（DnD 用 y→行アクセサ・完了）へ分離済み。
 
 ## #10 List / Table の複数選択
 - 状態: 完了（独立 SelectionModel を List / Table で共有。 app_filer で一括削除 / 移動）
@@ -864,3 +872,59 @@ overflow は strip 幅超過時のみ作動）。着手時に該当機能だけ�
 
 ### 完了条件
 着手した機能が動き、doc + テストが付く。本項目には未着手分の記録を残す。
+
+## #25 Table / 詳細ビュー DnD の堅牢化（低優先 follow-up まとめ）
+- 状態: 未着手
+- 優先度: 低
+- 影響範囲: framework の `Table.zig`（`rowAtLocalY` + 埋め込みテスト）、app_filer の詳細ビュー描画（`dndTablePaint`）
+- 更新日: 2026-06-14
+- 依存: #9（Table コア）/ #16（DnD 用 y→行アクセサ）
+
+### 何
+#9 / #16 完了後のセッションで出た、Table と詳細ビュー DnD まわりの細かい堅牢化をまとめて記録する。
+いずれも実 DnD 座標では発生せず実害は無い段階の防御 / テスト拡充 / 装飾の修正で、過剰に細分化せず 1 項目に束ねる。
+- `Table.rowAtLocalY` の非有限（NaN / 巨大）y 入力ガード。現状 `@intFromFloat(@floor((y - HEADER_HEIGHT) / rh))`
+  の前に範囲チェックが無く、`rh <= 0` ガードはあるが y の有限性は見ていない。実 DnD 座標では到達しないが、
+  非有限 y で `@intFromFloat` が未定義動作になり得る。
+- `Table.rowAtLocalY` のテスト拡充。現行テスト「rowAtLocalY accounts for header and scroll」は
+  `row_height <= 0` / 空モデル / 境界 `y == scroll_top + HEADER` のケースを踏んでいない。追加時は
+  `HEADER_HEIGHT` リテラルでなく `getHeaderHeight()` 基準で書く（リテラル直書きを避ける）。
+- 詳細ビューのドロップ先ハイライト（app_filer `dndTablePaint`）が、スクロール時に最上段付近の行で
+  pinned ヘッダーへ 1px 重なり得る。ハイライト矩形の y を `scroll_top + getHeaderHeight()` でクランプするか
+  クリップする。app_filer 側の装飾であり framework 本体の不具合ではない。
+
+### なぜ（保留理由）
+3 件とも実害が観測されておらず（DnD 座標は常に有限・正の範囲、ハイライトの重なりは最大 1px）、
+point-of-need。Table コアが安定した今、まとめて記録だけ残す。
+
+### 完了条件
+着手した項目について、ガード追加 / テスト追加 / クランプが入り `zig build test` 緑。本項目には未着手分を残す。
+
+## #26 オーバーレイの寿命・不変条件の堅牢化（低優先 follow-up まとめ）
+- 状態: 未着手
+- 優先度: 低
+- 影響範囲: framework の `OverlayManager.zig`（`dismissAll`）、`Window.zig`（ドラッグ ghost overlay の寿命）、`framework/tests/overlay_lifetime_test.zig`
+- 更新日: 2026-06-14
+- 依存: なし
+
+### 何
+overlay overlay-lifetime 関連の textlint / 回帰対応セッションで出た、オーバーレイの寿命・不変条件まわりの
+細かい堅牢化をまとめて記録する。いずれも現状の利用範囲では到達しない理論上の懸念。
+- `OverlayManager.dismissAll` の降順ループ不変条件。`while (i > 0) { i -= 1; orderedRemove(i); on_dismiss() }`
+  という降順 + orderedRemove の形は、`on_dismiss` が自分より下位 index の modal を remove すると要素が
+  シフトして 1 件スキップし得る。現状 `on_dismiss` は所有者の `open` フラグを倒すだけで他 overlay を
+  remove しないため起きないが、その前提をコードコメントで明記するか、ループ前にスナップショットを取る。
+- ComboBox の overlay-lifetime 回帰テスト追加。`overlay_lifetime_test.zig` は今回 PopupMenu 版
+  （window deinit が caller-owned popup を overlay リスト解放前に dismiss する）のみ追加した。ComboBox も
+  caller-owned overlay を持つので同型のテストを足す。
+- ドラッグ中にウィンドウ破棄が起きた場合の passthrough(ghost) overlay の寿命。`Window.deinit` の
+  `dismissAll` は `modal_popup` のみ畳み passthrough は触らないため、ドラッグ ghost を出したまま
+  ウィンドウが死ぬと `onDragDone` が解放済み `window.overlays` を触る理論上の UAF がある。今回スコープ外。
+
+### なぜ（保留理由）
+3 件とも現状の呼び出し規約では到達せず実害が観測されていない（`on_dismiss` は他 overlay を消さない、
+ドラッグ中のウィンドウ破棄は通常起きない）。point-of-need でまとめて記録だけ残す。
+
+### 完了条件
+着手した項目について、コメント明記 / テスト追加 / ライフタイム対処が入り `zig build test` 緑。
+本項目には未着手分を残す。
