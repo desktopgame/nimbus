@@ -1,4 +1,5 @@
 .DS_Store
+.claude/settings.local.json
 
 # zig build run-widget_scroll > run.log 2>&1
 run.log
