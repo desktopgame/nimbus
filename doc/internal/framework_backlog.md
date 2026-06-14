@@ -647,9 +647,9 @@ Name 列がウィンドウ幅に追従して伸びてほしいこと。作者評
 ファイラー詳細ビューで Name 列がウィンドウ幅に追従し、手動列幅ドラッグと破綻なく両立する。doc + テスト。
 
 ## #16 Table の DnD 用 y→行アクセサ
-- 状態: 未着手
+- 状態: 完了
 - 優先度: 低
-- 影響範囲: framework の `Table.zig`（公開アクセサ 1 つ）、`table.md`、app_filer（詳細ビューの DnD）
+- 影響範囲: framework の `Table.zig`（公開アクセサ 2 つ）、`table.md`、app_filer（詳細ビューの DnD）
 - 更新日: 2026-06-12
 - 依存: #9（Table コア）
 
@@ -664,6 +664,9 @@ List では DnD コントローラが `y / getRowHeight()` で行を割り出せ
 
 ### 完了条件
 ファイラー詳細ビューでも行を別フォルダ / 場所へ DnD 移動できる（リストビューと同等）。doc + テスト。
+
+### 完了メモ（2026-06-14）
+`rowAtLocalY(y)` と `getHeaderHeight()` を追加。DnD の行 hit は前者で行い、ハイライト描画には header offset が要るため後者も公開した。
 
 ## #17 narrative/dnd.md のセクション重複を除去
 - 状態: 未着手

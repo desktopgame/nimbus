@@ -207,6 +207,16 @@ pub fn getRowHeight(self: Table) f32;
 pub fn setRowHeight(self: *Table, h: f32) void;
 ```
 
+### 行・ヘッダーの座標クエリ
+```zig
+pub fn rowAtLocalY(self: *const Table, y: f32) ?usize;
+pub fn getHeaderHeight(self: *const Table) f32;
+```
+
+DnD コントローラなどが Table ローカル y 座標から行を引くための公開アクセサ。
+`rowAtLocalY` はヘッダーオフセットとスクロール位置を内部で処理し、ヘッダー帯または範囲外では null を返す。
+`getHeaderHeight` はハイライト描画など、行の y 位置にヘッダー高を足す用途で使う。
+
 ### 列幅の取得 / 設定
 ```zig
 pub fn getColumnWidth(self: Table, col: usize) f32;

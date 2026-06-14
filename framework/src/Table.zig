@@ -289,11 +289,25 @@ pub fn getRowHeight(self: Table) f32 {
     return self.row_height;
 }
 
+pub fn getHeaderHeight(_: *const Table) f32 {
+    return HEADER_HEIGHT;
+}
+
 pub fn setRowHeight(self: *Table, h: f32) void {
     if (self.row_height == h) return;
     self.row_height = h;
     self.syncContentSize();
     self.component.repaint();
+}
+
+pub fn rowAtLocalY(self: *const Table, y: f32) ?usize {
+    const rh = self.row_height;
+    if (rh <= 0) return null;
+    const scroll_top = @max(0, -self.component.position.y);
+    if (y < scroll_top + HEADER_HEIGHT) return null;
+    const row: usize = @intFromFloat(@floor((y - HEADER_HEIGHT) / rh));
+    if (row >= self.model.getSize()) return null;
+    return row;
 }
 
 pub fn getColumnWidth(self: Table, col: usize) f32 {
@@ -988,6 +1002,27 @@ test "table: setColumnWidth clamps to min_width and shifts later columns" {
 
     t.setColumnWidth(1, 5); // below min_width 30
     try std.testing.expectApproxEqAbs(@as(f32, 30), t.getColumnWidth(1), 0.001);
+}
+
+test "table: rowAtLocalY accounts for header and scroll" {
+    const a = std.testing.allocator;
+    const t = try testTable(a);
+    defer t.component.vtable.destroy(&t.component, a);
+
+    var items: [3]u32 = .{ 1, 2, 3 };
+    for (&items) |*it| try t.model.add(@ptrCast(it));
+    layoutAt(t, 200, 200);
+
+    try std.testing.expectApproxEqAbs(HEADER_HEIGHT, t.getHeaderHeight(), 0.001);
+    try std.testing.expectEqual(@as(?usize, null), t.rowAtLocalY(10));
+    try std.testing.expectEqual(@as(?usize, 0), t.rowAtLocalY(HEADER_HEIGHT + 1));
+    try std.testing.expectEqual(@as(?usize, null), t.rowAtLocalY(HEADER_HEIGHT + 3 * DEFAULT_ROW_HEIGHT + 1));
+
+    t.component.position.y = -50;
+    t.reconcile();
+    const scroll_top: f32 = 50;
+    try std.testing.expectEqual(@as(?usize, null), t.rowAtLocalY(scroll_top + 10));
+    try std.testing.expectEqual(@as(?usize, 2), t.rowAtLocalY(scroll_top + HEADER_HEIGHT + 1));
 }
 
 test "table: header click fires sort and toggles direction" {
