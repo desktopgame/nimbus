@@ -72,6 +72,7 @@ fn createInternal(
         .allocator = allocator,
     };
     item.component.role = .checkbox_menu_item;
+    item.component.a11y = .{ .name = a11yName };
     item.applyMetrics();
     try CheckBoxMenuItem.vtable.install(&item.component);
     return item;
@@ -120,6 +121,12 @@ pub fn doClick(self: *CheckBoxMenuItem) void {
 }
 
 // ── vtable impl ──────────────────────────────────────────────────────────
+
+fn a11yName(c: *const Component) ?[]const u8 {
+    const item: *const CheckBoxMenuItem = @fieldParentPtr("component", c);
+    if (item.text.len == 0) return null;
+    return item.text;
+}
 
 fn install(self: *Component) !void {
     const item: *CheckBoxMenuItem = @fieldParentPtr("component", self);

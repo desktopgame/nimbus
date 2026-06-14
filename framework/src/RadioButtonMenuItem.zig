@@ -77,6 +77,7 @@ fn createInternal(
         .allocator = allocator,
     };
     item.component.role = .radio_button_menu_item;
+    item.component.a11y = .{ .name = a11yName };
     item.applyMetrics();
     try RadioButtonMenuItem.vtable.install(&item.component);
     return item;
@@ -136,6 +137,12 @@ pub fn setMnemonic(self: *RadioButtonMenuItem, ch: u8) void {
 }
 
 // ── vtable impl ─────────────────────────────────────────────────────────
+
+fn a11yName(c: *const Component) ?[]const u8 {
+    const item: *const RadioButtonMenuItem = @fieldParentPtr("component", c);
+    if (item.text.len == 0) return null;
+    return item.text;
+}
 
 fn install(self: *Component) !void {
     const item: *RadioButtonMenuItem = @fieldParentPtr("component", self);

@@ -89,6 +89,7 @@ fn createInternal(
         .allocator = allocator,
     };
     item.component.role = .menu_item;
+    item.component.a11y = .{ .name = a11yName };
     item.applyMetrics();
     try MenuItem.vtable.install(&item.component);
     return item;
@@ -152,6 +153,12 @@ pub fn setMnemonic(self: *MenuItem, ch: u8) void {
 }
 
 // ── vtable impl ──────────────────────────────────────────────────────────
+
+fn a11yName(c: *const Component) ?[]const u8 {
+    const item: *const MenuItem = @fieldParentPtr("component", c);
+    if (item.text.len == 0) return null;
+    return item.text;
+}
 
 fn install(self: *Component) !void {
     const item: *MenuItem = @fieldParentPtr("component", self);

@@ -95,6 +95,7 @@ pub fn create(
         .allocator = allocator,
     };
     menu.component.role = .menu;
+    menu.component.a11y = .{ .name = a11yName };
     menu.applyMetrics();
     try Menu.vtable.install(&menu.component);
     return menu;
@@ -387,6 +388,12 @@ fn activateHighlighted(self: *Menu) void {
 }
 
 // ── vtable: label / row ──────────────────────────────────────────────────
+
+fn a11yName(c: *const Component) ?[]const u8 {
+    const menu: *const Menu = @fieldParentPtr("component", c);
+    if (menu.text.len == 0) return null;
+    return menu.text;
+}
 
 fn install(self: *Component) !void {
     const menu: *Menu = @fieldParentPtr("component", self);
