@@ -227,6 +227,7 @@ pub const Query = struct {
 `text` は `snapshotTree` の `text` と同じ `Component.a11y.name` から取り、snapshot に出るノードと query 対象が 1:1 で対応するようにする。
 一致が 0 件なら `error.NotFound`、2 件以上なら `error.Ambiguous`。
 `clickOn` は `find` の結果矩形の中心へ `robot.click` を合成する（座標計算を呼び出し側にさせない）。`pump` は呼ばず、呼び出し側がイベント処理のタイミングを決める。
+`Query` は最低 1 つの述語（role / text / name）を渡す前提。全フィールド null の `find(.{})` は未サポートで、走査対象次第で root を返すか `Ambiguous` / `NotFound` になりうる。
 
 座標ベースの `Robot.click` が下位プリミティブ、`Driver.clickOn` がその上の意味的ラッパー。
 AI は通常 `driver.clickOn(.{ .role = .button, .text = "Save" })` を使い、座標が必要なときだけ `robot.click` を使う。

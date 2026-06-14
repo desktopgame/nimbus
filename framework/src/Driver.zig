@@ -3,6 +3,7 @@
 const std = @import("std");
 const awt = @import("awt");
 const Component = @import("Component.zig");
+const Container = @import("Container.zig");
 const Robot = @import("Robot.zig");
 const Application = @import("Application.zig");
 
@@ -17,8 +18,12 @@ pub const Query = struct {
 robot: *Robot,
 
 pub fn find(self: *@This(), q: Query) QueryError!*Component {
+    return findFromRoot(&self.robot.window.container.component, q);
+}
+
+fn findFromRoot(root: *Component, q: Query) QueryError!*Component {
     var found: ?*Component = null;
-    return (try findInSubtree(&self.robot.window.container.component, q, &found)) orelse error.NotFound;
+    return (try findInSubtree(root, q, &found)) orelse error.NotFound;
 }
 
 pub fn clickOn(self: *@This(), q: Query) QueryError!void {
@@ -62,22 +67,11 @@ fn matches(c: *const Component, q: Query) bool {
     return true;
 }
 
-/// Test-quiet log: drop debug/info chatter, keep warn/error visible.
-const QuietLog = struct {
-    fn cb(level: awt.LogLevel, category: [*c]const u8, message: [*c]const u8, _: ?*anyopaque) callconv(.c) void {
-        if (level < awt.c.nmLogLevelWarn) return;
-        const tag: []const u8 = if (level == awt.c.nmLogLevelWarn) "WARN" else "ERROR";
-        const cat: [*:0]const u8 = category;
-        const msg: [*:0]const u8 = message;
-        std.debug.print("[{s}] [{s}] {s}\n", .{ tag, std.mem.span(cat), std.mem.span(msg) });
-    }
-};
-
 test "headless driver: clickOn button fires action by role and text" {
     const gpa = std.testing.allocator;
     const ActionEvent = @import("listener.zig").ActionEvent;
 
-    awt.setLogCallback(QuietLog.cb, null);
+    awt.setLogCallback(Robot.QuietLog.cb, null);
     const app = Application.initHeadless(gpa, std.testing.io) catch return error.SkipZigTest;
     defer app.deinit();
 
@@ -108,7 +102,7 @@ test "headless driver: clickOn button fires action by role and text" {
 test "headless driver: find button by role and text" {
     const gpa = std.testing.allocator;
 
-    awt.setLogCallback(QuietLog.cb, null);
+    awt.setLogCallback(Robot.QuietLog.cb, null);
     const app = Application.initHeadless(gpa, std.testing.io) catch return error.SkipZigTest;
     defer app.deinit();
 
@@ -129,7 +123,7 @@ test "headless driver: find button by role and text" {
 test "headless driver: find reports NotFound" {
     const gpa = std.testing.allocator;
 
-    awt.setLogCallback(QuietLog.cb, null);
+    awt.setLogCallback(Robot.QuietLog.cb, null);
     const app = Application.initHeadless(gpa, std.testing.io) catch return error.SkipZigTest;
     defer app.deinit();
 
@@ -150,7 +144,7 @@ test "headless driver: find reports NotFound" {
 test "headless driver: find reports Ambiguous" {
     const gpa = std.testing.allocator;
 
-    awt.setLogCallback(QuietLog.cb, null);
+    awt.setLogCallback(Robot.QuietLog.cb, null);
     const app = Application.initHeadless(gpa, std.testing.io) catch return error.SkipZigTest;
     defer app.deinit();
 
@@ -175,7 +169,7 @@ test "headless driver: find reports Ambiguous" {
 test "headless driver: text field content can be found after typing" {
     const gpa = std.testing.allocator;
 
-    awt.setLogCallback(QuietLog.cb, null);
+    awt.setLogCallback(Robot.QuietLog.cb, null);
     const app = Application.initHeadless(gpa, std.testing.io) catch return error.SkipZigTest;
     defer app.deinit();
 
@@ -195,4 +189,80 @@ test "headless driver: text field content can be found after typing" {
     robot.pump();
 
     try std.testing.expectEqual(&field.component, try driver.find(.{ .role = .text_field, .text = "hello" }));
+}
+
+fn createTestNode(allocator: std.mem.Allocator, role: Component.Role, name: ?[]const u8) !*Container {
+    const node = try Container.create(allocator);
+    node.component.role = role;
+    if (name) |n| {
+        node.component.name = try allocator.dupe(u8, n);
+    }
+    return node;
+}
+
+test "driver query core: matches role and name predicates without GPU" {
+    const gpa = std.testing.allocator;
+    const node = try createTestNode(gpa, .button, "save");
+    defer node.component.vtable.destroy(&node.component, gpa);
+
+    try std.testing.expect(matches(&node.component, .{ .role = .button }));
+    try std.testing.expect(matches(&node.component, .{ .name = "save" }));
+    try std.testing.expect(matches(&node.component, .{ .role = .button, .name = "save" }));
+    try std.testing.expect(!matches(&node.component, .{ .role = .label }));
+    try std.testing.expect(!matches(&node.component, .{ .name = "cancel" }));
+}
+
+test "driver query core: findInSubtree returns exactly one match without GPU" {
+    const gpa = std.testing.allocator;
+    const root = try createTestNode(gpa, .panel, "root");
+    defer root.component.vtable.destroy(&root.component, gpa);
+
+    const first = try createTestNode(gpa, .button, "save");
+    try root.add(&first.component);
+    const second = try createTestNode(gpa, .label, "status");
+    try root.add(&second.component);
+
+    try std.testing.expectEqual(&first.component, try findFromRoot(&root.component, .{ .role = .button, .name = "save" }));
+}
+
+test "driver query core: findInSubtree reports NotFound without GPU" {
+    const gpa = std.testing.allocator;
+    const root = try createTestNode(gpa, .panel, "root");
+    defer root.component.vtable.destroy(&root.component, gpa);
+
+    const child = try createTestNode(gpa, .button, "save");
+    try root.add(&child.component);
+
+    try std.testing.expectError(error.NotFound, findFromRoot(&root.component, .{ .role = .button, .name = "missing" }));
+}
+
+test "driver query core: findInSubtree reports Ambiguous for two and three matches without GPU" {
+    const gpa = std.testing.allocator;
+    const root = try createTestNode(gpa, .panel, "root");
+    defer root.component.vtable.destroy(&root.component, gpa);
+
+    const first = try createTestNode(gpa, .button, "dup");
+    try root.add(&first.component);
+    const second = try createTestNode(gpa, .button, "dup");
+    try root.add(&second.component);
+
+    try std.testing.expectError(error.Ambiguous, findFromRoot(&root.component, .{ .role = .button, .name = "dup" }));
+
+    const third = try createTestNode(gpa, .button, "dup");
+    try root.add(&third.component);
+
+    try std.testing.expectError(error.Ambiguous, findFromRoot(&root.component, .{ .role = .button, .name = "dup" }));
+}
+
+test "driver query core: empty query is ambiguous with multiple nodes without GPU" {
+    const gpa = std.testing.allocator;
+    const root = try createTestNode(gpa, .panel, "root");
+    defer root.component.vtable.destroy(&root.component, gpa);
+
+    const first = try createTestNode(gpa, .button, "first");
+    try root.add(&first.component);
+    const second = try createTestNode(gpa, .button, "second");
+    try root.add(&second.component);
+
+    try std.testing.expectError(error.Ambiguous, findFromRoot(&root.component, .{}));
 }

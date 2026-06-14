@@ -209,8 +209,8 @@ fn treeHasRole(node: NodeSnapshot, role: Component.Role) bool {
 /// Test-quiet log: drop debug/info chatter, keep warn/error visible. Any
 /// stderr from a passing test binary makes `zig build` print it under a
 /// noisy "failed command:" banner, so the happy path must stay silent.
-const QuietLog = struct {
-    fn cb(level: awt.LogLevel, category: [*c]const u8, message: [*c]const u8, _: ?*anyopaque) callconv(.c) void {
+pub const QuietLog = struct {
+    pub fn cb(level: awt.LogLevel, category: [*c]const u8, message: [*c]const u8, _: ?*anyopaque) callconv(.c) void {
         if (level < awt.c.nmLogLevelWarn) return;
         const tag: []const u8 = if (level == awt.c.nmLogLevelWarn) "WARN" else "ERROR";
         const cat: [*:0]const u8 = category;
