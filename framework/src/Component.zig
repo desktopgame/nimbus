@@ -87,6 +87,7 @@ pub const Role = enum {
     scroll_bar,
     scroll_pane,
     split_pane,
+    tabbed_pane,
     panel,
     menu,
     menu_item,

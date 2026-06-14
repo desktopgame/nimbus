@@ -16,6 +16,7 @@ const Table = @import("Table.zig");
 const ScrollBar = @import("ScrollBar.zig");
 const ScrollPane = @import("ScrollPane.zig");
 const SplitPane = @import("SplitPane.zig");
+const TabbedPane = @import("TabbedPane.zig");
 const Slider = @import("Slider.zig");
 const Frame = @import("Frame.zig");
 const Dialog = @import("Dialog.zig");
@@ -805,6 +806,13 @@ pub fn splitPane(
     // any not-yet-themed subtree.
     self.applyTheme(&sp.container.component);
     return sp;
+}
+
+/// Top-tabbed container. Added tab content ownership transfers to the pane.
+pub fn tabbedPane(self: *Application) !*TabbedPane {
+    const tp = try TabbedPane.create(self.allocator, .{ .face = self.default_font, .pixel_size = 14 });
+    self.applyTheme(&tp.container.component);
+    return tp;
 }
 
 /// Get a built-in lucide icon as a GPU `awt.Image`, decoding + uploading on

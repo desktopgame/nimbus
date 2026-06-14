@@ -34,6 +34,7 @@ pub const dnd = @import("dnd.zig");
 pub const ScrollBar = @import("ScrollBar.zig");
 pub const ScrollPane = @import("ScrollPane.zig");
 pub const SplitPane = @import("SplitPane.zig");
+pub const TabbedPane = @import("TabbedPane.zig");
 pub const MenuSeparator = @import("MenuSeparator.zig");
 pub const lucide = @import("lucide/icons.zig");
 pub const noto = @import("noto/fonts.zig");
