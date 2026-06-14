@@ -87,6 +87,7 @@ fn createInternal(
         .allocator = allocator,
     };
     rb.component.role = .radio_button;
+    rb.component.a11y = .{ .name = a11yName };
     rb.component.focus_query = .{ .isEligible = focusEligible };
     rb.applyMetrics();
     try RadioButton.vtable.install(&rb.component);
@@ -131,6 +132,12 @@ pub fn doClick(self: *RadioButton) void {
 fn focusEligible(c: *const Component) bool {
     const rb: *const RadioButton = @fieldParentPtr("component", c);
     return rb.model.button.enabled;
+}
+
+fn a11yName(c: *const Component) ?[]const u8 {
+    const rb: *const RadioButton = @fieldParentPtr("component", c);
+    if (rb.text.len == 0) return null;
+    return rb.text;
 }
 
 // ── layout ───────────────────────────────────────────────────────────────

@@ -41,6 +41,7 @@ pub fn init(
         .allocator = allocator,
     };
     l.component.role = .label;
+    l.component.a11y = .{ .name = a11yName };
     l.component.min_size = l.contentMinSize();
     return l;
 }
@@ -132,6 +133,12 @@ fn contentMinSize(self: *const Label) Component.Size {
         .width = icon_sz.width + gap + m.width,
         .height = @max(icon_sz.height, m.height),
     };
+}
+
+fn a11yName(c: *const Component) ?[]const u8 {
+    const l: *const Label = @fieldParentPtr("component", c);
+    if (l.text.len == 0) return null;
+    return l.text;
 }
 
 // ── vtable impl ──────────────────────────────────────────────────────────

@@ -95,6 +95,7 @@ fn createInternal(
         .allocator = allocator,
     };
     b.component.role = .button;
+    b.component.a11y = .{ .name = a11yName };
     b.component.setFocusable(true);
     b.component.focus_query = .{ .isEligible = focusEligible };
     b.applyMetrics();
@@ -214,6 +215,12 @@ pub fn setMnemonic(self: *Button, ch: u8) void {
 fn focusEligible(c: *const Component) bool {
     const b: *const Button = @fieldParentPtr("component", c);
     return b.model.enabled;
+}
+
+fn a11yName(c: *const Component) ?[]const u8 {
+    const b: *const Button = @fieldParentPtr("component", c);
+    if (b.text.len == 0) return null;
+    return b.text;
 }
 
 // ── vtable impl ──────────────────────────────────────────────────────────

@@ -127,6 +127,7 @@ pub fn create(
         .allocator = allocator,
     };
     tf.component.role = .text_field;
+    tf.component.a11y = .{ .name = a11yName };
     tf.applyMetrics();
     try TextField.vtable.install(&tf.component);
     return tf;
@@ -213,6 +214,11 @@ fn applyMetrics(self: *TextField) void {
     // Do not touch grow_x here. Its default 0 comes from Component.init, and
     // metrics recalculation (including setText) must not overwrite caller
     // layout policy such as setGrowX(1).
+}
+
+fn a11yName(c: *const Component) ?[]const u8 {
+    const tf: *const TextField = @fieldParentPtr("component", c);
+    return tf.text.items;
 }
 
 // ── vtable impl ──────────────────────────────────────────────────────────

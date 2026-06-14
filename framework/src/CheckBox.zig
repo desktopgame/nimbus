@@ -91,6 +91,7 @@ fn createInternal(
         .allocator = allocator,
     };
     cb.component.role = .checkbox;
+    cb.component.a11y = .{ .name = a11yName };
     cb.component.focus_query = .{ .isEligible = focusEligible };
     cb.applyMetrics();
     try CheckBox.vtable.install(&cb.component);
@@ -134,6 +135,12 @@ pub fn doClick(self: *CheckBox) void {
 fn focusEligible(c: *const Component) bool {
     const cb: *const CheckBox = @fieldParentPtr("component", c);
     return cb.model.button.enabled;
+}
+
+fn a11yName(c: *const Component) ?[]const u8 {
+    const cb: *const CheckBox = @fieldParentPtr("component", c);
+    if (cb.text.len == 0) return null;
+    return cb.text;
 }
 
 // ── layout ───────────────────────────────────────────────────────────────
