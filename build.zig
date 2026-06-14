@@ -220,6 +220,15 @@ pub fn build(b: *std.Build) void {
     // ── dogfooding apps (app_*) — real applications built on nimbus ──────
     addExample(b, "app_filer", framework_mod, null, target, optimize);
 
+    const app_filer_test_mod = b.createModule(.{
+        .root_source_file = b.path("examples/app_filer/main.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "nimbus", .module = framework_mod },
+        },
+    });
+
     // ── C ABI example: drive nimbus from a C program (cnimbus_*) ─────────
     // A pure-C executable that includes only include/nimbus.h — no Zig, linked
     // against the public C ABI shared lib (libnimbus, dynamic). Proves the
@@ -292,6 +301,18 @@ pub fn build(b: *std.Build) void {
         const t = b.addTest(.{ .root_module = m });
         test_step.dependOn(&b.addRunArtifact(t).step);
     }
+
+    const app_filer_smoke_test_mod = b.createModule(.{
+        .root_source_file = b.path("framework/tests/app_filer_smoke_test.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "nimbus", .module = framework_mod },
+            .{ .name = "app_filer", .module = app_filer_test_mod },
+        },
+    });
+    const app_filer_smoke_test = b.addTest(.{ .root_module = app_filer_smoke_test_mod });
+    test_step.dependOn(&b.addRunArtifact(app_filer_smoke_test).step);
 
     // ── snapshot tests (golden-image comparison) ─────────────────
     const snapshot_test_mod = b.createModule(.{
