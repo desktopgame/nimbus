@@ -91,7 +91,7 @@ const CardLayout = struct {
 
 const SortCtx = struct { col: usize, dir: nimbus.Table.SortDirection };
 
-const Filer = struct {
+pub const Filer = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
     app: *nimbus.Application,
@@ -99,13 +99,13 @@ const Filer = struct {
     icon_file: awt.Image,
     icon_home: awt.Image,
     icon_drive: awt.Image,
-    model: *Model, // shared by both right-pane views
+    model: Model, // shared by both right-pane views
     list: *nimbus.List = undefined,
     list_sp: *nimbus.ScrollPane = undefined,
     table: *nimbus.Table = undefined,
     table_sp: *nimbus.ScrollPane = undefined,
     right_center: *nimbus.Container = undefined,
-    card: *CardLayout = undefined,
+    card: CardLayout = undefined,
     view_mode: ViewMode = .list,
     view_button: *nimbus.Button = undefined,
     places_list: *nimbus.List = undefined,
@@ -116,6 +116,8 @@ const Filer = struct {
     background_popup: *nimbus.PopupMenu = undefined,
     confirm: *nimbus.Dialog = undefined,
     confirm_msg: *nimbus.Label = undefined,
+    mover: Mover = undefined,
+    ghost: *nimbus.Label = undefined,
     entries: std.ArrayList(*Entry) = .empty,
     places: std.ArrayList(*Place) = .empty,
     cur: [PATH_BUF]u8 = undefined,
@@ -126,6 +128,19 @@ const Filer = struct {
     pending: [NAME_BUF]u8 = undefined,
     pending_len: usize = 0,
     pending_edit: bool = false,
+
+    pub fn deinit(self: *Filer, gpa: std.mem.Allocator) void {
+        self.clearEntries();
+        self.entries.deinit(gpa);
+        self.clearPlaces();
+        self.places.deinit(gpa);
+        self.popup.destroy();
+        self.background_popup.destroy();
+        self.confirm.destroy();
+        self.ghost.component.vtable.destroy(&self.ghost.component, gpa);
+        self.model.deinit();
+        gpa.destroy(self);
+    }
 
     fn curPath(self: *const Filer) []const u8 {
         return self.cur[0..self.cur_len];
@@ -1183,133 +1198,121 @@ fn onConfirmCancel(d: *nimbus.Dialog, _: *const ActionEvent) void {
 
 // ── ui assembly ──────────────────────────────────────────────────────────
 
-pub fn main(init: std.process.Init) !void {
-    // The shared model outlives the views (which unsubscribe on destroy in
-    // app.deinit), so it is created first → its deinit runs last.
-    var model = Model.init(init.gpa);
-    defer model.deinit();
-
-    const app = try nimbus.Application.init(init.gpa, init.io);
-    defer app.deinit();
-
-    const frame = try app.frame("nimbus filer", 760, 520);
-
-    var filer = Filer{
-        .allocator = init.gpa,
-        .io = init.io,
+pub fn build(
+    app: *nimbus.Application,
+    window: *nimbus.Window,
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    start_dir: []const u8,
+    home: ?[]const u8,
+) !*Filer {
+    const filer = try gpa.create(Filer);
+    filer.* = .{
+        .allocator = gpa,
+        .io = io,
         .app = app,
         .icon_folder = try app.icon(.folder),
         .icon_file = try app.icon(.file),
         .icon_home = try app.icon(.house),
         .icon_drive = try app.icon(.hard_drive),
-        .model = &model,
+        .model = Model.init(gpa),
+        .card = .{ .base = .{ .vtable = &CardLayout.vt } },
     };
-    filer.window = &frame.window;
-    defer {
-        filer.clearEntries();
-        filer.entries.deinit(init.gpa);
-        filer.clearPlaces();
-        filer.places.deinit(init.gpa);
-    }
+    filer.window = window;
 
     // Right pane: list view (shares the model) with inline rename.
-    const lst = try app.listWithModel(&model, .{ .create = createFileCell, .user_data = &filer });
+    const lst = try app.listWithModel(&filer.model, .{ .create = createFileCell, .user_data = filer });
     filer.list = lst;
     lst.setRowHeight(ROW_HEIGHT);
     lst.setEditTrigger(.manual);
     lst.setSelectionMode(.multiple);
-    try lst.addActionListener(Filer, Filer.onActivate, &filer);
-    try lst.addContextMenuListener(Filer, Filer.onListContextMenu, &filer);
+    try lst.addActionListener(Filer, Filer.onActivate, filer);
+    try lst.addContextMenuListener(Filer, Filer.onListContextMenu, filer);
     const lsp = try app.scrollPane(lst.asComponent());
     filer.list_sp = lsp;
 
     // Right pane: details view (Table over the SAME model).
-    const tbl = try app.tableWithModel(&model, &.{
-        .{ .title = "Name", .width = 300, .factory = .{ .create = createNameCell, .user_data = &filer } },
-        .{ .title = "Size", .width = 90, .factory = .{ .create = createSizeCell, .user_data = &filer } },
-        .{ .title = "Modified", .width = 150, .factory = .{ .create = createDateCell, .user_data = &filer } },
+    const tbl = try app.tableWithModel(&filer.model, &.{
+        .{ .title = "Name", .width = 300, .factory = .{ .create = createNameCell, .user_data = filer } },
+        .{ .title = "Size", .width = 90, .factory = .{ .create = createSizeCell, .user_data = filer } },
+        .{ .title = "Modified", .width = 150, .factory = .{ .create = createDateCell, .user_data = filer } },
     });
     filer.table = tbl;
     tbl.setRowHeight(ROW_HEIGHT);
     tbl.setSelectionMode(.multiple);
     tbl.setSortIndicator(0, .ascending);
-    try tbl.addActionListener(Filer, Filer.onActivate, &filer);
-    try tbl.addContextMenuListener(Filer, Filer.onTableContextMenu, &filer);
-    try tbl.addSortListener(Filer, Filer.onSort, &filer);
+    try tbl.addActionListener(Filer, Filer.onActivate, filer);
+    try tbl.addContextMenuListener(Filer, Filer.onTableContextMenu, filer);
+    try tbl.addSortListener(Filer, Filer.onSort, filer);
     const tsp = try app.scrollPane(tbl.asComponent());
     filer.table_sp = tsp;
 
     // Holder with a card layout: both scroll panes are children; only the
     // active one is shown (the other collapses to zero size).
-    var card = CardLayout{ .base = .{ .vtable = &CardLayout.vt } };
-    filer.card = &card;
     const holder = try app.container();
     filer.right_center = holder;
-    holder.setLayout(&card.base);
+    holder.setLayout(&filer.card.base);
     try holder.add(lsp.asComponent());
     try holder.add(tsp.asComponent());
-    card.active = lsp.asComponent();
+    filer.card.active = lsp.asComponent();
 
     // Left pane: places.
-    const places = try app.list(.{ .create = createPlaceCell, .user_data = &filer });
+    const places = try app.list(.{ .create = createPlaceCell, .user_data = filer });
     filer.places_list = places;
     places.setRowHeight(ROW_HEIGHT);
-    try places.addChangeListener(Filer, Filer.onPlaceSelected, &filer);
+    try places.addChangeListener(Filer, Filer.onPlaceSelected, filer);
     const places_sp = try app.scrollPane(places.asComponent());
 
     const split = try app.splitPane(.horizontal, places_sp.asComponent(), &holder.component);
     split.setDividerLocation(SIDEBAR_WIDTH);
     split.asComponent().setGrowX(1);
     split.asComponent().setGrowY(1);
-    try nimbus.BorderLayout.add(&frame.window.container, .center, split.asComponent());
+    try nimbus.BorderLayout.add(&window.container, .center, split.asComponent());
 
     // Drag & drop move (list/details files + places).
     const ghost = try app.label("");
     ghost.setIconSize(.{ .width = ICON, .height = ICON });
     ghost.component.size = .{ .width = 240, .height = ROW_HEIGHT };
-    defer ghost.component.vtable.destroy(&ghost.component, init.gpa);
-    var mover = Mover{ .filer = &filer, .ghost = ghost };
-    lst.asComponent().drag_source = .{ .onDragStart = Mover.onDragStart, .onDrag = Mover.onDrag, .onDragDone = Mover.onDragDone, .user_data = &mover };
-    lst.asComponent().drop_target = .{ .onOver = Mover.filesOnOver, .onLeave = Mover.filesOnLeave, .onDrop = Mover.filesOnDrop, .user_data = &mover };
-    tbl.asComponent().drag_source = .{ .onDragStart = Mover.onDragStart, .onDrag = Mover.onDrag, .onDragDone = Mover.onDragDone, .user_data = &mover };
-    tbl.asComponent().drop_target = .{ .onOver = Mover.filesOnOver, .onLeave = Mover.filesOnLeave, .onDrop = Mover.filesOnDrop, .user_data = &mover };
-    places.asComponent().drop_target = .{ .onOver = Mover.placesOnOver, .onLeave = Mover.placesOnLeave, .onDrop = Mover.placesOnDrop, .user_data = &mover };
+    filer.ghost = ghost;
+    filer.mover = .{ .filer = filer, .ghost = ghost };
+    lst.asComponent().drag_source = .{ .onDragStart = Mover.onDragStart, .onDrag = Mover.onDrag, .onDragDone = Mover.onDragDone, .user_data = &filer.mover };
+    lst.asComponent().drop_target = .{ .onOver = Mover.filesOnOver, .onLeave = Mover.filesOnLeave, .onDrop = Mover.filesOnDrop, .user_data = &filer.mover };
+    tbl.asComponent().drag_source = .{ .onDragStart = Mover.onDragStart, .onDrag = Mover.onDrag, .onDragDone = Mover.onDragDone, .user_data = &filer.mover };
+    tbl.asComponent().drop_target = .{ .onOver = Mover.filesOnOver, .onLeave = Mover.filesOnLeave, .onDrop = Mover.filesOnDrop, .user_data = &filer.mover };
+    places.asComponent().drop_target = .{ .onOver = Mover.placesOnOver, .onLeave = Mover.placesOnLeave, .onDrop = Mover.placesOnDrop, .user_data = &filer.mover };
     lst.asComponent().vtable = &dnd_list_vt;
     tbl.asComponent().vtable = &dnd_table_vt;
     places.asComponent().vtable = &dnd_list_vt;
-    try lst.asComponent().putProperty(@typeName(Mover), &mover, null);
-    try tbl.asComponent().putProperty(@typeName(Mover), &mover, null);
-    try places.asComponent().putProperty(@typeName(Mover), &mover, null);
+    try lst.asComponent().putProperty(@typeName(Mover), &filer.mover, null);
+    try tbl.asComponent().putProperty(@typeName(Mover), &filer.mover, null);
+    try places.asComponent().putProperty(@typeName(Mover), &filer.mover, null);
 
     // Row context menu (caller-owned, reused).
     const popup = try app.popupMenu();
-    defer popup.destroy();
     filer.popup = popup;
     const mi_open = try app.menuItem("Open");
     mi_open.setIcon(try app.icon(.folder_open));
-    try mi_open.getModel().addActionListener(Filer, Filer.onMenuOpen, &filer);
+    try mi_open.getModel().addActionListener(Filer, Filer.onMenuOpen, filer);
     try popup.add(&mi_open.component);
     const mi_rename = try app.menuItem("Rename");
     mi_rename.setIcon(try app.icon(.pencil));
-    try mi_rename.getModel().addActionListener(Filer, Filer.onMenuRename, &filer);
+    try mi_rename.getModel().addActionListener(Filer, Filer.onMenuRename, filer);
     try popup.add(&mi_rename.component);
     const mi_delete = try app.menuItem("Delete");
     mi_delete.setIcon(try app.icon(.trash_2));
-    try mi_delete.getModel().addActionListener(Filer, Filer.onMenuDelete, &filer);
+    try mi_delete.getModel().addActionListener(Filer, Filer.onMenuDelete, filer);
     try popup.add(&mi_delete.component);
 
     // Background context menu (caller-owned, reused).
     const background_popup = try app.popupMenu();
-    defer background_popup.destroy();
     filer.background_popup = background_popup;
     const mi_new_folder = try app.menuItem("New Folder");
     mi_new_folder.setIcon(try app.icon(.folder_plus));
-    try mi_new_folder.getModel().addActionListener(Filer, Filer.onMenuNewFolder, &filer);
+    try mi_new_folder.getModel().addActionListener(Filer, Filer.onMenuNewFolder, filer);
     try background_popup.add(&mi_new_folder.component);
 
     // Delete confirmation (caller-owned).
-    const confirm = try app.dialog(&frame.window, "Confirm", 320, 120);
-    defer confirm.destroy();
+    const confirm = try app.dialog(window, "Confirm", 320, 120);
     filer.confirm = confirm;
     const confirm_msg = try app.label("");
     filer.confirm_msg = confirm_msg;
@@ -1321,53 +1324,63 @@ pub fn main(init: std.process.Init) !void {
     const up = try app.button("");
     up.setIcon(try app.icon(.arrow_up));
     up.setIconSize(.{ .width = ICON, .height = ICON });
-    try up.getModel().addActionListener(Filer, Filer.onUpButton, &filer);
+    try up.getModel().addActionListener(Filer, Filer.onUpButton, filer);
     const view_btn = try app.button("Details");
     filer.view_button = view_btn;
-    try view_btn.getModel().addActionListener(Filer, Filer.onViewButton, &filer);
+    try view_btn.getModel().addActionListener(Filer, Filer.onViewButton, filer);
     const gap = try app.container();
     gap.component.setMinSize(.{ .width = 6, .height = 0 });
     gap.component.setMaxSize(.{ .width = 6, .height = std.math.inf(f32) });
     const path_field = try app.textField("");
     filer.path_field = path_field;
     path_field.component.setGrowX(1);
-    try path_field.addSubmitListener(Filer, Filer.onPathSubmit, &filer);
-    try path_field.addCancelListener(Filer, Filer.onPathCancel, &filer);
+    try path_field.addSubmitListener(Filer, Filer.onPathSubmit, filer);
+    try path_field.addCancelListener(Filer, Filer.onPathCancel, filer);
     try bar.add(&up.component);
     try bar.add(&view_btn.component);
     try bar.add(&gap.component);
     try bar.add(&path_field.component);
-    try nimbus.BorderLayout.add(&frame.window.container, .north, &bar.component);
+    try nimbus.BorderLayout.add(&window.container, .north, &bar.component);
 
     // Status line (south).
     const status = try app.label("");
     filer.status = status;
-    try nimbus.BorderLayout.add(&frame.window.container, .south, &status.component);
+    try nimbus.BorderLayout.add(&window.container, .south, &status.component);
 
-    // Backspace / F5 are window-wide → root. F2 / Delete are scoped to the
+    // Backspace / F5 are window-wide -> root. F2 / Delete are scoped to the
     // file views (WHEN_FOCUSED): bound on the list and table so they fire only
     // when one of those has focus, and so the rename TextField (focus owner
     // while editing) gets Delete first to remove a char. Key dispatch now walks
     // key_bindings from the focus owner up, so a binding on the focused widget
     // itself fires (see narrative/keybinding.md).
-    const root = &frame.window.container.component;
-    try root.bindKey(nimbus.KeyStroke.of(.backspace), nimbus.KeyHandler.typed(Filer, Filer.onBackspace, &filer));
-    try root.bindKey(nimbus.KeyStroke.of(.f5), nimbus.KeyHandler.typed(Filer, Filer.onReloadKey, &filer));
+    const root = &window.container.component;
+    try root.bindKey(nimbus.KeyStroke.of(.backspace), nimbus.KeyHandler.typed(Filer, Filer.onBackspace, filer));
+    try root.bindKey(nimbus.KeyStroke.of(.f5), nimbus.KeyHandler.typed(Filer, Filer.onReloadKey, filer));
     for ([_]*nimbus.Component{ lst.asComponent(), tbl.asComponent() }) |c| {
-        try c.bindKey(nimbus.KeyStroke.of(.f2), nimbus.KeyHandler.typed(Filer, Filer.onRenameKey, &filer));
-        try c.bindKey(nimbus.KeyStroke.of(.delete), nimbus.KeyHandler.typed(Filer, Filer.onDeleteKey, &filer));
-        try c.bindKey(nimbus.KeyStroke.cmdShift(.n), nimbus.KeyHandler.typed(Filer, Filer.onNewFolderKey, &filer));
+        try c.bindKey(nimbus.KeyStroke.of(.f2), nimbus.KeyHandler.typed(Filer, Filer.onRenameKey, filer));
+        try c.bindKey(nimbus.KeyStroke.of(.delete), nimbus.KeyHandler.typed(Filer, Filer.onDeleteKey, filer));
+        try c.bindKey(nimbus.KeyStroke.cmdShift(.n), nimbus.KeyHandler.typed(Filer, Filer.onNewFolderKey, filer));
     }
 
-    const home_var = if (builtin.os.tag == .windows) "USERPROFILE" else "HOME";
-    filer.buildPlaces(init.environ_map.get(home_var));
+    filer.buildPlaces(home);
+    _ = filer.loadDir(start_dir);
 
+    return filer;
+}
+
+pub fn main(init: std.process.Init) !void {
+    const app = try nimbus.Application.init(init.gpa, init.io);
+    const frame = try app.frame("nimbus filer", 760, 520);
+
+    const home_var = if (builtin.os.tag == .windows) "USERPROFILE" else "HOME";
     var buf: [PATH_BUF]u8 = undefined;
     const n = try std.Io.Dir.cwd().realPath(init.io, &buf);
-    _ = filer.loadDir(buf[0..n]);
+    const filer = try build(app, &frame.window, init.gpa, init.io, buf[0..n], init.environ_map.get(home_var));
+    defer filer.deinit(init.gpa);
+    defer app.deinit();
 
     std.debug.print(
-        \\filer M5 — toolbar "Details"/"List" toggles the right-pane view.
+        \\filer M5 - toolbar "Details"/"List" toggles the right-pane view.
         \\Details view: click a header to sort, drag a column boundary to resize.
         \\Double-click/Enter opens, right-click for the menu, Ctrl+Shift+N creates a folder, F2 renames, Delete removes, F5 reloads.
         \\
