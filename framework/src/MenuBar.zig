@@ -46,6 +46,7 @@ pub fn create(
     };
     // Min height ≒ font ascent + padding. Computed lazily once a menu is added.
     bar.component.role = .menu_bar;
+    bar.component.tree_children = .{ .count = treeChildCount, .at = treeChildAt };
     const m = font.measureString("Mg");
     bar.component.min_size = .{ .width = 0, .height = m.height + 8 };
     bar.component.max_size = .{ .width = std.math.inf(f32), .height = bar.component.min_size.height };
@@ -86,6 +87,16 @@ fn relayout(self: *MenuBar) void {
 }
 
 // ── vtable impl ──────────────────────────────────────────────────────────
+
+fn treeChildCount(c: *const Component) usize {
+    const bar: *const MenuBar = @fieldParentPtr("component", c);
+    return bar.menus.items.len;
+}
+
+fn treeChildAt(c: *const Component, index: usize) *Component {
+    const bar: *const MenuBar = @fieldParentPtr("component", c);
+    return &bar.menus.items[index].component;
+}
 
 fn install(_: *Component) !void {}
 fn uninstall(_: *Component) void {}

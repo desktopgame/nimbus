@@ -7,7 +7,7 @@ const Container = @import("Container.zig");
 const Robot = @import("Robot.zig");
 const Application = @import("Application.zig");
 
-pub const QueryError = error{ NotFound, Ambiguous };
+pub const QueryError = error{ NotFound, Ambiguous, OutOfMemory };
 
 pub const Query = struct {
     role: ?Component.Role = null,
@@ -18,12 +18,22 @@ pub const Query = struct {
 robot: *Robot,
 
 pub fn find(self: *@This(), q: Query) QueryError!*Component {
-    return findFromRoot(&self.robot.window.container.component, q);
+    var roots: std.ArrayList(*Component) = .empty;
+    defer roots.deinit(self.robot.window.allocator);
+    try Robot.automationRoots(self.robot.window, &roots);
+    return findFromRoots(roots.items, q);
 }
 
 fn findFromRoot(root: *Component, q: Query) QueryError!*Component {
+    return findFromRoots(&.{root}, q);
+}
+
+fn findFromRoots(roots: []const *Component, q: Query) QueryError!*Component {
     var found: ?*Component = null;
-    return (try findInSubtree(root, q, &found)) orelse error.NotFound;
+    for (roots) |root| {
+        _ = try findInSubtree(root, q, &found);
+    }
+    return found orelse error.NotFound;
 }
 
 pub fn clickOn(self: *@This(), q: Query) QueryError!void {
@@ -42,10 +52,10 @@ fn findInSubtree(c: *Component, q: Query, found: *?*Component) QueryError!?*Comp
         found.* = c;
     }
 
-    if (c.container) |cont| {
-        for (cont.children.items) |elem| {
-            _ = try findInSubtree(elem.component, q, found);
-        }
+    const child_count = c.automationChildCount();
+    var i: usize = 0;
+    while (i < child_count) : (i += 1) {
+        _ = try findInSubtree(c.automationChildAt(i), q, found);
     }
 
     return found.*;

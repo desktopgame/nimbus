@@ -131,11 +131,46 @@ pub fn advanceClock(self: *Robot, ms: u32) void {
 // ── observe: snapshots ────────────────────────────────────────────────────
 
 /// Build a curated `NodeSnapshot` tree of the window's content (the container
-/// subtree). `role` / `rect` / `focusable` / `focused` are always present;
+/// automation roots). `role` / `rect` / `focusable` / `focused` are always present;
 /// `text` comes from `Component.a11y.name` (null until widgets wire it).
 /// Free with `freeTree`.
 pub fn snapshotTree(self: *Robot, allocator: std.mem.Allocator) !NodeSnapshot {
-    return buildNode(allocator, self.window, &self.window.container.component);
+    var roots: std.ArrayList(*Component) = .empty;
+    defer roots.deinit(allocator);
+    try automationRoots(self.window, &roots);
+
+    const children = try allocator.alloc(NodeSnapshot, roots.items.len);
+    errdefer allocator.free(children);
+    var built: usize = 0;
+    errdefer for (children[0..built]) |*n| freeNode(allocator, n);
+    for (roots.items) |root| {
+        children[built] = try buildNode(allocator, self.window, root);
+        built += 1;
+    }
+
+    const size = self.window.getSize();
+    return .{
+        .role = .window,
+        .name = null,
+        .text = null,
+        .rect = .{
+            .x = 0,
+            .y = 0,
+            .width = @floatFromInt(size.width),
+            .height = @floatFromInt(size.height),
+        },
+        .focusable = false,
+        .focused = false,
+        .children = children,
+    };
+}
+
+pub fn automationRoots(win: *Window, out: *std.ArrayList(*Component)) !void {
+    try out.append(win.allocator, &win.container.component);
+    if (win.menu_bar) |bar| try out.append(win.allocator, bar);
+    for (win.overlays.entries.items) |entry| {
+        try out.append(win.allocator, entry.component);
+    }
 }
 
 /// Free a tree returned by `snapshotTree`. Borrowed strings are not freed.
@@ -146,15 +181,14 @@ pub fn freeTree(allocator: std.mem.Allocator, root: NodeSnapshot) void {
 
 fn buildNode(allocator: std.mem.Allocator, win: *Window, c: *Component) !NodeSnapshot {
     var children: []NodeSnapshot = &.{};
-    if (c.container) |cont| {
-        const kids = cont.children.items;
-        const buf = try allocator.alloc(NodeSnapshot, kids.len);
+    const child_count = c.automationChildCount();
+    if (child_count > 0) {
+        const buf = try allocator.alloc(NodeSnapshot, child_count);
         errdefer allocator.free(buf);
         var built: usize = 0;
         errdefer for (buf[0..built]) |*n| freeNode(allocator, n);
-        for (kids) |elem| {
-            buf[built] = try buildNode(allocator, win, elem.component);
-            built += 1;
+        while (built < child_count) : (built += 1) {
+            buf[built] = try buildNode(allocator, win, c.automationChildAt(built));
         }
         children = buf;
     }
@@ -256,7 +290,7 @@ test "headless robot: click reaches the button; tree exposes its role" {
     const tree = try robot.snapshotTree(gpa);
     defer Robot.freeTree(gpa, tree);
     try std.testing.expect(treeHasRole(tree, .button));
-    try std.testing.expectEqualStrings("Go", tree.children[0].text.?);
+    try std.testing.expectEqualStrings("Go", tree.children[0].children[0].text.?);
 }
 
 test "headless robot: button rollover / press / release+action / un-hover" {

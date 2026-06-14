@@ -96,6 +96,7 @@ pub fn create(
     };
     menu.component.role = .menu;
     menu.component.a11y = .{ .name = a11yName };
+    menu.popup_root.tree_children = .{ .count = treeChildCount, .at = treeChildAt };
     menu.applyMetrics();
     try Menu.vtable.install(&menu.component);
     return menu;
@@ -531,6 +532,16 @@ fn destroy(self: *Component, allocator: std.mem.Allocator) void {
 }
 
 // ── popup_root vtable ────────────────────────────────────────────────────
+
+fn treeChildCount(c: *const Component) usize {
+    const menu: *const Menu = @fieldParentPtr("popup_root", c);
+    return menu.items.items.len;
+}
+
+fn treeChildAt(c: *const Component, index: usize) *Component {
+    const menu: *const Menu = @fieldParentPtr("popup_root", c);
+    return menu.items.items[index];
+}
 
 fn popupInstall(_: *Component) !void {}
 fn popupUninstall(_: *Component) void {}

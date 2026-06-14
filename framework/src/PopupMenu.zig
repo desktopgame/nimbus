@@ -42,6 +42,7 @@ pub fn create(allocator: std.mem.Allocator) !*PopupMenu {
         .allocator = allocator,
     };
     pm.popup_root.role = .popup_menu;
+    pm.popup_root.tree_children = .{ .count = treeChildCount, .at = treeChildAt };
     return pm;
 }
 
@@ -167,6 +168,16 @@ fn modelOf(c: *Component) ?*ButtonModel {
 }
 
 // ── popup_root vtable ────────────────────────────────────────────────────
+
+fn treeChildCount(c: *const Component) usize {
+    const pm: *const PopupMenu = @fieldParentPtr("popup_root", c);
+    return pm.items.items.len;
+}
+
+fn treeChildAt(c: *const Component, index: usize) *Component {
+    const pm: *const PopupMenu = @fieldParentPtr("popup_root", c);
+    return pm.items.items[index];
+}
 
 fn popupInstall(_: *Component) !void {}
 fn popupUninstall(_: *Component) void {}
