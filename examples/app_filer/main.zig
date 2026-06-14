@@ -217,15 +217,24 @@ const Filer = struct {
 
     /// Load `path` (absolute) into the shared model. On open failure the
     /// current directory and listing stay; only the status line reports.
-    fn loadDir(self: *Filer, path: []const u8) void {
-        if (path.len > PATH_BUF) return;
+    fn loadDir(self: *Filer, path: []const u8) bool {
+        if (path.len == 0) {
+            self.setStatus("path is empty", .{});
+            return false;
+        }
+        if (path.len > PATH_BUF) {
+            self.setStatus("path too long", .{});
+            return false;
+        }
         var dir = std.Io.Dir.openDirAbsolute(self.io, path, .{ .iterate = true }) catch |err| {
             self.setStatus("cannot open {s}: {s}", .{ path, @errorName(err) });
-            return;
+            return false;
         };
         defer dir.close(self.io);
 
-        const same_dir = std.mem.eql(u8, path, self.curPath());
+        var real_buf: [PATH_BUF]u8 = undefined;
+        const real_path = if (dir.realPath(self.io, &real_buf)) |n| real_buf[0..n] else |_| path;
+        const same_dir = std.mem.eql(u8, real_path, self.curPath());
 
         self.model.clear();
         self.clearEntries();
@@ -252,10 +261,10 @@ const Filer = struct {
         }
         self.applySort();
 
-        if (path.ptr != @as([*]const u8, @ptrCast(&self.cur))) {
-            @memcpy(self.cur[0..path.len], path);
+        if (real_path.ptr != @as([*]const u8, @ptrCast(&self.cur))) {
+            @memcpy(self.cur[0..real_path.len], real_path);
         }
-        self.cur_len = path.len;
+        self.cur_len = real_path.len;
         self.path_field.setText(self.curPath()) catch {};
 
         var sel: ?usize = if (self.entries.items.len > 0) 0 else null;
@@ -284,6 +293,7 @@ const Filer = struct {
             self.table_sp.setScrollY(0);
         }
         self.setStatus("{d} items", .{self.entries.items.len});
+        return true;
     }
 
     fn requestSelectName(self: *Filer, name: []const u8) void {
@@ -294,7 +304,7 @@ const Filer = struct {
 
     fn reloadTask(ud: *anyopaque) void {
         const self: *Filer = @ptrCast(@alignCast(ud));
-        self.loadDir(self.curPath());
+        _ = self.loadDir(self.curPath());
     }
 
     fn scheduleReload(self: *Filer) void {
@@ -371,7 +381,7 @@ const Filer = struct {
         if (e.is_dir) {
             const joined = std.fs.path.join(self.allocator, &.{ self.curPath(), e.name }) catch return;
             defer self.allocator.free(joined);
-            self.loadDir(joined);
+            _ = self.loadDir(joined);
         } else {
             self.setStatus("file: {s} (opening comes in a later milestone)", .{e.name});
         }
@@ -382,7 +392,7 @@ const Filer = struct {
             self.setStatus("already at the root", .{});
             return;
         };
-        self.loadDir(parent);
+        _ = self.loadDir(parent);
     }
 
     fn renameSelected(self: *Filer) void {
@@ -510,7 +520,7 @@ const Filer = struct {
             }
         }
 
-        self.loadDir(self.curPath());
+        _ = self.loadDir(self.curPath());
         const keep = std.mem.min(usize, sel);
         self.setActiveSelected(if (self.entries.items.len == 0)
             null
@@ -630,9 +640,13 @@ const Filer = struct {
     }
     fn onPathSubmit(self: *Filer, _: *const ActionEvent) void {
         const path = std.mem.trim(u8, self.path_field.getText(), " \t\r\n");
-        self.loadDir(path);
+        const loaded = self.loadDir(path);
         self.path_field.setText(self.curPath()) catch {};
-        self.focusActiveView();
+        if (loaded) {
+            self.focusActiveView();
+        } else {
+            self.path_field.component.requestFocus();
+        }
     }
     fn onPathCancel(self: *Filer, _: *const ActionEvent) void {
         self.path_field.setText(self.curPath()) catch {};
@@ -657,7 +671,7 @@ const Filer = struct {
         self.confirmDelete();
     }
     fn onReloadKey(self: *Filer) void {
-        self.loadDir(self.curPath());
+        _ = self.loadDir(self.curPath());
     }
     fn onNewFolderKey(self: *Filer) void {
         self.createNewFolder();
@@ -666,7 +680,7 @@ const Filer = struct {
     fn onPlaceSelected(self: *Filer, _: *const ChangeEvent) void {
         const idx = self.places_list.getSelected() orelse return;
         if (idx >= self.places.items.len) return;
-        self.loadDir(self.places.items[idx].path);
+        _ = self.loadDir(self.places.items[idx].path);
     }
 };
 
@@ -1315,7 +1329,7 @@ pub fn main(init: std.process.Init) !void {
 
     var buf: [PATH_BUF]u8 = undefined;
     const n = try std.Io.Dir.cwd().realPath(init.io, &buf);
-    filer.loadDir(buf[0..n]);
+    _ = filer.loadDir(buf[0..n]);
 
     std.debug.print(
         \\filer M5 — toolbar "Details"/"List" toggles the right-pane view.
