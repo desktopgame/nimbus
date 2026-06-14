@@ -75,6 +75,8 @@ orphan 状態 (`window` に attach されていない) では no-op。
 * `min_size.width = font.glyphAdvance('M') * 20 + PADDING_X * 2` (約 20 桁の幅)
 * `grow_x = 0` (デフォルトでは伸びない。Swing JTextField と同じ)
 
+`grow_x` は init 時の既定 (0)。`setText` 等の metrics 再計算では再適用しないため、caller の `setGrowX(1)` は保持される。
+
 `'M'` を基準に幅を決めるのは Western 的な慣習で、CJK では 1 セル ≈ 2 セル幅になる。
 あくまで「だいたい 20 列ぶんの推奨幅」のヒントで、外部から `setMinSize` で上書き可能。
 

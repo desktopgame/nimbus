@@ -210,11 +210,9 @@ fn applyMetrics(self: *TextField) void {
     const h = line_h + PADDING_Y * 2;
     self.component.min_size = .{ .width = w, .height = h };
     self.component.max_size = .{ .width = std.math.inf(f32), .height = h };
-    // grow_x defaults to 0 (Swing JTextField semantics): the widget reports
-    // its preferred width (DEFAULT_COLUMNS * 'M' advance) and stays at that
-    // size unless the caller opts in via `setGrowX(1)` or wraps it in a
-    // container that distributes leftover space differently.
-    self.component.grow_x = 0;
+    // Do not touch grow_x here. Its default 0 comes from Component.init, and
+    // metrics recalculation (including setText) must not overwrite caller
+    // layout policy such as setGrowX(1).
 }
 
 // ── vtable impl ──────────────────────────────────────────────────────────
