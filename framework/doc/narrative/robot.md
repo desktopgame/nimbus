@@ -67,6 +67,8 @@ pub const A11y = struct {
 ```
 
 robot の**最小投入分は `role`（前述のフィールド）+ `A11y.name` だけ**。`name` は curated ツリーと意味的クエリ（`Driver.find` / `clickOn`）が使う軽いアクセサで、型消去された `*const Component` から comptime リフレクションでウィジェット実体に届かないため、具体型を知るこのアクセサ経由で引く（`@fieldParentPtr` で実体に戻して text を返す）。名前を持たないウィジェット（Filler / Separator 等）は `a11y = null` のままでよい。
+2026-06-14 時点では最小5ウィジェット（Button / Label / CheckBox / RadioButton / TextField）に `A11y.name` を配線済み。Button / Label / CheckBox / RadioButton は表示テキストが空でなければそれを返し、TextField は既存の `snapshotTree` 慣行に合わせて現在の入力内容を空文字でも返す。将来 `A11y.value` を additive に足す段階で、TextField の `name`（ラベル）と `value`（内容）を分離する。
+menu 系（Menu / MenuItem / MenuBar / PopupMenu など）は、snapshot/find の menu_bar / overlay への走査範囲拡張とセットで後段に回す。ComboBox / Slider / List / Table の a11y、`A11y.value`、`A11y.dump` も後段。
 
 `A11y.dump` は詳細ビュー用のフックで、**段階として後回し**（最小投入は `role` + `name` のみ。詳細は後述「詳細ダンプのフィールド選別」と robot.md「機能要望」段階 3.5）。フック内では `name` と同じく `@fieldParentPtr` で実体に戻し、**診断に有用なフィールドを選んで** `sink.field(...)` で明示的に並べる。
 

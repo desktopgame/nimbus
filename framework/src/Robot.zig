@@ -6,7 +6,7 @@
 //! `Application` and a `Window`; it owns neither and must outlive neither.
 //!
 //! The semantic wrapper (`Driver.find` / `clickOn` by role + text) is a thin
-//! layer on top and is not implemented yet (waits on `Component.A11y.name`).
+//! layer on top.
 
 const std = @import("std");
 const awt = @import("awt");
@@ -247,14 +247,16 @@ test "headless robot: click reaches the button; tree exposes its role" {
     robot.pump(); // initial layout + paint
 
     try std.testing.expect(!ctx.fired);
-    robot.click(50, 25, .left); // inside the button rect
+    var driver = @import("Driver.zig"){ .robot = &robot };
+    try driver.clickOn(.{ .role = .button, .text = "Go" });
     robot.pump(); // drains move + press + release
     try std.testing.expect(ctx.fired);
 
-    // Structural snapshot sees the button by role (text is null until a11y.name).
+    // Structural snapshot sees the same a11y text Driver uses for lookup.
     const tree = try robot.snapshotTree(gpa);
     defer Robot.freeTree(gpa, tree);
     try std.testing.expect(treeHasRole(tree, .button));
+    try std.testing.expectEqualStrings("Go", tree.children[0].text.?);
 }
 
 test "headless robot: button rollover / press / release+action / un-hover" {

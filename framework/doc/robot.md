@@ -222,17 +222,19 @@ pub const Query = struct {
 };
 ```
 
-`find` は条件 `q`（role / text / name の AND）に一致する Component を、`robot.snapshotTree`（curated）の走査で探して返す。
+`find` は条件 `q`（role / text / name の AND）に一致する live `*Component` を返す。
+走査範囲は `snapshotTree` と同じ `window.container` サブツリーで、走査順も `Robot.buildNode` と同じプリオーダー（描画順の奥→手前）に揃える。
+`text` は `snapshotTree` の `text` と同じ `Component.a11y.name` から取り、snapshot に出るノードと query 対象が 1:1 で対応するようにする。
 一致が 0 件なら `error.NotFound`、2 件以上なら `error.Ambiguous`。
-`clickOn` は `find` の結果矩形の中心へ `robot.click` を合成する（座標計算を呼び出し側にさせない）。
+`clickOn` は `find` の結果矩形の中心へ `robot.click` を合成する（座標計算を呼び出し側にさせない）。`pump` は呼ばず、呼び出し側がイベント処理のタイミングを決める。
 
 座標ベースの `Robot.click` が下位プリミティブ、`Driver.clickOn` がその上の意味的ラッパー。
 AI は通常 `driver.clickOn(.{ .role = .button, .text = "Save" })` を使い、座標が必要なときだけ `robot.click` を使う。
 
 ## 利用例
-Robot プリミティブ層と前提3ケイパビリティは実装済み（2026-06-07、「機能要望」の実装状況参照）。
-`Application.initHeadless` / `frameHeadless`、`Robot.init` / `click` / `keyDown` / `typeText` / `pump` / `advanceClock` / `snapshotTree` / `snapshotPixels` は実コード。
-一方、`Driver.find` / `clickOn`（A 例の意味的名指し）と `Scenario.fromJsonl` / `replay`（B-2）は**未実装**で、それらの行は設計イメージ（コメントで明示）。座標ベースの `robot.click(x, y, .left)` は今すぐ動く。
+Robot プリミティブ層、前提3ケイパビリティ、最小 a11y 名、`Driver.find` / `clickOn` は実装済み（「機能要望」の実装状況参照）。
+`Application.initHeadless` / `frameHeadless`、`Robot.init` / `click` / `keyDown` / `typeText` / `pump` / `advanceClock` / `snapshotTree` / `snapshotPixels`、`Driver.find` / `clickOn` は実コード。
+一方、`Scenario.fromJsonl` / `replay`（B-2）は**未実装**で、それらの行は設計イメージ（コメントで明示）。座標ベースの `robot.click(x, y, .left)` は下位プリミティブとして今後も使える。
 
 ### コードから直接 Robot / Driver で書くテスト
 `Robot`（プリミティブ）でイベントを注入し、`pump` で 1 ステップ進め、ハンドル（白箱）または `snapshotTree`（黒箱）で検証する。座標を知らなくても `Driver.clickOn` が role + text で名指しする。
@@ -340,11 +342,12 @@ test "シナリオファイルを再生して checkpoint を照合" {
 ## 機能要望
 段階的に組む想定。下にいくほど後段。
 
-**実装状況 (2026-06-07)**: Robot プリミティブ層（act / `pump` / 仮想クロック / `snapshotTree` / `snapshotPixels`）と前提3ケイパビリティ（ヘッドレス / pump / 仮想クロック）は実装済み（`framework/src/Robot.zig`、`Application.initHeadless`/`frameHeadless`/`now`/`advanceClock`、`Window.initHeadless`/`postInput`）。`Driver`（意味レイヤー）・`dump`・シナリオランナーは未実装。
+**実装状況 (2026-06-14)**: Robot プリミティブ層（act / `pump` / 仮想クロック / `snapshotTree` / `snapshotPixels`）と前提3ケイパビリティ（ヘッドレス / pump / 仮想クロック）は実装済み（`framework/src/Robot.zig`、`Application.initHeadless`/`frameHeadless`/`now`/`advanceClock`、`Window.initHeadless`/`postInput`）。最小 a11y 名（Button / Label / CheckBox / RadioButton / TextField）と `Driver`（`find` / `clickOn`）も実装済み。`dump`・シナリオランナーは未実装。
 
 * **段階 1**: ✅ 実装済み (2026-06-07)。合成イベント注入（`Window.postInput`）+ 座標ベース `Robot.click` / `keyDown` / `typeText`。実ウィンドウに対しても動く
 * **段階 2**: ✅ 実装済み (2026-06-07)。ヘッドレスサーフェス + `pump`（= `Application.tickOnce`）+ 仮想クロック（framework 層、`Application.now`/`advanceClock`）。決定的な `inject → pump → snapshot` ループが成立する
-* **段階 3**: 部分実装。`Component.role`（フィールド・全ウィジェット設定済み）+ `snapshotTree`（curated; role/rect/focus）は実装済み。**未**: a11y 名（`A11y.name` の各ウィジェット配線）と意味レイヤー `Driver`（`find` / `clickOn`）
+* **段階 3**: 実装済み。`Component.role`（フィールド・全ウィジェット設定済み）+ `snapshotTree`（curated; role/rect/focus/text）+ 最小 a11y 名（Button / Label / CheckBox / RadioButton / TextField）+ 意味レイヤー `Driver`（`find` / `clickOn`）。TextField の `name` は現時点では入力内容を返す。将来 `A11y.value` を additive に足す段階で、`name`（ラベル）と `value`（内容）を分離する。
+  menu 系（Menu / MenuItem / MenuBar / PopupMenu など）は、snapshot/find の menu_bar / overlay への走査範囲拡張とセットで後段に回す。
 * **段階 3.5**: `A11y.dump` フック（ウィジェット毎にフィールド選別）+ 詳細ダンプ（`dumpTree` / `dumpNode`）。curated ツリーの上に深掘りビューを足す
 * **段階 4**: シナリオ形式 + シナリオランナー（再生 / 対話 stdin REPL）+ MCP サーバー化
 * **段階 5**: 入力レコーダー（`Window.input_observer` + `Recorder`）+ シナリオ再生（`replay`）。記録は実ウィンドウ、再生はヘッドレス。意味的解決とチェックポイントは段階 3 のファセットを前提とする

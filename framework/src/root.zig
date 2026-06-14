@@ -54,6 +54,7 @@ pub const TextField = @import("TextField.zig");
 pub const TextArea = @import("TextArea.zig");
 pub const GapBuffer = @import("GapBuffer.zig");
 pub const Robot = @import("Robot.zig");
+pub const Driver = @import("Driver.zig");
 
 test {
     std.testing.refAllDecls(@This());
