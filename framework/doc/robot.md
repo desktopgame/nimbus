@@ -61,7 +61,7 @@ pub const Value = union(enum) {
     object: []Field,              // 入れ子 struct（Size / Rect 等）を展開したもの
 };
 
-pub const QueryError = error{ NotFound, Ambiguous };
+pub const QueryError = error{ NotFound, Ambiguous, OutOfMemory };
 ```
 
 ## Robot の生成
@@ -169,7 +169,8 @@ pub fn snapshotTree(self: *Robot, allocator: std.mem.Allocator) !NodeSnapshot;
 pub fn freeTree(allocator: std.mem.Allocator, root: NodeSnapshot) void;
 ```
 
-`window` の Component ツリー（container / menu_bar / overlays）を再帰的に走査し、`NodeSnapshot` の木を構築して返す。
+`window` の自動化ルート（synthetic `.window` ルート配下の container / menu_bar / overlays）を再帰的に走査し、`NodeSnapshot` の木を構築して返す。
+ルート列は描画順と同じく container → menu_bar（存在する場合）→ overlays（登録順）で、overlay はモーダル / passthrough を区別せず含める。
 各ノードの `role` / `text` は Component の a11y ファセット（後述）から取る。
 `rect` は `absoluteOriginInWindow` を使ったウィンドウローカル絶対矩形。
 `focused` は `window.focus_owner` との一致で決める。
@@ -223,7 +224,8 @@ pub const Query = struct {
 ```
 
 `find` は条件 `q`（role / text / name の AND）に一致する live `*Component` を返す。
-走査範囲は `snapshotTree` と同じ `window.container` サブツリーで、走査順も `Robot.buildNode` と同じプリオーダー（描画順の奥→手前）に揃える。
+走査範囲は `snapshotTree` と同じ自動化ルート列（container / menu_bar / overlays）で、走査順も `Robot.buildNode` と同じプリオーダー（描画順の奥→手前）に揃える。
+`find` は synthetic `.window` ルート自体は作らず、ルート列の各サブツリーだけを対象にする。
 `text` は `snapshotTree` の `text` と同じ `Component.a11y.name` から取り、snapshot に出るノードと query 対象が 1:1 で対応するようにする。
 一致が 0 件なら `error.NotFound`、2 件以上なら `error.Ambiguous`。
 `clickOn` は `find` の結果矩形の中心へ `robot.click` を合成する（座標計算を呼び出し側にさせない）。`pump` は呼ばず、呼び出し側がイベント処理のタイミングを決める。
@@ -343,12 +345,12 @@ test "シナリオファイルを再生して checkpoint を照合" {
 ## 機能要望
 段階的に組む想定。下にいくほど後段。
 
-**実装状況 (2026-06-14)**: Robot プリミティブ層（act / `pump` / 仮想クロック / `snapshotTree` / `snapshotPixels`）と前提3ケイパビリティ（ヘッドレス / pump / 仮想クロック）は実装済み（`framework/src/Robot.zig`、`Application.initHeadless`/`frameHeadless`/`now`/`advanceClock`、`Window.initHeadless`/`postInput`）。最小 a11y 名（Button / Label / CheckBox / RadioButton / TextField）と `Driver`（`find` / `clickOn`）も実装済み。`dump`・シナリオランナーは未実装。
+**実装状況 (2026-06-14)**: Robot プリミティブ層（act / `pump` / 仮想クロック / `snapshotTree` / `snapshotPixels`）と前提3ケイパビリティ（ヘッドレス / pump / 仮想クロック）は実装済み（`framework/src/Robot.zig`、`Application.initHeadless`/`frameHeadless`/`now`/`advanceClock`、`Window.initHeadless`/`postInput`）。最小 a11y 名（Button / Label / CheckBox / RadioButton / TextField / Menu / MenuItem / CheckBoxMenuItem / RadioButtonMenuItem）と `Driver`（`find` / `clickOn`）も実装済み。`dump`・シナリオランナーは未実装。
 
 * **段階 1**: ✅ 実装済み (2026-06-07)。合成イベント注入（`Window.postInput`）+ 座標ベース `Robot.click` / `keyDown` / `typeText`。実ウィンドウに対しても動く
 * **段階 2**: ✅ 実装済み (2026-06-07)。ヘッドレスサーフェス + `pump`（= `Application.tickOnce`）+ 仮想クロック（framework 層、`Application.now`/`advanceClock`）。決定的な `inject → pump → snapshot` ループが成立する
-* **段階 3**: 実装済み。`Component.role`（フィールド・全ウィジェット設定済み）+ `snapshotTree`（curated; role/rect/focus/text）+ 最小 a11y 名（Button / Label / CheckBox / RadioButton / TextField）+ 意味レイヤー `Driver`（`find` / `clickOn`）。TextField の `name` は現時点では入力内容を返す。将来 `A11y.value` を additive に足す段階で、`name`（ラベル）と `value`（内容）を分離する。
-  menu 系（Menu / MenuItem / MenuBar / PopupMenu など）は、snapshot/find の menu_bar / overlay への走査範囲拡張とセットで後段に回す。
+* **段階 3**: 実装済み。`Component.role`（フィールド・全ウィジェット設定済み）+ `snapshotTree`（curated; role/rect/focus/text）+ 最小 a11y 名（Button / Label / CheckBox / RadioButton / TextField / Menu / MenuItem / CheckBoxMenuItem / RadioButtonMenuItem）+ 意味レイヤー `Driver`（`find` / `clickOn`）。TextField の `name` は現時点では入力内容を返す。将来 `A11y.value` を additive に足す段階で、`name`（ラベル）と `value`（内容）を分離する。
+  menu 系は `Component.tree_children` により MenuBar / PopupMenu / Menu popup ルートの専用 child list も走査対象になり、snapshot/find は container / menu_bar / overlays を同じルート列として扱う。
 * **段階 3.5**: `A11y.dump` フック（ウィジェット毎にフィールド選別）+ 詳細ダンプ（`dumpTree` / `dumpNode`）。curated ツリーの上に深掘りビューを足す
 * **段階 4**: シナリオ形式 + シナリオランナー（再生 / 対話 stdin REPL）+ MCP サーバー化
 * **段階 5**: 入力レコーダー（`Window.input_observer` + `Recorder`）+ シナリオ再生（`replay`）。記録は実ウィンドウ、再生はヘッドレス。意味的解決とチェックポイントは段階 3 のファセットを前提とする
