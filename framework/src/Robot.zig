@@ -136,7 +136,7 @@ pub fn advanceClock(self: *Robot, ms: u32) void {
 /// Free with `freeTree`.
 pub fn snapshotTree(self: *Robot, allocator: std.mem.Allocator) !NodeSnapshot {
     var roots: std.ArrayList(*Component) = .empty;
-    defer roots.deinit(allocator);
+    defer roots.deinit(self.window.allocator);
     try automationRoots(self.window, &roots);
 
     const children = try allocator.alloc(NodeSnapshot, roots.items.len);
@@ -332,6 +332,32 @@ test "headless robot: popup menu items appear in snapshot tree" {
     try std.testing.expect(treeHasRole(tree, .popup_menu));
     try std.testing.expect(treeHasRoleAndText(tree, .menu_item, "Copy"));
     try std.testing.expect(treeHasRoleAndText(tree, .menu_item, "Paste"));
+}
+
+test "headless robot: snapshotTree accepts allocator distinct from window allocator" {
+    const gpa = std.testing.allocator;
+
+    awt.setLogCallback(QuietLog.cb, null);
+    const app = Application.initHeadless(gpa, std.testing.io) catch return error.SkipZigTest;
+    defer app.deinit();
+
+    const frame = try app.frameHeadless("t", 200, 120);
+    frame.window.container.setLayout(null);
+
+    const btn = try app.button("Go");
+    btn.component.setBounds(.{ .x = 10, .y = 10, .width = 80, .height = 30 });
+    try frame.window.add(&btn.component);
+
+    var robot = Robot.init(app, &frame.window);
+    robot.pump();
+
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const arena_allocator = arena.allocator();
+
+    const tree = try robot.snapshotTree(arena_allocator);
+    defer Robot.freeTree(arena_allocator, tree);
+    try std.testing.expect(treeHasRoleAndText(tree, .button, "Go"));
 }
 
 test "headless robot: menu bar appears in snapshot tree" {

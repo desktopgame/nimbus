@@ -345,7 +345,7 @@ test "シナリオファイルを再生して checkpoint を照合" {
 ## 機能要望
 段階的に組む想定。下にいくほど後段。
 
-**実装状況 (2026-06-14)**: Robot プリミティブ層（act / `pump` / 仮想クロック / `snapshotTree` / `snapshotPixels`）と前提3ケイパビリティ（ヘッドレス / pump / 仮想クロック）は実装済み（`framework/src/Robot.zig`、`Application.initHeadless`/`frameHeadless`/`now`/`advanceClock`、`Window.initHeadless`/`postInput`）。最小 a11y 名（Button / Label / CheckBox / RadioButton / TextField / Menu / MenuItem / CheckBoxMenuItem / RadioButtonMenuItem）と `Driver`（`find` / `clickOn`）も実装済み。`dump`・シナリオランナーは未実装。
+**実装状況 (2026-06-14)**: Robot プリミティブ層（act / `pump` / 仮想クロック / `snapshotTree` / `snapshotPixels`）は実装済み。前提3ケイパビリティ（ヘッドレス / pump / 仮想クロック）も実装済み。対応コードは `framework/src/Robot.zig`、`Application.initHeadless`/`frameHeadless`/`now`/`advanceClock`、`Window.initHeadless`/`postInput`。最小5種（Button / Label / CheckBox / RadioButton / TextField）に a11y 名を配線済み。メニュー4種（Menu / MenuItem / CheckBoxMenuItem / RadioButtonMenuItem）と `Driver`（`find` / `clickOn`）も実装済み。`dump`・シナリオランナーは未実装。
 
 * **段階 1**: ✅ 実装済み (2026-06-07)。合成イベント注入（`Window.postInput`）+ 座標ベース `Robot.click` / `keyDown` / `typeText`。実ウィンドウに対しても動く
 * **段階 2**: ✅ 実装済み (2026-06-07)。ヘッドレスサーフェス + `pump`（= `Application.tickOnce`）+ 仮想クロック（framework 層、`Application.now`/`advanceClock`）。決定的な `inject → pump → snapshot` ループが成立する
