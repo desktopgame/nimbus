@@ -1,0 +1,28 @@
+# Repository-local Codex configuration for nimbus.
+#
+# This layer is loaded only when the project is trusted. Keep machine-local
+# provider/auth settings in ~/.codex/config.toml, not here.
+
+approval_policy = "on-request"
+default_permissions = "nimbus_workspace"
+
+[permissions.nimbus_workspace.filesystem]
+":minimal" = "read"
+glob_scan_max_depth = 3
+
+[permissions.nimbus_workspace.filesystem.":workspace_roots"]
+"." = "write"
+".git" = "read"
+"debug.log" = "deny"
+".env" = "deny"
+".env.*" = "deny"
+"secrets/**" = "deny"
+
+[permissions.nimbus_workspace.network]
+enabled = false
+
+[shell_environment_policy]
+inherit = "all"
+ignore_default_excludes = false
+set = { EDITOR = "code --wait", VISUAL = "code --wait" }
+

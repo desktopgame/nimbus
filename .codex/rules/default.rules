@@ -1,8 +1,7 @@
-# Repository-local Codex exec policy for nimbus.
+# Repository-local Codex command rules for nimbus.
 #
-# Ported from .claude/settings.json as far as Codex command rules can express.
-# Codex Rules apply to shell command execution. They do not directly govern
-# model file-read tools, WebFetch, environment variables, or Claude hooks.
+# Ported from .claude/settings.json where command-level approval is the right
+# fit. File read/write restrictions live in .codex/config.toml permissions.
 
 prefix_rule(
     pattern = ["git", "status"],
@@ -84,28 +83,3 @@ prefix_rule(
         "git pull --rebase",
     ],
 )
-
-# Approximate command-level protections for files denied in .claude/settings.json.
-# These do not replace Codex file-read/tool policy; they only affect shell commands.
-prefix_rule(
-    pattern = [["cat", "type", "Get-Content"], [".env", "./.env"]],
-    decision = "forbidden",
-    justification = "Environment files may contain secrets.",
-    match = [
-        "cat .env",
-        "type .env",
-        "Get-Content .env",
-    ],
-)
-
-prefix_rule(
-    pattern = [["cat", "type", "Get-Content"], ["debug.log", "./debug.log"]],
-    decision = "forbidden",
-    justification = "debug.log is denied in the existing Claude policy.",
-    match = [
-        "cat debug.log",
-        "type debug.log",
-        "Get-Content debug.log",
-    ],
-)
-
