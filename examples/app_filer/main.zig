@@ -18,9 +18,7 @@
 //!     column carries a CellEdit). Delete asks in a modal, then removes the
 //!     file / empty folder. F5 reloads; up-arrow / Backspace goes to parent.
 //!
-//! Known gap (Table is v1): the details view has no drag-to-move yet (DnD is
-//! wired to the list view only — moving DnD onto the Table needs a public
-//! row-from-y accessor, since the header offset is internal: framework#16).
+//! The list and details views both support drag-to-move into folders and places.
 //!
 //! Usage:
 //!     zig build run-app_filer
@@ -345,6 +343,20 @@ const Filer = struct {
         }
     }
 
+    fn activeFilesComponent(self: *Filer) *nimbus.Component {
+        return switch (self.view_mode) {
+            .list => self.list.asComponent(),
+            .details => self.table.asComponent(),
+        };
+    }
+
+    fn activeRowAt(self: *Filer, y: f32) ?usize {
+        return switch (self.view_mode) {
+            .list => Mover.rowAt(self.list, y),
+            .details => self.table.rowAtLocalY(y),
+        };
+    }
+
     /// Selected row indices of the active view (sorted ascending). Borrowed.
     fn selectedIndices(self: *Filer) []const usize {
         return switch (self.view_mode) {
@@ -579,7 +591,7 @@ const Filer = struct {
     /// DnD move: if the dragged entry is part of a multi-selection, move the
     /// whole selection; otherwise just the dragged entry.
     fn moveDraggedTo(self: *Filer, dragged: *Entry, dest_dir: []const u8) void {
-        const sel = self.list.getSelectedIndices();
+        const sel = self.selectedIndices();
         var in_sel = false;
         for (sel) |i| {
             if (i < self.entries.items.len and self.entries.items[i] == dragged) {
@@ -997,7 +1009,7 @@ fn createTextCell(ud: *anyopaque, allocator: std.mem.Allocator, kind: TextKind) 
     return .{ .component = &label.component, .update = TextCell.update, .destroy = TextCell.destroyCell, .user_data = tc };
 }
 
-// ── drag & drop move (list view only) ──────────────────────────────────────
+// ── drag & drop move (list/details files + places) ─────────────────────────
 
 const entry_tag = dnd.tagOf(Entry);
 
@@ -1021,13 +1033,13 @@ const Mover = struct {
         _ = x;
         const self: *Mover = @ptrCast(@alignCast(ud));
         const filer = self.filer;
-        const row = rowAt(filer.list, y) orelse return null;
+        const row = filer.activeRowAt(y) orelse return null;
         if (row >= filer.entries.items.len) return null;
         const entry = filer.entries.items[row];
         self.ghost.setText(entry.name) catch {};
         self.ghost.setIcon(if (entry.is_dir) filer.icon_folder else filer.icon_file);
         filer.window.overlays.addPassthrough(&self.ghost.component) catch {};
-        return .{ .flavor = .object, .ctx = entry, .type_tag = entry_tag, .source = filer.list.asComponent() };
+        return .{ .flavor = .object, .ctx = entry, .type_tag = entry_tag, .source = filer.activeFilesComponent() };
     }
     fn onDrag(ud: *anyopaque, x: f32, y: f32) void {
         const self: *Mover = @ptrCast(@alignCast(ud));
@@ -1044,27 +1056,27 @@ const Mover = struct {
         const filer = self.filer;
         const entry = dragEntry(e) orelse return false;
         var hl: ?usize = null;
-        if (rowAt(filer.list, e.y)) |row| {
+        if (filer.activeRowAt(e.y)) |row| {
             if (row < filer.entries.items.len) {
                 const target = filer.entries.items[row];
                 if (target.is_dir and target != entry) hl = row;
             }
         }
         self.files_highlight = hl;
-        filer.list.asComponent().repaint();
+        filer.activeFilesComponent().repaint();
         return hl != null;
     }
     fn filesOnLeave(ud: *anyopaque) void {
         const self: *Mover = @ptrCast(@alignCast(ud));
         self.files_highlight = null;
-        self.filer.list.asComponent().repaint();
+        self.filer.activeFilesComponent().repaint();
     }
     fn filesOnDrop(ud: *anyopaque, e: *const dnd.DragEvent) void {
         const self: *Mover = @ptrCast(@alignCast(ud));
         const filer = self.filer;
         self.files_highlight = null;
         const entry = dragEntry(e) orelse return;
-        const row = rowAt(filer.list, e.y) orelse return;
+        const row = filer.activeRowAt(e.y) orelse return;
         if (row >= filer.entries.items.len) return;
         const target = filer.entries.items[row];
         if (!target.is_dir or target == entry) return;
@@ -1124,6 +1136,25 @@ fn dndListPaint(self: *nimbus.Component, g: *awt.Graphics) void {
 const dnd_list_vt = blk: {
     var vt = nimbus.List.vtable;
     vt.paint = dndListPaint;
+    break :blk vt;
+};
+
+fn dndTablePaint(self: *nimbus.Component, g: *awt.Graphics) void {
+    nimbus.Table.vtable.paint(self, g);
+    const m = self.getTyped(Mover) orelse return;
+    if (m.filer.view_mode != .details) return;
+    if (m.files_highlight) |row| {
+        const table = m.filer.table;
+        const h = table.getRowHeight();
+        const y = table.getHeaderHeight() + @as(f32, @floatFromInt(row)) * h;
+        g.setColor(self.theme.focus_ring);
+        g.drawRect(.{ .x = 1, .y = y + 1, .width = self.size.width - 2, .height = h - 2 });
+    }
+}
+
+const dnd_table_vt = blk: {
+    var vt = nimbus.Table.vtable;
+    vt.paint = dndTablePaint;
     break :blk vt;
 };
 
@@ -1232,7 +1263,7 @@ pub fn main(init: std.process.Init) !void {
     split.asComponent().setGrowY(1);
     try nimbus.BorderLayout.add(&frame.window.container, .center, split.asComponent());
 
-    // Drag & drop move (list view only — see header note).
+    // Drag & drop move (list/details files + places).
     const ghost = try app.label("");
     ghost.setIconSize(.{ .width = ICON, .height = ICON });
     ghost.component.size = .{ .width = 240, .height = ROW_HEIGHT };
@@ -1240,10 +1271,14 @@ pub fn main(init: std.process.Init) !void {
     var mover = Mover{ .filer = &filer, .ghost = ghost };
     lst.asComponent().drag_source = .{ .onDragStart = Mover.onDragStart, .onDrag = Mover.onDrag, .onDragDone = Mover.onDragDone, .user_data = &mover };
     lst.asComponent().drop_target = .{ .onOver = Mover.filesOnOver, .onLeave = Mover.filesOnLeave, .onDrop = Mover.filesOnDrop, .user_data = &mover };
+    tbl.asComponent().drag_source = .{ .onDragStart = Mover.onDragStart, .onDrag = Mover.onDrag, .onDragDone = Mover.onDragDone, .user_data = &mover };
+    tbl.asComponent().drop_target = .{ .onOver = Mover.filesOnOver, .onLeave = Mover.filesOnLeave, .onDrop = Mover.filesOnDrop, .user_data = &mover };
     places.asComponent().drop_target = .{ .onOver = Mover.placesOnOver, .onLeave = Mover.placesOnLeave, .onDrop = Mover.placesOnDrop, .user_data = &mover };
     lst.asComponent().vtable = &dnd_list_vt;
+    tbl.asComponent().vtable = &dnd_table_vt;
     places.asComponent().vtable = &dnd_list_vt;
     try lst.asComponent().putProperty(@typeName(Mover), &mover, null);
+    try tbl.asComponent().putProperty(@typeName(Mover), &mover, null);
     try places.asComponent().putProperty(@typeName(Mover), &mover, null);
 
     // Row context menu (caller-owned, reused).
