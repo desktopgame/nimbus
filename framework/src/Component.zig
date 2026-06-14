@@ -65,6 +65,15 @@ pub const SizeQuery = struct {
     minHeightForWidth: *const fn (self: *const Component, w: f32) f32,
 };
 
+/// Opt-in automation tree child facet for components that own child
+/// components outside `Container` (menus, popup roots, etc.). Container-backed
+/// components remain authoritative through `container`; this facet only fills
+/// the gap for non-container structural nodes.
+pub const TreeChildren = struct {
+    count: *const fn (self: *const Component) usize,
+    at: *const fn (self: *const Component, index: usize) *Component,
+};
+
 /// Accessibility / automation role: a stable, semantic widget kind the
 /// Robot/Driver layer uses to address and snapshot widgets by meaning rather
 /// than by coordinates or pixels. Distinct from `name`, which is debug-only and
@@ -179,6 +188,9 @@ role: Role,
 /// Accessibility facet (opt-in; null = no accessible name). Set by widgets that
 /// expose a name. See `A11y`.
 a11y: ?A11y,
+/// Automation tree child facet (opt-in; null = no non-container children).
+/// See `TreeChildren`.
+tree_children: ?TreeChildren,
 parent: ?*Component,
 container: ?*Container,
 /// True if this component can receive keyboard focus. Default false (Label,
@@ -222,6 +234,7 @@ pub fn init(allocator: std.mem.Allocator, vtable: *const VTable) Component {
         .size_query = null,
         .role = .none,
         .a11y = null,
+        .tree_children = null,
         .parent = null,
         .container = null,
         .focusable = false,
@@ -323,6 +336,17 @@ pub fn effectiveMinSize(self: *const Component) Size {
 pub fn effectiveMaxSize(self: *const Component) Size {
     if (self.container) |c| return c.getMaxSize();
     return self.max_size;
+}
+
+pub fn automationChildCount(self: *const Component) usize {
+    if (self.container) |cont| return cont.children.items.len;
+    if (self.tree_children) |tc| return tc.count(self);
+    return 0;
+}
+
+pub fn automationChildAt(self: *const Component, index: usize) *Component {
+    if (self.container) |cont| return cont.children.items[index].component;
+    return self.tree_children.?.at(self, index);
 }
 
 pub fn getGrowX(self: *const Component) f32 {
