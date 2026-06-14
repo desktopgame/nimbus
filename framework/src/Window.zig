@@ -266,6 +266,13 @@ pub fn initHeadless(
 }
 
 pub fn deinit(self: *Window) void {
+    // Caller-owned modal overlays (PopupMenu / ComboBox / Menu) can outlive the
+    // window. Dismiss them before dropping the overlay list so their owners
+    // clear `open`; later owner `destroy()` / `hide()` then becomes a no-op
+    // instead of walking freed overlay entries. Keep the non-empty guard:
+    // early init-failure paths may not have wired dirty_notify yet, and
+    // dismissAll marks dirty at the end.
+    if (self.overlays.entries.items.len != 0) self.overlays.dismissAll();
     // Overlays are not owned (Menu/PopupMenu owners hold them) — just drop the list.
     // menu_bar is owned by Frame, not Window — do not destroy.
     self.overlays.deinit();

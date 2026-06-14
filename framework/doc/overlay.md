@@ -93,6 +93,11 @@ ESC の段階クローズ（サブメニュー → 親 popup の順に 1 押下 
 pub fn addPassthrough(self: *OverlayManager, component: *Component) !void;
 ```
 
+## Window lifetime
+When a `Window` is destroyed, `Window.deinit` calls `dismissAll` before freeing
+the overlay entry list. Open `modal_popup` owners receive `on_dismiss` and clear
+their `open` state, so caller-owned overlays may safely outlive the window.
+
 `passthrough` ポリシーのオーバーレイ（ドラッグゴースト・ツールチップ等の非インタラクティブ浮遊物）を登録する。
 `component.parent` は内部で `null` にされる。`owner` / `on_dismiss` は不要（dismiss されない）。
 `component.position` を更新すればカーソル追従などに使える（再描画は司令塔が促す）。

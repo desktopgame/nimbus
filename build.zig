@@ -278,6 +278,7 @@ pub fn build(b: *std.Build) void {
         "framework/tests/split_pane_test.zig",
         "framework/tests/tabbed_pane_test.zig",
         "framework/tests/focus_test.zig",
+        "framework/tests/overlay_lifetime_test.zig",
         "framework/tests/theme_test.zig",
     }) |path| {
         const m = b.createModule(.{
