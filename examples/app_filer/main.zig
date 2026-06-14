@@ -258,18 +258,21 @@ const Filer = struct {
         self.path_label.setText(self.curPath()) catch {};
 
         var sel: ?usize = if (self.entries.items.len > 0) 0 else null;
+        var pending_match: ?usize = null;
         if (self.pending_len > 0) {
             const want = self.pending[0..self.pending_len];
             for (self.entries.items, 0..) |e, i| {
                 if (std.mem.eql(u8, e.name, want)) {
                     sel = i;
+                    pending_match = i;
                     break;
                 }
             }
             self.pending_len = 0;
+            if (pending_match == null) self.pending_edit = false;
         }
         self.setActiveSelected(sel);
-        if (sel) |idx| {
+        if (pending_match) |idx| {
             if (self.pending_edit) self.startPendingEdit(idx);
         } else {
             self.pending_edit = false;
@@ -395,6 +398,13 @@ const Filer = struct {
         };
     }
 
+    fn commitActiveEdit(self: *Filer) void {
+        switch (self.view_mode) {
+            .list => self.list.commitEdit(),
+            .details => self.table.commitEdit(),
+        }
+    }
+
     fn startPendingEdit(self: *Filer, idx: usize) void {
         self.pending_edit = false;
         self.editIndex(idx);
@@ -407,6 +417,8 @@ const Filer = struct {
     }
 
     fn createNewFolder(self: *Filer) void {
+        self.commitActiveEdit();
+
         var d = std.Io.Dir.openDirAbsolute(self.io, self.curPath(), .{}) catch |err| {
             self.setStatus("cannot open {s}: {s}", .{ self.curPath(), @errorName(err) });
             return;
