@@ -12,6 +12,7 @@
 //!     zero-sized by a small CardLayout (both stay owned by the holder).
 //!   - double-click / Enter opens a folder; on a file it reports in status
 //!   - right-click a row for the context menu: Open / Rename / Delete
+//!   - editable path bar navigates to an absolute path on Enter
 //!   - background right-click or Ctrl+Shift+N creates "New Folder" and starts rename
 //!   - F2 (or the menu) renames in place in BOTH views (the Table's Name
 //!     column carries a CellEdit). Delete asks in a modal, then removes the
@@ -110,7 +111,7 @@ const Filer = struct {
     view_mode: ViewMode = .list,
     view_button: *nimbus.Button = undefined,
     places_list: *nimbus.List = undefined,
-    path_label: *nimbus.Label = undefined,
+    path_field: *nimbus.TextField = undefined,
     status: *nimbus.Label = undefined,
     window: *nimbus.Window = undefined,
     popup: *nimbus.PopupMenu = undefined,
@@ -255,7 +256,7 @@ const Filer = struct {
             @memcpy(self.cur[0..path.len], path);
         }
         self.cur_len = path.len;
-        self.path_label.setText(self.curPath()) catch {};
+        self.path_field.setText(self.curPath()) catch {};
 
         var sel: ?usize = if (self.entries.items.len > 0) 0 else null;
         var pending_match: ?usize = null;
@@ -324,6 +325,13 @@ const Filer = struct {
         switch (self.view_mode) {
             .list => self.list.setSelected(idx),
             .details => self.table.setSelected(idx),
+        }
+    }
+
+    fn focusActiveView(self: *Filer) void {
+        switch (self.view_mode) {
+            .list => self.list.asComponent().requestFocus(),
+            .details => self.table.asComponent().requestFocus(),
         }
     }
 
@@ -619,6 +627,15 @@ const Filer = struct {
     }
     fn onMenuNewFolder(self: *Filer, _: *const ActionEvent) void {
         self.createNewFolder();
+    }
+    fn onPathSubmit(self: *Filer, _: *const ActionEvent) void {
+        const path = std.mem.trim(u8, self.path_field.getText(), " \t\r\n");
+        self.loadDir(path);
+        self.path_field.setText(self.curPath()) catch {};
+        self.focusActiveView();
+    }
+    fn onPathCancel(self: *Filer, _: *const ActionEvent) void {
+        self.path_field.setText(self.curPath()) catch {};
     }
     fn onUpButton(self: *Filer, _: *const ActionEvent) void {
         self.goUp();
@@ -1262,13 +1279,15 @@ pub fn main(init: std.process.Init) !void {
     const gap = try app.container();
     gap.component.setMinSize(.{ .width = 6, .height = 0 });
     gap.component.setMaxSize(.{ .width = 6, .height = std.math.inf(f32) });
-    const path_label = try app.label("");
-    filer.path_label = path_label;
-    path_label.component.setAlignY(.center);
+    const path_field = try app.textField("");
+    filer.path_field = path_field;
+    path_field.component.setGrowX(1);
+    try path_field.addSubmitListener(Filer, Filer.onPathSubmit, &filer);
+    try path_field.addCancelListener(Filer, Filer.onPathCancel, &filer);
     try bar.add(&up.component);
     try bar.add(&view_btn.component);
     try bar.add(&gap.component);
-    try bar.add(&path_label.component);
+    try bar.add(&path_field.component);
     try nimbus.BorderLayout.add(&frame.window.container, .north, &bar.component);
 
     // Status line (south).
