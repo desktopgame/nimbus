@@ -240,6 +240,16 @@ fn treeHasRole(node: NodeSnapshot, role: Component.Role) bool {
     return false;
 }
 
+fn treeHasRoleAndText(node: NodeSnapshot, role: Component.Role, text: []const u8) bool {
+    if (node.role == role) {
+        if (node.text) |got| {
+            if (std.mem.eql(u8, got, text)) return true;
+        }
+    }
+    for (node.children) |ch| if (treeHasRoleAndText(ch, role, text)) return true;
+    return false;
+}
+
 /// Test-quiet log: drop debug/info chatter, keep warn/error visible. Any
 /// stderr from a passing test binary makes `zig build` print it under a
 /// noisy "failed command:" banner, so the happy path must stay silent.
@@ -291,6 +301,65 @@ test "headless robot: click reaches the button; tree exposes its role" {
     defer Robot.freeTree(gpa, tree);
     try std.testing.expect(treeHasRole(tree, .button));
     try std.testing.expectEqualStrings("Go", tree.children[0].children[0].text.?);
+}
+
+test "headless robot: popup menu items appear in snapshot tree" {
+    const gpa = std.testing.allocator;
+
+    awt.setLogCallback(QuietLog.cb, null);
+    const app = Application.initHeadless(gpa, std.testing.io) catch return error.SkipZigTest;
+    defer app.deinit();
+
+    const frame = try app.frameHeadless("t", 240, 160);
+    frame.window.container.setLayout(null);
+
+    const popup = try app.popupMenu();
+    defer popup.destroy();
+
+    const copy = try app.menuItem("Copy");
+    try popup.add(&copy.component);
+    const paste = try app.menuItem("Paste");
+    try popup.add(&paste.component);
+
+    try popup.show(&frame.window, 20, 20);
+
+    var robot = Robot.init(app, &frame.window);
+    robot.pump();
+
+    const tree = try robot.snapshotTree(gpa);
+    defer Robot.freeTree(gpa, tree);
+    try std.testing.expectEqual(Component.Role.window, tree.role);
+    try std.testing.expect(treeHasRole(tree, .popup_menu));
+    try std.testing.expect(treeHasRoleAndText(tree, .menu_item, "Copy"));
+    try std.testing.expect(treeHasRoleAndText(tree, .menu_item, "Paste"));
+}
+
+test "headless robot: menu bar appears in snapshot tree" {
+    const gpa = std.testing.allocator;
+
+    awt.setLogCallback(QuietLog.cb, null);
+    const app = Application.initHeadless(gpa, std.testing.io) catch return error.SkipZigTest;
+    defer app.deinit();
+
+    const frame = try app.frameHeadless("t", 240, 160);
+    frame.window.container.setLayout(null);
+
+    const bar = try app.menuBar();
+    const file = try app.menu("File");
+    const open = try app.menuItem("Open");
+    try file.add(&open.component);
+    try bar.add(file);
+    try frame.setMenuBar(bar);
+
+    var robot = Robot.init(app, &frame.window);
+    robot.pump();
+
+    const tree = try robot.snapshotTree(gpa);
+    defer Robot.freeTree(gpa, tree);
+    try std.testing.expectEqual(Component.Role.window, tree.role);
+    try std.testing.expect(tree.children.len >= 2);
+    try std.testing.expectEqual(Component.Role.menu_bar, tree.children[1].role);
+    try std.testing.expect(treeHasRoleAndText(tree.children[1], .menu, "File"));
 }
 
 test "headless robot: button rollover / press / release+action / un-hover" {
