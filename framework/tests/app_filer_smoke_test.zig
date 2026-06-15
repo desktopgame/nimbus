@@ -42,6 +42,15 @@ fn tmpPath(td: *std.testing.TmpDir, buf: []u8) ![]const u8 {
     return buf[0..try td.dir.realPath(std.testing.io, buf)];
 }
 
+fn finishManualSearch(filer: *app_filer.Filer, robot: *nimbus.Robot) !void {
+    var guard: usize = 0;
+    while (filer.searchRunningForTest() and guard < 32) : (guard += 1) {
+        filer.searchStepForTest(1);
+        robot.pump();
+    }
+    try std.testing.expect(!filer.searchRunningForTest());
+}
+
 fn hasRoleText(node: nimbus.Robot.NodeSnapshot, role: nimbus.Component.Role, text: []const u8) bool {
     if (node.role == role) {
         if (node.text) |got| {
@@ -250,6 +259,64 @@ test "app_filer search: threaded cancel and join reaches terminal state" {
     robot.pump();
     try std.testing.expect(!filer.searchRunningForTest());
     try std.testing.expectEqual(@as(usize, 0), filer.searchResultCountForTest());
+}
+
+test "app_filer search: cancel after completion leaves results view" {
+    const gpa = std.testing.allocator;
+    var td = try makeSearchFixture();
+    defer td.cleanup();
+
+    var start_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const start_dir = try tmpPath(&td, &start_buf);
+
+    const app = try newApp();
+    const frame = try app.frameHeadless("filer", 760, 520);
+    const filer = try app_filer.buildWithRunner(app, &frame.window, gpa, std.testing.io, start_dir, null, .manual);
+    defer filer.deinitModel(gpa);
+    defer app.deinit();
+    defer filer.deinitUi();
+
+    var robot = nimbus.Robot.init(app, &frame.window);
+    robot.pump();
+
+    filer.searchStart("match");
+    try finishManualSearch(filer, &robot);
+    try std.testing.expect(filer.showingResultsForTest());
+
+    filer.cancelSearchForTest();
+    robot.pump();
+    try std.testing.expect(!filer.showingResultsForTest());
+}
+
+test "app_filer search: activating completed result leaves results view" {
+    const gpa = std.testing.allocator;
+    var td = try makeSearchFixture();
+    defer td.cleanup();
+
+    var start_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const start_dir = try tmpPath(&td, &start_buf);
+    const expected_parent = try std.fs.path.join(gpa, &.{ start_dir, "match_dir" });
+    defer gpa.free(expected_parent);
+
+    const app = try newApp();
+    const frame = try app.frameHeadless("filer", 760, 520);
+    const filer = try app_filer.buildWithRunner(app, &frame.window, gpa, std.testing.io, start_dir, null, .manual);
+    defer filer.deinitModel(gpa);
+    defer app.deinit();
+    defer filer.deinitUi();
+
+    var robot = nimbus.Robot.init(app, &frame.window);
+    robot.pump();
+
+    filer.searchStart("match_c");
+    try finishManualSearch(filer, &robot);
+    try std.testing.expectEqual(@as(usize, 1), filer.searchResultCountForTest());
+    try std.testing.expect(filer.showingResultsForTest());
+
+    filer.activateResultForTest(0);
+    robot.pump();
+    try std.testing.expect(!filer.showingResultsForTest());
+    try std.testing.expectEqualStrings(expected_parent, filer.curPathForTest());
 }
 
 test "app_filer smoke: open row popup then close window without keeping popup alive" {

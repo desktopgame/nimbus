@@ -391,6 +391,7 @@ pub const Filer = struct {
             self.list_sp.setScrollY(0);
             self.table_sp.setScrollY(0);
         }
+        self.leaveResultsView();
         self.setStatus("{d} items", .{self.entries.items.len});
         return true;
     }
@@ -409,6 +410,15 @@ pub const Filer = struct {
             self.right_center.component.markLayoutDirty();
             self.right_center.component.repaint();
         }
+    }
+
+    fn exitResults(self: *Filer) void {
+        if (self.search_job != null) {
+            self.searchStop();
+            return;
+        }
+        self.leaveResultsView();
+        self.updateSearchStatus("{d} items", .{self.entries.items.len});
     }
 
     fn updateSearchStatus(self: *Filer, comptime fmt: []const u8, args: anytype) void {
@@ -533,6 +543,14 @@ pub const Filer = struct {
 
     pub fn curPathForTest(self: *const Filer) []const u8 {
         return self.curPath();
+    }
+
+    pub fn showingResultsForTest(self: *const Filer) bool {
+        return self.card.active == self.results_sp.asComponent();
+    }
+
+    pub fn cancelSearchForTest(self: *Filer) void {
+        self.exitResults();
     }
 
     pub fn activateResultForTest(self: *Filer, idx: usize) void {
@@ -901,13 +919,16 @@ pub const Filer = struct {
         self.searchStart(self.search_field.getText());
     }
     fn onSearchCancel(self: *Filer, _: *const ActionEvent) void {
-        self.searchStop();
+        self.exitResults();
     }
     fn onSearchButton(self: *Filer, _: *const ActionEvent) void {
         self.searchStart(self.search_field.getText());
     }
     fn onCancelButton(self: *Filer, _: *const ActionEvent) void {
-        self.searchStop();
+        self.exitResults();
+    }
+    fn onResultsEscape(self: *Filer) void {
+        self.exitResults();
     }
     fn onResultActivate(self: *Filer, _: *const ActionEvent) void {
         const idx = self.results_list.getSelected() orelse return;
@@ -1665,6 +1686,7 @@ pub fn buildWithRunner(
     filer.results_list = results_list;
     results_list.setRowHeight(ROW_HEIGHT);
     try results_list.addActionListener(Filer, Filer.onResultActivate, filer);
+    try results_list.asComponent().bindKey(nimbus.KeyStroke.of(.escape), nimbus.KeyHandler.typed(Filer, Filer.onResultsEscape, filer));
     const rsp = try app.scrollPane(results_list.asComponent());
     filer.results_sp = rsp;
 
