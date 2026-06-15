@@ -28,6 +28,20 @@ fn makeFixture() !std.testing.TmpDir {
     return td;
 }
 
+fn makeSearchFixture() !std.testing.TmpDir {
+    var td = std.testing.tmpDir(.{ .iterate = true });
+    errdefer td.cleanup();
+    try td.dir.writeFile(std.testing.io, .{ .sub_path = "match_a.txt", .data = "a" });
+    try td.dir.writeFile(std.testing.io, .{ .sub_path = "match_b.txt", .data = "b" });
+    try td.dir.createDir(std.testing.io, "match_dir", .default_dir);
+    try td.dir.writeFile(std.testing.io, .{ .sub_path = "match_dir/match_c.txt", .data = "c" });
+    return td;
+}
+
+fn tmpPath(td: *std.testing.TmpDir, buf: []u8) ![]const u8 {
+    return buf[0..try td.dir.realPath(std.testing.io, buf)];
+}
+
 fn hasRoleText(node: nimbus.Robot.NodeSnapshot, role: nimbus.Component.Role, text: []const u8) bool {
     if (node.role == role) {
         if (node.text) |got| {
@@ -92,6 +106,119 @@ test "app_filer smoke: Driver.clickOn toggles view button" {
     const tree_after = try robot.snapshotTree(gpa);
     defer nimbus.Robot.freeTree(gpa, tree_after);
     try std.testing.expect(hasRoleText(tree_after, .button, "List"));
+}
+
+test "app_filer search logic: matching and cancellation state are pure" {
+    try std.testing.expect(app_filer.SearchLogic.matches("AlphaMatch.txt", "match"));
+    try std.testing.expect(app_filer.SearchLogic.matches("alpha.txt", "ALPHA"));
+    try std.testing.expect(!app_filer.SearchLogic.matches("alpha.txt", ""));
+    try std.testing.expect(!app_filer.SearchLogic.matches("alpha.txt", "beta"));
+    try std.testing.expectEqual(app_filer.SearchLogic.State.running, app_filer.SearchLogic.transition(.running, false, false));
+    try std.testing.expectEqual(app_filer.SearchLogic.State.cancelled, app_filer.SearchLogic.transition(.running, true, false));
+    try std.testing.expectEqual(app_filer.SearchLogic.State.done, app_filer.SearchLogic.transition(.running, false, true));
+}
+
+test "app_filer search: manual runner publishes one pumped batch at a time" {
+    const gpa = std.testing.allocator;
+    var td = try makeSearchFixture();
+    defer td.cleanup();
+
+    var start_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const start_dir = try tmpPath(&td, &start_buf);
+
+    const app = try newApp();
+    const frame = try app.frameHeadless("filer", 760, 520);
+    const filer = try app_filer.buildWithRunner(app, &frame.window, gpa, std.testing.io, start_dir, null, .manual);
+    defer filer.deinitModel(gpa);
+    defer app.deinit();
+    defer filer.deinitUi();
+
+    var robot = nimbus.Robot.init(app, &frame.window);
+    robot.pump();
+
+    filer.searchStart("match");
+    try std.testing.expectEqual(@as(usize, 0), filer.searchResultCountForTest());
+    filer.searchStepForTest(1);
+    robot.pump();
+    try std.testing.expectEqual(@as(usize, 1), filer.searchResultCountForTest());
+    filer.searchStepForTest(1);
+    robot.pump();
+    try std.testing.expectEqual(@as(usize, 2), filer.searchResultCountForTest());
+}
+
+test "app_filer search: cancellation stops manual producer" {
+    const gpa = std.testing.allocator;
+    var td = try makeSearchFixture();
+    defer td.cleanup();
+
+    var start_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const start_dir = try tmpPath(&td, &start_buf);
+
+    const app = try newApp();
+    const frame = try app.frameHeadless("filer", 760, 520);
+    const filer = try app_filer.buildWithRunner(app, &frame.window, gpa, std.testing.io, start_dir, null, .manual);
+    defer filer.deinitModel(gpa);
+    defer app.deinit();
+    defer filer.deinitUi();
+
+    var robot = nimbus.Robot.init(app, &frame.window);
+    robot.pump();
+
+    filer.searchStart("match");
+    filer.searchStepForTest(1);
+    robot.pump();
+    try std.testing.expectEqual(@as(usize, 1), filer.searchResultCountForTest());
+    filer.searchStop();
+    filer.searchStepForTest(10);
+    robot.pump();
+    try std.testing.expect(!filer.searchRunningForTest());
+    try std.testing.expectEqual(@as(usize, 0), filer.searchResultCountForTest());
+}
+
+test "app_filer search: teardown drains stale manual batch without leaks" {
+    const gpa = std.testing.allocator;
+    var td = try makeSearchFixture();
+    defer td.cleanup();
+
+    var start_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const start_dir = try tmpPath(&td, &start_buf);
+
+    const app = try newApp();
+    const frame = try app.frameHeadless("filer", 760, 520);
+    const filer = try app_filer.buildWithRunner(app, &frame.window, gpa, std.testing.io, start_dir, null, .manual);
+
+    var robot = nimbus.Robot.init(app, &frame.window);
+    robot.pump();
+    filer.searchStart("match");
+    filer.searchStepForTest(1);
+
+    filer.deinitUi();
+    app.deinit();
+    filer.deinitModel(gpa);
+}
+
+test "app_filer search: threaded cancel and join reaches terminal state" {
+    const gpa = std.testing.allocator;
+    var td = try makeSearchFixture();
+    defer td.cleanup();
+
+    var start_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const start_dir = try tmpPath(&td, &start_buf);
+
+    const app = try newApp();
+    const frame = try app.frameHeadless("filer", 760, 520);
+    const filer = try app_filer.buildWithRunner(app, &frame.window, gpa, std.testing.io, start_dir, null, .threaded);
+    defer filer.deinitModel(gpa);
+    defer app.deinit();
+    defer filer.deinitUi();
+
+    var robot = nimbus.Robot.init(app, &frame.window);
+    robot.pump();
+    filer.searchStart("match");
+    filer.searchStop();
+    robot.pump();
+    try std.testing.expect(!filer.searchRunningForTest());
+    try std.testing.expectEqual(@as(usize, 0), filer.searchResultCountForTest());
 }
 
 test "app_filer smoke: open row popup then close window without keeping popup alive" {

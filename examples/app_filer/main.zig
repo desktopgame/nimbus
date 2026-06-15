@@ -37,8 +37,27 @@ const ICON: f32 = 16;
 const PATH_BUF = 4096;
 const NAME_BUF = 512;
 const SIDEBAR_WIDTH: f32 = 180;
+const SEARCH_BATCH_SIZE = 32;
 
 const ViewMode = enum { list, details };
+pub const RunnerKind = enum { threaded, manual };
+
+pub const SearchLogic = struct {
+    pub const State = enum { idle, running, done, cancelled };
+
+    pub fn matches(name: []const u8, query: []const u8) bool {
+        const q = std.mem.trim(u8, query, " \t\r\n");
+        if (q.len == 0) return false;
+        return std.ascii.indexOfIgnoreCase(name, q) != null;
+    }
+
+    pub fn transition(state: State, cancel: bool, exhausted: bool) State {
+        return switch (state) {
+            .idle, .done, .cancelled => state,
+            .running => if (cancel) .cancelled else if (exhausted) .done else .running,
+        };
+    }
+};
 
 /// One directory entry. Owned by Filer (`entries`); the model borrows it.
 const Entry = struct {
@@ -55,6 +74,51 @@ const Place = struct {
     kind: Kind,
 
     const Kind = enum { home, drive };
+};
+
+const Hit = struct {
+    path: []u8,
+};
+
+const Batch = struct {
+    gen: u64,
+    filer: *Filer,
+    paths: [][]u8,
+    consumed: bool = false,
+};
+
+const Finish = struct {
+    gen: u64,
+    filer: *Filer,
+    cancelled: bool,
+};
+
+const SearchJob = struct {
+    gen: u64,
+    cancelled: std.atomic.Value(bool) = .init(false),
+    thread: ?std.Thread = null,
+    root: [PATH_BUF]u8 = undefined,
+    root_len: usize = 0,
+    query: [NAME_BUF]u8 = undefined,
+    query_len: usize = 0,
+    // std.testing.allocator and the process GPA used by the app are safe for
+    // this worker usage. If a different allocator is introduced, wrap it with
+    // ThreadSafeAllocator before assigning it here.
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    filer: *Filer,
+    runner: RunnerKind,
+    state: SearchLogic.State = .idle,
+    manual_stack: std.ArrayList([]u8) = .empty,
+    manual_ready: bool = false,
+
+    fn rootPath(self: *const SearchJob) []const u8 {
+        return self.root[0..self.root_len];
+    }
+
+    fn queryText(self: *const SearchJob) []const u8 {
+        return self.query[0..self.query_len];
+    }
 };
 
 /// Card-stack layout: the `active` child fills the container; every other
@@ -100,8 +164,11 @@ pub const Filer = struct {
     icon_home: awt.Image,
     icon_drive: awt.Image,
     model: Model, // shared by both right-pane views
+    results_model: Model,
     list: *nimbus.List = undefined,
     list_sp: *nimbus.ScrollPane = undefined,
+    results_list: *nimbus.List = undefined,
+    results_sp: *nimbus.ScrollPane = undefined,
     table: *nimbus.Table = undefined,
     table_sp: *nimbus.ScrollPane = undefined,
     right_center: *nimbus.Container = undefined,
@@ -128,8 +195,23 @@ pub const Filer = struct {
     pending: [NAME_BUF]u8 = undefined,
     pending_len: usize = 0,
     pending_edit: bool = false,
+    runner: RunnerKind = .threaded,
+    search_gen: u64 = 0,
+    search_job: ?*SearchJob = null,
+    results: std.ArrayList(*Hit) = .empty,
+    search_field: *nimbus.TextField = undefined,
+    search_button: *nimbus.Button = undefined,
+    cancel_button: *nimbus.Button = undefined,
+    result_count: *nimbus.Label = undefined,
+    prev_view: ?*nimbus.Component = null,
+    tearing_down: bool = false,
 
     pub fn deinitUi(self: *Filer) void {
+        self.tearing_down = true;
+        self.searchStop();
+        self.app.event_queue.drain();
+        self.clearResults();
+        self.results.deinit(self.allocator);
         self.clearEntries();
         self.entries.deinit(self.allocator);
         self.clearPlaces();
@@ -141,6 +223,7 @@ pub const Filer = struct {
     }
 
     pub fn deinitModel(self: *Filer, gpa: std.mem.Allocator) void {
+        self.results_model.deinit();
         self.model.deinit();
         gpa.destroy(self);
     }
@@ -160,6 +243,15 @@ pub const Filer = struct {
             self.allocator.destroy(e);
         }
         self.entries.clearRetainingCapacity();
+    }
+
+    fn clearResults(self: *Filer) void {
+        self.results_model.clear();
+        for (self.results.items) |h| {
+            self.allocator.free(h.path);
+            self.allocator.destroy(h);
+        }
+        self.results.clearRetainingCapacity();
     }
 
     fn clearPlaces(self: *Filer) void {
@@ -234,6 +326,7 @@ pub const Filer = struct {
     /// Load `path` (absolute) into the shared model. On open failure the
     /// current directory and listing stay; only the status line reports.
     fn loadDir(self: *Filer, path: []const u8) bool {
+        if (self.search_job != null) self.searchStop();
         if (path.len == 0) {
             self.setStatus("path is empty", .{});
             return false;
@@ -312,6 +405,143 @@ pub const Filer = struct {
         return true;
     }
 
+    fn showResultsView(self: *Filer) void {
+        if (self.prev_view == null) self.prev_view = self.card.active;
+        self.card.active = self.results_sp.asComponent();
+        self.right_center.component.markLayoutDirty();
+        self.right_center.component.repaint();
+    }
+
+    fn leaveResultsView(self: *Filer) void {
+        if (self.prev_view) |prev| {
+            self.card.active = prev;
+            self.prev_view = null;
+            self.right_center.component.markLayoutDirty();
+            self.right_center.component.repaint();
+        }
+    }
+
+    fn updateSearchStatus(self: *Filer, comptime fmt: []const u8, args: anytype) void {
+        self.setStatus(fmt, args);
+        const text = std.fmt.bufPrint(&self.status_buf, fmt, args) catch return;
+        self.result_count.setText(text) catch {};
+    }
+
+    fn appendResult(self: *Filer, path: []u8) void {
+        const h = self.allocator.create(Hit) catch {
+            self.allocator.free(path);
+            return;
+        };
+        h.* = .{ .path = path };
+        self.results.append(self.allocator, h) catch {
+            self.allocator.free(h.path);
+            self.allocator.destroy(h);
+            return;
+        };
+        self.results_model.add(@ptrCast(h)) catch {};
+    }
+
+    fn destroyBatch(self: *Filer, b: *Batch) void {
+        if (!b.consumed) for (b.paths) |p| self.allocator.free(p);
+        self.allocator.free(b.paths);
+        self.allocator.destroy(b);
+    }
+
+    fn destroyFinish(self: *Filer, f: *Finish) void {
+        self.allocator.destroy(f);
+    }
+
+    fn destroyJob(self: *Filer, job: *SearchJob) void {
+        for (job.manual_stack.items) |p| job.allocator.free(p);
+        job.manual_stack.deinit(job.allocator);
+        self.allocator.destroy(job);
+    }
+
+    fn makeJob(self: *Filer, root: []const u8, query: []const u8) ?*SearchJob {
+        if (root.len > PATH_BUF or query.len > NAME_BUF) return null;
+        const job = self.allocator.create(SearchJob) catch return null;
+        job.* = .{
+            .gen = self.search_gen,
+            .allocator = self.allocator,
+            .io = self.io,
+            .filer = self,
+            .runner = self.runner,
+            .state = .running,
+        };
+        @memcpy(job.root[0..root.len], root);
+        job.root_len = root.len;
+        @memcpy(job.query[0..query.len], query);
+        job.query_len = query.len;
+        return job;
+    }
+
+    pub fn searchStart(self: *Filer, raw_query: []const u8) void {
+        const query = std.mem.trim(u8, raw_query, " \t\r\n");
+        self.searchStop();
+        self.clearResults();
+        if (query.len == 0) {
+            self.leaveResultsView();
+            self.updateSearchStatus("{d} items", .{self.entries.items.len});
+            return;
+        }
+        const job = self.makeJob(self.curPath(), query) orelse {
+            self.updateSearchStatus("search failed", .{});
+            return;
+        };
+        self.search_job = job;
+        self.showResultsView();
+        self.updateSearchStatus("searching... {d}", .{self.results.items.len});
+        if (self.runner == .threaded) {
+            job.thread = std.Thread.spawn(.{}, walkThread, .{job}) catch {
+                self.search_job = null;
+                self.destroyJob(job);
+                self.updateSearchStatus("search failed", .{});
+                return;
+            };
+        }
+    }
+
+    pub fn searchStop(self: *Filer) void {
+        const job = self.search_job orelse return;
+        job.cancelled.store(true, .release);
+        if (job.thread) |t| t.join();
+        self.search_gen +%= 1;
+        self.search_job = null;
+        self.destroyJob(job);
+        self.clearResults();
+        self.leaveResultsView();
+        if (!self.tearing_down) self.updateSearchStatus("cancelled ({d})", .{self.results.items.len});
+    }
+
+    fn finishSearch(self: *Filer, gen: u64, cancelled: bool) void {
+        if (gen != self.search_gen) return;
+        const job = self.search_job orelse return;
+        if (job.thread) |t| t.join();
+        self.search_job = null;
+        self.destroyJob(job);
+        if (cancelled) {
+            self.updateSearchStatus("cancelled ({d})", .{self.results.items.len});
+        } else if (self.results.items.len == 0) {
+            self.updateSearchStatus("no matches", .{});
+        } else {
+            self.updateSearchStatus("done: {d} found", .{self.results.items.len});
+        }
+    }
+
+    pub fn searchStepForTest(self: *Filer, max_entries: usize) void {
+        const job = self.search_job orelse return;
+        if (job.runner != .manual or job.cancelled.load(.acquire)) return;
+        produceManual(job, max_entries);
+    }
+
+    pub fn searchResultCountForTest(self: *const Filer) usize {
+        return self.results.items.len;
+    }
+
+    pub fn searchRunningForTest(self: *const Filer) bool {
+        return self.search_job != null;
+    }
+
     fn requestSelectName(self: *Filer, name: []const u8) void {
         const n = @min(name.len, self.pending.len);
         @memcpy(self.pending[0..n], name[0..n]);
@@ -320,6 +550,7 @@ pub const Filer = struct {
 
     fn reloadTask(ud: *anyopaque) void {
         const self: *Filer = @ptrCast(@alignCast(ud));
+        if (self.tearing_down) return;
         _ = self.loadDir(self.curPath());
     }
 
@@ -329,6 +560,7 @@ pub const Filer = struct {
 
     fn pendingEditTask(ud: *anyopaque) void {
         const self: *Filer = @ptrCast(@alignCast(ud));
+        if (self.tearing_down) return;
         if (!self.pending_edit) return;
         const idx = self.selectedIndex() orelse {
             self.pending_edit = false;
@@ -668,6 +900,27 @@ pub const Filer = struct {
     fn onMenuNewFolder(self: *Filer, _: *const ActionEvent) void {
         self.createNewFolder();
     }
+    fn onSearchSubmit(self: *Filer, _: *const ActionEvent) void {
+        self.searchStart(self.search_field.getText());
+    }
+    fn onSearchCancel(self: *Filer, _: *const ActionEvent) void {
+        self.searchStop();
+    }
+    fn onSearchButton(self: *Filer, _: *const ActionEvent) void {
+        self.searchStart(self.search_field.getText());
+    }
+    fn onCancelButton(self: *Filer, _: *const ActionEvent) void {
+        self.searchStop();
+    }
+    fn onResultActivate(self: *Filer, _: *const ActionEvent) void {
+        const idx = self.results_list.getSelected() orelse return;
+        if (idx >= self.results.items.len) return;
+        const path = self.results.items[idx].path;
+        const dir = std.fs.path.dirname(path) orelse return;
+        const base = std.fs.path.basename(path);
+        self.requestSelectName(base);
+        _ = self.loadDir(dir);
+    }
     fn onPathSubmit(self: *Filer, _: *const ActionEvent) void {
         const path = std.mem.trim(u8, self.path_field.getText(), " \t\r\n");
         const loaded = self.loadDir(path);
@@ -715,6 +968,131 @@ pub const Filer = struct {
 };
 
 // ── formatting helpers ─────────────────────────────────────────────────────
+
+fn freePathList(allocator: std.mem.Allocator, paths: *std.ArrayList([]u8)) void {
+    for (paths.items) |p| allocator.free(p);
+    paths.deinit(allocator);
+}
+
+fn flushBatch(job: *SearchJob, paths: *std.ArrayList([]u8)) void {
+    if (paths.items.len == 0) return;
+    const slice = job.allocator.dupe([]u8, paths.items) catch {
+        freePathList(job.allocator, paths);
+        paths.* = .empty;
+        return;
+    };
+    paths.clearRetainingCapacity();
+    const batch = job.allocator.create(Batch) catch {
+        for (slice) |p| job.allocator.free(p);
+        job.allocator.free(slice);
+        return;
+    };
+    batch.* = .{ .gen = job.gen, .filer = job.filer, .paths = slice };
+    job.filer.app.event_queue.invokeLater(publishBatch, @ptrCast(batch)) catch {
+        job.filer.destroyBatch(batch);
+    };
+}
+
+fn pushHit(job: *SearchJob, paths: *std.ArrayList([]u8), full_path: []const u8) void {
+    const owned = job.allocator.dupe(u8, full_path) catch return;
+    paths.append(job.allocator, owned) catch {
+        job.allocator.free(owned);
+        return;
+    };
+    if (paths.items.len >= SEARCH_BATCH_SIZE) flushBatch(job, paths);
+}
+
+fn postFinish(job: *SearchJob, cancelled: bool) void {
+    const finish = job.allocator.create(Finish) catch return;
+    finish.* = .{ .gen = job.gen, .filer = job.filer, .cancelled = cancelled };
+    job.filer.app.event_queue.invokeLater(finishTask, @ptrCast(finish)) catch {
+        job.filer.destroyFinish(finish);
+    };
+}
+
+fn scanDir(job: *SearchJob, dir_path: []const u8, paths: *std.ArrayList([]u8)) void {
+    if (job.cancelled.load(.acquire)) return;
+    var dir = std.Io.Dir.openDirAbsolute(job.io, dir_path, .{ .iterate = true }) catch return;
+    defer dir.close(job.io);
+
+    var it = dir.iterate();
+    while (!job.cancelled.load(.acquire)) {
+        const ent = it.next(job.io) catch null orelse break;
+        const full = std.fs.path.join(job.allocator, &.{ dir_path, ent.name }) catch continue;
+        defer job.allocator.free(full);
+        if (SearchLogic.matches(ent.name, job.queryText())) pushHit(job, paths, full);
+        if (ent.kind == .directory) scanDir(job, full, paths);
+    }
+}
+
+fn walkThread(job: *SearchJob) void {
+    var paths: std.ArrayList([]u8) = .empty;
+    defer freePathList(job.allocator, &paths);
+    scanDir(job, job.rootPath(), &paths);
+    flushBatch(job, &paths);
+    postFinish(job, job.cancelled.load(.acquire));
+}
+
+fn ensureManualReady(job: *SearchJob) void {
+    if (job.manual_ready) return;
+    collectManualPaths(job, job.rootPath());
+    job.manual_ready = true;
+}
+
+fn collectManualPaths(job: *SearchJob, dir_path: []const u8) void {
+    var dir = std.Io.Dir.openDirAbsolute(job.io, dir_path, .{ .iterate = true }) catch return;
+    defer dir.close(job.io);
+    var it = dir.iterate();
+    while (it.next(job.io) catch null) |ent| {
+        const full = std.fs.path.join(job.allocator, &.{ dir_path, ent.name }) catch continue;
+        job.manual_stack.append(job.allocator, full) catch {
+            job.allocator.free(full);
+            continue;
+        };
+        if (ent.kind == .directory) collectManualPaths(job, full);
+    }
+}
+
+fn produceManual(job: *SearchJob, max_entries: usize) void {
+    ensureManualReady(job);
+    var paths: std.ArrayList([]u8) = .empty;
+    defer freePathList(job.allocator, &paths);
+
+    var seen: usize = 0;
+    while (seen < max_entries and !job.cancelled.load(.acquire)) {
+        if (job.manual_stack.items.len == 0) {
+            flushBatch(job, &paths);
+            postFinish(job, false);
+            return;
+        }
+        const full = job.manual_stack.orderedRemove(0);
+        defer job.allocator.free(full);
+        seen += 1;
+        if (SearchLogic.matches(std.fs.path.basename(full), job.queryText())) pushHit(job, &paths, full);
+    }
+    flushBatch(job, &paths);
+    if (job.cancelled.load(.acquire)) postFinish(job, true);
+}
+
+fn publishBatch(ud: *anyopaque) void {
+    const batch: *Batch = @ptrCast(@alignCast(ud));
+    const filer = batch.filer;
+    defer filer.destroyBatch(batch);
+    if (batch.gen != filer.search_gen or filer.tearing_down) return;
+    for (batch.paths) |p| {
+        filer.appendResult(p);
+    }
+    batch.consumed = true;
+    filer.updateSearchStatus("searching... {d}", .{filer.results.items.len});
+}
+
+fn finishTask(ud: *anyopaque) void {
+    const finish: *Finish = @ptrCast(@alignCast(ud));
+    const filer = finish.filer;
+    defer filer.destroyFinish(finish);
+    if (finish.gen != filer.search_gen or filer.tearing_down) return;
+    filer.finishSearch(finish.gen, finish.cancelled);
+}
 
 fn fmtSize(buf: []u8, n: u64) []const u8 {
     if (n < 1024) return std.fmt.bufPrint(buf, "{d} B", .{n}) catch "";
@@ -865,6 +1243,38 @@ fn createFileCell(ud: *anyopaque, allocator: std.mem.Allocator) anyerror!nimbus.
         .destroy = FileCell.destroyCell,
         .edit = .{ .start = FileCell.start, .commit = FileCell.commit, .cancel = FileCell.cancel },
         .user_data = fc,
+    };
+}
+
+const ResultCell = struct {
+    label: *nimbus.Label,
+
+    fn update(ud: *anyopaque, ctx: nimbus.List.CellContext) void {
+        const self: *ResultCell = @ptrCast(@alignCast(ud));
+        const h: *Hit = @ptrCast(@alignCast(ctx.value));
+        self.label.setText(h.path) catch {};
+    }
+
+    fn destroyCell(ud: *anyopaque, allocator: std.mem.Allocator) void {
+        const self: *ResultCell = @ptrCast(@alignCast(ud));
+        self.label.component.vtable.destroy(&self.label.component, allocator);
+        allocator.destroy(self);
+    }
+};
+
+fn createResultCell(ud: *anyopaque, allocator: std.mem.Allocator) anyerror!nimbus.List.Cell {
+    const filer: *Filer = @ptrCast(@alignCast(ud));
+    const rc = try allocator.create(ResultCell);
+    errdefer allocator.destroy(rc);
+    const label = try filer.app.label("");
+    label.setIcon(filer.icon_file);
+    label.setIconSize(.{ .width = ICON, .height = ICON });
+    rc.* = .{ .label = label };
+    return .{
+        .component = &label.component,
+        .update = ResultCell.update,
+        .destroy = ResultCell.destroyCell,
+        .user_data = rc,
     };
 }
 
@@ -1209,6 +1619,18 @@ pub fn build(
     start_dir: []const u8,
     home: ?[]const u8,
 ) !*Filer {
+    return buildWithRunner(app, window, gpa, io, start_dir, home, .threaded);
+}
+
+pub fn buildWithRunner(
+    app: *nimbus.Application,
+    window: *nimbus.Window,
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    start_dir: []const u8,
+    home: ?[]const u8,
+    runner: RunnerKind,
+) !*Filer {
     const filer = try gpa.create(Filer);
     filer.* = .{
         .allocator = gpa,
@@ -1219,6 +1641,8 @@ pub fn build(
         .icon_home = try app.icon(.house),
         .icon_drive = try app.icon(.hard_drive),
         .model = Model.init(gpa),
+        .results_model = Model.init(gpa),
+        .runner = runner,
         .card = .{ .base = .{ .vtable = &CardLayout.vt } },
     };
     filer.window = window;
@@ -1233,6 +1657,13 @@ pub fn build(
     try lst.addContextMenuListener(Filer, Filer.onListContextMenu, filer);
     const lsp = try app.scrollPane(lst.asComponent());
     filer.list_sp = lsp;
+
+    const results_list = try app.listWithModel(&filer.results_model, .{ .create = createResultCell, .user_data = filer });
+    filer.results_list = results_list;
+    results_list.setRowHeight(ROW_HEIGHT);
+    try results_list.addActionListener(Filer, Filer.onResultActivate, filer);
+    const rsp = try app.scrollPane(results_list.asComponent());
+    filer.results_sp = rsp;
 
     // Right pane: details view (Table over the SAME model).
     const tbl = try app.tableWithModel(&filer.model, &.{
@@ -1257,6 +1688,7 @@ pub fn build(
     holder.setLayout(&filer.card.base);
     try holder.add(lsp.asComponent());
     try holder.add(tsp.asComponent());
+    try holder.add(rsp.asComponent());
     filer.card.active = lsp.asComponent();
 
     // Left pane: places.
@@ -1321,7 +1753,10 @@ pub fn build(
     filer.confirm_msg = confirm_msg;
     try buildConfirmDialog(app, confirm, confirm_msg);
 
-    // Toolbar (north): [up] [view] path
+    // Toolbar (north): [up] [view] path / search row.
+    const north_stack = try app.container();
+    north_stack.setLayout(nimbus.BoxLayout.vertical());
+
     const bar = try app.container();
     bar.setLayout(nimbus.BoxLayout.horizontal());
     const up = try app.button("");
@@ -1344,7 +1779,30 @@ pub fn build(
     try bar.add(&view_btn.component);
     try bar.add(&gap.component);
     try bar.add(&path_field.component);
-    try nimbus.BorderLayout.add(&window.container, .north, &bar.component);
+    try north_stack.add(&bar.component);
+
+    const search_bar = try app.container();
+    search_bar.setLayout(nimbus.BoxLayout.horizontal());
+    const search_field = try app.textField("");
+    filer.search_field = search_field;
+    search_field.component.setGrowX(1);
+    search_field.component.setAlignY(.center);
+    try search_field.addSubmitListener(Filer, Filer.onSearchSubmit, filer);
+    try search_field.addCancelListener(Filer, Filer.onSearchCancel, filer);
+    const search_btn = try app.button("Search");
+    filer.search_button = search_btn;
+    try search_btn.getModel().addActionListener(Filer, Filer.onSearchButton, filer);
+    const cancel_btn = try app.button("Cancel");
+    filer.cancel_button = cancel_btn;
+    try cancel_btn.getModel().addActionListener(Filer, Filer.onCancelButton, filer);
+    const result_count = try app.label("");
+    filer.result_count = result_count;
+    try search_bar.add(&search_field.component);
+    try search_bar.add(&search_btn.component);
+    try search_bar.add(&cancel_btn.component);
+    try search_bar.add(&result_count.component);
+    try north_stack.add(&search_bar.component);
+    try nimbus.BorderLayout.add(&window.container, .north, &north_stack.component);
 
     // Status line (south).
     const status = try app.label("");
