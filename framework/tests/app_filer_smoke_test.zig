@@ -173,3 +173,25 @@ test "app_filer smoke: background popup creates New Folder" {
 
     try td.dir.access(std.testing.io, "New Folder", .{});
 }
+
+test "app_filer layout: path_field is vertically centered in toolbar" {
+    const gpa = std.testing.allocator;
+    var td = try makeFixture();
+    defer td.cleanup();
+
+    var start_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const start_dir = start_buf[0..try td.dir.realPath(std.testing.io, &start_buf)];
+
+    const app = try newApp();
+    const frame = try app.frameHeadless("filer", 760, 520);
+    const filer = try app_filer.build(app, &frame.window, gpa, std.testing.io, start_dir, null);
+    defer filer.deinitModel(gpa);
+    defer app.deinit();
+    defer filer.deinitUi();
+
+    var robot = nimbus.Robot.init(app, &frame.window);
+    robot.pump();
+
+    const y = filer.path_field.component.getBounds().y;
+    try std.testing.expect(y > 0.5);
+}

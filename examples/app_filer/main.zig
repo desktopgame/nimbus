@@ -1337,6 +1337,7 @@ pub fn build(
     const path_field = try app.textField("");
     filer.path_field = path_field;
     path_field.component.setGrowX(1);
+    path_field.component.setAlignY(.center);
     try path_field.addSubmitListener(Filer, Filer.onPathSubmit, filer);
     try path_field.addCancelListener(Filer, Filer.onPathCancel, filer);
     try bar.add(&up.component);
