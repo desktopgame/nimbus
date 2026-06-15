@@ -43,19 +43,10 @@ const ViewMode = enum { list, details };
 pub const RunnerKind = enum { threaded, manual };
 
 pub const SearchLogic = struct {
-    pub const State = enum { idle, running, done, cancelled };
-
     pub fn matches(name: []const u8, query: []const u8) bool {
         const q = std.mem.trim(u8, query, " \t\r\n");
         if (q.len == 0) return false;
         return std.ascii.indexOfIgnoreCase(name, q) != null;
-    }
-
-    pub fn transition(state: State, cancel: bool, exhausted: bool) State {
-        return switch (state) {
-            .idle, .done, .cancelled => state,
-            .running => if (cancel) .cancelled else if (exhausted) .done else .running,
-        };
     }
 };
 
@@ -108,7 +99,6 @@ const SearchJob = struct {
     io: std.Io,
     filer: *Filer,
     runner: RunnerKind,
-    state: SearchLogic.State = .idle,
     manual_stack: std.ArrayList([]u8) = .empty,
     manual_ready: bool = false,
 
@@ -466,7 +456,6 @@ pub const Filer = struct {
             .io = self.io,
             .filer = self,
             .runner = self.runner,
-            .state = .running,
         };
         @memcpy(job.root[0..root.len], root);
         job.root_len = root.len;
@@ -540,6 +529,14 @@ pub const Filer = struct {
 
     pub fn searchRunningForTest(self: *const Filer) bool {
         return self.search_job != null;
+    }
+
+    pub fn curPathForTest(self: *const Filer) []const u8 {
+        return self.curPath();
+    }
+
+    pub fn activateResultForTest(self: *Filer, idx: usize) void {
+        self.activateResultIndex(idx);
     }
 
     fn requestSelectName(self: *Filer, name: []const u8) void {
@@ -914,12 +911,18 @@ pub const Filer = struct {
     }
     fn onResultActivate(self: *Filer, _: *const ActionEvent) void {
         const idx = self.results_list.getSelected() orelse return;
+        self.activateResultIndex(idx);
+    }
+    fn activateResultIndex(self: *Filer, idx: usize) void {
         if (idx >= self.results.items.len) return;
         const path = self.results.items[idx].path;
         const dir = std.fs.path.dirname(path) orelse return;
+        if (dir.len > PATH_BUF) return;
+        var dir_buf: [PATH_BUF]u8 = undefined;
+        @memcpy(dir_buf[0..dir.len], dir);
         const base = std.fs.path.basename(path);
         self.requestSelectName(base);
-        _ = self.loadDir(dir);
+        _ = self.loadDir(dir_buf[0..dir.len]);
     }
     fn onPathSubmit(self: *Filer, _: *const ActionEvent) void {
         const path = std.mem.trim(u8, self.path_field.getText(), " \t\r\n");

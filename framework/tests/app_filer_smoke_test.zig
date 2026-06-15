@@ -108,14 +108,11 @@ test "app_filer smoke: Driver.clickOn toggles view button" {
     try std.testing.expect(hasRoleText(tree_after, .button, "List"));
 }
 
-test "app_filer search logic: matching and cancellation state are pure" {
+test "app_filer search logic: matching is pure" {
     try std.testing.expect(app_filer.SearchLogic.matches("AlphaMatch.txt", "match"));
     try std.testing.expect(app_filer.SearchLogic.matches("alpha.txt", "ALPHA"));
     try std.testing.expect(!app_filer.SearchLogic.matches("alpha.txt", ""));
     try std.testing.expect(!app_filer.SearchLogic.matches("alpha.txt", "beta"));
-    try std.testing.expectEqual(app_filer.SearchLogic.State.running, app_filer.SearchLogic.transition(.running, false, false));
-    try std.testing.expectEqual(app_filer.SearchLogic.State.cancelled, app_filer.SearchLogic.transition(.running, true, false));
-    try std.testing.expectEqual(app_filer.SearchLogic.State.done, app_filer.SearchLogic.transition(.running, false, true));
 }
 
 test "app_filer search: manual runner publishes one pumped batch at a time" {
@@ -144,6 +141,40 @@ test "app_filer search: manual runner publishes one pumped batch at a time" {
     filer.searchStepForTest(1);
     robot.pump();
     try std.testing.expectEqual(@as(usize, 2), filer.searchResultCountForTest());
+}
+
+test "app_filer search: activating result while search is running copies destination dir" {
+    const gpa = std.testing.allocator;
+    var td = try makeSearchFixture();
+    defer td.cleanup();
+
+    var start_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const start_dir = try tmpPath(&td, &start_buf);
+    const expected_parent = try std.fs.path.join(gpa, &.{ start_dir, "match_dir" });
+    defer gpa.free(expected_parent);
+
+    const app = try newApp();
+    const frame = try app.frameHeadless("filer", 760, 520);
+    const filer = try app_filer.buildWithRunner(app, &frame.window, gpa, std.testing.io, start_dir, null, .manual);
+    defer filer.deinitModel(gpa);
+    defer app.deinit();
+    defer filer.deinitUi();
+
+    var robot = nimbus.Robot.init(app, &frame.window);
+    robot.pump();
+
+    filer.searchStart("match_c");
+    var guard: usize = 0;
+    while (filer.searchResultCountForTest() == 0 and guard < 10) : (guard += 1) {
+        filer.searchStepForTest(1);
+        robot.pump();
+    }
+    try std.testing.expectEqual(@as(usize, 1), filer.searchResultCountForTest());
+    try std.testing.expect(filer.searchRunningForTest());
+
+    filer.activateResultForTest(0);
+    robot.pump();
+    try std.testing.expectEqualStrings(expected_parent, filer.curPathForTest());
 }
 
 test "app_filer search: cancellation stops manual producer" {
