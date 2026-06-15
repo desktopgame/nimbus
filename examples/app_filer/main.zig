@@ -129,15 +129,18 @@ pub const Filer = struct {
     pending_len: usize = 0,
     pending_edit: bool = false,
 
-    pub fn deinit(self: *Filer, gpa: std.mem.Allocator) void {
+    pub fn deinitUi(self: *Filer) void {
         self.clearEntries();
-        self.entries.deinit(gpa);
+        self.entries.deinit(self.allocator);
         self.clearPlaces();
-        self.places.deinit(gpa);
+        self.places.deinit(self.allocator);
         self.popup.destroy();
         self.background_popup.destroy();
         self.confirm.destroy();
-        self.ghost.component.vtable.destroy(&self.ghost.component, gpa);
+        self.ghost.component.vtable.destroy(&self.ghost.component, self.allocator);
+    }
+
+    pub fn deinitModel(self: *Filer, gpa: std.mem.Allocator) void {
         self.model.deinit();
         gpa.destroy(self);
     }
@@ -1376,11 +1379,12 @@ pub fn main(init: std.process.Init) !void {
     var buf: [PATH_BUF]u8 = undefined;
     const n = try std.Io.Dir.cwd().realPath(init.io, &buf);
     const filer = try build(app, &frame.window, init.gpa, init.io, buf[0..n], init.environ_map.get(home_var));
-    defer filer.deinit(init.gpa);
+    defer filer.deinitModel(init.gpa);
     defer app.deinit();
+    defer filer.deinitUi();
 
     std.debug.print(
-        \\filer M5 - toolbar "Details"/"List" toggles the right-pane view.
+        \\filer M5 — toolbar "Details"/"List" toggles the right-pane view.
         \\Details view: click a header to sort, drag a column boundary to resize.
         \\Double-click/Enter opens, right-click for the menu, Ctrl+Shift+N creates a folder, F2 renames, Delete removes, F5 reloads.
         \\

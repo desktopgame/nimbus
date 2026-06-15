@@ -74,8 +74,9 @@ test "app_filer smoke: Driver.clickOn toggles view button" {
     const app = try newApp();
     const frame = try app.frameHeadless("filer", 760, 520);
     const filer = try app_filer.build(app, &frame.window, gpa, std.testing.io, start_dir, null);
-    defer filer.deinit(gpa);
+    defer filer.deinitModel(gpa);
     defer app.deinit();
+    defer filer.deinitUi();
 
     var robot = nimbus.Robot.init(app, &frame.window);
     var driver = nimbus.Driver{ .robot = &robot };
@@ -104,8 +105,9 @@ test "app_filer smoke: open row popup then close window without keeping popup al
     const app = try newApp();
     const frame = try app.frameHeadless("filer", 760, 520);
     const filer = try app_filer.build(app, &frame.window, gpa, std.testing.io, start_dir, null);
-    defer filer.deinit(gpa);
+    defer filer.deinitModel(gpa);
     defer app.deinit();
+    defer filer.deinitUi();
 
     var robot = nimbus.Robot.init(app, &frame.window);
     robot.pump();
@@ -151,8 +153,9 @@ test "app_filer smoke: background popup creates New Folder" {
     const app = try newApp();
     const frame = try app.frameHeadless("filer", 760, 520);
     const filer = try app_filer.build(app, &frame.window, gpa, std.testing.io, start_dir, null);
-    defer filer.deinit(gpa);
+    defer filer.deinitModel(gpa);
     defer app.deinit();
+    defer filer.deinitUi();
 
     var robot = nimbus.Robot.init(app, &frame.window);
     var driver = nimbus.Driver{ .robot = &robot };
