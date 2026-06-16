@@ -317,49 +317,7 @@ IME対応も必須だが、これも初版では完全でなくてもよしと�
 
 ### エラーのC_ABIでの表現
 NULLを返し、内部エラーを `GetLastError()` のように取得できるようにする。
-
-```.zig
-// framework/src/c_api.zig
-const std = @import("std");
-const framework = @import("nimbus");
-
-// Zig側のerror unionを返す関数を、C ABI互換のNULL返しに変換
-export fn nimbus_button_create(label: [*:0]const u8) ?*framework.widget.Button {
-    const label_slice = std.mem.span(label);
-    const btn = framework.widget.Button.init(getApp(), label_slice) catch |err| {
-        setLastError(err);    // ★ ここでerror値を保存
-        return null;          // ★ C ABIにはNULLで失敗を伝える
-    };
-    return btn;
-}
-
-// thread-local last error storage
-threadlocal var last_error: ?anyerror = null;
-threadlocal var last_error_buf: [256]u8 = undefined;
-threadlocal var last_error_msg: []const u8 = "";
-
-fn setLastError(err: anyerror) void {
-    last_error = err;
-    last_error_msg = std.fmt.bufPrint(&last_error_buf, "{s}", .{@errorName(err)}) catch "";
-}
-
-export fn nimbus_last_error_code() c_int {
-    return errorToCode(last_error orelse return 0);
-}
-
-export fn nimbus_last_error_message() [*:0]const u8 {
-    return @ptrCast(last_error_msg.ptr);  // 簡略化
-}
-
-fn errorToCode(err: anyerror) c_int {
-    return switch (err) {
-        error.OutOfMemory => 1,
-        error.WindowCreateFailed => 2,
-        // ...
-        else => 99,
-    };
-}
-```
+詳細は framework/src/c_api.zig を参照してください。
 
 #### 関数の失敗時の保証
 `nmCreateXxx` 系の関数が NULL を返した場合、その関数内で確保したリソースはすべて関数内で解放されている。
