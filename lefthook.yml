@@ -1,0 +1,25 @@
+# nimbus commit gate — lefthook で管理。
+#
+# 旧 .git/hooks/pre-commit シェルスクリプトを置き換える、staged ファイル種別ごとの
+# 決定論ゲート。有効化は lefthook install。
+#
+# glob を持つ command は、staged ファイルに glob 一致が無ければ lefthook が自動 skip する。
+# {staged_files} には glob 一致した staged ファイルだけが渡る。
+pre-commit:
+  commands:
+    betterleaks:
+      run: |
+        if [ -f tools/bin/betterleaks.exe ]; then
+          tools/bin/betterleaks.exe git --pre-commit --redact --staged --verbose
+        else
+          echo "betterleaks 未導入。tools/bin/betterleaks.exe が無いのでシークレットスキャンを skip します。" >&2
+        fi
+    textlint-base:
+      glob: "*.md"
+      run: npx textlint -c .textlintrc.json --rulesdir tools/textlint/rules {staged_files}
+    textlint-doc:
+      glob: "**doc/**.md"
+      run: npx textlint -c .textlintrc.doc.json --rulesdir tools/textlint/doc-rules {staged_files}
+    zigtest:
+      glob: "*.{zig,c,h,m}"
+      run: zig build test

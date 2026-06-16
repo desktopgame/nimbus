@@ -17,13 +17,18 @@
 ## 検知している規則
 
 - 表示幅: 1 行が 160 桁（全角 2 / 半角 1）を超えると警告。折り返し対策。
-  実装は `tools/textlint/rules/max-display-width.js`、閾値はその定数。
+  実装は `tools/textlint/doc-rules/max-display-width.js`、閾値はその定数。
 - 強調の数: 1 行に 1 個まで、見出し配下の本文（セクション）は 2 個まで。強調は `**` / `*`。
-  実装は `tools/textlint/rules/max-emphasis-per-line.js`。
+  実装は `tools/textlint/doc-rules/max-emphasis-per-line.js`。
 - 用語統一: 小文字の英語形を所定のカタカナ・日本語へ寄せる。PascalCase（型名）は対象外。
   辞書は `tools/textlint/prh.yml`、規約は `.claude/rules/api-document-style-guide.md`「表記の統一」。
 - 和文技術文: 長文（150 字超）・だ である調と ですます調 の混在・冗長表現など。
-  preset-ja-technical-writing。有効無効と閾値は `.textlintrc.json`。
+  preset-ja-technical-writing。有効無効と閾値は `.textlintrc.doc.json`。
+
+上の 4 つは module doc（`*/doc/**`）専用で、設定は `.textlintrc.doc.json` と `tools/textlint/doc-rules/`。
+これとは別に、行末スペース／ハードブレークを検出する softbreak は全 Markdown が対象で、
+実装は `tools/textlint/rules/softbreak.js`、設定は base の `.textlintrc.json`。
+softbreak は `npm run lint` ではなくコミットゲート（lefthook）で全 *.md に適用される。
 
 閾値や対象語を変えるときは、上に挙げた各ファイルを直す。
 

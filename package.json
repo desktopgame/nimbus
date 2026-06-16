@@ -9,8 +9,8 @@
     "example": "examples"
   },
   "scripts": {
-    "lint": "textlint --rulesdir tools/textlint/rules",
-    "lint_all": "textlint --rulesdir tools/textlint/rules \"*/doc/**/*.md\""
+    "lint": "textlint -c .textlintrc.doc.json --rulesdir tools/textlint/doc-rules",
+    "lint_all": "textlint -c .textlintrc.doc.json --rulesdir tools/textlint/doc-rules \"*/doc/**/*.md\""
   },
   "repository": {
     "type": "git",
