@@ -1,14 +1,31 @@
 #!/bin/sh
-# betterleaks staged シークレットスキャン（配布用ソース: dotgit/）。
-# 秘密が staged に混じったコミットをブロックする。
-# 有効化の方法は CLAUDE.md「シークレットスキャン」を参照。
+# betterleaks による staged シークレットスキャン＋ zig テストゲート。
+# 秘密が staged に混じったコミット、およびテスト非緑のコミットをブロックする。
+# バイナリ: tools/bin/betterleaks.exe（gitignore 済み。未導入ならスキャンのみ skip）
+
 BL="tools/bin/betterleaks.exe"
+
 if [ ! -f "$BL" ]; then
-  echo "betterleaks 未導入（$BL が無い）。スキャンを skip。" >&2
-  exit 0
+  echo "betterleaks 未導入（$BL が無い）。シークレットスキャンを skip します。" >&2
+else
+  "$BL" git --pre-commit --redact --staged --verbose
+  if [ $? -ne 0 ]; then
+    echo "" >&2
+    echo "🚫 betterleaks: コミットにシークレットの疑いがあります。" >&2
+    echo "   除去するか、誤検知なら .betterleaks.toml で allowlist してください。" >&2
+    exit 1
+  fi
 fi
-"$BL" git --pre-commit --redact --staged --verbose || {
-  echo "🚫 betterleaks: コミットにシークレットの疑い。除去するか .betterleaks.toml で allowlist。" >&2
+
+# --- zig テストゲート（追加 2026-06-16）---
+# 委譲（Codex/Claude）でも手コミットでも、緑でない限り commit を通さない決定論ゲート。
+# 注意: build/test 緑 ≠ 正しい（独立レビューは別途必要）。重ければ後で対象を絞る。
+# 緊急時のみ `git commit --no-verify` で迂回（委譲では使わない）。
+echo "pre-commit: zig build test を実行中…（数十秒かかることがあります）" >&2
+if ! zig build test; then
+  echo "" >&2
+  echo "🚫 pre-commit: zig build test が緑じゃありません。直してから再コミット。" >&2
   exit 1
-}
+fi
+
 exit 0
