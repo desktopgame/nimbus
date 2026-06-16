@@ -8,12 +8,7 @@
 pre-commit:
   commands:
     betterleaks:
-      run: |
-        if [ -f tools/bin/betterleaks.exe ]; then
-          tools/bin/betterleaks.exe git --pre-commit --redact --staged --verbose
-        else
-          echo "betterleaks 未導入。tools/bin/betterleaks.exe が無いのでシークレットスキャンを skip します。" >&2
-        fi
+      run: if [ -f tools/bin/betterleaks.exe ]; then tools/bin/betterleaks.exe git --pre-commit --redact --staged --verbose; else echo 'betterleaks 未導入のため skip します。' >&2; fi
     textlint-base:
       glob: "*.md"
       run: npx textlint -c .textlintrc.json --rulesdir tools/textlint/rules {staged_files}
