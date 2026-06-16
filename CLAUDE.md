@@ -183,10 +183,7 @@ prefix のあとに、その変更が何をするものかを簡潔に書く。
 あなた自身が将来のためにソースコード中にコメントを残すことはOKです。
 
 ## ドキュメントに関する共通ルール
-共通の doc 規約は path-scoped rule（`.claude/rules/`）に分離した。該当パスを編集すると自動適用される。
-
-* リポジトリルート表記（`{REPO_ROOT}`）と改行（ソフトブレーク）: `markdown-common.md`
-* doc と実装の追従関係（実装が doc を追い越すのは可・doc が実装に追いつかないのは不可・改名の取りこぼし）: `doc-impl-sync.md`
+doc 共通規約は `.claude/rules/`（`markdown-common.md`・`doc-impl-sync.md`）にあり、該当パスを編集すると自動適用される。
 
 ## その他の決定項目
 

@@ -13,7 +13,7 @@ pre-commit:
       glob: "*.md"
       run: npx textlint -c .textlintrc.json --rulesdir tools/textlint/rules {staged_files}
     textlint-doc:
-      glob: "**doc/**.md"
+      glob: "*/doc/**.md"
       run: npx textlint -c .textlintrc.doc.json --rulesdir tools/textlint/doc-rules {staged_files}
     zigtest:
       glob: "*.{zig,c,h,m}"
