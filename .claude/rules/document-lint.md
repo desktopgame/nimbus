@@ -1,3 +1,12 @@
+---
+paths:
+  - "*.md"
+  - "doc/**/*.md"
+  - "awt/doc/**/*.md"
+  - "awt-c/doc/**/*.md"
+  - "framework/doc/**/*.md"
+---
+
 # document-lint
 
 ドキュメントの読みやすさは textlint で機械的に縛っている。コミット時に lefthook の pre-commit ゲートが staged の Markdown へ自動で走るので、基本は自分で流す必要はない。コミットが lint で止まったら、出た指摘を解消してから commit し直す。
