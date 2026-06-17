@@ -1,20 +1,23 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # robot
 AI / 自動テストが nimbus アプリのインタラクションを再現・観測するための駆動レイヤー。
-2 層に分かれる: **`Robot`**（意味を知らないプリミティブ。合成イベントの注入 / イベントループの単一ステップ駆動 / 仮想時間 / 構造化スナップショット）と、**`Driver`**（その上の薄い意味ラッパー。role + text でウィジェットを名指しする `find` / `clickOn`）。
-Swing の `java.awt.Robot` に相当するが、OS レベルではなく framework レベルで動き、ヘッドレス・決定的・意味的（role + text 指定）である点が異なる。意味レイヤーは座標プリミティブへ解決して委譲するだけで、新しい機構は足さない。
+2 層に分かれる。
+**`Robot`** は意味を知らないプリミティブで、合成イベントの注入 / イベントループの単一ステップ駆動 / 仮想時間 / 構造化スナップショットを行う。
+**`Driver`** はその上の薄い意味ラッパーで、role + text でウィジェットを名指しする `find` / `clickOn` を提供する。
+Swing の `java.awt.Robot` に相当するが、OS レベルではなく framework レベルで動き、ヘッドレス・決定的・意味的（role + text 指定）である点が異なる。
+意味レイヤーは座標プリミティブへ解決して委譲するだけで、新しい機構は足さない。
 
 ## 型定義
 ```zig
 pub const Robot = struct {
-    app:    *Application,         // 借用。Robot は Application を所有しない
-    window: *Window,             // 操作対象ウィンドウ（複数ある場合は対象を保持）
-    // 直前のマウス座標 / 装飾キー / ボタン状態など、合成イベント組み立て用の保持状態
+    app:    *Application,  // 借用。Robot は Application を所有しない
+    window: *Window,       // 操作対象ウィンドウ（複数ある場合は対象を保持）
+    // 直前に合成したカーソル位置（ウィンドウローカル）。mouseDown / mouseUp / scroll はこの位置で発火し、
+    // moveMouse / click が更新する
     cursor: Component.Point,
-    buttons: awt.Event.Modifiers, // 押下中のボタン / 装飾キー
 };
 ```
 
@@ -36,33 +39,8 @@ pub const NodeSnapshot = struct {
 };
 ```
 
-詳細 `dump` ビューのノード。
-ノード毎に、ウィジェットが**自分で選別した**プロパティを並べる（機械的な全件走査ではない。後述「詳細ダンプのフィールド選別」）。
-構造（親子）は `children` で表す。
-
-```zig
-pub const DumpNode = struct {
-    type_name: []const u8,        // 実体の型名（"Button" 等）
-    fields:    []Field,           // ウィジェットが選別したプロパティ
-    children:  []DumpNode,
-};
-
-pub const Field = struct {
-    name:  []const u8,
-    value: Value,
-};
-
-pub const Value = union(enum) {
-    int:    i64,
-    float:  f64,
-    boolean:bool,
-    string: []const u8,           // []const u8 / [:0]const u8 など
-    enum_:  []const u8,           // enum はタグ名で出す（決定的）
-    object: []Field,              // 入れ子 struct（Size / Rect 等）を展開したもの
-};
-
-pub const QueryError = error{ NotFound, Ambiguous, OutOfMemory };
-```
+詳細プロパティを出す `dump` ビュー（`DumpNode` 系）は未実装。
+設計は `narrative/robot.md`「2 つのスナップショットモード」「詳細ダンプのフィールド選別」を、段階は「機能要望」段階 3.5 を参照。
 
 ## Robot の生成
 ```zig
@@ -70,12 +48,13 @@ pub fn init(app: *Application, window: *Window) Robot;
 ```
 
 `app` と `window` を借用して `Robot` を初期化する。
-`cursor` は原点、`buttons` は空で始まる。
+`cursor` は原点から始まる。
 メモリ確保を伴わないので失敗しない（スナップショットの確保は各メソッド側で行う）。
 
 ### 事前条件
 `window` は `app` に登録済みのウィンドウであること。
-ヘッドレスでデバッグする場合、`app` / `window` がヘッドレスモードで生成されていること（後述「ヘッドレスサーフェス」）。実ウィンドウに対しても動作するが、その場合フォーカス奪取や OS のジッタの影響を受ける。
+ヘッドレスでデバッグする場合、`app` / `window` がヘッドレスモードで生成されていること（後述「ヘッドレスサーフェス」）。
+実ウィンドウに対しても動作するが、その場合フォーカス奪取や OS のジッタの影響を受ける。
 
 ## マウスの移動
 ```zig
@@ -93,7 +72,6 @@ pub fn mouseUp  (self: *Robot, button: awt.Event.MouseButton) void;
 ```
 
 現在の `cursor` 位置で `.press` / `.release` の `.mouse` イベントを合成して積む。
-`buttons` の対応ビットを更新する。
 mouse capture / focus 遷移は `Window.dispatchInput` 側が処理するので、Robot は座標とボタンだけを与える。
 
 ## クリック
@@ -133,7 +111,7 @@ TextField 等への文字入力を再現する。物理キーの `.key` では�
 
 ### IME の合成
 ```zig
-pub fn composition(self: *Robot, text: []const u8, target_start: i32, target_end: i32) void;
+pub fn composition(self: *Robot, text: []const u8, target_start: usize, target_end: usize) void;
 ```
 
 `.composition` イベント（変換中文字列）を合成し、focus_owner へ届ける。
@@ -178,31 +156,19 @@ pub fn freeTree(allocator: std.mem.Allocator, root: NodeSnapshot) void;
 コンパクトで安定した「画面に何があるか」のビュー。ナビゲーションと検証（クリックが効いたか等）向け。
 返り値は `allocator` で確保される。呼び出し側が `freeTree` で解放する。
 
-## ダンプスナップショットの取得（詳細）
-```zig
-pub fn dumpTree(self: *Robot, allocator: std.mem.Allocator) !DumpNode;
-pub fn dumpNode(self: *Robot, allocator: std.mem.Allocator, target: *Component) !DumpNode;
-pub fn freeDump(allocator: std.mem.Allocator, root: DumpNode) void;
-```
-
-`dumpTree` はツリー全体、`dumpNode` は単一ノードのサブツリーについて、各ウィジェットが**選別した詳細プロパティ**を `DumpNode` として返す。
-「なぜそうなっているか」を診断するための深いビュー。
-curated `tree` が role / text / rect の最小集合なのに対し、これは内部状態（`min_size` / `grow_x` / モデルの選択インデックス / caret 位置等）のうちウィジェットが診断に有用と判断したものを出す。
-
-各ノードのフィールド収集は Component の opt-in 能力構造体 `a11y.dump` フック（`narrative/robot.md`「a11y ファセット」参照。段階としては後回し）が行う。
-返り値は `allocator` で確保される。呼び出し側が `freeDump` で解放する。
-
 ## ピクセルスナップショットの取得
 ```zig
-pub fn snapshotPixels(self: *Robot, allocator: std.mem.Allocator, out_rgba: []u8) !void;
+pub fn snapshotPixels(self: *Robot, out_rgba: []u8) !void;
 pub fn snapshotPng(self: *Robot, allocator: std.mem.Allocator, io: std.Io, path: []const u8) !void;
 ```
 
-ヘッドレスサーフェスのオフスクリーン RT から RGBA8 を読み戻す（`awt.RenderTarget.readback` / `readbackToPng` のラッパー）。
+ヘッドレスサーフェスのオフスクリーン RT から RGBA8 を読み戻す。
+`snapshotPixels` は `awt.RenderTarget.readback` のラッパー、`snapshotPng` は読み戻した結果を `awt.snapshot.writePng` で書き出す。
+`out_rgba` の長さはフレームバッファの `width * height * 4` でなければならない。
 構造化スナップショットで判定できない視覚バグ（色・描画位置・アンチエイリアス等）用のフォールバック。
 
 ### 事前条件
-`window` がヘッドレスモードであること。実ウィンドウ（Swapchain）に対しては未サポート（UB）。
+`window` がヘッドレスモードであること。実ウィンドウ（Swapchain）に対しては `error.NotHeadless` を返す。
 
 ## 意味レイヤー（Driver）
 `find` / `clickOn` は `Robot` ではなく、その上の薄いラッパー `Driver` に置く。
@@ -221,26 +187,34 @@ pub const Query = struct {
     text: ?[]const u8 = null,     // a11y 名（後述「a11y ファセット」）との完全一致
     name: ?[]const u8 = null,     // Component.name との完全一致
 };
+
+pub const QueryError = error{ NotFound, Ambiguous, OutOfMemory };
 ```
 
 `find` は条件 `q`（role / text / name の AND）に一致する live `*Component` を返す。
 走査範囲は `snapshotTree` と同じ自動化ルート列（container / menu_bar / overlays）で、走査順も `Robot.buildNode` と同じプリオーダー（描画順の奥→手前）に揃える。
 `find` は synthetic `.window` ルート自体は作らず、ルート列の各サブツリーだけを対象にする。
-`text` は `snapshotTree` の `text` と同じ `Component.a11y.name` から取り、snapshot に出るノードと query 対象が 1:1 で対応するようにする。
+`text` は `snapshotTree` の `text` と同じ `Component.a11y.name` から取り、スナップショットに出るノードと query 対象が 1:1 で対応するようにする。
 一致が 0 件なら `error.NotFound`、2 件以上なら `error.Ambiguous`。
-`clickOn` は `find` の結果矩形の中心へ `robot.click` を合成する（座標計算を呼び出し側にさせない）。`pump` は呼ばず、呼び出し側がイベント処理のタイミングを決める。
-`Query` は最低 1 つの述語（role / text / name）を渡す前提。全フィールド null の `find(.{})` は未サポートで、走査対象次第で root を返すか `Ambiguous` / `NotFound` になりうる。
+`clickOn` は `find` の結果矩形の中心へ `robot.click` を合成する（座標計算を呼び出し側にさせない）。
+`pump` は呼ばず、呼び出し側がイベント処理のタイミングを決める。
+`Query` は最低 1 つの述語（role / text / name）を渡す前提。
+全フィールド null の `find(.{})` は未サポートで、走査対象次第でルートを返すか `Ambiguous` / `NotFound` になりうる。
 
 座標ベースの `Robot.click` が下位プリミティブ、`Driver.clickOn` がその上の意味的ラッパー。
 AI は通常 `driver.clickOn(.{ .role = .button, .text = "Save" })` を使い、座標が必要なときだけ `robot.click` を使う。
 
 ## 利用例
 Robot プリミティブ層、前提3ケイパビリティ、最小 a11y 名、`Driver.find` / `clickOn` は実装済み（「機能要望」の実装状況参照）。
-`Application.initHeadless` / `frameHeadless`、`Robot.init` / `click` / `keyDown` / `typeText` / `pump` / `advanceClock` / `snapshotTree` / `snapshotPixels`、`Driver.find` / `clickOn` は実コード。
-一方、`Scenario.fromJsonl` / `replay`（B-2）は**未実装**で、それらの行は設計イメージ（コメントで明示）。座標ベースの `robot.click(x, y, .left)` は下位プリミティブとして今後も使える。
+`Application.initHeadless` / `frameHeadless` は実コード。
+`Robot.init` / `click` / `keyDown` / `typeText` / `pump` / `advanceClock` / `snapshotTree` / `snapshotPixels` も実コード。
+`Driver.find` / `clickOn` も実コード。
+一方、`Scenario.fromJsonl` / `replay`（B-2）は**未実装**で、それらの行は設計イメージ（コメントで明示）。
+座標ベースの `robot.click(x, y, .left)` は下位プリミティブとして今後も使える。
 
 ### コードから直接 Robot / Driver で書くテスト
-`Robot`（プリミティブ）でイベントを注入し、`pump` で 1 ステップ進め、ハンドル（白箱）または `snapshotTree`（黒箱）で検証する。座標を知らなくても `Driver.clickOn` が role + text で名指しする。
+`Robot`（プリミティブ）でイベントを注入し、`pump` で 1 ステップ進め、ハンドル（白箱）または `snapshotTree`（黒箱）で検証する。
+座標を知らなくても `Driver.clickOn` が role + text で名指しする。
 
 ```zig
 const std = @import("std");
@@ -340,23 +314,47 @@ test "シナリオファイルを再生して checkpoint を照合" {
 }
 ```
 
-対話（stdin REPL）モードや実アプリ内ライブ・サーバーも同じ語彙・同じ `Driver` / `Robot` を叩くだけで、入口（transport）が違うだけ（`narrative/robot.md`「シナリオ形式とシナリオランナー」「機能要望」参照）。
+対話（stdin REPL）モードや実アプリ内ライブ・サーバーも、同じ語彙・同じ `Driver` / `Robot` を叩くだけで動く。
+入口（transport）が違うだけ（`narrative/robot.md`「シナリオ形式とシナリオランナー」「機能要望」参照）。
 
 ## 機能要望
 段階的に組む想定。下にいくほど後段。
 
-**実装状況 (2026-06-14)**: Robot プリミティブ層（act / `pump` / 仮想クロック / `snapshotTree` / `snapshotPixels`）は実装済み。前提3ケイパビリティ（ヘッドレス / pump / 仮想クロック）も実装済み。対応コードは `framework/src/Robot.zig`、`Application.initHeadless`/`frameHeadless`/`now`/`advanceClock`、`Window.initHeadless`/`postInput`。最小5種（Button / Label / CheckBox / RadioButton / TextField）に a11y 名を配線済み。メニュー4種（Menu / MenuItem / CheckBoxMenuItem / RadioButtonMenuItem）と `Driver`（`find` / `clickOn`）も実装済み。`dump`・シナリオランナーは未実装。
+**実装状況 (2026-06-14)**: Robot プリミティブ層（act / `pump` / 仮想クロック / `snapshotTree` / `snapshotPixels`）は実装済み。
+前提3ケイパビリティ（ヘッドレス / pump / 仮想クロック）も実装済み。
+対応コードは `framework/src/Robot.zig`、`Application.initHeadless`/`frameHeadless`/`now`/`advanceClock`、`Window.initHeadless`/`postInput`。
+最小5種（Button / Label / CheckBox / RadioButton / TextField）に a11y 名を配線済み。
+メニュー4種（Menu / MenuItem / CheckBoxMenuItem / RadioButtonMenuItem）と `Driver`（`find` / `clickOn`）も実装済み。
+`dump`・シナリオランナーは未実装。
 
-* **段階 1**: ✅ 実装済み (2026-06-07)。合成イベント注入（`Window.postInput`）+ 座標ベース `Robot.click` / `keyDown` / `typeText`。実ウィンドウに対しても動く
-* **段階 2**: ✅ 実装済み (2026-06-07)。ヘッドレスサーフェス + `pump`（= `Application.tickOnce`）+ 仮想クロック（framework 層、`Application.now`/`advanceClock`）。決定的な `inject → pump → snapshot` ループが成立する
-* **段階 3**: 実装済み。`Component.role`（フィールド・全ウィジェット設定済み）+ `snapshotTree`（curated; role/rect/focus/text）+ 最小 a11y 名（Button / Label / CheckBox / RadioButton / TextField / Menu / MenuItem / CheckBoxMenuItem / RadioButtonMenuItem）+ 意味レイヤー `Driver`（`find` / `clickOn`）。TextField の `name` は現時点では入力内容を返す。将来 `A11y.value` を additive に足す段階で、`name`（ラベル）と `value`（内容）を分離する。
-  menu 系は `Component.tree_children` により MenuBar / PopupMenu / Menu popup ルートの専用 child list も走査対象になり、snapshot/find は container / menu_bar / overlays を同じルート列として扱う。
-* **段階 3.5**: `A11y.dump` フック（ウィジェット毎にフィールド選別）+ 詳細ダンプ（`dumpTree` / `dumpNode`）。curated ツリーの上に深掘りビューを足す
-* **段階 4**: シナリオ形式 + シナリオランナー（再生 / 対話 stdin REPL）+ MCP サーバー化
-* **段階 5**: 入力レコーダー（`Window.input_observer` + `Recorder`）+ シナリオ再生（`replay`）。記録は実ウィンドウ、再生はヘッドレス。意味的解決とチェックポイントは段階 3 のファセットを前提とする
-* ライブ・サーバー（当面見送り・メモ）: **対話モードのシナリオランナーを、別実行ファイル(stdin)ではなく実アプリ内(別スレッド + socket)にホストした版**。フラグで起動した実 nimbus アプリにローカルサーバーを立て、実行中の GUI を操作・内省する口を晒す（MCP がそれを叩く）。用途は「AI が実アプリを操作するエージェント」「開発時の GUI REPL」「再現しないバグの現地調査」で、**決定的テストとは別物**（実時間・実イベントなので回帰には使えない）。語彙 / `Driver` / a11y(role+name) は他モードと共通で、transport が socket・host が実アプリという違いだけなので**薄く後付けできる**（新規は socket とフラグゲートのみ、再アーキテクチャ不要）。後で詰める点のメモ:
+* 段階 1: ✅ 実装済み (2026-06-07)。合成イベント注入（`Window.postInput`）+ 座標ベース `Robot.click` / `keyDown` / `typeText`。実ウィンドウに対しても動く
+* 段階 2: ✅ 実装済み (2026-06-07)。
+  ヘッドレスサーフェス + `pump`（= `Application.tickOnce`）+ 仮想クロック（framework 層、`Application.now`/`advanceClock`）。
+  決定的な `inject → pump → snapshot` ループが成立する
+* 段階 3: 実装済み。
+  実装は `Component.role`（フィールド・全ウィジェット設定済み）、`snapshotTree`（curated; role/rect/focus/text）。
+  さらに最小 a11y 名、意味レイヤー `Driver`（`find` / `clickOn`）。
+  最小 a11y 名の対象は Button / Label / CheckBox / RadioButton / TextField / Menu / MenuItem / CheckBoxMenuItem / RadioButtonMenuItem。
+  TextField の `name` は現時点では入力内容を返す。
+  将来 `A11y.value` を additive に足す段階で、`name`（ラベル）と `value`（内容）を分離する。
+  menu 系は `Component.tree_children` により MenuBar / PopupMenu / Menu popup ルートの専用 child list も走査対象になる。
+  スナップショット / find は container / menu_bar / overlays を同じルート列として扱う。
+* 段階 3.5: `A11y.dump` フック（ウィジェット毎にフィールド選別）+ 詳細ダンプ（`dumpTree` / `dumpNode`）。curated ツリーの上に深掘りビューを足す
+* 段階 4: シナリオ形式 + シナリオランナー（再生 / 対話 stdin REPL）+ MCP サーバー化
+* 段階 5: 入力レコーダー（`Window.input_observer` + `Recorder`）+ シナリオ再生（`replay`）。
+  記録は実ウィンドウ、再生はヘッドレス。
+  意味的解決とチェックポイントは段階 3 のファセットを前提とする
+* ライブ・サーバー（当面見送り・メモ）。
+  対話モードのシナリオランナーを、別実行ファイル(stdin)ではなく実アプリ内(別スレッド + socket)にホストした版。
+  フラグで起動した実 nimbus アプリにローカルサーバーを立て、実行中の GUI を操作・内省する口を晒す（MCP がそれを叩く）。
+  用途は「AI が実アプリを操作するエージェント」「開発時の GUI REPL」「再現しないバグの現地調査」。
+  決定的テストとは別物（実時間・実イベントなので回帰には使えない）。
+  語彙 / `Driver` / a11y(role+name) は他モードと共通。
+  transport が socket・host が実アプリという違いだけなので薄く後付けできる（新規は socket とフラグゲートのみ、再アーキテクチャ不要）。
+  後で詰める点のメモ:
   - 語彙はサブセット（`act` / `snapshot` / `query` のみ。実ループが回るので `pump` / `advance` は使わない）
-  - サーバーは別スレッドなので `EventQueue.postEvent`(act) / `invokeAndWait`(結果が要る snapshot) で UI スレッドへマーシャルする（CLAUDE.md「非同期処理」のプリミティブにそのまま乗る）
+  - サーバーは別スレッドなので、`EventQueue.postEvent`(act) / `invokeAndWait`(結果が要る スナップショット) で UI スレッドへマーシャルする。
+    （CLAUDE.md「非同期処理」のプリミティブにそのまま乗る）
   - セキュリティ: 既定オフ・フラグ必須・loopback 限定（+トークン）。外向きの口なので release 既定オンにしない
   - `argc/argv` を framework が予約フラグ（`--nimbus-debug-server` 等）として食うか、アプリが `enableDebugServer(port)` で opt-in するかは要判断
   - 当面はヘッドレス（決定的検証）に集中する
