@@ -17,6 +17,15 @@ glob_scan_max_depth = 3
 ".env" = "deny"
 ".env.*" = "deny"
 "secrets/**" = "deny"
+# codexは実装担当のため、ドキュメントを変更してはいけない（ドキュメントの腐敗防止）
+# 現在はサンドボックス設定できてないので、ちゃんとこの設定が効いていない。
+"awt/doc/**"       = "read"
+"awt-c/doc/**"     = "read"
+"framework/doc/**" = "read"
+"doc/**" = "read"
+# 設定を勝手に緩めるのもダメ
+".codex/**"   = "read"
+"lefthook.yml" = "read"
 
 [permissions.nimbus_workspace.network]
 enabled = false
