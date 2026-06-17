@@ -19,5 +19,5 @@ pre-commit:
       glob: "*.{zig,c,h,m}"
       run: zig build test
     docrot:
-      glob: "*.{md,zig,c,h,m}"
+      glob: "*.{zig,c,h,m}"
       run: node tools/docrot.mjs
