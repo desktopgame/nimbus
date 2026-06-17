@@ -7,7 +7,6 @@
       "Read(./.env.*)",
       "Read(./secrets/**)",
 
-      // ドキュメント腐敗防止：Claude はコード変更不可
       "Write(*.h)",
       "Edit(*.h)",
       "Write(*.c)",
@@ -16,7 +15,7 @@
       "Edit(*.m)",
       "Write(*.zig)",
       "Edit(*.zig)",
-      // 設定を自分で緩めるのもダメ
+
       "Write(./.claude/settings.json)",
       "Edit(./.claude/settings.json)",
       "Write(./.claude/settings.local.json)",
