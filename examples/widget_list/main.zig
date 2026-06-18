@@ -90,7 +90,8 @@ fn createCell(ud: *anyopaque, allocator: std.mem.Allocator) anyerror!nimbus.List
         const comp = &panel.container.component;
         comp.vtable.destroy(comp, allocator);
     }
-    panel.asContainer().setLayout(nimbus.BoxLayout.horizontal());
+    panel.setPadding(nimbus.Insets.symmetric(6, 2));
+    panel.asContainer().setLayout(try nimbus.BoxLayout.horizontalSpaced(app.allocator, 6));
 
     const check = try app.checkBox("");
     const label = try app.label("");
