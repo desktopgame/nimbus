@@ -1725,9 +1725,15 @@ pub fn buildWithRunner(
 
     const split = try app.splitPane(.horizontal, places_sp.asComponent(), &holder.component);
     split.setDividerLocation(SIDEBAR_WIDTH);
-    split.asComponent().setGrowX(1);
-    split.asComponent().setGrowY(1);
-    try nimbus.BorderLayout.add(&window.container, .center, split.asComponent());
+
+    // Frame only the content pane with the theme separator color captured at startup.
+    const framed = try app.panel();
+    framed.setBorder(.{ .thickness = 1, .color = app.theme.separator });
+    framed.asComponent().setGrowX(1);
+    framed.asComponent().setGrowY(1);
+    try nimbus.BorderLayout.add(framed.asContainer(), .center, split.asComponent());
+
+    try nimbus.BorderLayout.add(&window.container, .center, framed.asComponent());
 
     // Drag & drop move (list/details files + places).
     const ghost = try app.label("");
