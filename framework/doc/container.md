@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # container
@@ -36,7 +36,7 @@ pub const Container = struct {
 pub fn create(allocator: std.mem.Allocator) !*Container;
 ```
 
-allocator で `Container` を確保し、`children` を空で初期化、`layout` を null（手動配置）、vtable をセットして `install` まで実行する。
+`allocator` で `Container` を確保し、`children` を空で初期化、`layout` を null（手動配置）、vtable をセットして `install` まで実行する。
 `component.container` には self が入る（列挙用）。
 
 ### 失敗時の保証
@@ -48,7 +48,10 @@ fn destroy(self: *Component, allocator: std.mem.Allocator) void;
 ```
 
 `Container.vtable.destroy` として登録される。
-全 children に対して再帰的に `hint_destroy` → `component.vtable.destroy` を呼んで解放したのち、自分の `Component` を uninstall して `allocator.destroy` で free する。
+全 children に対して再帰的に `hint_destroy` → `component.vtable.destroy` を呼んで解放する。
+現行の `layout` が `deinit` を持つ（= 確保されたインスタンス）ならそれも解放する。
+最後に自分の `Component` を uninstall して `allocator.destroy` で free する。
+レイアウトの所有については後述「LayoutManager の差し替え」を参照。
 
 利用者が直接呼ぶ機会は通常無い。
 スタンドアロンで使うなら `container.component.vtable.destroy(&container.component, allocator)` を呼ぶ。
@@ -97,7 +100,19 @@ pub fn setLayout(self: *Container, layout: ?*LayoutManager) void;
 
 LayoutManager を差し替えて再レイアウトを走らせる。
 差し替え前にサイズキャッシュを無効化する（古い LayoutManager が計算したサイズは新しい LayoutManager では無効なため）。
-古い LayoutManager の解放は呼び出し側の責務（const シングルトンであれば不要）。
+
+差し替え前の LayoutManager が新しいものと別物で、かつ `deinit` を持つ（= 確保されたインスタンス）なら、ここで解放する。
+
+### LayoutManager の所有
+Container は `deinit` を持つ LayoutManager の寿命を肩代わりする（`hint_destroy` と同じく、Container が後片付けを担う方針）。
+
+* const シングルトン（`deinit = null`、`BoxLayout.horizontal()` など）は解放されず、複数の Container で共有してよい。
+* 確保したインスタンス（`deinit != null`、`PaddingLayout.create` / `BoxLayout.horizontalSpaced` など）は差した 1 つの Container が専有する。
+  `setLayout` での差し替え時、または Container の破棄時に Container が `deinit` を呼んで解放する。
+
+同じ確保済みインスタンスを複数の Container に差してはならない（二重解放になる）。
+確保に使う `allocator` は Container の `allocator` と同一でなければならない
+（Container が自身の `allocator` で `deinit` を呼ぶため）。
 
 ## 最小サイズの取得
 ```zig
@@ -109,7 +124,8 @@ Container 自身に `component.min_size` が設定されていれば、その値
 
 `computeMinSize` の結果は `min_cache` にメモ化される。`computeMinSize` はサブツリー全体を再帰測定するため、
 キャッシュが有効な間は再計算を避ける。キャッシュは `invalidateSizeCache` で無効化される（後述）。
-メモ化のため `*const` レシーバだが内部で書き込みを行う。Container 実体は可変であり、メモは不変サブツリーの純関数なので、論理的には const のまま矛盾しない。
+メモ化のため `*const` レシーバだが内部で書き込みを行う。
+Container 実体は可変であり、メモは不変サブツリーの純関数なので、論理的には const のまま矛盾しない。
 
 ## 最大サイズの取得
 ```zig
@@ -126,8 +142,10 @@ pub fn invalidateSizeCache(self: *Container) void;
 
 `min_cache` / `max_cache` を null に戻し、次回の `getMinSize` / `getMaxSize` で再計算させる。
 
-利用者がこれを直接呼ぶ必要は通常ない。`markLayoutDirty`（`component.md` 参照）が、変更されたノードからルートまでの経路上の全コンテナーに対して自動的にこれを呼ぶ。
-`add` / `remove` / `setLayout` / `setBounds` や Component 側のサイズ系セッター（`setMinSize` など）はすべて `markLayoutDirty` を経由するため、標準ウィジェットの利用ではキャッシュ整合性は自動で保たれる。
+利用者がこれを直接呼ぶ必要は通常ない。
+`markLayoutDirty`（`component.md` 参照）が、変更されたノードからルートまでの経路上の全コンテナーに対して自動的にこれを呼ぶ。
+`add` / `remove` / `setLayout` / `setBounds` や Component 側のサイズ系セッター（`setMinSize` など）はすべて `markLayoutDirty` を経由するため、
+標準ウィジェットの利用ではキャッシュ整合性は自動で保たれる。
 
 利用者が直接呼ぶ／`markLayoutDirty` を撃つべきなのは、上記の経路を通らずにサイズへ影響する変更を加えたときのみ。
 具体的には次の 2 ケース。
@@ -146,8 +164,10 @@ pub fn setBounds(self: *Container, bounds: Rect) void;
 ```
 
 `component.setBounds(bounds)` への委譲のみ。 `doLayout()` は呼ばない (= `Component.setBounds` と意味的に等価)。
-過去は `doLayout()` を自動で走らせていたが、 これが LayoutManager から呼ばれた場合に 2^k の二重 layout を起こす footgun だったため取り除いた (`{REPO_ROOT}/doc/internal/optimize.md` 参照)。
-レイアウト起動の起点は `Window.redraw` が明示的に呼ぶ `root.doLayout()` のみ。 利用者は通常これを意識しない (setter が `markLayoutDirty` を立てる → 次フレームの redraw で自動)。
+過去は `doLayout()` を自動で走らせていたが、
+これが LayoutManager から呼ばれた場合に 2^k の二重 layout を起こす footgun だったため取り除いた (`{REPO_ROOT}/doc/internal/optimize.md` 参照)。
+レイアウト起動の起点は `Window.redraw` が明示的に呼ぶ `root.doLayout()` のみ。
+利用者は通常これを意識しない (setter が `markLayoutDirty` を立てる → 次フレームの redraw で自動)。
 
 ## レイアウトの実行
 ```zig

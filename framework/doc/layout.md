@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # layout
@@ -37,10 +37,15 @@ doLayout: *const fn (*LayoutManager, *Container) void;
 `container` の現在のサイズと各子の MinimumSize / MaximumSize / GrowX / GrowY および hint を読み、各子の bounds を計算して `child.setBounds(...)` を呼び出す。
 直接の子のみを対象とする。孫以下への再帰呼び出しは Container 側の責務であり、LayoutManager は関知しない。
 
-幅で高さが変わる子 (折り返し `TextArea`、 将来の折り返し `Label` 等) を正しく扱うには、 子の `component.size_query` (オプショナル) を見て `minHeightForWidth(child, chosen_width)` を呼んで高さを得る。 `size_query` が null の子に対しては従来通り `getMinSize().height` を使えばよい (`component.md`「SizeQuery」参照)。 現状の組み込み `BoxLayout` / `BorderLayout` は size_query を参照していない (= 折り返し系の子は ScrollPane 経由でしか height-for-width が機能しない) が、 これは将来の拡張余地。
+幅で高さが変わる子 (折り返し `TextArea`、 将来の折り返し `Label` 等) を正しく扱うには、
+子の `component.size_query` (オプショナル) を見て `minHeightForWidth(child, chosen_width)` を呼んで高さを得る。
+`size_query` が null の子に対しては従来通り `getMinSize().height` を使えばよい (`component.md`「SizeQuery」参照)。
+現状の組み込み `BoxLayout` / `BorderLayout` は size_query を参照していない
+(= 折り返し系の子は ScrollPane 経由でしか height-for-width が機能しない) が、 これは将来の拡張余地。
 
 ### 事前条件
-* `container` の bounds が有効な値で確定していること（ルートのみは Window の resize イベントが、ネストされたものは親コンテナーの doLayout が事前にこれを保証する）
+* `container` の bounds が有効な値で確定していること
+  （ルートのみは Window の resize イベントが、ネストされたものは親コンテナーの doLayout が事前にこれを保証する）
 
 ## コンテナーの最小サイズを計算する
 ```zig
@@ -55,10 +60,14 @@ computeMinSize: *const fn (*LayoutManager, *const Container) Size;
 
 ### キャッシュ
 戻り値は `Container` 側で memoize される (`min_cache`、 `container.md` 参照)。
-同じ layout サイクル内で `computeMinSize` が複数回呼ばれてもキャッシュヒットで即座に返るため、 深さ `D` のツリーを top-down で `doLayout` 走査する際の重複計算が抑えられる (キャッシュ無しでは深い兄弟ノードが各階層で再走査され `O(N×D)`、 キャッシュ有りで実質 `O(N)`)。
+同じ layout サイクル内で `computeMinSize` が複数回呼ばれてもキャッシュヒットで即座に返る。
+これにより深さ `D` のツリーを top-down で `doLayout` 走査する際の重複計算が抑えられる
+(キャッシュ無しでは深い兄弟ノードが各階層で再走査され `O(N×D)`、 キャッシュ有りで実質 `O(N)`)。
 
-キャッシュ無効化は `markLayoutDirty` がパス上の祖先 Container すべてに対して `invalidateSizeCache` を呼ぶことで自動的に行われる (= 変更されたサブツリーを含む Container のキャッシュだけが落ちる、 兄弟サブツリーには影響しない)。
-LayoutManager 実装者から見るとキャッシュは透過で、 純粋関数として書いてさえいれば正しく動く。 逆に **純粋性を破る (副作用で観測可能な状態を変える、 内部状態に依存する乱数を返す、 等) と古いキャッシュ値が返ってバグになる**。
+キャッシュ無効化は `markLayoutDirty` がパス上の祖先 Container すべてに対して `invalidateSizeCache` を呼ぶことで自動的に行われる
+(= 変更されたサブツリーを含む Container のキャッシュだけが落ちる、 兄弟サブツリーには影響しない)。
+LayoutManager 実装者から見るとキャッシュは透過で、 純粋関数として書いてさえいれば正しく動く。
+逆に **純粋性を破ると古いキャッシュ値が返ってバグになる** (副作用で観測可能な状態を変える、 内部状態に依存する乱数を返す、 等)。
 
 LayoutManager 自身が独自キャッシュを持つ必要は通常ない (`deinit` 不要、 const シングルトンで提供できる)。
 複雑な内部キャッシュを持つ場合は `markLayoutDirty` の通知が LayoutManager まで届かない点に注意 (= 自前で dirty 管理を入れる必要がある)。
@@ -79,8 +88,15 @@ deinit: ?*const fn (*LayoutManager, std.mem.Allocator) void = null;
 ```
 
 オプショナル。
-LayoutManager がアロケート済みの内部状態（キャッシュなど）を持つ場合のみ実装する。
-標準的に提供される const シングルトンの LayoutManager では不要なため、デフォルトは null である。
+LayoutManager 自身がインスタンスとして確保されている（`PaddingLayout` / ギャップ付き `BoxLayout` など）、またはアロケート済みの内部状態を持つ場合に実装する。
+標準的に提供される const シングルトン（`BoxLayout.horizontal()` / `BorderLayout.get()` など）では不要なため、デフォルトは null である。
+
+### LayoutManager の所有
+`deinit` を持つ LayoutManager の寿命は、それを差した `Container` が肩代わりする。
+`Container.setLayout` が差し替え前の（別物かつ `deinit` を持つ）レイアウトを、
+`Container` の破棄が現行レイアウトを解放する（`container.md`「LayoutManager の所有」参照）。
+`deinit = null` のシングルトンは解放されず複数 Container で共有してよいが、確保したインスタンスは 1 つの Container が専有する（共有すると二重解放）。
+利用者が `deinit` を直接呼ぶことは無い。
 
 ## 利用例
 hint なしで子を追加する例（BoxLayout など）。
@@ -163,4 +179,6 @@ fn doLayout(self: *LayoutManager, container: *Container) void {
 ## 機能要望
 * 組み込み GridBagLayout 相当
 * 宣言的レイアウト API（手続き型 LayoutManager をラップする DSL 風 API）
-* サブツリー単位の部分再レイアウト (validate root 相当)。 ある subtree より上には dirty を伝播させず、 そのサブツリー内だけで `doLayout` を完結させる仕組み。 現状は Window 全体が 1 単位で、 N が大きくなったときの最適化余地
+* サブツリー単位の部分再レイアウト (`validate root` 相当)。
+  ある subtree より上には dirty を伝播させず、 そのサブツリー内だけで `doLayout` を完結させる仕組み。
+  現状は Window 全体が 1 単位で、 N が大きくなったときの最適化余地

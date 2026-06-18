@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # box_layout
@@ -15,33 +15,58 @@ pub const Orientation = enum { horizontal, vertical };
 pub const BoxLayout = struct {
     base:        LayoutManager,
     orientation: Orientation,
+    spacing:     f32 = 0,           // 主軸方向の子間ギャップ
 
     pub const vtable = LayoutManager.VTable{
         .doLayout       = doLayout,
         .computeMinSize = computeMinSize,
         .computeMaxSize = computeMaxSize,
+        .deinit         = deinit,   // spaced 変種のみ確保するため、その解放に使う
     };
 
     // ... メソッド
 };
 ```
 
-利用者は `BoxLayout` 自体を直接インスタンス化せず、シングルトンを返すヘルパで使う（後述）。
+`spacing` は主軸方向に隣り合う子の間へ入れる固定の隙間。
+子が `n` 個なら隙間は `n - 1` 箇所できる（両端には入らない）。交差軸には影響しない。
+
+利用者は `BoxLayout` 自体を直接インスタンス化せず、後述のヘルパで使う。
+`spacing = 0`（隙間なし）は確保不要の const シングルトンで提供し、`spacing > 0` のときだけインスタンスを確保する。
 
 ## 水平ボックスレイアウトの取得
 ```zig
 pub fn horizontal() *LayoutManager;
 ```
 
-水平方向に子を並べるシングルトン `BoxLayout` への `*LayoutManager` を返す。
-`Container.setLayout` に渡せる。
+水平方向に子を並べる（`spacing = 0`）シングルトン `BoxLayout` への `*LayoutManager` を返す。
+`Container.setLayout` に渡せる。確保しないため解放不要。
 
 ## 垂直ボックスレイアウトの取得
 ```zig
 pub fn vertical() *LayoutManager;
 ```
 
-垂直方向に子を並べるシングルトン `BoxLayout` への `*LayoutManager` を返す。
+垂直方向に子を並べる（`spacing = 0`）シングルトン `BoxLayout` への `*LayoutManager` を返す。
+
+## ギャップ付き水平ボックスレイアウトの生成
+```zig
+pub fn horizontalSpaced(allocator: std.mem.Allocator, spacing: f32) !*LayoutManager;
+```
+
+主軸方向に `spacing` の隙間を入れる水平 `BoxLayout` を `allocator` で確保し、`*LayoutManager` を返す。
+解放は差した `Container` が肩代わりする（`deinit` フック経由。`layout.md`「LayoutManager の所有」参照）。
+確保に使う `allocator` は差し先の `Container` の `allocator` と同一でなければならない。
+
+### 失敗時の保証
+確保に失敗した場合は `error.OutOfMemory` を返し、後片付けは不要。
+
+## ギャップ付き垂直ボックスレイアウトの生成
+```zig
+pub fn verticalSpaced(allocator: std.mem.Allocator, spacing: f32) !*LayoutManager;
+```
+
+`horizontalSpaced` の垂直版。
 
 ## 利用例
 水平ボックスでラベルを並べる。
@@ -131,8 +156,18 @@ try root.add(&body.component);
 try root.add(&status.component);
 ```
 
+ギャップ付きのツールバー。ボタンの間に 8px の隙間を空ける。
+
+```zig
+const toolbar = try app.container();
+toolbar.setLayout(try BoxLayout.horizontalSpaced(app.allocator, 8));
+try toolbar.add(&btn_a.component);   // [a] 8px [b] 8px [c]
+try toolbar.add(&btn_b.component);
+try toolbar.add(&btn_c.component);
+// toolbar を破棄すれば spaced レイアウトも自動で解放される
+```
+
 ## 機能要望
 * 主軸方向の justify-content 相当（space-between / space-around / center 等を Filler なしで指定）
-* 子の間に固定ギャップを入れるオプション（`spacing: f32`）
 * min が container を超えた場合の挙動（現状は overflow、将来 clip / scroll の選択肢）
 * CSS flexbox 流の再分配ループ（max にぶつかった余りを残りの growable な子に再配分）

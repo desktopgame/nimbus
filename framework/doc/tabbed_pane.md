@@ -122,8 +122,8 @@ const tabs = try app.tabbedPane();
 const general = try app.panel();
 const advanced = try app.panel();
 
-try tabs.addTab("General", general.asContainer().asComponent());
-try tabs.addTab("Advanced", advanced.asContainer().asComponent());
+try tabs.addTab("General", general.asComponent());
+try tabs.addTab("Advanced", advanced.asComponent());
 
 tabs.asComponent().setGrowX(1);
 tabs.asComponent().setGrowY(1);

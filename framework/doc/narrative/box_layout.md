@@ -1,9 +1,9 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # box_layout
-BoxLayout の主軸/交差軸の処理・分配アルゴリズム・シングルトン採用の理由。
+BoxLayout の主軸/交差軸の処理・分配アルゴリズム・シングルトン採用の理由・spacing の置き場所。
 
 ## 主軸と交差軸
 ボックスレイアウトでは「主軸（main axis）」と「交差軸（cross axis）」の 2 つの軸を区別する。
@@ -73,9 +73,41 @@ BoxLayout は `LayoutElement.hint` を無視する。
 利用者は `container.add(child)` を使えばよく、`addWithHint` は不要。
 
 ## シングルトンとして提供する理由
-BoxLayout はインスタンス固有の状態を持たない（orientation の 2 種類があるだけ）。
-したがって horizontal / vertical の 2 つだけプロセス全体で共有すれば足りる。
-利用者が allocator で確保する手間と、いつ deinit するかを考える手間が省ける。
+BoxLayout は `spacing = 0` ならインスタンス固有の状態を持たない（orientation の 2 種類があるだけ）。
+したがって隙間なしの horizontal / vertical の 2 つだけプロセス全体で共有すれば足りる。
+利用者が `allocator` で確保する手間と、いつ `deinit` するかを考える手間が省ける。
 
 内部実装は `pub var` の static インスタンスを 2 つ用意し、`horizontal()` / `vertical()` がそのアドレスを返す。
-LayoutManager の vtable は `deinit = null`（解放不要）。
+両シングルトンは `spacing = 0`。
+
+## spacing をどこに置くか（決定）
+子間ギャップ `spacing` は LayoutManager（BoxLayout）のプロパティにした。
+candidate は 3 つあった。
+
+* 案 1（Container 持ち）: `Container` に `spacing` フィールドを足す。却下。spacing はボックス分配アルゴリズムの一部であって、
+  `BorderLayout` など他のレイアウトには意味を持たない。レイアウト非依存の場所に置くと使われないフィールドが増える。
+* 案 2（常に per-instance）: `BoxLayout` を必ず確保にする。却下。既存の `horizontal()` / `vertical()` 呼び出し全箇所が確保を伴うようになり、
+  隙間ゼロの一般ケースにまで `allocator` と解放を持ち込む。
+* 案 3（採用）: `spacing` を `BoxLayout` のフィールドにし、`spacing = 0` は従来どおり const シングルトンで提供、
+  `spacing > 0` のときだけ `horizontalSpaced` / `verticalSpaced` でインスタンスを確保する。
+
+採用案なら既存の `horizontal()` / `vertical()` 呼び出しは一切変わらず、確保も発生しない。
+spacing が実際に要るときだけ確保し、その寿命は差し先の `Container` が `deinit` フック経由で肩代わりする
+（`layout.md`「LayoutManager の所有」と一致）。
+spec の型定義で `spacing: f32 = 0` を `BoxLayout` に足し、シングルトンはこのデフォルトに乗る。
+
+## spacing を入れた分配の調整
+`spacing` は分配前に主軸から取り除く固定費として扱う。
+
+* `doLayout`: 分配可能量（distributable）から `spacing * (n - 1)` を先に引いてから grow 配分する。
+  各子を配置したあと、次の子へ進む `pos` を子サイズに加えて `spacing` ぶんさらに進める。
+* `computeMinSize` / `computeMaxSize`: 主軸の総和に `spacing * (n - 1)` を加える（`n` は子の個数、`n <= 1` なら加算 0）。
+
+交差軸の処理は spacing の影響を受けない。
+
+## テスト方針
+`Application` / GPU 非依存の純ロジックテスト。
+
+* `n` 個の子を入れた水平／垂直ボックスで、主軸 `computeMinSize` が `Σ child_min + spacing * (n - 1)` になることを確認する。
+* `doLayout` 後、隣り合う子の主軸方向の間隔がちょうど `spacing` であることを確認する。
+* `spacing = 0` の既存シングルトンが従来どおりの配置（隙間なし）を返す回帰を確認する。
