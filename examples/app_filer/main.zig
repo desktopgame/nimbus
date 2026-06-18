@@ -1147,6 +1147,7 @@ fn fmtDate(buf: []u8, secs: i64) []const u8 {
 
 const FileCell = struct {
     root: *nimbus.Container,
+    content: *nimbus.Container,
     label: *nimbus.Label,
     field: *nimbus.TextField,
     filer: *Filer,
@@ -1184,11 +1185,11 @@ const FileCell = struct {
     fn swapTo(self: *FileCell, edit_mode: bool) void {
         if (edit_mode == self.in_edit) return;
         if (edit_mode) {
-            self.root.remove(&self.label.component);
-            nimbus.BorderLayout.add(self.root, .center, &self.field.component) catch {};
+            self.content.remove(&self.label.component);
+            nimbus.BorderLayout.add(self.content, .center, &self.field.component) catch {};
         } else {
-            self.root.remove(&self.field.component);
-            nimbus.BorderLayout.add(self.root, .center, &self.label.component) catch {};
+            self.content.remove(&self.field.component);
+            nimbus.BorderLayout.add(self.content, .center, &self.label.component) catch {};
         }
         self.in_edit = edit_mode;
         self.root.doLayout();
@@ -1203,8 +1204,8 @@ const FileCell = struct {
 
     fn destroyCell(ud: *anyopaque, allocator: std.mem.Allocator) void {
         const self: *FileCell = @ptrCast(@alignCast(ud));
-        self.root.remove(&self.label.component);
-        self.root.remove(&self.field.component);
+        self.content.remove(&self.label.component);
+        self.content.remove(&self.field.component);
         const rc = &self.root.component;
         rc.vtable.destroy(rc, allocator);
         self.label.component.vtable.destroy(&self.label.component, allocator);
@@ -1246,18 +1247,18 @@ fn createFileCell(ud: *anyopaque, allocator: std.mem.Allocator) anyerror!nimbus.
 
     const root = try app.container();
     errdefer root.component.vtable.destroy(&root.component, allocator);
-    root.setLayout(nimbus.BorderLayout.get());
+    root.setLayout(try nimbus.PaddingLayout.create(app.allocator, .{ .left = 6 }));
 
-    const margin = try app.container();
-    margin.component.setMinSize(.{ .width = 6, .height = 0 });
-    try nimbus.BorderLayout.add(root, .west, &margin.component);
+    const content = try app.container();
+    content.setLayout(nimbus.BorderLayout.get());
+    try root.add(&content.component);
 
     const label = try app.label("");
     label.setIconSize(.{ .width = ICON, .height = ICON });
     const field = try app.textField("");
-    try nimbus.BorderLayout.add(root, .center, &label.component);
+    try nimbus.BorderLayout.add(content, .center, &label.component);
 
-    fc.* = .{ .root = root, .label = label, .field = field, .filer = filer };
+    fc.* = .{ .root = root, .content = content, .label = label, .field = field, .filer = filer };
     try field.addSubmitListener(FileCell, FileCell.onSubmit, fc);
     try field.addCancelListener(FileCell, FileCell.onCancel, fc);
 
@@ -1311,12 +1312,7 @@ fn createPlaceCell(ud: *anyopaque, allocator: std.mem.Allocator) anyerror!nimbus
 
     const root = try app.container();
     errdefer root.component.vtable.destroy(&root.component, allocator);
-    root.setLayout(nimbus.BoxLayout.horizontal());
-
-    const margin = try app.container();
-    margin.component.setMinSize(.{ .width = 6, .height = 0 });
-    margin.component.setMaxSize(.{ .width = 6, .height = std.math.inf(f32) });
-    try root.add(&margin.component);
+    root.setLayout(try nimbus.PaddingLayout.create(app.allocator, .{ .left = 6 }));
 
     const label = try app.label("");
     label.setIconSize(.{ .width = ICON, .height = ICON });
@@ -1337,6 +1333,7 @@ fn createPlaceCell(ud: *anyopaque, allocator: std.mem.Allocator) anyerror!nimbus
 // rename via CellEdit — label / field swap).
 const NameCell = struct {
     root: *nimbus.Container,
+    content: *nimbus.Container,
     label: *nimbus.Label,
     field: *nimbus.TextField,
     filer: *Filer,
@@ -1370,11 +1367,11 @@ const NameCell = struct {
     fn swapTo(self: *NameCell, edit_mode: bool) void {
         if (edit_mode == self.in_edit) return;
         if (edit_mode) {
-            self.root.remove(&self.label.component);
-            nimbus.BorderLayout.add(self.root, .center, &self.field.component) catch {};
+            self.content.remove(&self.label.component);
+            nimbus.BorderLayout.add(self.content, .center, &self.field.component) catch {};
         } else {
-            self.root.remove(&self.field.component);
-            nimbus.BorderLayout.add(self.root, .center, &self.label.component) catch {};
+            self.content.remove(&self.field.component);
+            nimbus.BorderLayout.add(self.content, .center, &self.label.component) catch {};
         }
         self.in_edit = edit_mode;
         self.root.doLayout();
@@ -1387,8 +1384,8 @@ const NameCell = struct {
     }
     fn destroyCell(ud: *anyopaque, allocator: std.mem.Allocator) void {
         const self: *NameCell = @ptrCast(@alignCast(ud));
-        self.root.remove(&self.label.component);
-        self.root.remove(&self.field.component);
+        self.content.remove(&self.label.component);
+        self.content.remove(&self.field.component);
         const c = &self.root.component;
         c.vtable.destroy(c, allocator);
         self.label.component.vtable.destroy(&self.label.component, allocator);
@@ -1426,15 +1423,15 @@ fn createNameCell(ud: *anyopaque, allocator: std.mem.Allocator) anyerror!nimbus.
     errdefer allocator.destroy(nc);
     const root = try app.container();
     errdefer root.component.vtable.destroy(&root.component, allocator);
-    root.setLayout(nimbus.BorderLayout.get());
-    const margin = try app.container();
-    margin.component.setMinSize(.{ .width = 6, .height = 0 });
-    try nimbus.BorderLayout.add(root, .west, &margin.component);
+    root.setLayout(try nimbus.PaddingLayout.create(app.allocator, .{ .left = 6 }));
+    const content = try app.container();
+    content.setLayout(nimbus.BorderLayout.get());
+    try root.add(&content.component);
     const label = try app.label("");
     label.setIconSize(.{ .width = ICON, .height = ICON });
     const field = try app.textField("");
-    try nimbus.BorderLayout.add(root, .center, &label.component);
-    nc.* = .{ .root = root, .label = label, .field = field, .filer = filer };
+    try nimbus.BorderLayout.add(content, .center, &label.component);
+    nc.* = .{ .root = root, .content = content, .label = label, .field = field, .filer = filer };
     try field.addSubmitListener(NameCell, NameCell.onSubmit, nc);
     try field.addCancelListener(NameCell, NameCell.onCancel, nc);
     return .{
@@ -1613,18 +1610,21 @@ const dnd_table_vt = blk: {
 // ── confirm dialog ──────────────────────────────────────────────────────────
 
 fn buildConfirmDialog(app: *nimbus.Application, dialog: *nimbus.Dialog, msg: *nimbus.Label) !void {
-    dialog.window.container.setLayout(nimbus.BoxLayout.vertical());
+    dialog.window.container.setLayout(try nimbus.PaddingLayout.create(app.allocator, nimbus.Insets.all(12)));
+    const body = try app.container();
+    body.setLayout(try nimbus.BoxLayout.verticalSpaced(app.allocator, 8));
     msg.component.setAlignX(.center);
     const row = try app.container();
-    row.setLayout(nimbus.BoxLayout.horizontal());
+    row.setLayout(try nimbus.BoxLayout.horizontalSpaced(app.allocator, 8));
     const ok = try app.button("Delete");
     const cancel = try app.button("Cancel");
     try ok.getModel().addActionListener(nimbus.Dialog, onConfirmOk, dialog);
     try cancel.getModel().addActionListener(nimbus.Dialog, onConfirmCancel, dialog);
     try row.add(&ok.component);
     try row.add(&cancel.component);
-    try dialog.window.add(&msg.component);
-    try dialog.window.add(&row.component);
+    try body.add(&msg.component);
+    try body.add(&row.component);
+    try dialog.window.add(&body.component);
 }
 fn onConfirmOk(d: *nimbus.Dialog, _: *const ActionEvent) void {
     d.close(.ok);
@@ -1780,10 +1780,10 @@ pub fn buildWithRunner(
 
     // Toolbar (north): [up] [view] path / search row.
     const north_stack = try app.container();
-    north_stack.setLayout(nimbus.BoxLayout.vertical());
+    north_stack.setLayout(try nimbus.BoxLayout.verticalSpaced(app.allocator, 4));
 
     const bar = try app.container();
-    bar.setLayout(nimbus.BoxLayout.horizontal());
+    bar.setLayout(try nimbus.BoxLayout.horizontalSpaced(app.allocator, 6));
     const up = try app.button("");
     up.setIcon(try app.icon(.arrow_up));
     up.setIconSize(.{ .width = ICON, .height = ICON });
@@ -1791,9 +1791,6 @@ pub fn buildWithRunner(
     const view_btn = try app.button("Details");
     filer.view_button = view_btn;
     try view_btn.getModel().addActionListener(Filer, Filer.onViewButton, filer);
-    const gap = try app.container();
-    gap.component.setMinSize(.{ .width = 6, .height = 0 });
-    gap.component.setMaxSize(.{ .width = 6, .height = std.math.inf(f32) });
     const path_field = try app.textField("");
     filer.path_field = path_field;
     path_field.component.setGrowX(1);
@@ -1802,12 +1799,11 @@ pub fn buildWithRunner(
     try path_field.addCancelListener(Filer, Filer.onPathCancel, filer);
     try bar.add(&up.component);
     try bar.add(&view_btn.component);
-    try bar.add(&gap.component);
     try bar.add(&path_field.component);
     try north_stack.add(&bar.component);
 
     const search_bar = try app.container();
-    search_bar.setLayout(nimbus.BoxLayout.horizontal());
+    search_bar.setLayout(try nimbus.BoxLayout.horizontalSpaced(app.allocator, 6));
     const search_field = try app.textField("");
     filer.search_field = search_field;
     search_field.component.setGrowX(1);
@@ -1827,7 +1823,10 @@ pub fn buildWithRunner(
     try search_bar.add(&cancel_btn.component);
     try search_bar.add(&result_count.component);
     try north_stack.add(&search_bar.component);
-    try nimbus.BorderLayout.add(&window.container, .north, &north_stack.component);
+    const north_pad = try app.container();
+    north_pad.setLayout(try nimbus.PaddingLayout.create(app.allocator, .{ .left = 6, .right = 6, .top = 6, .bottom = 4 }));
+    try north_pad.add(&north_stack.component);
+    try nimbus.BorderLayout.add(&window.container, .north, &north_pad.component);
 
     // Status line (south).
     const status = try app.label("");
