@@ -78,7 +78,7 @@ BoxLayout は `spacing = 0` ならインスタンス固有の状態を持たな�
 利用者が `allocator` で確保する手間と、いつ `deinit` するかを考える手間が省ける。
 
 内部実装は `pub var` の static インスタンスを 2 つ用意し、`horizontal()` / `vertical()` がそのアドレスを返す。
-両シングルトンは `spacing = 0`。
+両シングルトンは `spacing = 0` で、`base.vtable` は `singleton_vtable`（`deinit = null`）を指す（解放不要。後述「なぜ vtable を 2 つに分けるのか」）。
 
 ## spacing をどこに置くか（決定）
 子間ギャップ `spacing` は LayoutManager（BoxLayout）のプロパティにした。
@@ -95,6 +95,21 @@ candidate は 3 つあった。
 spacing が実際に要るときだけ確保し、その寿命は差し先の `Container` が `deinit` フック経由で肩代わりする
 （`layout.md`「LayoutManager の所有」と一致）。
 spec の型定義で `spacing: f32 = 0` を `BoxLayout` に足し、シングルトンはこのデフォルトに乗る。
+
+## なぜ vtable を 2 つに分けるのか
+`layout.md` の所有規約は「`deinit` 非 null なら Container が解放する／const シングルトンは `deinit = null`」という、
+`deinit` の有無だけを discriminator にした判定で成り立っている。
+ところが BoxLayout はシングルトンと spaced 変種で同じ構造体・同じ doLayout を共有する。
+vtable を 1 つ（`deinit` 非 null）にまとめると、その vtable を指す const シングルトンを Container が解放しようとする。
+結果として const グローバルへの invalid-free を招く（spec の自己矛盾）。
+
+そこで doLayout / computeMinSize / computeMaxSize は共通のまま、vtable だけを 2 つに割る。
+
+* `singleton_vtable`（`deinit = null`）: `horizontal()` / `vertical()` のシングルトンが指す。Container は解放しない。
+* `spaced_vtable`（`deinit` 非 null）: `horizontalSpaced` / `verticalSpaced` の確保インスタンスが指す。Container が解放する。
+
+これで所有の discriminator が BoxLayout でも正しく機能する。
+常に確保される `PaddingLayout` は単一 vtable（`deinit` 非 null）のままで矛盾しない（シングルトン経路を持たないため）。
 
 ## spacing を入れた分配の調整
 `spacing` は分配前に主軸から取り除く固定費として扱う。

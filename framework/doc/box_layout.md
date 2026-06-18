@@ -17,11 +17,20 @@ pub const BoxLayout = struct {
     orientation: Orientation,
     spacing:     f32 = 0,           // 主軸方向の子間ギャップ
 
-    pub const vtable = LayoutManager.VTable{
+    // シングルトン用（spacing = 0、無確保）。Container は解放しない。
+    pub const singleton_vtable = LayoutManager.VTable{
         .doLayout       = doLayout,
         .computeMinSize = computeMinSize,
         .computeMaxSize = computeMaxSize,
-        .deinit         = deinit,   // spaced 変種のみ確保するため、その解放に使う
+        .deinit         = null,
+    };
+
+    // spaced 変種用（確保インスタンス）。Container が deinit で解放する。
+    pub const spaced_vtable = LayoutManager.VTable{
+        .doLayout       = doLayout,
+        .computeMinSize = computeMinSize,
+        .computeMaxSize = computeMaxSize,
+        .deinit         = deinit,
     };
 
     // ... メソッド
@@ -31,8 +40,13 @@ pub const BoxLayout = struct {
 `spacing` は主軸方向に隣り合う子の間へ入れる固定の隙間。
 子が `n` 個なら隙間は `n - 1` 箇所できる（両端には入らない）。交差軸には影響しない。
 
+`doLayout` / `computeMinSize` / `computeMaxSize` の中身は 2 つの vtable で共通であり、所有モデルだけが異なる。
+`deinit` の有無が `layout.md`「LayoutManager の所有」の discriminator（Container が解放するか否か）なので、
+解放されてはならない const シングルトンと、Container が解放すべき確保インスタンスとで vtable を分ける。
+
 利用者は `BoxLayout` 自体を直接インスタンス化せず、後述のヘルパで使う。
-`spacing = 0`（隙間なし）は確保不要の const シングルトンで提供し、`spacing > 0` のときだけインスタンスを確保する。
+`spacing = 0`（隙間なし）は確保不要の const シングルトン（`singleton_vtable`）で提供し、
+`spacing > 0` のときだけインスタンス（`spaced_vtable`）を確保する。
 
 ## 水平ボックスレイアウトの取得
 ```zig
@@ -40,7 +54,8 @@ pub fn horizontal() *LayoutManager;
 ```
 
 水平方向に子を並べる（`spacing = 0`）シングルトン `BoxLayout` への `*LayoutManager` を返す。
-`Container.setLayout` に渡せる。確保しないため解放不要。
+この `base.vtable` は `singleton_vtable`（`deinit = null`）を指す。
+`Container.setLayout` に渡せる。確保しないため解放不要で、複数の Container で共有してよい。
 
 ## 垂直ボックスレイアウトの取得
 ```zig
@@ -48,6 +63,7 @@ pub fn vertical() *LayoutManager;
 ```
 
 垂直方向に子を並べる（`spacing = 0`）シングルトン `BoxLayout` への `*LayoutManager` を返す。
+`horizontal` と同じく `base.vtable` は `singleton_vtable` を指す。
 
 ## ギャップ付き水平ボックスレイアウトの生成
 ```zig
@@ -55,7 +71,9 @@ pub fn horizontalSpaced(allocator: std.mem.Allocator, spacing: f32) !*LayoutMana
 ```
 
 主軸方向に `spacing` の隙間を入れる水平 `BoxLayout` を `allocator` で確保し、`*LayoutManager` を返す。
+確保したインスタンスの `base.vtable` は `spaced_vtable`（`deinit` 非 null）を指す。
 解放は差した `Container` が肩代わりする（`deinit` フック経由。`layout.md`「LayoutManager の所有」参照）。
+1 つの Container が専有し、複数の Container で共有してはならない（二重解放になる）。
 確保に使う `allocator` は差し先の `Container` の `allocator` と同一でなければならない。
 
 ### 失敗時の保証
@@ -66,7 +84,18 @@ pub fn horizontalSpaced(allocator: std.mem.Allocator, spacing: f32) !*LayoutMana
 pub fn verticalSpaced(allocator: std.mem.Allocator, spacing: f32) !*LayoutManager;
 ```
 
-`horizontalSpaced` の垂直版。
+`horizontalSpaced` の垂直版。確保したインスタンスの `base.vtable` は同じく `spaced_vtable` を指す。
+
+## ギャップ付きレイアウトの解放
+```zig
+fn deinit(self: *LayoutManager, allocator: std.mem.Allocator) void;
+```
+
+`spaced_vtable` の `deinit` として登録される。
+`self` を内包する `BoxLayout` を `allocator` で free する。
+`horizontalSpaced` / `verticalSpaced` が確保したインスタンスにのみ使われ、差した `Container` の破棄・差し替え時に Container が呼ぶ。
+`singleton_vtable`（`deinit = null`）のシングルトンに対しては呼ばれない。
+利用者が直接呼ぶことは無い。
 
 ## 利用例
 水平ボックスでラベルを並べる。
