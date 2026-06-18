@@ -944,3 +944,78 @@ awt に線・三角・多角形のプリミティブが無いことが原因で�
 
 ### 完了条件
 awt#9 の方針に沿って 3 関数の階段描画が解消され、スナップショットテストが緑。awt#9 の完了条件と一体で達成される。
+
+## #28 ScrollPane のヘッダー領域とコーナー（JScrollPane パリティ：columnHeader / rowHeader / corner）
+- 状態: 未着手
+- 優先度: 中（columnHeader 部分は実バグ起点。rowHeader + corner は低・将来）
+- 影響範囲: framework の `ScrollPane.zig`（領域モデルの刷新 + レイアウト + ヘッダーのスクロール同期 + ヘッダー/コーナー view の所有）/ `scroll_pane.md`、`Table.zig`（自前ヘッダー pin の廃止）、将来の text editor（行番号 gutter）
+- 更新日: 2026-06-18
+- 依存: なし（awt は既存の drawImage / clip / Container で組める見込み。不足が出たら awt_backlog.md にクロス参照）
+
+### 何
+Swing `JScrollPane` 相当の固定ヘッダー帯とコーナーを ScrollPane に持たせる。現状の ScrollPane は
+container = [viewport, hbar, vbar] + viewport が `view` を 1 枚持つだけで、ヘッダー / コーナー領域の概念が無い
+（`ScrollPane.zig` の `container` / `viewport` / `hbar` / `vbar`、`create` で `container.add` する 3 子）。
+これを概念的に 3x3 グリッドの領域モデルへ刷新する。
+
+```
+[UL       ][columnHeader][UR  ]
+[rowHeader ][viewport    ][vbar]
+[LL       ][hbar        ][LR  ]
+```
+
+- columnHeaderView: viewport の上の固定バンド。横スクロールには content と同期、縦には固定。
+  **vbar はこのバンドの下から始まる**（ヘッダー帯を跨がない）。
+- rowHeaderView: viewport の左の固定バンド。縦スクロールに同期、横は固定。
+  **hbar はこのバンドの右から始まる**。将来のテキストエディタの行番号 gutter にそのまま使える。
+- corner: ヘッダー帯 / スクロールバーが交わる四隅（UL / UR / LL / LR）の静的セル。
+- スクロールバーは viewport の行 / 列だけに跨る（ヘッダー帯を跨がない）。columnHeader は水平オフセットのみ追従、
+  rowHeader は垂直オフセットのみ追従、viewport は両方。
+
+API スケッチ（シグネチャは提案、nimbus 流に整える）:
+`setColumnHeaderView(self: *ScrollPane, view: *Component) void` /
+`setRowHeaderView(self: *ScrollPane, view: *Component) void` /
+`setCorner(self: *ScrollPane, which: Corner, view: *Component) void`（`Corner` = `.upper_left` / `.upper_right` /
+`.lower_left` / `.lower_right`）。ヘッダー / コーナー view は ScrollPane が所有する。
+
+### 即時の動機（バグ）
+app_filer の詳細ビュー（Table を ScrollPane に入れている）で、縦スクロールバーが Table の列ヘッダー帯に被る
+（作者がスクショで発見）。根因:
+- ScrollPane の vbar は container の全高に並ぶ（ヘッダー帯の概念が無いため）。
+- app_filer は Table 全体（ヘッダー帯ごと）を ScrollPane の `view` にしており、Table は自前でヘッダーを pin
+  している（`Table.zig` の `scroll_top = @max(0, -position.y)` で算出し `paintHeader` を最後に描く＝viewport 上端に貼り付く）。
+  縦スクロールでヘッダーは消えないが、vbar がその pin したヘッダー帯の右端に被る。
+
+columnHeaderView を入れると **vbar がヘッダーの下から始まる**ため、これがこのバグの正しい解になる。
+Table は自前 pin をやめ、ヘッダーを columnHeaderView として出す。
+
+### なぜ（保留理由 / 優先度の刻み）
+columnHeader 部分は実バグ（vbar 被り）が背後にあるので相対的に上（中）。rowHeader + corner は
+completeness / enabler（低・将来。行番号 gutter は file chooser → text editor のロードマップで効く）だが、
+「どうせなら」一緒に設計したいので同一 item に捕捉する。段階導入なら columnHeader を先に入れられる。
+
+### 候補アプローチ
+- 案A: 3x3 領域モデルへ一括刷新（columnHeader / rowHeader / corner をまとめて入れる）。
+  メリット: 設計が一度で揃い、領域の取り合い（スクロールバーがヘッダー帯を跨がない）を 1 回で固められる。
+  デメリット: ScrollPane のレイアウト刷新 + 同期配線 + 所有が一度に乗り、変更が大きい。
+- 案B: columnHeader だけ先に入れて実バグを解消し、rowHeader + corner は実需（text editor）で後追い。
+  メリット: バグ修正を小さく刻める。デメリット: 領域モデルを 2 回触る（後で rowHeader / corner ぶんの再レイアウト）。
+- 判断軸: 一度の大きな刷新を許容するか（A）、バグ修正を先に小さく出すか（B）。
+- 推奨: 段階導入を取るなら案B（columnHeader を先に）。設計は 3x3 で見据えつつ実装を割る。最終判断は作者。
+
+### 決めること
+- 着手の刻み（案A 一括 / 案B columnHeader 先行）。
+- API の形（`setColumnHeaderView` / `setRowHeaderView` / `setCorner` のシグネチャと `Corner` enum、view の所有移転の規約）。
+- ヘッダー view のスクロール同期をどう配線するか（columnHeader は h_model に、rowHeader は v_model に従属）。
+- Table の自前ヘッダー pin（`paintHeader` + `scroll_top` 打ち消し）を廃止して columnHeaderView へ載せ替える移行手順。
+
+### 影響・consumer 移行
+- Table: 自前 pin を廃し、ヘッダーを columnHeaderView として出す。
+- 将来の text editor: rowHeaderView を行番号 gutter に。
+- ScrollPane: container の [viewport, hbar, vbar] を 3x3 領域モデルへリファクタ + スクロールバーがヘッダー帯を
+  跨がないレイアウト + ヘッダーのスクロール同期配線 + ヘッダー / コーナー view の所有。
+
+### 完了条件
+app_filer 詳細ビューで vbar が列ヘッダー帯に被らない（vbar がヘッダーの下から始まる）。
+Table が自前ヘッダー pin をやめ columnHeaderView でヘッダーを出す。`scroll_pane.md` に領域モデルと API を記載。
+rowHeader / corner を入れた場合はそのレイアウト・所有も doc + テストで確認。
