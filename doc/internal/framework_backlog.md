@@ -928,3 +928,19 @@ overlay overlay-lifetime 関連の textlint / 回帰対応セッションで出�
 ### 完了条件
 着手した項目について、コメント明記 / テスト追加 / ライフタイム対処が入り `zig build test` 緑。
 本項目には未着手分を残す。
+
+## #27 小アイコン手組み（drawCheck / paintSortIndicator）の脱・階段描画
+- 状態: 未着手
+- 優先度: 低
+- 影響範囲: framework の `CheckBox.drawCheck`（`CheckBox.zig`）/ `Table.paintSortIndicator`（`Table.zig`）/ `CheckBoxMenuItem.drawCheckmark`（`CheckBoxMenuItem.zig`）
+- 依存: awt#9（ベクター描画プリミティブ or テクスチャ方式の小アイコン）
+- 更新日: 2026-06-18
+
+### 何
+チェックマーク・ソート caret を軸並行 `fillRect` の階段で手組みしている consumer 側の移行を記録するクロス参照。
+awt に線・三角・多角形のプリミティブが無いことが原因で、本体の検討は awt 側の [awt#9](awt_backlog.md) にある
+（プリミティブを足す / テクスチャで済ませる / lucide アイコンへ置換、の 3 案とスナップショット脆化のトレードオフ）。
+本項目は awt#9 で方針が決まったら、上記 3 関数を新プリミティブ or アイコンへ載せ替えるという framework 側の follow-up。
+
+### 完了条件
+awt#9 の方針に沿って 3 関数の階段描画が解消され、スナップショットテストが緑。awt#9 の完了条件と一体で達成される。

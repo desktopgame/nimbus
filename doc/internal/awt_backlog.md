@@ -186,3 +186,59 @@ framework のキーストローク/ニーモニック実装を進めるために
 
 ### 完了条件
 `Event.Modifiers` が super を表現でき、`event.md` と実装が一致。framework の `KeyStroke.Mods.command` が macOS で super、Win/Linux で ctrl に解決して照合できる状態。
+
+## #9 ベクター描画プリミティブ（drawPolygon / fillPolygon）or テクスチャ方式の小アイコン
+- 状態: 未着手
+- 優先度: 低
+- 影響範囲: awt の `Graphics`（`Graphics.zig` に描画 API 追加 / `awt/doc/graphics.md`）、採用案によっては awt-c のパイプライン / シェーダー（新 program）。consumer は framework の小アイコン手組み（`CheckBox.drawCheck` / `Table.paintSortIndicator` / `CheckBoxMenuItem.drawCheckmark`）
+- 更新日: 2026-06-18
+- 依存: なし
+
+### 何
+`awt.Graphics` の描画語彙は実質 `fillRect` / `drawRect` / `fillRoundRect`（SDF `sdfQuad`）/ `fillCircle` /
+`drawString` / `drawImage` 等で、線・三角・任意多角形・パスを直接描くプリミティブが無い。
+このため framework は小アイコンを軸並行 `fillRect` の階段で手組みしている:
+- `CheckBox.drawCheck`（`framework/src/CheckBox.zig:231-253`）— 2x2 の dot を斜めに点描してチェックマークを作る
+  （コメント「no line primitive in awt」）。
+- `Table.paintSortIndicator`（`framework/src/Table.zig:756-768`）— 高さ 2px の横バーを幅を変えて積んで三角の caret を作る
+  （コメント「no triangle primitive」）。
+- `CheckBoxMenuItem.drawCheckmark` も同じ trick（`drawCheck` のコメントが参照している）。
+
+任意のベクター形状（チェック / caret / 将来の richer iconography）を、形状ごとの手組み無しで描けるようにしたい。
+利用者の要望は「`drawPolygon` 的なプリミティブが欲しい。あるいはテクスチャで済ませてもよい」。
+
+### なぜ（保留理由）
+現状の階段描画で動いており見た目も許容範囲。これは「richer iconography を可能にする＋形状ごとの手組みを無くす」
+cleanup / enabler であって、機能の欠落で詰まっているわけではない（point-of-need）。
+加えてゴールデン PNG スナップショットテストとの相性が判断軸に絡む（下記）ため、急いで倒さず方針を選んでから着手したい。
+
+### 候補アプローチ
+- 案A: awt に `fillPolygon` / `drawPolygon` を足す（ベクタープリミティブ）。簡易 / 凸多角形を CPU で三角形分割して
+  頂点バッファに積む、または SDF 的手法で描く。任意形状を滑らかに描ける。AA 手法（頂点 AA / SDF / MSAA いずれか）は要検討。
+  メリット: 形状を式で書け、HiDPI でも解像度非依存に鮮明。`drawString` の SDF 経路と思想が揃う。
+  デメリット: 三角形分割＋AA の実装コスト。新しい program（シェーダー）が要る可能性。AA を入れると下記スナップショットの脆化リスク。
+- 案B: テクスチャ / アトラス方式（小アイコンをラスタライズして `drawImage`）。
+  **lucide アイコンが既にこの経路（`awt.Image.fromMemory` → GPU アップロード、`Application.icon(...)` でキャッシュ。
+  `framework/src/lucide/icons.zig` 冒頭）を実装済みで、そのまま再利用できる**。
+  メリット: 最小コスト（新プリミティブ不要、既存経路の流用）。
+  デメリット: HiDPI で拡大するとスケール品質が落ちる / 各サイズ分のメモリ。ピクセル等倍以外では AA ゆらぎがスナップショットを脆くしうる。
+- 案C（最安）: 新プリミティブを足さず、チェックと caret を lucide アイコンへ置換するだけ。lucide セットには
+  `check` / `chevron_up` / `chevron_down`（`chevrons_up_down` も）が存在する（`framework/src/lucide/icons.zig` で確認済み）。
+  メリット: awt 無改修・実装ほぼゼロ。デメリット: 任意形状の汎用解にはならない（個別アイコンの差し替えに留まる）。テクスチャ拡大時の品質 / スナップショット脆化は案B と同様。
+- 判断軸: 任意ベクター形状の汎用性を取るなら A、実装コスト最小を取るなら B / C。
+  ただしどの案も**ゴールデン PNG スナップショットとの相性**が効く: 現状の `fillRect` 階段は
+  ピクセルスナップで決定論的＝ AA ゆらぎが無く、`snapshot_test.zig` の `TOLERANCE = 1`（1 LSB）が成立している理由そのもの。
+  AA 付きポリゴン（案A）や拡大テクスチャ（案B / C）は GPU ドライバ間で AA 結果がぶれ、スナップショットを脆くしうる
+  （tolerance 引き上げ or 該当 scene の許容調整が要るか要検討）。
+- 推奨: 当面は積むだけ（実需が出るまで保留）。実需が「個別アイコンを綺麗にしたい」だけなら最安の案C、
+  「任意形状を描く API が欲しい」なら案A。最終判断は作者。
+
+### 決めること
+- A / B / C のいずれか（ベクタープリミティブを足すか、テクスチャで済ませるか、個別アイコン置換に留めるか）。
+- 案A を採るなら: `fillPolygon` / `drawPolygon` のシグネチャ（頂点列の渡し方・凸限定か凹も許すか）、AA 手法、新 program の要否。
+- いずれの案でも: ゴールデン PNG スナップショットの許容（`TOLERANCE` を上げるか、該当 scene を個別に許容するか）をどうするか。
+
+### 完了条件
+選んだ方針で awt（案A）or framework（案C）or 両方（案B）を更新し、`CheckBox.drawCheck` /
+`Table.paintSortIndicator` / `CheckBoxMenuItem.drawCheckmark` の手組み階段が新プリミティブ or アイコンへ移行している。
+スナップショットテストが緑（許容方針を決めた上で fixtures 再生成）。案A なら `graphics.md` に新プリミティブを記載。
