@@ -148,9 +148,9 @@ pub fn main(init: std.process.Init) !void {
     // Content panel.
     const content = try app.panel();
     content.setBackground(awt.Graphics.Color.rgb(1, 1, 1));
-    content.container.setLayout(nimbus.BoxLayout.vertical());
+    content.asContainer().setLayout(nimbus.BoxLayout.vertical());
     label.component.setAlignX(.center);
-    try content.container.add(&label.component);
+    try content.asContainer().add(&label.component);
 
     // Set up right-click context menu via vtable override on the content panel.
     const popup = try app.popupMenu();
@@ -177,10 +177,10 @@ pub fn main(init: std.process.Init) !void {
     defer popup.destroy();
 
     var ctx_panel = ContextPanel{ .popup = popup, .window = &frame.window };
-    content.container.component.vtable = &ctx_vt;
-    try content.container.component.putProperty(@typeName(ContextPanel), &ctx_panel, null);
+    content.asComponent().vtable = &ctx_vt;
+    try content.asComponent().putProperty(@typeName(ContextPanel), &ctx_panel, null);
 
-    try nimbus.BorderLayout.add(&frame.window.container, .center, &content.container.component);
+    try nimbus.BorderLayout.add(&frame.window.container, .center, content.asComponent());
 
     // Toolbar with icon-only buttons.
     const tb = try app.toolBar();
@@ -189,9 +189,9 @@ pub fn main(init: std.process.Init) !void {
         tb_btn.setIcon(icn);
         tb_btn.setIconSize(.{ .width = 20, .height = 20 });
         try tb_btn.getModel().addActionListener(State, onTbAction, &state);
-        try tb.container.add(&tb_btn.component);
+        try tb.asContainer().add(&tb_btn.component);
     }
-    try nimbus.BorderLayout.add(&frame.window.container, .north, &tb.container.component);
+    try nimbus.BorderLayout.add(&frame.window.container, .north, tb.asComponent());
 
     // Build menu bar.
     const bar = try app.menuBar();

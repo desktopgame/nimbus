@@ -306,15 +306,15 @@ fn tabPage(
 ) !*nimbus.Panel {
     const p = try nimbus.Panel.create(allocator);
     p.setBackground(color);
-    p.container.setLayout(null);
+    p.asContainer().setLayout(null);
 
     const label = try nimbus.Label.create(allocator, title, font, awt.Graphics.Color.rgb(0.10, 0.10, 0.10));
     label.component.setBounds(.{ .x = 18, .y = 18, .width = 260, .height = 24 });
     const body = try nimbus.Label.create(allocator, detail, font, awt.Graphics.Color.rgb(0.10, 0.10, 0.10));
     body.component.setBounds(.{ .x = 18, .y = 52, .width = 340, .height = 24 });
 
-    try p.container.add(&label.component);
-    try p.container.add(&body.component);
+    try p.asContainer().add(&label.component);
+    try p.asContainer().add(&body.component);
     return p;
 }
 

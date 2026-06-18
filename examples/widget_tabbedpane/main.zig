@@ -11,15 +11,15 @@ const awt = nimbus.awt;
 fn page(app: *nimbus.Application, title: []const u8, detail: []const u8, color: awt.Graphics.Color) !*nimbus.Panel {
     const p = try app.panel();
     p.setBackground(color);
-    p.container.setLayout(null);
+    p.asContainer().setLayout(null);
 
     const heading = try app.label(title);
     heading.component.setBounds(.{ .x = 18, .y = 18, .width = 360, .height = 26 });
     const body = try app.label(detail);
     body.component.setBounds(.{ .x = 18, .y = 52, .width = 420, .height = 24 });
 
-    try p.container.add(&heading.component);
-    try p.container.add(&body.component);
+    try p.asContainer().add(&heading.component);
+    try p.asContainer().add(&body.component);
     return p;
 }
 

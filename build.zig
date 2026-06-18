@@ -283,6 +283,7 @@ pub fn build(b: *std.Build) void {
     // subject so failures point at a single one.
     inline for (.{
         "framework/tests/box_layout_test.zig",
+        "framework/tests/insets_layout_test.zig",
         "framework/tests/border_layout_test.zig",
         "framework/tests/split_pane_test.zig",
         "framework/tests/tabbed_pane_test.zig",

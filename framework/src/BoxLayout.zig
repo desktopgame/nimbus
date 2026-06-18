@@ -15,21 +15,30 @@ pub const Orientation = enum { horizontal, vertical };
 
 base: LayoutManager,
 orientation: Orientation,
+spacing: f32 = 0,
 
-pub const vtable = LayoutManager.VTable{
+pub const singleton_vtable = LayoutManager.VTable{
     .doLayout = doLayout,
     .computeMinSize = computeMinSize,
     .computeMaxSize = computeMaxSize,
+    .deinit = null,
+};
+
+pub const spaced_vtable = LayoutManager.VTable{
+    .doLayout = doLayout,
+    .computeMinSize = computeMinSize,
+    .computeMaxSize = computeMaxSize,
+    .deinit = deinit,
 };
 
 // Singletons. Mutable static instances since LayoutManager API takes
 // non-const pointers; we never actually mutate them.
 var horizontal_singleton: BoxLayout = .{
-    .base = .{ .vtable = &vtable },
+    .base = .{ .vtable = &singleton_vtable },
     .orientation = .horizontal,
 };
 var vertical_singleton: BoxLayout = .{
-    .base = .{ .vtable = &vtable },
+    .base = .{ .vtable = &singleton_vtable },
     .orientation = .vertical,
 };
 
@@ -39,6 +48,29 @@ pub fn horizontal() *LayoutManager {
 
 pub fn vertical() *LayoutManager {
     return &vertical_singleton.base;
+}
+
+pub fn horizontalSpaced(allocator: std.mem.Allocator, spacing: f32) !*LayoutManager {
+    return createSpaced(allocator, .horizontal, spacing);
+}
+
+pub fn verticalSpaced(allocator: std.mem.Allocator, spacing: f32) !*LayoutManager {
+    return createSpaced(allocator, .vertical, spacing);
+}
+
+fn createSpaced(allocator: std.mem.Allocator, orientation: Orientation, spacing: f32) !*LayoutManager {
+    const layout = try allocator.create(BoxLayout);
+    layout.* = .{
+        .base = .{ .vtable = &spaced_vtable },
+        .orientation = orientation,
+        .spacing = spacing,
+    };
+    return &layout.base;
+}
+
+fn deinit(self: *LayoutManager, allocator: std.mem.Allocator) void {
+    const this: *BoxLayout = @fieldParentPtr("base", self);
+    allocator.destroy(this);
 }
 
 // ── vtable impl ──────────────────────────────────────────────────────────
@@ -91,7 +123,8 @@ fn doLayout(self: *LayoutManager, container: *Container) void {
         sum_grow += growMain(ori, elem.component);
     }
 
-    const excess = main_size - sum_min;
+    const gap_total = this.spacing * @as(f32, @floatFromInt(if (container.children.items.len > 0) container.children.items.len - 1 else 0));
+    const excess = main_size - sum_min - gap_total;
     const distributable = if (excess > 0) excess else 0;
 
     // Pass 2: assign main-axis sizes (1-pass clamp; no redistribution).
@@ -136,7 +169,7 @@ fn doLayout(self: *LayoutManager, container: *Container) void {
         // set bounds here; either setBounds variant is equivalent now (both
         // just write the rect). See `doc/internal/optimize.md`.
         child.setBounds(bounds);
-        pos += main;
+        pos += main + this.spacing;
     }
 }
 
@@ -151,6 +184,9 @@ fn computeMinSize(self: *LayoutManager, container: *const Container) Component.S
         main_total += mainOf(ori, child_min);
         const c = crossOf(ori, child_min);
         if (c > cross_max) cross_max = c;
+    }
+    if (container.children.items.len > 1) {
+        main_total += this.spacing * @as(f32, @floatFromInt(container.children.items.len - 1));
     }
     return switch (ori) {
         .horizontal => .{ .width = main_total, .height = cross_max },
@@ -169,6 +205,9 @@ fn computeMaxSize(self: *LayoutManager, container: *const Container) Component.S
         main_total += mainOf(ori, child_max);
         const c = crossOf(ori, child_max);
         if (c > cross_max) cross_max = c;
+    }
+    if (container.children.items.len > 1) {
+        main_total += this.spacing * @as(f32, @floatFromInt(container.children.items.len - 1));
     }
     return switch (ori) {
         .horizontal => .{ .width = main_total, .height = cross_max },

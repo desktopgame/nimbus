@@ -1,4 +1,4 @@
-//! Container wrapper with optional background color and border.
+//! Container wrapper with optional background color, border, and padding.
 //! See `framework/doc/panel.md`.
 
 const std = @import("std");
@@ -6,6 +6,8 @@ const awt = @import("awt");
 const Component = @import("Component.zig");
 const Container = @import("Container.zig");
 const BorderLayout = @import("BorderLayout.zig");
+const PaddingLayout = @import("PaddingLayout.zig");
+const Insets = PaddingLayout.Insets;
 
 const Panel = @This();
 
@@ -15,8 +17,10 @@ pub const Border = struct {
 };
 
 container: Container,
-background: ?awt.Graphics.Color,
-border: ?Border,
+content: *Container,
+padding: Insets = .{},
+background: ?awt.Graphics.Color = null,
+border: ?Border = null,
 
 pub const vtable = Component.VTable{
     .install = install,
@@ -26,26 +30,29 @@ pub const vtable = Component.VTable{
     .destroy = destroy,
 };
 
-pub fn init(allocator: std.mem.Allocator) Panel {
-    var p = Panel{
-        .container = Container.init(allocator),
-        .background = null,
-        .border = null,
-    };
-    // Override the inner Container's vtable so paint hits Panel.paint
-    // (which draws bg + border + children) instead of Container.paint.
-    p.container.component.vtable = &vtable;
-    p.container.component.role = .panel;
-    // Default layout: BorderLayout. Users override via `panel.container.setLayout`.
-    p.container.layout = BorderLayout.get();
-    return p;
-}
-
 pub fn create(allocator: std.mem.Allocator) !*Panel {
     const panel = try allocator.create(Panel);
     errdefer allocator.destroy(panel);
-    panel.* = Panel.init(allocator);
+
+    const content = try Container.create(allocator);
+    errdefer content.component.vtable.destroy(&content.component, allocator);
+    content.setLayout(BorderLayout.get());
+
+    const layout = try PaddingLayout.create(allocator, Insets.zero);
+    errdefer if (layout.vtable.deinit) |layout_deinit| layout_deinit(layout, allocator);
+
+    panel.* = .{
+        .container = Container.init(allocator),
+        .content = content,
+    };
+    panel.container.component.vtable = &vtable;
+    panel.container.component.role = .panel;
+    panel.container.layout = layout;
+
     try Panel.vtable.install(&panel.container.component);
+    errdefer panel.container.component.deinit();
+    try panel.container.add(&content.component);
+
     return panel;
 }
 
@@ -64,14 +71,41 @@ pub fn getBorder(self: Panel) ?Border {
 
 pub fn setBorder(self: *Panel, border: ?Border) void {
     self.border = border;
+    self.updatePaddingLayout();
+    self.container.component.markLayoutDirty();
     self.container.component.repaint();
 }
 
-pub fn asContainer(self: *Panel) *Container {
-    return &self.container;
+pub fn getPadding(self: Panel) Insets {
+    return self.padding;
 }
 
-// ── vtable impl ──────────────────────────────────────────────────────────
+pub fn setPadding(self: *Panel, padding: Insets) void {
+    self.padding = padding;
+    self.updatePaddingLayout();
+    self.container.component.markLayoutDirty();
+}
+
+pub fn asComponent(self: *Panel) *Component {
+    return &self.container.component;
+}
+
+pub fn asContainer(self: *Panel) *Container {
+    return self.content;
+}
+
+fn updatePaddingLayout(self: *Panel) void {
+    const t: f32 = if (self.border) |b| b.thickness else 0;
+    const insets = Insets{
+        .left = t + self.padding.left,
+        .top = t + self.padding.top,
+        .right = t + self.padding.right,
+        .bottom = t + self.padding.bottom,
+    };
+    PaddingLayout.setInsets(self.container.layout.?, insets);
+}
+
+// 笏笏 vtable impl 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
 fn install(self: *Component) !void {
     const cont: *Container = @fieldParentPtr("component", self);
@@ -89,34 +123,26 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     const w = self.size.width;
     const h = self.size.height;
 
-    // 1. background
     if (panel.background) |bg| {
         g.setColor(bg);
         g.fillRect(.{ .x = 0, .y = 0, .width = w, .height = h });
     }
 
-    // 2. children (paint each in its own clipped sub-graphics)
     for (cont.children.items) |elem| {
         elem.component.paintAt(g);
     }
 
-    // 3. border (4 rectangles for top/bottom/left/right)
     if (panel.border) |b| {
         g.setColor(b.color);
         const t = b.thickness;
-        // top
         g.fillRect(.{ .x = 0, .y = 0, .width = w, .height = t });
-        // bottom
         g.fillRect(.{ .x = 0, .y = h - t, .width = w, .height = t });
-        // left
         g.fillRect(.{ .x = 0, .y = t, .width = t, .height = h - 2 * t });
-        // right
         g.fillRect(.{ .x = w - t, .y = t, .width = t, .height = h - 2 * t });
     }
 }
 
 fn processEvent(self: *Component, ev: *Component.Event) void {
-    // Delegate to Container's hit-test dispatch.
     const cont = self.container orelse return;
     switch (ev.payload) {
         .mouse => |m| {
@@ -133,19 +159,13 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
             }
             if (m.action == .move) cont.updateHover(hovered, m.x, m.y);
         },
-        .key, .char => {
-            for (cont.children.items) |elem| {
-                elem.component.vtable.processEvent(elem.component, ev);
-                if (ev.isConsumed()) return;
-            }
-        },
-        .focus, .composition => {},
+        .key, .char, .focus, .composition => {},
     }
 }
 
 fn destroy(self: *Component, allocator: std.mem.Allocator) void {
     const cont: *Container = @fieldParentPtr("component", self);
     const panel: *Panel = @fieldParentPtr("container", cont);
-    cont.deinit(); // frees children
+    cont.deinit();
     allocator.destroy(panel);
 }

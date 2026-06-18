@@ -666,7 +666,7 @@ pub fn container(self: *Application) !*Container {
 
 pub fn panel(self: *Application) !*Panel {
     const p = try Panel.create(self.allocator);
-    self.applyTheme(&p.container.component);
+    self.applyTheme(p.asComponent());
     return p;
 }
 
@@ -828,8 +828,8 @@ pub fn icon(self: *Application, id: lucide.Icon) !awt.Image {
 
 pub fn filler(self: *Application) !*Panel {
     const p = try self.panel();
-    p.container.component.setGrowX(1);
-    p.container.component.setGrowY(1);
+    p.asComponent().setGrowX(1);
+    p.asComponent().setGrowY(1);
     return p;
 }
 
@@ -839,9 +839,9 @@ pub fn filler(self: *Application) !*Panel {
 pub fn toolBar(self: *Application) !*Panel {
     const p = try self.panel();
     p.setBackground(self.theme.surface_window);
-    p.container.setLayout(@import("BoxLayout.zig").horizontal());
-    p.container.component.min_size = .{ .width = 0, .height = 32 };
-    p.container.component.max_size = .{ .width = std.math.inf(f32), .height = 32 };
+    p.asContainer().setLayout(@import("BoxLayout.zig").horizontal());
+    p.asComponent().min_size = .{ .width = 0, .height = 32 };
+    p.asComponent().max_size = .{ .width = std.math.inf(f32), .height = 32 };
     return p;
 }
 

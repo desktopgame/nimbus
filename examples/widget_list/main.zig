@@ -90,16 +90,16 @@ fn createCell(ud: *anyopaque, allocator: std.mem.Allocator) anyerror!nimbus.List
         const comp = &panel.container.component;
         comp.vtable.destroy(comp, allocator);
     }
-    panel.container.setLayout(nimbus.BoxLayout.horizontal());
+    panel.asContainer().setLayout(nimbus.BoxLayout.horizontal());
 
     const check = try app.checkBox("");
     const label = try app.label("");
     label.component.setGrowX(1); // push the delete button to the right edge
     const del = try app.button("delete");
 
-    try panel.container.add(&check.component);
-    try panel.container.add(&label.component);
-    try panel.container.add(&del.component);
+    try panel.asContainer().add(&check.component);
+    try panel.asContainer().add(&label.component);
+    try panel.asContainer().add(&del.component);
 
     tc.* = .{ .panel = panel, .check = check, .label = label, .del = del, .list = ctx.list };
 

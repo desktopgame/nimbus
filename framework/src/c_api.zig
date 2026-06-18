@@ -1563,7 +1563,7 @@ export fn nmMenuSeparatorAsComponent(self: *framework.MenuSeparator) *framework.
 }
 
 export fn nmPanelAsContainer(self: *framework.Panel) *framework.Container {
-    return &self.container;
+    return self.asContainer();
 }
 
 export fn nmScrollPaneAsContainer(self: *framework.ScrollPane) *framework.Container {

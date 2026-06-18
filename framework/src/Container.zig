@@ -54,6 +54,7 @@ pub fn deinit(self: *Container) void {
         elem.component.vtable.destroy(elem.component, self.allocator);
     }
     self.children.deinit(self.allocator);
+    self.deinitLayout();
     self.component.deinit();
 }
 
@@ -112,12 +113,20 @@ pub fn getLayout(self: *const Container) ?*LayoutManager {
 }
 
 pub fn setLayout(self: *Container, layout: ?*LayoutManager) void {
+    if (self.layout != layout) self.deinitLayout();
     self.layout = layout;
     // The cached size belongs to the previous layout manager; drop it before
     // the doLayout below reads getMinSize.
     self.invalidateSizeCache();
     self.doLayout();
     self.component.markLayoutDirty();
+}
+
+fn deinitLayout(self: *Container) void {
+    if (self.layout) |layout| {
+        if (layout.vtable.deinit) |layout_deinit| layout_deinit(layout, self.allocator);
+        self.layout = null;
+    }
 }
 
 pub fn getMinSize(self: *const Container) Component.Size {
