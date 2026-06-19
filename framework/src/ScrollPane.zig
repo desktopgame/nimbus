@@ -180,6 +180,7 @@ pub fn getCorner(self: ScrollPane, which: Corner) ?*Component {
 }
 
 pub fn setColumnHeaderView(self: *ScrollPane, view: *Component) !void {
+    if (self.column_header_view == view) return;
     const port = try self.ensureColumnHeaderPort();
     try port.children.ensureTotalCapacity(self.allocator, 1);
     if (self.column_header_view) |old| {
@@ -192,6 +193,7 @@ pub fn setColumnHeaderView(self: *ScrollPane, view: *Component) !void {
 }
 
 pub fn setRowHeaderView(self: *ScrollPane, view: *Component) !void {
+    if (self.row_header_view == view) return;
     const port = try self.ensureRowHeaderPort();
     try port.children.ensureTotalCapacity(self.allocator, 1);
     if (self.row_header_view) |old| {
@@ -206,6 +208,7 @@ pub fn setRowHeaderView(self: *ScrollPane, view: *Component) !void {
 pub fn setCorner(self: *ScrollPane, which: Corner, view: *Component) !void {
     try self.container.children.ensureUnusedCapacity(self.allocator, 1);
     const idx = @intFromEnum(which);
+    if (self.corners[idx] == view) return;
     if (self.corners[idx]) |old| {
         self.container.remove(old);
         old.vtable.destroy(old, self.allocator);
@@ -602,10 +605,18 @@ test "scrollpane: corners collapse when either band is zero" {
     const sp = try create(a, view.asComponent());
     defer sp.asComponent().vtable.destroy(sp.asComponent(), a);
     const header = try testPanel(a, 80, 26);
+    const row_header = try testPanel(a, 32, 80);
     const corner = try testPanel(a, 10, 10);
     try sp.setColumnHeaderView(header.asComponent());
+    try sp.setRowHeaderView(row_header.asComponent());
     try sp.setCorner(.upper_left, corner.asComponent());
 
+    layoutTestPane(sp, 100, 100);
+
+    try std.testing.expectApproxEqAbs(@as(f32, 32), corner.asComponent().size.width, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 26), corner.asComponent().size.height, 0.001);
+
+    row_header.asComponent().setMinSize(.{ .width = 0, .height = 80 });
     layoutTestPane(sp, 100, 100);
 
     try std.testing.expectApproxEqAbs(@as(f32, 0), corner.asComponent().size.width, 0.001);

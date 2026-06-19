@@ -195,6 +195,7 @@ const TableHeader = struct {
 
     fn destroy(self: *Component, allocator: std.mem.Allocator) void {
         const header: *TableHeader = @fieldParentPtr("component", self);
+        if (header.table.header_view == header) header.table.header_view = null;
         self.deinit();
         allocator.destroy(header);
     }
@@ -324,6 +325,7 @@ pub fn asComponent(self: *Table) *Component {
 }
 
 pub fn headerView(self: *Table) !*Component {
+    if (self.header_view) |header| return &header.component;
     const header = try TableHeader.create(self.allocator, self);
     self.header_view = header;
     return &header.component;
@@ -363,10 +365,6 @@ pub fn setSelectionMode(self: *Table, mode: SelectionModel.Mode) void {
 
 pub fn getRowHeight(self: Table) f32 {
     return self.row_height;
-}
-
-pub fn getHeaderHeight(_: *const Table) f32 {
-    return HEADER_HEIGHT;
 }
 
 pub fn setRowHeight(self: *Table, h: f32) void {
@@ -1056,7 +1054,6 @@ test "table: rowAtLocalY uses body coordinates" {
     for (&items) |*it| try t.model.add(@ptrCast(it));
     layoutAt(t, 200, 200);
 
-    try std.testing.expectApproxEqAbs(HEADER_HEIGHT, t.getHeaderHeight(), 0.001);
     try std.testing.expectEqual(@as(?usize, null), t.rowAtLocalY(-1));
     try std.testing.expectEqual(@as(?usize, 0), t.rowAtLocalY(1));
     try std.testing.expectEqual(@as(?usize, null), t.rowAtLocalY(3 * DEFAULT_ROW_HEIGHT + 1));
@@ -1127,6 +1124,29 @@ test "table: dragging a column boundary resizes the column" {
     var rel = Component.Event{ .payload = .{ .mouse = .{ .x = 150, .y = 10, .action = .release, .button = .left } } };
     header.vtable.processEvent(header, &rel);
     try std.testing.expect(t.header_drag == null);
+}
+
+test "table: replacing a scrollpane column header clears stale TableHeader" {
+    const ScrollPane = @import("ScrollPane.zig");
+    const a = std.testing.allocator;
+    const t = try testTable(a);
+    const sp = try ScrollPane.create(a, t.asComponent());
+    defer sp.asComponent().vtable.destroy(sp.asComponent(), a);
+
+    const header = try t.headerView();
+    try sp.setColumnHeaderView(header);
+    try std.testing.expect(t.header_view != null);
+
+    try sp.setColumnHeaderView(try t.headerView());
+    try std.testing.expect(t.header_view != null);
+
+    const replacement = try Panel.create(a);
+    replacement.asComponent().setMinSize(.{ .width = 160, .height = HEADER_HEIGHT });
+    try sp.setColumnHeaderView(replacement.asComponent());
+    try std.testing.expect(t.header_view == null);
+
+    t.setColumnWidth(0, 120);
+    t.setSortIndicator(0, .ascending);
 }
 
 test "table: body click selects row; Enter activates" {

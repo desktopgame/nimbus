@@ -1595,7 +1595,7 @@ fn dndTablePaint(self: *nimbus.Component, g: *awt.Graphics) void {
     if (m.files_highlight) |row| {
         const table = m.filer.table;
         const h = table.getRowHeight();
-        const y = table.getHeaderHeight() + @as(f32, @floatFromInt(row)) * h;
+        const y = @as(f32, @floatFromInt(row)) * h;
         g.setColor(self.theme.focus_ring);
         g.drawRect(.{ .x = 1, .y = y + 1, .width = self.size.width - 2, .height = h - 2 });
     }
