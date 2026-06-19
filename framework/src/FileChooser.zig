@@ -22,6 +22,8 @@ const ChangeEvent = @import("listener.zig").ChangeEvent;
 
 const PATH_BUF = 4096;
 
+extern "kernel32" fn GetLogicalDrives() callconv(.winapi) u32;
+
 pub const Mode = enum { open, save, select_directory };
 
 pub const DirEntry = struct {
@@ -101,7 +103,7 @@ fn osRealPath(user_data: *anyopaque, path: []const u8, buf: []u8) ![]const u8 {
 }
 
 fn osPlaces(user_data: *anyopaque, allocator: std.mem.Allocator, out: *std.ArrayList(PlaceEntry)) !void {
-    const state = osState(user_data);
+    _ = user_data;
     const home_var: [*:0]const u8 = if (builtin.os.tag == .windows) "USERPROFILE" else "HOME";
     const raw_home_opt = std.c.getenv(home_var);
     if (raw_home_opt != null) {
@@ -118,10 +120,11 @@ fn osPlaces(user_data: *anyopaque, allocator: std.mem.Allocator, out: *std.Array
     }
 
     if (builtin.os.tag == .windows) {
-        var letter: u8 = 'A';
-        while (letter <= 'Z') : (letter += 1) {
-            const drive = [3]u8{ letter, ':', std.fs.path.sep };
-            std.Io.Dir.accessAbsolute(state.io, &drive, .{}) catch continue;
+        const drive_mask = GetLogicalDrives();
+        var i: u5 = 0;
+        while (i < 26) : (i += 1) {
+            if ((drive_mask & (@as(u32, 1) << i)) == 0) continue;
+            const drive = [3]u8{ 'A' + @as(u8, i), ':', std.fs.path.sep };
             try appendPlace(allocator, out, &drive, &drive, .root);
         }
     } else {
