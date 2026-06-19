@@ -59,5 +59,6 @@ pub const Robot = @import("Robot.zig");
 pub const Driver = @import("Driver.zig");
 
 test {
+    _ = @import("FileChooser.zig");
     std.testing.refAllDecls(@This());
 }
