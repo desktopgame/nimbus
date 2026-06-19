@@ -25,6 +25,8 @@ pub const Policy = enum {
     always,     // 常にバーを出す
     never,      // バーを出さない (ホイール / プログラムでのスクロールは可)
 };
+
+pub const Corner = enum { upper_left, upper_right, lower_left, lower_right };
 ```
 
 ### ビューのスクロール挙動宣言 (`Component.scrollable`)
@@ -91,6 +93,24 @@ pub fn setView(self: *ScrollPane, view: *Component) void;
 
 `setView` は現在のビューを破棄して新しいビューに差し替える (所有権が移る)。
 スクロール位置は 0 にリセットされ、 再レイアウトされる。
+
+## ヘッダー / コーナーの設定
+```zig
+pub fn setColumnHeaderView(self: *ScrollPane, view: *Component) !void;
+pub fn setRowHeaderView   (self: *ScrollPane, view: *Component) !void;
+pub fn setCorner          (self: *ScrollPane, which: Corner, view: *Component) !void;
+pub fn getColumnHeaderView(self: ScrollPane) ?*Component;
+pub fn getRowHeaderView   (self: ScrollPane) ?*Component;
+pub fn getCorner          (self: ScrollPane, which: Corner) ?*Component;
+```
+
+列ヘッダー、行ヘッダー、4 隅のコーナー view を設定する。
+渡した view は `ScrollPane` が所有する。再設定時は古い view を破棄して差し替え、`ScrollPane` の破棄時にも解放される。
+
+領域は 3 行 3 列。列は左から rowHeader 幅 / ビューポート幅 / vbar 幅、行は上から columnHeader 高 / ビューポート高 / hbar 高。
+vbar は columnHeader 帯の下から、hbar は rowHeader 帯の右から始まり、スクロールバーはヘッダー帯 / コーナーを跨がない。
+columnHeader は水平オフセットのみ、rowHeader は垂直オフセットのみスクロールに追従する。
+詳細な領域モデルと Table 移行方針は `{REPO_ROOT}/doc/internal/scroll_pane_3x3_design.md` を参照。
 
 ## スクロール位置の取得 / 設定
 ```zig
@@ -163,30 +183,6 @@ try nimbus.BorderLayout.add(&frame.window.container, .center, sp.asComponent());
   (描画自体は空シザーで早期 return するので GPU 仕事は無いが、 ツリー巡回コストは残る)。
   巨大なコンテンツ (数千行) では、 ビューポート外の子の巡回をスキップする仮想化が要る
 * `Component.scrollable` のヒント拡張 (`unit_increment` / `block_increment` をビューが行高ベースで返す)
-* 行 / 列ヘッダー + コーナー (Swing `JScrollPane` の rowHeader / columnHeader。 表計算 / テーブル向け)。
-  設計確定・未実装 (案A 一括、 backlog #28、 ブランチ `feat/scroll-headers`)。
-  3x3 領域モデルの全体像・レイアウト規約・スクロール同期・所有・Table 移行・テスト方針は
-  `{REPO_ROOT}/doc/internal/scroll_pane_3x3_design.md` を正本とする。
-  確定した公開 API スケッチ (実装時にこの節を「型定義」「関数定義」へ昇格する):
-
-  ```zig
-  pub const Corner = enum { upper_left, upper_right, lower_left, lower_right };
-
-  pub fn setColumnHeaderView(self: *ScrollPane, view: *Component) !void;
-  pub fn setRowHeaderView   (self: *ScrollPane, view: *Component) !void;
-  pub fn setCorner          (self: *ScrollPane, which: Corner, view: *Component) !void;
-  pub fn getColumnHeaderView(self: ScrollPane) ?*Component;
-  pub fn getRowHeaderView   (self: ScrollPane) ?*Component;
-  pub fn getCorner          (self: ScrollPane, which: Corner) ?*Component;
-  ```
-
-  領域は 3 行 3 列。
-  列は左から rowHeader 幅 / ビューポート 幅 / vbar 幅。
-  行は上から columnHeader 高 / ビューポート 高 / hbar 高。
-  vbar は columnHeader 帯の下から、 hbar は rowHeader 帯の右から始まる。
-  スクロールバーはヘッダー帯 / コーナーを跨がない (これが #28 の vbar 被りバグの解)。
-  columnHeader は水平オフセットのみ、 rowHeader は垂直オフセットのみスクロールに追従する。
-  ヘッダー / コーナー view は ScrollPane が所有する (`setView` と同じ規約、 `destroy` で解放)。
 * スクロール位置のアニメーション (慣性 / スムーズスクロール)
 * キーボードスクロール (フォーカス時の PageUp/Down、 矢印)
 * ビューポートサイズ基準の推奨サイズ指定 (`setPreferredViewportSize`)

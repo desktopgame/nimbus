@@ -22,6 +22,7 @@ const ChangeEvent = listener.ChangeEvent;
 const ScrollPane = @This();
 
 pub const Policy = enum { as_needed, always, never };
+pub const Corner = enum { upper_left, upper_right, lower_left, lower_right };
 
 const DEFAULT_UNIT_INCREMENT: f32 = 40;
 /// Modest floor so the pane is usable in a layout without demanding the
@@ -35,6 +36,11 @@ container: Container,
 layout: ScrollLayout,
 view: *Component, // owned (lives inside `viewport`)
 viewport: *Container, // child of `container`; owns `view`
+column_header_view: ?*Component,
+column_header_port: ?*Container,
+row_header_view: ?*Component,
+row_header_port: ?*Container,
+corners: [4]?*Component,
 hbar: *ScrollBar, // child of `container`; borrows `h_model`
 vbar: *ScrollBar, // child of `container`; borrows `v_model`
 /// Scroll state. Owned here (not by the bars) so teardown order is safe: the
@@ -76,6 +82,11 @@ pub fn create(allocator: std.mem.Allocator, view: *Component) !*ScrollPane {
         .layout = .{ .base = .{ .vtable = &scroll_layout_vtable } },
         .view = view,
         .viewport = undefined,
+        .column_header_view = null,
+        .column_header_port = null,
+        .row_header_view = null,
+        .row_header_port = null,
+        .corners = .{ null, null, null, null },
         .hbar = undefined,
         .vbar = undefined,
         .h_model = BoundedRangeModel.init(allocator, 0, 0, 0),
@@ -153,6 +164,54 @@ pub fn setView(self: *ScrollPane, view: *Component) void {
     self.viewport.add(view) catch {}; // capacity retained from the removed slot
     self.h_model.setValue(0);
     self.v_model.setValue(0);
+    self.container.component.markLayoutDirty();
+}
+
+pub fn getColumnHeaderView(self: ScrollPane) ?*Component {
+    return self.column_header_view;
+}
+
+pub fn getRowHeaderView(self: ScrollPane) ?*Component {
+    return self.row_header_view;
+}
+
+pub fn getCorner(self: ScrollPane, which: Corner) ?*Component {
+    return self.corners[@intFromEnum(which)];
+}
+
+pub fn setColumnHeaderView(self: *ScrollPane, view: *Component) !void {
+    const port = try self.ensureColumnHeaderPort();
+    try port.children.ensureTotalCapacity(self.allocator, 1);
+    if (self.column_header_view) |old| {
+        port.remove(old);
+        old.vtable.destroy(old, self.allocator);
+    }
+    self.column_header_view = view;
+    port.add(view) catch unreachable;
+    self.container.component.markLayoutDirty();
+}
+
+pub fn setRowHeaderView(self: *ScrollPane, view: *Component) !void {
+    const port = try self.ensureRowHeaderPort();
+    try port.children.ensureTotalCapacity(self.allocator, 1);
+    if (self.row_header_view) |old| {
+        port.remove(old);
+        old.vtable.destroy(old, self.allocator);
+    }
+    self.row_header_view = view;
+    port.add(view) catch unreachable;
+    self.container.component.markLayoutDirty();
+}
+
+pub fn setCorner(self: *ScrollPane, which: Corner, view: *Component) !void {
+    try self.container.children.ensureUnusedCapacity(self.allocator, 1);
+    const idx = @intFromEnum(which);
+    if (self.corners[idx]) |old| {
+        self.container.remove(old);
+        old.vtable.destroy(old, self.allocator);
+    }
+    self.corners[idx] = view;
+    self.container.add(view) catch unreachable;
     self.container.component.markLayoutDirty();
 }
 
@@ -250,6 +309,26 @@ fn fromComponent(self: *Component) *ScrollPane {
     return @fieldParentPtr("container", c);
 }
 
+fn ensureColumnHeaderPort(self: *ScrollPane) !*Container {
+    if (self.column_header_port) |port| return port;
+    try self.container.children.ensureUnusedCapacity(self.allocator, 1);
+    const port = try Container.create(self.allocator);
+    errdefer port.component.vtable.destroy(&port.component, self.allocator);
+    self.column_header_port = port;
+    self.container.add(&port.component) catch unreachable;
+    return port;
+}
+
+fn ensureRowHeaderPort(self: *ScrollPane) !*Container {
+    if (self.row_header_port) |port| return port;
+    try self.container.children.ensureUnusedCapacity(self.allocator, 1);
+    const port = try Container.create(self.allocator);
+    errdefer port.component.vtable.destroy(&port.component, self.allocator);
+    self.row_header_port = port;
+    self.container.add(&port.component) catch unreachable;
+    return port;
+}
+
 /// Measure the view's laid-out size given the available viewport. Honors the
 /// view's optional `scrollable` hint: a tracked axis is forced to the viewport
 /// size; an untracked axis uses `max(natural, viewport)` so small content fills
@@ -280,6 +359,8 @@ fn layoutDoLayout(_: *LayoutManager, container: *Container) void {
     const W = container.component.size.width;
     const H = container.component.size.height;
     const T = ScrollBar.THICKNESS;
+    const left: f32 = if (self.row_header_view) |v| v.effectiveMinSize().width else 0;
+    const top: f32 = if (self.column_header_view) |v| v.effectiveMinSize().height else 0;
 
     // Decide bar visibility. The vertical bar steals width (and vice-versa),
     // which can change the other axis's need — settle with a couple passes.
@@ -287,8 +368,8 @@ fn layoutDoLayout(_: *LayoutManager, container: *Container) void {
     var show_h = self.h_policy == .always;
     var iter: u8 = 0;
     while (iter < 2) : (iter += 1) {
-        const vp_w = @max(0, W - (if (show_v) T else 0));
-        const vp_h = @max(0, H - (if (show_h) T else 0));
+        const vp_w = @max(0, W - left - (if (show_v) T else 0));
+        const vp_h = @max(0, H - top - (if (show_h) T else 0));
         const sz = self.measureView(vp_w, vp_h);
         if (self.v_policy == .as_needed) show_v = sz.height > vp_h;
         if (self.h_policy == .as_needed) show_h = sz.width > vp_w;
@@ -296,34 +377,62 @@ fn layoutDoLayout(_: *LayoutManager, container: *Container) void {
         if (self.h_policy == .never) show_h = false;
     }
 
-    const vp_w = @max(0, W - (if (show_v) T else 0));
-    const vp_h = @max(0, H - (if (show_h) T else 0));
-    const view_size = self.measureView(vp_w, vp_h);
+    const right: f32 = if (show_v) T else 0;
+    const bottom: f32 = if (show_h) T else 0;
+    const center_w = @max(0, W - left - right);
+    const center_h = @max(0, H - top - bottom);
+    const view_size = self.measureView(center_w, center_h);
 
     // Scroll state: range = content size, extent = viewport size. Atomic
     // update so a stale `value` (left over from when the content was larger,
     // e.g. user scrolled down then deleted lines) is clamped down to the new
     // valid range — otherwise `setRange` would leave `value` past the new max
     // and `setExtent` would collapse the extent to compensate.
-    self.v_model.setRangeProperties(0, self.v_model.value, toI32(view_size.height), toI32(vp_h));
-    self.h_model.setRangeProperties(0, self.h_model.value, toI32(view_size.width), toI32(vp_w));
+    self.v_model.setRangeProperties(0, self.v_model.value, toI32(view_size.height), toI32(center_h));
+    self.h_model.setRangeProperties(0, self.h_model.value, toI32(view_size.width), toI32(center_w));
 
     // View at its measured size, offset by the (clamped) scroll value.
     const ox: f32 = @floatFromInt(self.h_model.value);
     const oy: f32 = @floatFromInt(self.v_model.value);
     self.view.setBounds(.{ .x = -ox, .y = -oy, .width = view_size.width, .height = view_size.height });
+    if (self.column_header_view) |header| {
+        header.setBounds(.{ .x = -ox, .y = 0, .width = view_size.width, .height = top });
+    }
+    if (self.row_header_view) |header| {
+        header.setBounds(.{ .x = 0, .y = -oy, .width = left, .height = view_size.height });
+    }
 
     // Viewport + bars in disjoint rects (Component.setBounds: the outer
     // doLayout recursion handles the viewport's own child layout).
-    self.viewport.component.setBounds(.{ .x = 0, .y = 0, .width = vp_w, .height = vp_h });
+    self.viewport.component.setBounds(.{ .x = left, .y = top, .width = center_w, .height = center_h });
+    if (self.column_header_port) |port| {
+        port.component.setBounds(.{ .x = left, .y = 0, .width = center_w, .height = top });
+    }
+    if (self.row_header_port) |port| {
+        port.component.setBounds(.{ .x = 0, .y = top, .width = left, .height = center_h });
+    }
     self.vbar.component.setBounds(if (show_v)
-        .{ .x = vp_w, .y = 0, .width = T, .height = vp_h }
+        .{ .x = left + center_w, .y = top, .width = T, .height = center_h }
     else
         .{ .x = 0, .y = 0, .width = 0, .height = 0 });
     self.hbar.component.setBounds(if (show_h)
-        .{ .x = 0, .y = vp_h, .width = vp_w, .height = T }
+        .{ .x = left, .y = top + center_h, .width = center_w, .height = T }
     else
         .{ .x = 0, .y = 0, .width = 0, .height = 0 });
+    setCornerBounds(self.corners[@intFromEnum(Corner.upper_left)], 0, 0, left, top);
+    setCornerBounds(self.corners[@intFromEnum(Corner.upper_right)], left + center_w, 0, right, top);
+    setCornerBounds(self.corners[@intFromEnum(Corner.lower_left)], 0, top + center_h, left, bottom);
+    setCornerBounds(self.corners[@intFromEnum(Corner.lower_right)], left + center_w, top + center_h, right, bottom);
+}
+
+fn setCornerBounds(corner: ?*Component, x: f32, y: f32, w: f32, h: f32) void {
+    if (corner) |c| {
+        if (w > 0 and h > 0) {
+            c.setBounds(.{ .x = x, .y = y, .width = w, .height = h });
+        } else {
+            c.setBounds(.{ .x = x, .y = y, .width = 0, .height = 0 });
+        }
+    }
 }
 
 fn layoutComputeMinSize(_: *LayoutManager, _: *const Container) Component.Size {
@@ -342,6 +451,12 @@ fn onScrollChange(self: *ScrollPane, _: *const ChangeEvent) void {
         .x = -@as(f32, @floatFromInt(self.h_model.value)),
         .y = -@as(f32, @floatFromInt(self.v_model.value)),
     };
+    if (self.column_header_view) |header| {
+        header.position = .{ .x = -@as(f32, @floatFromInt(self.h_model.value)), .y = 0 };
+    }
+    if (self.row_header_view) |header| {
+        header.position = .{ .x = 0, .y = -@as(f32, @floatFromInt(self.v_model.value)) };
+    }
     self.container.component.repaint();
 }
 
@@ -396,4 +511,103 @@ fn destroy(self: *Component, allocator: std.mem.Allocator) void {
     sp.v_model.deinit();
     sp.h_model.deinit();
     allocator.destroy(sp);
+}
+
+const Panel = @import("Panel.zig");
+
+fn testPanel(a: std.mem.Allocator, w: f32, h: f32) !*Panel {
+    const p = try Panel.create(a);
+    p.asComponent().setMinSize(.{ .width = w, .height = h });
+    return p;
+}
+
+fn layoutTestPane(sp: *ScrollPane, w: f32, h: f32) void {
+    sp.asComponent().setBounds(.{ .x = 0, .y = 0, .width = w, .height = h });
+    sp.container.doLayout();
+}
+
+test "scrollpane: vertical bar starts below column header" {
+    const a = std.testing.allocator;
+    const view = try testPanel(a, 80, 300);
+    const sp = try create(a, view.asComponent());
+    defer sp.asComponent().vtable.destroy(sp.asComponent(), a);
+    const header = try testPanel(a, 80, 26);
+    try sp.setColumnHeaderView(header.asComponent());
+
+    layoutTestPane(sp, 100, 100);
+
+    const top: f32 = 26;
+    const center_h = 100 - top;
+    try std.testing.expectApproxEqAbs(top, sp.vbar.component.position.y, 0.001);
+    try std.testing.expectApproxEqAbs(center_h, sp.vbar.component.size.height, 0.001);
+}
+
+test "scrollpane: horizontal bar starts after row header" {
+    const a = std.testing.allocator;
+    const view = try testPanel(a, 300, 80);
+    const sp = try create(a, view.asComponent());
+    defer sp.asComponent().vtable.destroy(sp.asComponent(), a);
+    const row_header = try testPanel(a, 32, 80);
+    try sp.setRowHeaderView(row_header.asComponent());
+
+    layoutTestPane(sp, 100, 100);
+
+    try std.testing.expectApproxEqAbs(@as(f32, 32), sp.hbar.component.position.x, 0.001);
+}
+
+test "scrollpane: header and viewport offsets follow their axes" {
+    const a = std.testing.allocator;
+    const view = try testPanel(a, 300, 300);
+    const sp = try create(a, view.asComponent());
+    defer sp.asComponent().vtable.destroy(sp.asComponent(), a);
+    const col_header = try testPanel(a, 300, 26);
+    const row_header = try testPanel(a, 32, 300);
+    try sp.setColumnHeaderView(col_header.asComponent());
+    try sp.setRowHeaderView(row_header.asComponent());
+
+    layoutTestPane(sp, 100, 100);
+    sp.setScrollX(40);
+    sp.setScrollY(30);
+
+    try std.testing.expectApproxEqAbs(@as(f32, -40), col_header.asComponent().position.x, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), col_header.asComponent().position.y, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), row_header.asComponent().position.x, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, -30), row_header.asComponent().position.y, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, -40), view.asComponent().position.x, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, -30), view.asComponent().position.y, 0.001);
+}
+
+test "scrollpane: no headers keeps legacy viewport and bar regions" {
+    const a = std.testing.allocator;
+    const view = try testPanel(a, 300, 300);
+    const sp = try create(a, view.asComponent());
+    defer sp.asComponent().vtable.destroy(sp.asComponent(), a);
+
+    layoutTestPane(sp, 100, 100);
+
+    const T = ScrollBar.THICKNESS;
+    try std.testing.expectApproxEqAbs(@as(f32, 0), sp.viewport.component.position.x, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), sp.viewport.component.position.y, 0.001);
+    try std.testing.expectApproxEqAbs(100 - T, sp.viewport.component.size.width, 0.001);
+    try std.testing.expectApproxEqAbs(100 - T, sp.viewport.component.size.height, 0.001);
+    try std.testing.expectApproxEqAbs(100 - T, sp.vbar.component.position.x, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), sp.vbar.component.position.y, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), sp.hbar.component.position.x, 0.001);
+    try std.testing.expectApproxEqAbs(100 - T, sp.hbar.component.position.y, 0.001);
+}
+
+test "scrollpane: corners collapse when either band is zero" {
+    const a = std.testing.allocator;
+    const view = try testPanel(a, 80, 80);
+    const sp = try create(a, view.asComponent());
+    defer sp.asComponent().vtable.destroy(sp.asComponent(), a);
+    const header = try testPanel(a, 80, 26);
+    const corner = try testPanel(a, 10, 10);
+    try sp.setColumnHeaderView(header.asComponent());
+    try sp.setCorner(.upper_left, corner.asComponent());
+
+    layoutTestPane(sp, 100, 100);
+
+    try std.testing.expectApproxEqAbs(@as(f32, 0), corner.asComponent().size.width, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), corner.asComponent().size.height, 0.001);
 }

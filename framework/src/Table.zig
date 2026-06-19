@@ -5,9 +5,8 @@
 //! The framework never interprets a row: each column's cell casts the row item
 //! and reads its own field. Sorting is not done here — the header click only
 //! notifies (SortEvent) and updates the indicator; the app reorders the model.
-//! The header is painted by the Table itself, pinned to the top of the
-//! viewport (it counteracts the scroll offset), so it stays visible without
-//! any ScrollPane column-header support.
+//! The header is exposed as a separate borrowed Component for ScrollPane's
+//! column-header slot; the Table body itself owns only rows/cells.
 
 const std = @import("std");
 const awt = @import("awt");
@@ -132,6 +131,75 @@ const HeaderDrag = struct {
     grab: f32,
 };
 
+const TableHeader = struct {
+    component: Component,
+    table: *Table,
+
+    const vtable = Component.VTable{
+        .install = TableHeader.install,
+        .uninstall = TableHeader.uninstall,
+        .paint = TableHeader.paint,
+        .processEvent = TableHeader.processEvent,
+        .destroy = TableHeader.destroy,
+    };
+
+    fn create(allocator: std.mem.Allocator, table: *Table) !*TableHeader {
+        const header = try allocator.create(TableHeader);
+        header.* = .{
+            .component = Component.init(allocator, &TableHeader.vtable),
+            .table = table,
+        };
+        header.component.setMinSize(.{ .width = table.totalWidth(), .height = HEADER_HEIGHT });
+        try TableHeader.vtable.install(&header.component);
+        return header;
+    }
+
+    fn install(_: *Component) !void {}
+    fn uninstall(_: *Component) void {}
+
+    fn paint(self: *Component, g: *awt.Graphics) void {
+        const header: *TableHeader = @fieldParentPtr("component", self);
+        header.table.paintHeader(g, 0, self.size.width);
+    }
+
+    fn processEvent(self: *Component, ev: *Component.Event) void {
+        const header: *TableHeader = @fieldParentPtr("component", self);
+        const table = header.table;
+        switch (ev.payload) {
+            .mouse => |m| {
+                const origin = self.absoluteOriginInWindow();
+                const lx = m.x - origin.x;
+                if (table.header_drag) |hd| {
+                    switch (m.action) {
+                        .move => {
+                            table.updateResize(hd, lx);
+                            ev.consume();
+                            return;
+                        },
+                        .release => {
+                            table.header_drag = null;
+                            ev.consume();
+                            return;
+                        },
+                        else => {},
+                    }
+                }
+                if (m.action == .scroll) return;
+                if (m.action == .press and (m.button orelse .left) == .left) {
+                    table.handleHeaderPress(ev, lx, self);
+                }
+            },
+            .key, .char, .focus, .composition => {},
+        }
+    }
+
+    fn destroy(self: *Component, allocator: std.mem.Allocator) void {
+        const header: *TableHeader = @fieldParentPtr("component", self);
+        self.deinit();
+        allocator.destroy(header);
+    }
+};
+
 // ── fields ───────────────────────────────────────────────────────────────
 
 component: Component,
@@ -147,6 +215,7 @@ sort_direction: SortDirection,
 has_focus: bool,
 hovered: ?*Component,
 header_drag: ?HeaderDrag,
+header_view: ?*TableHeader,
 last_click_time: f64,
 last_click_row: ?usize,
 change_listeners: ChangeListenerList,
@@ -225,6 +294,7 @@ fn createInternal(
         .has_focus = false,
         .hovered = null,
         .header_drag = null,
+        .header_view = null,
         .last_click_time = 0,
         .last_click_row = null,
         .change_listeners = ChangeListenerList.init(allocator),
@@ -251,6 +321,12 @@ fn createInternal(
 
 pub fn asComponent(self: *Table) *Component {
     return &self.component;
+}
+
+pub fn headerView(self: *Table) !*Component {
+    const header = try TableHeader.create(self.allocator, self);
+    self.header_view = header;
+    return &header.component;
 }
 
 pub fn getSelected(self: Table) ?usize {
@@ -303,9 +379,8 @@ pub fn setRowHeight(self: *Table, h: f32) void {
 pub fn rowAtLocalY(self: *const Table, y: f32) ?usize {
     const rh = self.row_height;
     if (rh <= 0) return null;
-    const scroll_top = @max(0, -self.component.position.y);
-    if (y < scroll_top + HEADER_HEIGHT) return null;
-    const row: usize = @intFromFloat(@floor((y - HEADER_HEIGHT) / rh));
+    if (y < 0) return null;
+    const row: usize = @intFromFloat(@floor(y / rh));
     if (row >= self.model.getSize()) return null;
     return row;
 }
@@ -321,6 +396,7 @@ pub fn setColumnWidth(self: *Table, col: usize, width: f32) void {
     self.syncContentSize();
     self.component.markLayoutDirty();
     self.component.repaint();
+    if (self.header_view) |header| header.component.repaint();
 }
 
 pub fn getSortColumn(self: Table) ?usize {
@@ -337,6 +413,7 @@ pub fn setSortIndicator(self: *Table, column: ?usize, direction: SortDirection) 
     self.sort_column = column;
     self.sort_direction = direction;
     self.component.repaint();
+    if (self.header_view) |header| header.component.repaint();
 }
 
 // ── editing (single cell; List.CellEdit ported) ─────────────────────────────
@@ -464,8 +541,11 @@ fn columnAtBoundary(self: *const Table, lx: f32) ?usize {
 }
 
 fn syncContentSize(self: *Table) void {
-    const h = HEADER_HEIGHT + @as(f32, @floatFromInt(self.model.getSize())) * self.row_height;
+    const h = @as(f32, @floatFromInt(self.model.getSize())) * self.row_height;
     self.component.setMinSize(.{ .width = self.totalWidth(), .height = h });
+    if (self.header_view) |header| {
+        header.component.setMinSize(.{ .width = self.totalWidth(), .height = HEADER_HEIGHT });
+    }
 }
 
 fn findCellRowIndex(col: *ColumnState, row: usize) ?usize {
@@ -511,7 +591,7 @@ fn layoutCell(self: *Table, col: *ColumnState, ci: usize, idx: usize, row: usize
     const comp = col.pool.items[idx].cell.component;
     comp.setBounds(.{
         .x = self.columnX(ci),
-        .y = HEADER_HEIGHT + @as(f32, @floatFromInt(row)) * self.row_height,
+        .y = @as(f32, @floatFromInt(row)) * self.row_height,
         .width = col.width,
         .height = self.row_height,
     });
@@ -553,14 +633,12 @@ fn reconcile(self: *Table) void {
     const vp_h = if (self.component.parent) |p| p.size.height else self.component.size.height;
     const bot = scroll_top + vp_h;
 
-    // Body starts at content y = HEADER_HEIGHT; row r occupies
-    // [HEADER + r*rh, HEADER + (r+1)*rh].
-    var first_f = @floor((scroll_top - HEADER_HEIGHT) / rh);
+    var first_f = @floor(scroll_top / rh);
     if (first_f < 0) first_f = 0;
     var first: usize = @intFromFloat(first_f);
     first = if (first > BUFFER_ROWS) first - BUFFER_ROWS else 0;
 
-    var last_f = @ceil((bot - HEADER_HEIGHT) / rh);
+    var last_f = @ceil(bot / rh);
     if (last_f < 0) last_f = 0;
     var last: usize = @intFromFloat(last_f);
     last += BUFFER_ROWS;
@@ -617,15 +695,12 @@ fn moveSelection(self: *Table, delta: i32, extend: bool) void {
 
 fn scrollToRow(self: *Table, row: usize) void {
     const sc = self.component.enclosingScrollController() orelse return;
-    const y = HEADER_HEIGHT + @as(f32, @floatFromInt(row)) * self.row_height;
-    // Expand the rect upward by the header height so scrolling a row up never
-    // tucks it under the pinned header; the downward case is unchanged (the
-    // extra top and extra height cancel in ScrollPane's bottom calculation).
+    const y = @as(f32, @floatFromInt(row)) * self.row_height;
     sc.scroll_rect_to_visible(sc.user_data, .{
         .x = 0,
-        .y = y - HEADER_HEIGHT,
+        .y = y,
         .width = self.component.size.width,
-        .height = self.row_height + HEADER_HEIGHT,
+        .height = self.row_height,
     });
 }
 
@@ -646,6 +721,7 @@ fn toggleSort(self: *Table, ci: usize) void {
         self.sort_direction = .ascending;
     }
     self.component.repaint();
+    if (self.header_view) |header| header.component.repaint();
     self.sort_listeners.fire(&.{ .source = self, .column = ci, .direction = self.sort_direction });
 }
 
@@ -656,14 +732,15 @@ fn updateResize(self: *Table, hd: HeaderDrag, lx: f32) void {
     self.syncContentSize();
     self.component.markLayoutDirty();
     self.component.repaint();
+    if (self.header_view) |header| header.component.repaint();
 }
 
-fn handleHeaderPress(self: *Table, ev: *Component.Event, lx: f32) void {
+fn handleHeaderPress(self: *Table, ev: *Component.Event, lx: f32, capture_target: *Component) void {
     if (self.editing != null) self.commitEdit(); // clicking the header ends an edit
     if (self.columnAtBoundary(lx)) |ci| {
         const right = self.columnX(ci) + self.columns[ci].width;
         self.header_drag = .{ .col = ci, .grab = lx - right };
-        ev.requestCapture(@ptrCast(&self.component));
+        ev.requestCapture(@ptrCast(capture_target));
         ev.consume();
         return;
     }
@@ -710,7 +787,7 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     for (table.selection.indices()) |r| {
         g.fillRect(.{
             .x = 0,
-            .y = HEADER_HEIGHT + @as(f32, @floatFromInt(r)) * table.row_height,
+            .y = @as(f32, @floatFromInt(r)) * table.row_height,
             .width = sz.width,
             .height = table.row_height,
         });
@@ -721,10 +798,6 @@ fn paint(self: *Component, g: *awt.Graphics) void {
             if (pc.row != null) pc.cell.component.paintAt(g);
         }
     }
-
-    // Pinned header, drawn last (on top of any cell scrolled into its band).
-    const scroll_top = @max(0, -self.position.y);
-    table.paintHeader(g, scroll_top, sz.width);
 }
 
 fn paintHeader(self: *Table, g: *awt.Graphics, top: f32, width: f32) void {
@@ -773,37 +846,7 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
 
     switch (ev.payload) {
         .mouse => |m| {
-            const origin = self.absoluteOriginInWindow();
-            const lx = m.x - origin.x;
-            const ly = m.y - origin.y;
-            const scroll_top = @max(0, -self.position.y);
-
-            // Active column-resize drag (captured) takes precedence.
-            if (table.header_drag) |hd| {
-                switch (m.action) {
-                    .move => {
-                        table.updateResize(hd, lx);
-                        ev.consume();
-                        return;
-                    },
-                    .release => {
-                        table.header_drag = null;
-                        ev.consume();
-                        return;
-                    },
-                    else => {},
-                }
-            }
-
             if (m.action == .scroll) return; // let the enclosing ScrollPane wheel
-
-            // Header band (pinned to the viewport top in content coords).
-            if (ly >= scroll_top and ly < scroll_top + HEADER_HEIGHT) {
-                if (m.action == .press and (m.button orelse .left) == .left) {
-                    table.handleHeaderPress(ev, lx);
-                }
-                return;
-            }
 
             // Body: forward to the visible cell under the pointer first.
             var hit_row: ?usize = null;
@@ -958,7 +1001,7 @@ fn layoutAt(t: *Table, w: f32, h: f32) void {
     t.reconcile();
 }
 
-test "table: content size = header + rows tall, all columns wide" {
+test "table: content size = rows tall, all columns wide" {
     const a = std.testing.allocator;
     const t = try testTable(a);
     defer t.component.vtable.destroy(&t.component, a);
@@ -968,7 +1011,7 @@ test "table: content size = header + rows tall, all columns wide" {
 
     const min = t.component.effectiveMinSize();
     try std.testing.expectApproxEqAbs(@as(f32, 160), min.width, 0.001); // 100 + 60
-    try std.testing.expectApproxEqAbs(@as(f32, 26 + 3 * 24), min.height, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 3 * 24), min.height, 0.001);
 }
 
 test "table: cells lay out per column at row offsets" {
@@ -980,10 +1023,10 @@ test "table: cells lay out per column at row offsets" {
     for (&items) |*it| try t.model.add(@ptrCast(it));
     layoutAt(t, 200, 200);
 
-    // Column 0 cell of row 0: x=0, y=HEADER, w=100, h=24.
+    // Column 0 cell of row 0: x=0, y=0, w=100, h=24.
     const c0 = t.columns[0].pool.items[0].cell.component;
     try std.testing.expectApproxEqAbs(@as(f32, 0), c0.position.x, 0.001);
-    try std.testing.expectApproxEqAbs(@as(f32, 26), c0.position.y, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), c0.position.y, 0.001);
     try std.testing.expectApproxEqAbs(@as(f32, 100), c0.size.width, 0.001);
     // Column 1 starts at x=100.
     const c1 = t.columns[1].pool.items[0].cell.component;
@@ -1004,7 +1047,7 @@ test "table: setColumnWidth clamps to min_width and shifts later columns" {
     try std.testing.expectApproxEqAbs(@as(f32, 30), t.getColumnWidth(1), 0.001);
 }
 
-test "table: rowAtLocalY accounts for header and scroll" {
+test "table: rowAtLocalY uses body coordinates" {
     const a = std.testing.allocator;
     const t = try testTable(a);
     defer t.component.vtable.destroy(&t.component, a);
@@ -1014,15 +1057,14 @@ test "table: rowAtLocalY accounts for header and scroll" {
     layoutAt(t, 200, 200);
 
     try std.testing.expectApproxEqAbs(HEADER_HEIGHT, t.getHeaderHeight(), 0.001);
-    try std.testing.expectEqual(@as(?usize, null), t.rowAtLocalY(10));
-    try std.testing.expectEqual(@as(?usize, 0), t.rowAtLocalY(HEADER_HEIGHT + 1));
-    try std.testing.expectEqual(@as(?usize, null), t.rowAtLocalY(HEADER_HEIGHT + 3 * DEFAULT_ROW_HEIGHT + 1));
+    try std.testing.expectEqual(@as(?usize, null), t.rowAtLocalY(-1));
+    try std.testing.expectEqual(@as(?usize, 0), t.rowAtLocalY(1));
+    try std.testing.expectEqual(@as(?usize, null), t.rowAtLocalY(3 * DEFAULT_ROW_HEIGHT + 1));
 
     t.component.position.y = -50;
     t.reconcile();
-    const scroll_top: f32 = 50;
-    try std.testing.expectEqual(@as(?usize, null), t.rowAtLocalY(scroll_top + 10));
-    try std.testing.expectEqual(@as(?usize, 2), t.rowAtLocalY(scroll_top + HEADER_HEIGHT + 1));
+    try std.testing.expectEqual(@as(?usize, 0), t.rowAtLocalY(10));
+    try std.testing.expectEqual(@as(?usize, 2), t.rowAtLocalY(2 * DEFAULT_ROW_HEIGHT + 1));
 }
 
 test "table: header click fires sort and toggles direction" {
@@ -1044,10 +1086,13 @@ test "table: header click fires sort and toggles direction" {
     try t.addSortListener(Ctx, Ctx.onSort, &ctx);
 
     layoutAt(t, 200, 200);
+    const header = try t.headerView();
+    defer header.vtable.destroy(header, a);
+    header.setBounds(.{ .x = 0, .y = 0, .width = 200, .height = HEADER_HEIGHT });
 
     // Click column 0's title (x within [0,100), y in header band [0,26)).
     var e1 = Component.Event{ .payload = .{ .mouse = .{ .x = 30, .y = 10, .action = .press, .button = .left } } };
-    t.component.vtable.processEvent(&t.component, &e1);
+    header.vtable.processEvent(header, &e1);
     try std.testing.expectEqual(@as(u32, 1), ctx.fires);
     try std.testing.expectEqual(@as(?usize, 0), ctx.col);
     try std.testing.expectEqual(SortDirection.ascending, ctx.dir);
@@ -1055,7 +1100,7 @@ test "table: header click fires sort and toggles direction" {
 
     // Click again → descending.
     var e2 = Component.Event{ .payload = .{ .mouse = .{ .x = 30, .y = 10, .action = .press, .button = .left } } };
-    t.component.vtable.processEvent(&t.component, &e2);
+    header.vtable.processEvent(header, &e2);
     try std.testing.expectEqual(SortDirection.descending, ctx.dir);
 }
 
@@ -1064,20 +1109,23 @@ test "table: dragging a column boundary resizes the column" {
     const t = try testTable(a);
     defer t.component.vtable.destroy(&t.component, a);
     layoutAt(t, 200, 200);
+    const header = try t.headerView();
+    defer header.vtable.destroy(header, a);
+    header.setBounds(.{ .x = 0, .y = 0, .width = 200, .height = HEADER_HEIGHT });
 
     // Press on column 0's right boundary (x=100, header band).
     var press = Component.Event{ .payload = .{ .mouse = .{ .x = 100, .y = 10, .action = .press, .button = .left } } };
-    t.component.vtable.processEvent(&t.component, &press);
+    header.vtable.processEvent(header, &press);
     try std.testing.expect(press.isConsumed());
     try std.testing.expect(press.capture_target != null);
 
     // Drag right to x=150 → column 0 widens to ~150.
     var move = Component.Event{ .payload = .{ .mouse = .{ .x = 150, .y = 10, .action = .move } } };
-    t.component.vtable.processEvent(&t.component, &move);
+    header.vtable.processEvent(header, &move);
     try std.testing.expectApproxEqAbs(@as(f32, 150), t.getColumnWidth(0), 0.001);
 
     var rel = Component.Event{ .payload = .{ .mouse = .{ .x = 150, .y = 10, .action = .release, .button = .left } } };
-    t.component.vtable.processEvent(&t.component, &rel);
+    header.vtable.processEvent(header, &rel);
     try std.testing.expect(t.header_drag == null);
 }
 
@@ -1090,8 +1138,8 @@ test "table: body click selects row; Enter activates" {
     for (&items) |*it| try t.model.add(@ptrCast(it));
     layoutAt(t, 200, 200);
 
-    // Click row 1: content y in [HEADER+1*24, HEADER+2*24) = [50, 74).
-    var click = Component.Event{ .payload = .{ .mouse = .{ .x = 20, .y = 62, .action = .press, .button = .left } } };
+    // Click row 1: content y in [1*24, 2*24) = [24, 48).
+    var click = Component.Event{ .payload = .{ .mouse = .{ .x = 20, .y = 38, .action = .press, .button = .left } } };
     t.component.vtable.processEvent(&t.component, &click);
     try std.testing.expectEqual(@as(?usize, 1), t.getSelected());
 
@@ -1203,8 +1251,8 @@ test "table: pressing another row commits the active edit" {
     t.edit(0, 0);
     try std.testing.expectEqual(@as(u32, 1), EditState.started);
 
-    // Left press on row 2 (content y in [HEADER+2*24, +3*24) = [74,98)).
-    var click = Component.Event{ .payload = .{ .mouse = .{ .x = 20, .y = 84, .action = .press, .button = .left } } };
+    // Left press on row 2 (content y in [2*24, 3*24) = [48,72)).
+    var click = Component.Event{ .payload = .{ .mouse = .{ .x = 20, .y = 60, .action = .press, .button = .left } } };
     t.component.vtable.processEvent(&t.component, &click);
     try std.testing.expectEqual(@as(u32, 1), EditState.committed); // edit committed by the off-row press
     try std.testing.expect(t.getEditing() == null);
@@ -1230,9 +1278,9 @@ test "table: right press selects the row and fires context menu" {
     var ctx: Ctx = .{};
     try t.addContextMenuListener(Ctx, Ctx.onCtx, &ctx);
 
-    var rc = Component.Event{ .payload = .{ .mouse = .{ .x = 20, .y = 62, .action = .press, .button = .right } } };
+    var rc = Component.Event{ .payload = .{ .mouse = .{ .x = 20, .y = 38, .action = .press, .button = .right } } };
     t.component.vtable.processEvent(&t.component, &rc);
     try std.testing.expectEqual(@as(u32, 1), ctx.fired);
-    try std.testing.expectEqual(@as(?usize, 1), ctx.row); // y=62 → row (62-26)/24 = 1
+    try std.testing.expectEqual(@as(?usize, 1), ctx.row); // y=38 -> row 38/24 = 1
     try std.testing.expectEqual(@as(?usize, 1), t.getSelected());
 }

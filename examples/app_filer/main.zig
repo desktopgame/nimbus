@@ -1704,6 +1704,7 @@ pub fn buildWithRunner(
     try tbl.addContextMenuListener(Filer, Filer.onTableContextMenu, filer);
     try tbl.addSortListener(Filer, Filer.onSort, filer);
     const tsp = try app.scrollPane(tbl.asComponent());
+    try tsp.setColumnHeaderView(try tbl.headerView());
     filer.table_sp = tsp;
 
     // Holder with a card layout: both scroll panes are children; only the
