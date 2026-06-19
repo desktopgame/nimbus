@@ -148,7 +148,7 @@ pub fn setItems(self: *ComboBox, items: []const []const u8) !void {
     for (self.items.items) |s| self.allocator.free(s);
     self.items.deinit(self.allocator);
     self.items = next;
-    self.selected_index = if (items.len > 0) 0 else 0;
+    self.selected_index = 0;
     if (self.open) self.hide();
     self.applyMetrics();
     self.change_listeners.fire(&.{ .source = self });

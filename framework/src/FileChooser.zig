@@ -1106,7 +1106,7 @@ test "reload replaces owned entry store without leaks or stale entries" {
     try std.testing.expectEqualStrings("/tmp", core.getCurrentDirectory());
 }
 
-test "file chooser widget rebuilds borrowed list model before core reload" {
+test "file chooser widget reload helper repopulates borrowed list model" {
     awt.setLogCallback(@import("Robot.zig").QuietLog.cb, null);
     const app = Application.initHeadless(std.testing.allocator, std.testing.io) catch return error.SkipZigTest;
     defer app.deinit();
@@ -1117,11 +1117,16 @@ test "file chooser widget rebuilds borrowed list model before core reload" {
     const chooser = try FileChooser.createWithSource(app, &frame.window, fake.source());
     defer chooser.destroy();
 
+    try chooser.dialog.show();
+    var robot = @import("Robot.zig").init(app, &chooser.dialog.window);
+    robot.pump();
+
     try std.testing.expectEqualStrings("/home/me", chooser.getCurrentDirectory());
     try std.testing.expect(chooser.files_model.getSize() > 1);
-    chooser.files_model.clear();
-    try chooser.core.loadDir("/tmp");
-    try chooser.rebuildFilesModel();
+    // reloadPath owns the required order: clear the borrowed ListModel before
+    // core.loadDir replaces Entry storage, then publish the fresh visible rows.
+    try chooser.reloadPath("/tmp");
+    robot.pump();
     try std.testing.expectEqual(@as(usize, 1), chooser.files_model.getSize());
     const raw = chooser.files_model.getElementAt(0).?;
     const entry: *Entry = @ptrCast(@alignCast(raw));
@@ -1145,7 +1150,7 @@ test "file chooser headless smoke selects a file and closes with OK" {
     robot.pump();
 
     chooser.files_list.setSelected(1);
-    try chooser.core.setSelectedFromList("notes.txt");
+    chooser.core.selected_len = 0;
     try driver.clickOn(.{ .role = .button, .text = "OK" });
     robot.pump();
 
