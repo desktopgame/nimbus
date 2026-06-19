@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # scrollpane
@@ -29,7 +29,8 @@ pub const Policy = enum {
 
 ### ビューのスクロール挙動宣言 (`Component.scrollable`)
 ビューが「ビューポートのサイズに追従する」ことを宣言するためのオプショナルなヒント。
-`Component` の optional フィールドとして持つ (property バッグや @typeName キーは使わない — これはビュー固有の静的属性なので、 付け外しの動的さが要らず、 素の変数が素直):
+`Component` の optional フィールドとして持つ (property バッグや @typeName キーは使わない —
+これはビュー固有の静的属性なので、 付け外しの動的さが要らず、 素の変数が素直):
 
 ```zig
 // Component.zig
@@ -48,12 +49,14 @@ scrollable: ?Scrollable = null,   // Component のフィールド。既定 null
 追従軸での「この幅での最小高さ」を問い合わせるための、 これも `Component` の optional フィールド (`component.md`「SizeQuery」参照)。
 折り返しビュー (wrap mode の `TextArea` 等) が `scrollable.tracks_viewport_width = true` と一緒に `size_query = .{ .minHeightForWidth = ... }` をセットする。
 
-`ScrollPane` は追従軸が tracked の場合、 `view.size_query` が non-null なら `minHeightForWidth(view, w)` を呼んで自由軸 (高さ) を決める。 `size_query` が null なら `view.effectiveMinSize()` の値を使う。
+`ScrollPane` は追従軸が tracked の場合、 `view.size_query` が non-null なら `minHeightForWidth(view, w)` を呼んで自由軸 (高さ) を決める。
+`size_query` が null なら `view.effectiveMinSize()` の値を使う。
 これは pure query なので副作用がない (= ビュー自身の `min_size` を書き換えない)。 詳細な契約は後述「サイズ決定とビューの契約」。
 
 `viewport` は内部実装の詳細で、 普通の `Container` をそのまま使う。
 `Container` は子に配る前に `containsWindowPoint` で門番し (`container.md`)、 描画は `paintAt` が bounds でクリップする。
-ビューを `viewport` の唯一の子として offset 位置に置くだけで、 **スクロールの描画クリップも当たり判定の絞り込みも既存機構でそのまま成立する** (専用のクリップ / ヒットテストコードは要らない)。
+ビューを `viewport` の唯一の子として offset 位置に置くだけで、
+**スクロールの描画クリップも当たり判定の絞り込みも既存機構でそのまま成立する** (専用のクリップ / ヒットテストコードは要らない)。
 
 ## 生成
 ```zig
@@ -156,9 +159,34 @@ try nimbus.BorderLayout.add(&frame.window.container, .center, sp.asComponent());
 ```
 
 ## 機能要望
-* 可視範囲カリング: 現状はオフスクリーンの子も `paint` が呼ばれる (描画自体は空シザーで早期 return するので GPU 仕事は無いが、 ツリー巡回コストは残る)。 巨大なコンテンツ (数千行) では、 ビューポート外の子の巡回をスキップする仮想化が要る
+* 可視範囲カリング: 現状はオフスクリーンの子も `paint` が呼ばれる
+  (描画自体は空シザーで早期 return するので GPU 仕事は無いが、 ツリー巡回コストは残る)。
+  巨大なコンテンツ (数千行) では、 ビューポート外の子の巡回をスキップする仮想化が要る
 * `Component.scrollable` のヒント拡張 (`unit_increment` / `block_increment` をビューが行高ベースで返す)
-* 行 / 列ヘッダー + コーナー (Swing `JScrollPane` の rowHeader / columnHeader。 表計算 / テーブル向け)
+* 行 / 列ヘッダー + コーナー (Swing `JScrollPane` の rowHeader / columnHeader。 表計算 / テーブル向け)。
+  設計確定・未実装 (案A 一括、 backlog #28、 ブランチ `feat/scroll-headers`)。
+  3x3 領域モデルの全体像・レイアウト規約・スクロール同期・所有・Table 移行・テスト方針は
+  `{REPO_ROOT}/doc/internal/scroll_pane_3x3_design.md` を正本とする。
+  確定した公開 API スケッチ (実装時にこの節を「型定義」「関数定義」へ昇格する):
+
+  ```zig
+  pub const Corner = enum { upper_left, upper_right, lower_left, lower_right };
+
+  pub fn setColumnHeaderView(self: *ScrollPane, view: *Component) !void;
+  pub fn setRowHeaderView   (self: *ScrollPane, view: *Component) !void;
+  pub fn setCorner          (self: *ScrollPane, which: Corner, view: *Component) !void;
+  pub fn getColumnHeaderView(self: ScrollPane) ?*Component;
+  pub fn getRowHeaderView   (self: ScrollPane) ?*Component;
+  pub fn getCorner          (self: ScrollPane, which: Corner) ?*Component;
+  ```
+
+  領域は 3 行 3 列。
+  列は左から rowHeader 幅 / ビューポート 幅 / vbar 幅。
+  行は上から columnHeader 高 / ビューポート 高 / hbar 高。
+  vbar は columnHeader 帯の下から、 hbar は rowHeader 帯の右から始まる。
+  スクロールバーはヘッダー帯 / コーナーを跨がない (これが #28 の vbar 被りバグの解)。
+  columnHeader は水平オフセットのみ、 rowHeader は垂直オフセットのみスクロールに追従する。
+  ヘッダー / コーナー view は ScrollPane が所有する (`setView` と同じ規約、 `destroy` で解放)。
 * スクロール位置のアニメーション (慣性 / スムーズスクロール)
 * キーボードスクロール (フォーカス時の PageUp/Down、 矢印)
 * ビューポートサイズ基準の推奨サイズ指定 (`setPreferredViewportSize`)

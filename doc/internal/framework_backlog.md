@@ -1019,3 +1019,18 @@ completeness / enabler（低・将来。行番号 gutter は file chooser → te
 app_filer 詳細ビューで vbar が列ヘッダー帯に被らない（vbar がヘッダーの下から始まる）。
 Table が自前ヘッダー pin をやめ columnHeaderView でヘッダーを出す。`scroll_pane.md` に領域モデルと API を記載。
 rowHeader / corner を入れた場合はそのレイアウト・所有も doc + テストで確認。
+
+### 設計メモ（2026-06-19、ブランチ `feat/scroll-headers`）
+作者決定の案A（一括）で 3x3 領域モデルを最初から確定。設計の正本は
+`doc/internal/scroll_pane_3x3_design.md`、公開 API スケッチ + 領域モデル要約は
+`framework/doc/scrollpane.md`「機能要望」に記載（未実装なので spec の型定義 / 関数定義へは未昇格 ＝ 追従監査は緑）。
+確定した要点:
+- 領域寸法・各セル矩形・縮退（ヘッダー無し時に現行 `[viewport, hbar, vbar]` へ一致）・コーナー畳み（行帯 × 列帯がともに非ゼロのときだけ可視）。
+- vbar は columnHeader の下（y=top, 高さ center_h）、hbar は rowHeader の右（x=left, 幅 center_w）。スクロールバーはヘッダー帯を跨がない。
+- ヘッダーは viewport と同型の内部 `Container`（ポート）でクリップ。columnHeader view 幅 = `view_size.width`、rowHeader view 高 = `view_size.height`（本体と列 / 行が一致）。
+- 同期: 初期サイズは doLayout、毎フレーム追従は `onScrollChange`（columnHeader は `position.x=-h`、rowHeader は `position.y=-v`）。新しい配線機構は作らない。
+- API は `!void`（初回ポート確保が fallible）。ヘッダー / コーナー view は ScrollPane 所有・`container.deinit` 単一経路で解放。view の null 化（外す）は機能要望。
+- Table 移行: `Table.headerView()` が Table を借用する薄い `TableHeader`（`paintHeader` / `handleHeaderPress` を委譲、top=0）を返し、本体から `HEADER_HEIGHT` オフセットを除去。app_filer が `tsp.setColumnHeaderView(try tbl.headerView())` を配線。
+- awt は既存 `paintAt` / `drawImage` / `Container` で充足（追加プリミティブ不要・awt_backlog 起票なし）。
+- テスト: 領域計算・同期オフセットは GPU 非依存の純ロジック（`ScrollPane.create` は device / フォント不要）、ヘッダー実描画のみ snapshot / Robot ゲート。
+- リスク明記: `ScrollLayout` は埋め込み値なので deinit を付けない（invalid-free）、`TableHeader` は Table より長生きさせない、Table 移行で HEADER_HEIGHT 前提の既存テストは書き換え。
