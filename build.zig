@@ -208,6 +208,7 @@ pub fn build(b: *std.Build) void {
     addExample(b, "widget_radio", framework_mod, null, target, optimize);
     addExample(b, "widget_combobox", framework_mod, null, target, optimize);
     addExample(b, "widget_dialog", framework_mod, null, target, optimize);
+    addExample(b, "widget_filechooser", framework_mod, null, target, optimize);
     addExample(b, "widget_window", framework_mod, null, target, optimize);
     addExample(b, "widget_scroll", framework_mod, null, target, optimize);
     addExample(b, "widget_list", framework_mod, null, target, optimize);

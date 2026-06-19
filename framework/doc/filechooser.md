@@ -3,6 +3,9 @@ unsafe: true
 ---
 
 # filechooser
+v1 は実装済み。下記の公開 API ブロックは機能要望ではなく、実装済みの型定義 / 関数定義である。
+詳細設計（DirSource、レイアウト、所有 / 寿命、テスト、リスク）は `{REPO_ROOT}/doc/internal/file_chooser_design.md` を参照。
+
 ファイルを開く / 保存する / ディレクトリを選ぶためのモーダルダイアログ。
 Swing の `JFileChooser`、Qt の `QFileDialog` 相当。places サイドバー + ファイル種別フィルタ + list ビューを持つ。
 

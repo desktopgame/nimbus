@@ -54,11 +54,13 @@ pub const Dialog = @import("Dialog.zig");
 pub const Application = @import("Application.zig");
 pub const TextField = @import("TextField.zig");
 pub const TextArea = @import("TextArea.zig");
+pub const FileChooser = @import("FileChooser.zig").FileChooser;
+pub const FileChooserCore = @import("FileChooser.zig").ChooserCore;
+pub const FileChooserDirSource = @import("FileChooser.zig").DirSource;
 pub const GapBuffer = @import("GapBuffer.zig");
 pub const Robot = @import("Robot.zig");
 pub const Driver = @import("Driver.zig");
 
 test {
-    _ = @import("FileChooser.zig");
     std.testing.refAllDecls(@This());
 }

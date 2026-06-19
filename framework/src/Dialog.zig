@@ -196,6 +196,7 @@ pub fn isShown(self: Dialog) bool {
 
 /// Position the dialog centered over its owner (OS screen coordinates).
 fn centerOnOwner(self: *Dialog) void {
+    if (self.owner.awt_window == null or self.window.awt_window == null) return;
     const op = self.owner.awt_window.?.pos();
     const os = self.owner.awt_window.?.size();
     const ds = self.window.awt_window.?.size();

@@ -30,6 +30,7 @@ const PopupMenu = @import("PopupMenu.zig");
 const MenuSeparator = @import("MenuSeparator.zig");
 const TextField = @import("TextField.zig");
 const TextArea = @import("TextArea.zig");
+const FileChooser = @import("FileChooser.zig").FileChooser;
 const Theme = @import("theme.zig").Theme;
 const noto = @import("noto/fonts.zig");
 const lucide = @import("lucide/icons.zig");
@@ -634,6 +635,10 @@ pub fn dialog(self: *Application, owner: *Window, title: []const u8, w: u32, h: 
     d.window.container.component.theme = &self.theme;
     d.window.background = self.theme.surface_window;
     return d;
+}
+
+pub fn fileChooser(self: *Application, owner: *Window) !*FileChooser {
+    return FileChooser.create(self, owner);
 }
 
 /// Inject this Application's theme into `c` and every descendant reachable

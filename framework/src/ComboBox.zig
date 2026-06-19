@@ -136,6 +136,25 @@ pub fn getItem(self: ComboBox, idx: usize) ?[]const u8 {
     return self.items.items[idx];
 }
 
+pub fn setItems(self: *ComboBox, items: []const []const u8) !void {
+    var next: std.ArrayList([]const u8) = .empty;
+    errdefer {
+        for (next.items) |s| self.allocator.free(s);
+        next.deinit(self.allocator);
+    }
+    try next.ensureTotalCapacity(self.allocator, items.len);
+    for (items) |s| next.appendAssumeCapacity(try self.allocator.dupe(u8, s));
+
+    for (self.items.items) |s| self.allocator.free(s);
+    self.items.deinit(self.allocator);
+    self.items = next;
+    self.selected_index = if (items.len > 0) 0 else 0;
+    if (self.open) self.hide();
+    self.applyMetrics();
+    self.change_listeners.fire(&.{ .source = self });
+    self.component.markLayoutDirty();
+}
+
 pub fn isEnabled(self: ComboBox) bool {
     return self.enabled;
 }

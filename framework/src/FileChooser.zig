@@ -1,5 +1,24 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const awt = @import("awt");
+
+const Application = @import("Application.zig");
+const BorderLayout = @import("BorderLayout.zig");
+const BoxLayout = @import("BoxLayout.zig");
+const Button = @import("Button.zig");
+const Component = @import("Component.zig");
+const ComboBox = @import("ComboBox.zig");
+const Container = @import("Container.zig");
+const Dialog = @import("Dialog.zig");
+const Label = @import("Label.zig");
+const List = @import("List.zig");
+const PaddingLayout = @import("PaddingLayout.zig");
+const ScrollPane = @import("ScrollPane.zig");
+const SplitPane = @import("SplitPane.zig");
+const TextField = @import("TextField.zig");
+const Window = @import("Window.zig");
+const ActionEvent = @import("listener.zig").ActionEvent;
+const ChangeEvent = @import("listener.zig").ChangeEvent;
 
 const PATH_BUF = 4096;
 
@@ -31,17 +50,14 @@ pub const DirSource = struct {
     };
 };
 
-const OsDirSourceState = struct {
+pub const OsDirSourceState = struct {
     io: std.Io,
 };
 
-var os_dir_source_state: OsDirSourceState = undefined;
-
-pub fn osDirSource(io: std.Io) DirSource {
-    os_dir_source_state = .{ .io = io };
+pub fn osDirSource(state: *OsDirSourceState) DirSource {
     return .{
         .vtable = &os_vtable,
-        .user_data = &os_dir_source_state,
+        .user_data = state,
     };
 }
 
@@ -86,15 +102,20 @@ fn osRealPath(user_data: *anyopaque, path: []const u8, buf: []u8) ![]const u8 {
 
 fn osPlaces(user_data: *anyopaque, allocator: std.mem.Allocator, out: *std.ArrayList(PlaceEntry)) !void {
     const state = osState(user_data);
-    const home_var = if (builtin.os.tag == .windows) "USERPROFILE" else "HOME";
-    if (std.process.getEnvVarOwned(allocator, home_var)) |home| {
+    const home_var: [*:0]const u8 = if (builtin.os.tag == .windows) "USERPROFILE" else "HOME";
+    const raw_home_opt = std.c.getenv(home_var);
+    if (raw_home_opt != null) {
+        const raw_home = raw_home_opt.?;
+        const home = try allocator.dupe(u8, std.mem.span(raw_home));
         errdefer allocator.free(home);
+        const name = try allocator.dupe(u8, "Home");
+        errdefer allocator.free(name);
         try out.append(allocator, .{
-            .name = try allocator.dupe(u8, "Home"),
+            .name = name,
             .path = home,
             .kind = .home,
         });
-    } else |_| {}
+    }
 
     if (builtin.os.tag == .windows) {
         var letter: u8 = 'A';
@@ -367,6 +388,441 @@ pub const ChooserCore = struct {
         try copyPath(&self.selected, &self.selected_len, path);
     }
 };
+
+pub const FileChooser = struct {
+    allocator: std.mem.Allocator,
+    app: *Application,
+    owner: *Window,
+    dialog: *Dialog,
+    core: ChooserCore,
+    os_state: ?OsDirSourceState,
+    files_model: List.ListModel,
+    places_model: List.ListModel,
+    files_list: *List,
+    places_list: *List,
+    path_field: *TextField,
+    filename_field: *TextField,
+    filter_combo: *ComboBox,
+    ok_button: *Button,
+    cancel_button: *Button,
+    up_button: *Button,
+    icon_folder: awt.Image,
+    icon_file: awt.Image,
+    icon_home: awt.Image,
+    icon_root: awt.Image,
+
+    pub fn create(app: *Application, owner: *Window) !*FileChooser {
+        const chooser = try app.allocator.create(FileChooser);
+        errdefer app.allocator.destroy(chooser);
+        chooser.os_state = .{ .io = app.event_queue.io };
+        return createInto(chooser, app, owner, osDirSource(&chooser.os_state.?));
+    }
+
+    pub fn createWithSource(app: *Application, owner: *Window, source: DirSource) !*FileChooser {
+        const chooser = try app.allocator.create(FileChooser);
+        errdefer app.allocator.destroy(chooser);
+        chooser.os_state = null;
+        return createInto(chooser, app, owner, source);
+    }
+
+    fn createInto(self: *FileChooser, app: *Application, owner: *Window, source: DirSource) !*FileChooser {
+        const allocator = app.allocator;
+        var core = try ChooserCore.init(allocator, source);
+        errdefer core.deinit();
+
+        if (core.places.items.len > 0) {
+            try core.loadDir(core.places.items[0].path);
+        }
+
+        const dialog = try app.dialog(owner, "File Chooser", 720, 480);
+        errdefer dialog.destroy();
+
+        self.* = .{
+            .allocator = allocator,
+            .app = app,
+            .owner = owner,
+            .dialog = dialog,
+            .core = core,
+            .os_state = self.os_state,
+            .files_model = List.ListModel.init(allocator),
+            .places_model = List.ListModel.init(allocator),
+            .files_list = undefined,
+            .places_list = undefined,
+            .path_field = undefined,
+            .filename_field = undefined,
+            .filter_combo = undefined,
+            .ok_button = undefined,
+            .cancel_button = undefined,
+            .up_button = undefined,
+            .icon_folder = try app.icon(.folder),
+            .icon_file = try app.icon(.file),
+            .icon_home = try app.icon(.house),
+            .icon_root = try app.icon(.hard_drive),
+        };
+        errdefer {
+            self.files_model.deinit();
+            self.places_model.deinit();
+        }
+
+        try self.buildUi();
+        try self.rebuildPlacesModel();
+        try self.rebuildFilesModel();
+        try self.syncFieldsFromCore();
+        return self;
+    }
+
+    pub fn destroy(self: *FileChooser) void {
+        self.dialog.destroy();
+        self.files_model.deinit();
+        self.places_model.deinit();
+        self.core.deinit();
+        self.allocator.destroy(self);
+    }
+
+    pub fn setMode(self: *FileChooser, mode: Mode) void {
+        self.core.setMode(mode);
+    }
+
+    pub fn setCurrentDirectory(self: *FileChooser, path: []const u8) void {
+        self.reloadPath(path) catch {};
+    }
+
+    pub fn addFilter(self: *FileChooser, name: []const u8, extensions: []const []const u8) !void {
+        try self.core.addFilter(name, extensions);
+        try self.rebuildFilterCombo();
+        try self.rebuildFilesModel();
+    }
+
+    pub fn setSelectedFileName(self: *FileChooser, name: []const u8) void {
+        self.core.setSelectedFileName(name) catch return;
+        self.filename_field.setText(name) catch {};
+    }
+
+    pub fn showOpenDialog(self: *FileChooser) Dialog.Result {
+        self.setMode(.open);
+        return self.showDialog("Open");
+    }
+
+    pub fn showSaveDialog(self: *FileChooser) Dialog.Result {
+        self.setMode(.save);
+        return self.showDialog("Save");
+    }
+
+    pub fn showDialog(self: *FileChooser, approve_text: []const u8) Dialog.Result {
+        self.ok_button.setText(approve_text) catch {};
+        self.syncFieldsFromCore() catch {};
+        return self.dialog.showModal();
+    }
+
+    pub fn getSelectedPath(self: *const FileChooser) ?[]const u8 {
+        return self.core.getSelectedPath();
+    }
+
+    pub fn getCurrentDirectory(self: *const FileChooser) []const u8 {
+        return self.core.getCurrentDirectory();
+    }
+
+    fn buildUi(self: *FileChooser) !void {
+        const app = self.app;
+        const a = self.allocator;
+        const root = &self.dialog.window.container;
+        root.setLayout(try PaddingLayout.create(a, PaddingLayout.Insets.all(8)));
+
+        const body = try app.container();
+        body.setLayout(BorderLayout.get());
+        try root.add(&body.component);
+
+        const north = try app.container();
+        north.setLayout(try BoxLayout.horizontalSpaced(a, 8));
+        self.up_button = try app.button("Up");
+        self.path_field = try app.textField("");
+        self.path_field.component.setGrowX(1);
+        try self.up_button.getModel().addActionListener(FileChooser, onUp, self);
+        try self.path_field.addSubmitListener(FileChooser, onPathSubmit, self);
+        try north.add(&self.up_button.component);
+        try north.add(&self.path_field.component);
+        try BorderLayout.add(body, .north, &north.component);
+
+        self.places_list = try app.listWithModel(&self.places_model, .{ .create = createPlaceCell, .user_data = self });
+        self.places_list.setRowHeight(28);
+        try self.places_list.addChangeListener(FileChooser, onPlaceSelected, self);
+        const places_sp = try app.scrollPane(self.places_list.asComponent());
+        places_sp.container.component.min_size.width = 180;
+
+        self.files_list = try app.listWithModel(&self.files_model, .{ .create = createFileCell, .user_data = self });
+        self.files_list.setRowHeight(28);
+        try self.files_list.addChangeListener(FileChooser, onFileSelected, self);
+        try self.files_list.addActionListener(FileChooser, onFileActivated, self);
+        const files_sp = try app.scrollPane(self.files_list.asComponent());
+
+        const card_holder = try app.container();
+        card_holder.setLayout(BorderLayout.get());
+        try BorderLayout.add(card_holder, .center, &files_sp.container.component);
+
+        const split = try app.splitPane(.horizontal, &places_sp.container.component, &card_holder.component);
+        split.setDividerLocation(180);
+        split.setResizeWeight(0);
+        try BorderLayout.add(body, .center, split.asComponent());
+
+        const south = try app.container();
+        south.setLayout(try BoxLayout.horizontalSpaced(a, 8));
+        self.filename_field = try app.textField("");
+        self.filename_field.component.setGrowX(1);
+        self.filter_combo = try app.comboBox(&.{"All Files"});
+        self.ok_button = try app.button("OK");
+        self.cancel_button = try app.button("Cancel");
+        try self.filter_combo.addChangeListener(FileChooser, onFilterChanged, self);
+        try self.ok_button.getModel().addActionListener(FileChooser, onOk, self);
+        try self.cancel_button.getModel().addActionListener(FileChooser, onCancel, self);
+        try south.add(&self.filename_field.component);
+        try south.add(&self.filter_combo.component);
+        try south.add(&self.ok_button.component);
+        try south.add(&self.cancel_button.component);
+        try BorderLayout.add(body, .south, &south.component);
+    }
+
+    fn rebuildFilesModel(self: *FileChooser) !void {
+        self.files_model.clear();
+        self.files_list.clearSelection();
+        var i: usize = 0;
+        while (i < self.core.visibleEntryCount()) : (i += 1) {
+            try self.files_model.add(@ptrCast(self.core.visibleEntryAt(i).?));
+        }
+        self.files_list.asComponent().markLayoutDirty();
+    }
+
+    fn rebuildPlacesModel(self: *FileChooser) !void {
+        self.places_model.clear();
+        for (self.core.places.items) |p| try self.places_model.add(@ptrCast(p));
+    }
+
+    fn rebuildFilterCombo(self: *FileChooser) !void {
+        var names: std.ArrayList([]const u8) = .empty;
+        defer names.deinit(self.allocator);
+        if (self.core.filters.items.len == 0) {
+            try names.append(self.allocator, "All Files");
+        } else {
+            try names.ensureTotalCapacity(self.allocator, self.core.filters.items.len);
+            for (self.core.filters.items) |filter| names.appendAssumeCapacity(filter.name);
+        }
+        try self.filter_combo.setItems(names.items);
+        self.filter_combo.setSelectedIndex(self.core.selected_filter);
+    }
+
+    fn syncFieldsFromCore(self: *FileChooser) !void {
+        try self.path_field.setText(self.core.getCurrentDirectory());
+        try self.filename_field.setText(self.core.filename.items);
+    }
+
+    fn reloadPath(self: *FileChooser, path: []const u8) !void {
+        self.files_model.clear();
+        try self.core.loadDir(path);
+        try self.rebuildFilesModel();
+        try self.syncFieldsFromCore();
+    }
+
+    fn selectedVisibleEntry(self: *FileChooser) ?*Entry {
+        const idx = self.files_list.getSelected() orelse return null;
+        const raw = self.files_model.getElementAt(idx) orelse return null;
+        return @ptrCast(@alignCast(raw));
+    }
+
+    fn selectedFileName(self: *FileChooser) ?[]const u8 {
+        const e = self.selectedVisibleEntry() orelse return null;
+        if (e.is_dir) return null;
+        return e.name;
+    }
+
+    fn openEntry(self: *FileChooser, e: *Entry) !void {
+        if (e.is_dir) {
+            self.files_model.clear();
+            try self.core.cd(e.name);
+            try self.rebuildFilesModel();
+            try self.syncFieldsFromCore();
+        } else {
+            try self.core.setSelectedFromList(e.name);
+            try self.core.setSelectedFileName(e.name);
+            try self.syncFieldsFromCore();
+        }
+    }
+
+    fn onUp(self: *FileChooser, _: *const ActionEvent) void {
+        self.files_model.clear();
+        self.core.up() catch {};
+        self.rebuildFilesModel() catch {};
+        self.syncFieldsFromCore() catch {};
+    }
+
+    fn onPathSubmit(self: *FileChooser, _: *const ActionEvent) void {
+        self.reloadPath(self.path_field.getText()) catch {};
+    }
+
+    fn onPlaceSelected(self: *FileChooser, _: *const ChangeEvent) void {
+        const idx = self.places_list.getSelected() orelse return;
+        self.files_model.clear();
+        self.core.selectPlace(idx) catch return;
+        self.rebuildFilesModel() catch {};
+        self.syncFieldsFromCore() catch {};
+    }
+
+    fn onFileSelected(self: *FileChooser, _: *const ChangeEvent) void {
+        if (self.selectedFileName()) |name| {
+            self.core.setSelectedFromList(name) catch {};
+            self.core.setSelectedFileName(name) catch {};
+            self.syncFieldsFromCore() catch {};
+        }
+    }
+
+    fn onFileActivated(self: *FileChooser, _: *const ActionEvent) void {
+        const e = self.selectedVisibleEntry() orelse return;
+        self.openEntry(e) catch {};
+    }
+
+    fn onFilterChanged(self: *FileChooser, _: *const ChangeEvent) void {
+        self.files_model.clear();
+        self.core.setFilter(self.filter_combo.getSelectedIndex());
+        self.rebuildFilesModel() catch {};
+    }
+
+    fn onOk(self: *FileChooser, _: *const ActionEvent) void {
+        switch (self.core.mode) {
+            .save => {
+                self.core.setSelectedFileName(self.filename_field.getText()) catch return;
+                self.core.commitSaveName() catch return;
+                if (self.core.overwriteNeeded() and !self.confirmOverwrite()) return;
+                self.dialog.close(.ok);
+            },
+            .open, .select_directory => {
+                if (self.selectedVisibleEntry()) |e| {
+                    if (self.core.mode == .select_directory and e.is_dir) {
+                        self.core.setSelectedFromList(e.name) catch return;
+                    } else if (!e.is_dir) {
+                        self.core.setSelectedFromList(e.name) catch return;
+                    }
+                }
+                if (self.core.getSelectedPath() != null) self.dialog.close(.ok);
+            },
+        }
+    }
+
+    fn onCancel(self: *FileChooser, _: *const ActionEvent) void {
+        self.dialog.close(.cancel);
+    }
+
+    fn confirmOverwrite(self: *FileChooser) bool {
+        const d = self.app.dialog(self.owner, "Confirm overwrite", 320, 140) catch return false;
+        defer d.destroy();
+        d.window.container.setLayout(PaddingLayout.create(self.allocator, PaddingLayout.Insets.all(12)) catch return false);
+        const body = self.app.container() catch return false;
+        body.setLayout(BoxLayout.verticalSpaced(self.allocator, 8) catch return false);
+        const msg = self.app.label("Overwrite existing file?") catch return false;
+        const row = self.app.container() catch return false;
+        row.setLayout(BoxLayout.horizontalSpaced(self.allocator, 8) catch return false);
+        const yes = self.app.button("Yes") catch return false;
+        const no = self.app.button("No") catch return false;
+        yes.getModel().addActionListener(Dialog, confirmYes, d) catch return false;
+        no.getModel().addActionListener(Dialog, confirmNo, d) catch return false;
+        row.add(&yes.component) catch return false;
+        row.add(&no.component) catch return false;
+        body.add(&msg.component) catch return false;
+        body.add(&row.component) catch return false;
+        d.window.add(&body.component) catch return false;
+        return d.showModal() == .ok;
+    }
+};
+
+fn confirmYes(d: *Dialog, _: *const ActionEvent) void {
+    d.close(.ok);
+}
+
+fn confirmNo(d: *Dialog, _: *const ActionEvent) void {
+    d.close(.cancel);
+}
+
+const FileCell = struct {
+    root: *Container,
+    label: *Label,
+    chooser: *FileChooser,
+
+    fn update(user_data: *anyopaque, ctx: List.CellContext) void {
+        const self: *FileCell = @ptrCast(@alignCast(user_data));
+        const e: *Entry = @ptrCast(@alignCast(ctx.value));
+        self.label.setText(e.name) catch {};
+        self.label.setIcon(if (e.is_dir) self.chooser.icon_folder else self.chooser.icon_file);
+    }
+
+    fn destroy(user_data: *anyopaque, allocator: std.mem.Allocator) void {
+        const self: *FileCell = @ptrCast(@alignCast(user_data));
+        self.root.component.vtable.destroy(&self.root.component, allocator);
+        allocator.destroy(self);
+    }
+};
+
+fn createFileCell(user_data: *anyopaque, allocator: std.mem.Allocator) anyerror!List.Cell {
+    const chooser: *FileChooser = @ptrCast(@alignCast(user_data));
+    const cell = try allocator.create(FileCell);
+    errdefer allocator.destroy(cell);
+
+    const root = try chooser.app.container();
+    errdefer root.component.vtable.destroy(&root.component, allocator);
+    root.setLayout(try PaddingLayout.create(allocator, .{ .left = 6, .right = 6 }));
+
+    const label = try chooser.app.label("");
+    label.setIconSize(.{ .width = 18, .height = 18 });
+    try root.add(&label.component);
+
+    cell.* = .{ .root = root, .label = label, .chooser = chooser };
+    return .{
+        .component = &root.component,
+        .update = FileCell.update,
+        .destroy = FileCell.destroy,
+        .user_data = cell,
+    };
+}
+
+const PlaceCell = struct {
+    root: *Container,
+    label: *Label,
+    chooser: *FileChooser,
+
+    fn update(user_data: *anyopaque, ctx: List.CellContext) void {
+        const self: *PlaceCell = @ptrCast(@alignCast(user_data));
+        const p: *Place = @ptrCast(@alignCast(ctx.value));
+        self.label.setText(p.name) catch {};
+        self.label.setIcon(switch (p.kind) {
+            .home => self.chooser.icon_home,
+            .root => self.chooser.icon_root,
+        });
+    }
+
+    fn destroy(user_data: *anyopaque, allocator: std.mem.Allocator) void {
+        const self: *PlaceCell = @ptrCast(@alignCast(user_data));
+        self.root.component.vtable.destroy(&self.root.component, allocator);
+        allocator.destroy(self);
+    }
+};
+
+fn createPlaceCell(user_data: *anyopaque, allocator: std.mem.Allocator) anyerror!List.Cell {
+    const chooser: *FileChooser = @ptrCast(@alignCast(user_data));
+    const cell = try allocator.create(PlaceCell);
+    errdefer allocator.destroy(cell);
+
+    const root = try chooser.app.container();
+    errdefer root.component.vtable.destroy(&root.component, allocator);
+    root.setLayout(try PaddingLayout.create(allocator, .{ .left = 6, .right = 6 }));
+
+    const label = try chooser.app.label("");
+    label.setIconSize(.{ .width = 18, .height = 18 });
+    try root.add(&label.component);
+
+    cell.* = .{ .root = root, .label = label, .chooser = chooser };
+    return .{
+        .component = &root.component,
+        .update = PlaceCell.update,
+        .destroy = PlaceCell.destroy,
+        .user_data = cell,
+    };
+}
 
 fn entryLess(_: void, a: *Entry, b: *Entry) bool {
     if (a.is_dir != b.is_dir) return a.is_dir;
@@ -648,4 +1104,72 @@ test "reload replaces owned entry store without leaks or stale entries" {
     try core.loadDir("/tmp");
     try expectVisibleNames(&core, &.{"scratch.txt"});
     try std.testing.expectEqualStrings("/tmp", core.getCurrentDirectory());
+}
+
+test "file chooser widget rebuilds borrowed list model before core reload" {
+    awt.setLogCallback(@import("Robot.zig").QuietLog.cb, null);
+    const app = Application.initHeadless(std.testing.allocator, std.testing.io) catch return error.SkipZigTest;
+    defer app.deinit();
+    const frame = try app.frameHeadless("owner", 320, 200);
+
+    var fake = try populateFake(std.testing.allocator);
+    defer fake.deinit();
+    const chooser = try FileChooser.createWithSource(app, &frame.window, fake.source());
+    defer chooser.destroy();
+
+    try std.testing.expectEqualStrings("/home/me", chooser.getCurrentDirectory());
+    try std.testing.expect(chooser.files_model.getSize() > 1);
+    chooser.files_model.clear();
+    try chooser.core.loadDir("/tmp");
+    try chooser.rebuildFilesModel();
+    try std.testing.expectEqual(@as(usize, 1), chooser.files_model.getSize());
+    const raw = chooser.files_model.getElementAt(0).?;
+    const entry: *Entry = @ptrCast(@alignCast(raw));
+    try std.testing.expectEqualStrings("scratch.txt", entry.name);
+}
+
+test "file chooser headless smoke selects a file and closes with OK" {
+    awt.setLogCallback(@import("Robot.zig").QuietLog.cb, null);
+    const app = Application.initHeadless(std.testing.allocator, std.testing.io) catch return error.SkipZigTest;
+    defer app.deinit();
+    const frame = try app.frameHeadless("owner", 420, 260);
+
+    var fake = try populateFake(std.testing.allocator);
+    defer fake.deinit();
+    const chooser = try FileChooser.createWithSource(app, &frame.window, fake.source());
+    defer chooser.destroy();
+
+    try chooser.dialog.show();
+    var robot = @import("Robot.zig").init(app, &chooser.dialog.window);
+    var driver = @import("Driver.zig"){ .robot = &robot };
+    robot.pump();
+
+    chooser.files_list.setSelected(1);
+    try chooser.core.setSelectedFromList("notes.txt");
+    try driver.clickOn(.{ .role = .button, .text = "OK" });
+    robot.pump();
+
+    try std.testing.expectEqual(Dialog.Result.ok, chooser.dialog.getResult());
+    try std.testing.expectEqualStrings("/home/me/notes.txt", chooser.getSelectedPath().?);
+
+    const tree = try robot.snapshotTree(std.testing.allocator);
+    defer @import("Robot.zig").freeTree(std.testing.allocator, tree);
+    try std.testing.expect(tree.children.len > 0);
+}
+
+test "file chooser save path detects overwrite before confirmation" {
+    awt.setLogCallback(@import("Robot.zig").QuietLog.cb, null);
+    const app = Application.initHeadless(std.testing.allocator, std.testing.io) catch return error.SkipZigTest;
+    defer app.deinit();
+    const frame = try app.frameHeadless("owner", 320, 200);
+
+    var fake = try populateFake(std.testing.allocator);
+    defer fake.deinit();
+    const chooser = try FileChooser.createWithSource(app, &frame.window, fake.source());
+    defer chooser.destroy();
+
+    chooser.setMode(.save);
+    chooser.setSelectedFileName("notes.txt");
+    try chooser.core.commitSaveName();
+    try std.testing.expect(chooser.core.overwriteNeeded());
 }
