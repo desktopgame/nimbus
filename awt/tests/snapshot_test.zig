@@ -50,6 +50,10 @@ test "snapshot: vertical_gradient" {
     try runScene(scenes.vertical_gradient);
 }
 
+test "snapshot: texture_nine_slice" {
+    try runScene(scenes.texture_nine_slice);
+}
+
 test "snapshot: layout_horizontal_buttons" {
     try runScene(scenes.layout_horizontal_buttons);
 }
@@ -105,6 +109,12 @@ fn renderScene(
     font: awt.Font,
     scene: scenes.Scene,
 ) ![]u8 {
+    var scene_images: std.ArrayList(awt.Image) = .empty;
+    defer {
+        for (scene_images.items) |*image| image.deinit();
+        scene_images.deinit(allocator);
+    }
+
     var rt = try awt.RenderTarget.create(device, scene.width, scene.height);
     defer rt.deinit();
 
@@ -156,6 +166,8 @@ fn renderScene(
         try scene.paint(.{
             .g = &g,
             .allocator = allocator,
+            .device = device,
+            .images = &scene_images,
             .font = font,
             .width = scene.width,
             .height = scene.height,
@@ -211,11 +223,11 @@ fn snapshotCompare(
     };
     defer allocator.free(expected);
 
-    const result = awt.snapshot.compare(actual, expected, .{ .tolerance = TOLERANCE });
+    const result = awt.snapshot.compare(actual, expected, .{ .tolerance = scene.tolerance });
     if (!result.ok()) {
         std.debug.print(
             "[snapshot] {} channel(s) exceed tolerance +-{} (max diff {})\n",
-            .{ result.mismatch_channels, TOLERANCE, result.max_diff },
+            .{ result.mismatch_channels, scene.tolerance, result.max_diff },
         );
         writeFailureArtifacts(allocator, scene.name, actual, expected, w, h) catch {};
         std.debug.print(

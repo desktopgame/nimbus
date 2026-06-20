@@ -32,6 +32,13 @@ pub const Rect = struct {
     }
 };
 
+pub const Insets = struct {
+    left: f32,
+    top: f32,
+    right: f32,
+    bottom: f32,
+};
+
 pub const Color = struct {
     r: f32,
     g: f32,
@@ -65,6 +72,28 @@ pub const TextFont = struct {
 
     pub fn measureString(self: TextFont, s: []const u8) Font.TextSize {
         return self.face.measureString(s, self.pixel_size);
+    }
+};
+
+const Quad = struct {
+    dst: Rect,
+    u0: f32,
+    v0: f32,
+    u1: f32,
+    v1: f32,
+
+    fn empty() Quad {
+        return .{
+            .dst = .{ .x = 0, .y = 0, .width = 0, .height = 0 },
+            .u0 = 0,
+            .v0 = 0,
+            .u1 = 0,
+            .v1 = 0,
+        };
+    }
+
+    fn isEmpty(self: Quad) bool {
+        return self.dst.width <= 0 or self.dst.height <= 0 or self.u0 >= self.u1 or self.v0 >= self.v1;
     }
 };
 
@@ -212,6 +241,54 @@ fn pxToNdcY(self: Graphics, px: f32) f32 {
 }
 
 // ─────────────────────────── draw API ────────────────────────────────────
+
+fn clampedInsetsPair(a: f32, b: f32, limit: f32) struct { first: f32, second: f32 } {
+    const first = @max(0, a);
+    const second = @max(0, b);
+    const total = first + second;
+    if (limit <= 0 or total <= 0) return .{ .first = 0, .second = 0 };
+    if (total <= limit) return .{ .first = first, .second = second };
+    const scale = limit / total;
+    return .{ .first = first * scale, .second = second * scale };
+}
+
+fn makeQuad(x0: f32, y0: f32, x1: f32, y1: f32, u_min: f32, v_min: f32, u_max: f32, v_max: f32) Quad {
+    return .{
+        .dst = .{ .x = x0, .y = y0, .width = x1 - x0, .height = y1 - y0 },
+        .u0 = u_min,
+        .v0 = v_min,
+        .u1 = u_max,
+        .v1 = v_max,
+    };
+}
+
+fn nineSliceRects(dst: Rect, insets: Insets, img_w: f32, img_h: f32) [9]Quad {
+    if (dst.width <= 0 or dst.height <= 0 or img_w <= 0 or img_h <= 0) {
+        return [_]Quad{Quad.empty()} ** 9;
+    }
+
+    const src_x = clampedInsetsPair(insets.left, insets.right, img_w);
+    const src_y = clampedInsetsPair(insets.top, insets.bottom, img_h);
+    const dst_x = clampedInsetsPair(src_x.first, src_x.second, dst.width);
+    const dst_y = clampedInsetsPair(src_y.first, src_y.second, dst.height);
+
+    const xs = [_]f32{ dst.x, dst.x + dst_x.first, dst.x + dst.width - dst_x.second, dst.x + dst.width };
+    const ys = [_]f32{ dst.y, dst.y + dst_y.first, dst.y + dst.height - dst_y.second, dst.y + dst.height };
+    const us = [_]f32{ 0, src_x.first / img_w, (img_w - src_x.second) / img_w, 1 };
+    const vs = [_]f32{ 0, src_y.first / img_h, (img_h - src_y.second) / img_h, 1 };
+
+    return .{
+        makeQuad(xs[0], ys[0], xs[1], ys[1], us[0], vs[0], us[1], vs[1]),
+        makeQuad(xs[1], ys[0], xs[2], ys[1], us[1], vs[0], us[2], vs[1]),
+        makeQuad(xs[2], ys[0], xs[3], ys[1], us[2], vs[0], us[3], vs[1]),
+        makeQuad(xs[0], ys[1], xs[1], ys[2], us[0], vs[1], us[1], vs[2]),
+        makeQuad(xs[1], ys[1], xs[2], ys[2], us[1], vs[1], us[2], vs[2]),
+        makeQuad(xs[2], ys[1], xs[3], ys[2], us[2], vs[1], us[3], vs[2]),
+        makeQuad(xs[0], ys[2], xs[1], ys[3], us[0], vs[2], us[1], vs[3]),
+        makeQuad(xs[1], ys[2], xs[2], ys[3], us[1], vs[2], us[2], vs[3]),
+        makeQuad(xs[2], ys[2], xs[3], ys[3], us[2], vs[2], us[3], vs[3]),
+    };
+}
 
 pub fn fillRect(self: *Graphics, r: Rect) void {
     self.fillRectColor(r, self.current_color);
@@ -367,23 +444,28 @@ pub fn drawImage(self: *Graphics, image: Image, x: f32, y: f32) void {
 /// Use when displaying the same image at different sizes (toolbar icon
 /// vs menu icon vs preview) without preparing per-size assets.
 pub fn drawImageScaled(self: *Graphics, image: Image, x: f32, y: f32, w: f32, h: f32) void {
+    self.imageQuad(image, .{ .x = x, .y = y, .width = w, .height = h }, 0, 0, 1, 1, Color.rgba(1, 1, 1, 1));
+}
+
+fn imageQuad(self: *Graphics, image: Image, dst: Rect, @"u0": f32, v0: f32, @"u1": f32, v1: f32, tint: Color) void {
     if (self.clipIsEmpty()) return;
-    const left = self.origin_x + x;
-    const top = self.origin_y + y;
-    const right = left + w;
-    const bottom = top + h;
+    if (dst.width <= 0 or dst.height <= 0) return;
+    const left = self.origin_x + dst.x;
+    const top = self.origin_y + dst.y;
+    const right = left + dst.width;
+    const bottom = top + dst.height;
     const x0 = self.pxToNdcX(left);
     const x1 = self.pxToNdcX(right);
     const y0 = self.pxToNdcY(top);
     const y1 = self.pxToNdcY(bottom);
     const verts = [_]f32{
-        x0, y0, 0, 0, // TL
-        x0, y1, 0, 1, // BL
-        x1, y1, 1, 1, // BR
-        x1, y0, 1, 0, // TR
+        x0, y0, @"u0", v0, // TL
+        x0, y1, @"u0", v1, // BL
+        x1, y1, @"u1", v1, // BR
+        x1, y0, @"u1", v0, // TR
     };
     const vh = self.ctx.vertex_ring.pushBytes(std.mem.sliceAsBytes(verts[0..])) catch return;
-    const uh = self.ctx.uniforms.push(programs.Image.Uniforms{ .tint = .{ 1, 1, 1, 1 } }) catch return;
+    const uh = self.ctx.uniforms.push(programs.Image.Uniforms{ .tint = tint.asArray() }) catch return;
 
     self.applyScissor();
     self.ctx.image_program.bind(self.cb);
@@ -392,6 +474,15 @@ pub fn drawImageScaled(self: *Graphics, image: Image, x: f32, y: f32, w: f32, h:
     self.cb.bindVertexBuffer(self.ctx.vertex_ring.buffer, 0, 4 * @sizeOf(f32), vh.offset);
     self.cb.bindIndexBuffer(self.ctx.quad_index.buffer, .u16, 0);
     self.cb.drawIndexed(6, 0, 0);
+}
+
+pub fn drawTextureNineSlice(self: *Graphics, image: Image, dst: Rect, insets: Insets, tint: Color) void {
+    const quads = nineSliceRects(dst, insets, @floatFromInt(image.width), @floatFromInt(image.height));
+    for (quads) |quad| {
+        if (!quad.isEmpty()) {
+            self.imageQuad(image, quad.dst, quad.u0, quad.v0, quad.u1, quad.v1, tint);
+        }
+    }
 }
 
 /// Draw a single line of UTF-8 text. `(x, y)` is the top-left of the bounding
@@ -468,4 +559,64 @@ pub fn drawString(self: *Graphics, s: []const u8, x: f32, y: f32) void {
     self.cb.bindVertexBuffer(self.ctx.vertex_ring.buffer, 0, 4 * @sizeOf(f32), first_vh.?.offset);
     self.cb.bindIndexBuffer(self.ctx.quad_index.buffer, .u16, 0);
     self.cb.drawIndexed(@intCast(emitted * 6), 0, 0);
+}
+
+fn expectRectEqual(expected: Rect, actual: Rect) !void {
+    try std.testing.expectEqual(expected.x, actual.x);
+    try std.testing.expectEqual(expected.y, actual.y);
+    try std.testing.expectEqual(expected.width, actual.width);
+    try std.testing.expectEqual(expected.height, actual.height);
+}
+
+test "nineSliceRects keeps corners one-to-one and stretches edges and center" {
+    const quads = nineSliceRects(
+        .{ .x = 10, .y = 20, .width = 20, .height = 12 },
+        .{ .left = 2, .top = 2, .right = 2, .bottom = 2 },
+        8,
+        8,
+    );
+
+    try expectRectEqual(.{ .x = 10, .y = 20, .width = 2, .height = 2 }, quads[0].dst);
+    try std.testing.expectEqual(@as(f32, 0), quads[0].u0);
+    try std.testing.expectEqual(@as(f32, 0), quads[0].v0);
+    try std.testing.expectEqual(@as(f32, 0.25), quads[0].u1);
+    try std.testing.expectEqual(@as(f32, 0.25), quads[0].v1);
+
+    try expectRectEqual(.{ .x = 12, .y = 20, .width = 16, .height = 2 }, quads[1].dst);
+    try std.testing.expectEqual(@as(f32, 0.25), quads[1].u0);
+    try std.testing.expectEqual(@as(f32, 0), quads[1].v0);
+    try std.testing.expectEqual(@as(f32, 0.75), quads[1].u1);
+    try std.testing.expectEqual(@as(f32, 0.25), quads[1].v1);
+
+    try expectRectEqual(.{ .x = 12, .y = 22, .width = 16, .height = 8 }, quads[4].dst);
+    try std.testing.expectEqual(@as(f32, 0.25), quads[4].u0);
+    try std.testing.expectEqual(@as(f32, 0.25), quads[4].v0);
+    try std.testing.expectEqual(@as(f32, 0.75), quads[4].u1);
+    try std.testing.expectEqual(@as(f32, 0.75), quads[4].v1);
+
+    try expectRectEqual(.{ .x = 28, .y = 30, .width = 2, .height = 2 }, quads[8].dst);
+    for (quads) |quad| {
+        try std.testing.expect(!quad.isEmpty());
+    }
+}
+
+test "nineSliceRects proportionally clamps degenerate destination insets" {
+    const quads = nineSliceRects(
+        .{ .x = 0, .y = 0, .width = 3, .height = 10 },
+        .{ .left = 2, .top = 2, .right = 4, .bottom = 2 },
+        8,
+        8,
+    );
+
+    try expectRectEqual(.{ .x = 0, .y = 0, .width = 1, .height = 2 }, quads[0].dst);
+    try expectRectEqual(.{ .x = 1, .y = 0, .width = 0, .height = 2 }, quads[1].dst);
+    try expectRectEqual(.{ .x = 1, .y = 0, .width = 2, .height = 2 }, quads[2].dst);
+    try expectRectEqual(.{ .x = 1, .y = 2, .width = 0, .height = 6 }, quads[4].dst);
+
+    try std.testing.expect(!quads[0].isEmpty());
+    try std.testing.expect(quads[1].isEmpty());
+    try std.testing.expect(!quads[2].isEmpty());
+    try std.testing.expect(quads[4].isEmpty());
+    try std.testing.expectEqual(@as(f32, 0.25), quads[1].u0);
+    try std.testing.expectEqual(@as(f32, 0.5), quads[1].u1);
 }

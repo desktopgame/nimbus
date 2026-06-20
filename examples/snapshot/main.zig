@@ -58,6 +58,11 @@ pub fn main(init: std.process.Init) !void {
     defer quad_index.deinit();
     var atlas = try awt.GlyphAtlas.init(gpa, device, 256);
     defer atlas.deinit();
+    var scene_images: std.ArrayList(awt.Image) = .empty;
+    defer {
+        for (scene_images.items) |*image| image.deinit();
+        scene_images.deinit(gpa);
+    }
 
     var ctx = awt.Graphics.Context{
         .vertex_ring = &vertex_ring,
@@ -87,6 +92,8 @@ pub fn main(init: std.process.Init) !void {
         try scene.paint(.{
             .g = &g,
             .allocator = gpa,
+            .device = device,
+            .images = &scene_images,
             .font = font,
             .width = scene.width,
             .height = scene.height,

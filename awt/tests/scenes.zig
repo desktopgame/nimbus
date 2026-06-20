@@ -15,6 +15,8 @@ pub const default_font_bytes = framework.noto.noto_sans_jp_regular;
 pub const PaintContext = struct {
     g: *awt.Graphics,
     allocator: std.mem.Allocator,
+    device: awt.Device,
+    images: *std.ArrayList(awt.Image),
     font: awt.Font,
     width: i32,
     height: i32,
@@ -28,6 +30,8 @@ pub const Scene = struct {
     height: i32,
     /// Clear color applied before `paint`.
     clear: [4]f32 = .{ 0.10, 0.10, 0.15, 1.0 },
+    /// Per-channel snapshot comparison tolerance.
+    tolerance: u8 = 1,
     /// `paint` may use `ctx.allocator` / `ctx.font` for framework widgets,
     /// or just `ctx.g` for raw awt drawing.
     paint: *const fn (ctx: PaintContext) anyerror!void,
@@ -76,6 +80,41 @@ fn paintVerticalGradient(ctx: PaintContext) anyerror!void {
     );
     g.setColor(awt.Graphics.Color.rgb(0.92, 0.92, 0.95));
     g.drawRect(.{ .x = 32, .y = 24, .width = 176, .height = 112 });
+}
+
+// ── image primitives (raw awt) ───────────────────────────────────────────
+
+pub const texture_nine_slice = Scene{
+    .name = "texture_nine_slice",
+    .width = 40,
+    .height = 40,
+    .clear = .{ 0.12, 0.12, 0.14, 1.0 },
+    .paint = paintTextureNineSlice,
+};
+
+const nine_slice_source_png = [_]u8{
+    137, 80,  78,  71,  13,  10,  26,  10,  0,   0,   0,   13,  73,  72,  68,  82,
+    0,   0,   0,   8,   0,   0,   0,   8,   8,   6,   0,   0,   0,   196, 15,  190,
+    139, 0,   0,   0,   63,  73,  68,  65,  84,  120, 218, 99,  120, 100, 107, 242,
+    31,  132, 109, 91,  30,  160, 224, 255, 167, 221, 193, 152, 129, 160, 130, 47,
+    125, 118, 255, 65,  248, 221, 187, 231, 40,  184, 58,  241, 63,  24,  211, 67,
+    193, 234, 136, 139, 255, 65,  216, 97,  67,  26,  10,  54,  88,  178, 3,   140,
+    9,   42,  0,   0,   103, 207, 187, 145, 127, 132, 139, 135, 0,   0,   0,   0,
+    73,  69,  78,  68,  174, 66,  96,  130,
+};
+
+fn paintTextureNineSlice(ctx: PaintContext) anyerror!void {
+    var image = try awt.Image.fromMemory(ctx.allocator, ctx.device, nine_slice_source_png[0..]);
+    errdefer image.deinit();
+    try ctx.images.append(ctx.allocator, image);
+    const stored = ctx.images.items[ctx.images.items.len - 1];
+
+    ctx.g.drawTextureNineSlice(
+        stored,
+        .{ .x = 10, .y = 10, .width = 20, .height = 20 },
+        .{ .left = 2, .top = 2, .right = 2, .bottom = 2 },
+        awt.Graphics.Color.rgba(1, 1, 1, 1),
+    );
 }
 
 // ── framework layout scenes ──────────────────────────────────────────────
@@ -392,6 +431,7 @@ fn paintMenuBarClosed(ctx: PaintContext) anyerror!void {
 pub const all = [_]Scene{
     basic_shapes,
     vertical_gradient,
+    texture_nine_slice,
     layout_horizontal_buttons,
     layout_vertical_grow,
     layout_right_aligned,
