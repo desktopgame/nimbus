@@ -252,6 +252,39 @@ void nmSetWindowSize(nmWindow* self, int width, int height) {
     glfwSetWindowSize((GLFWwindow*)self, width, height);
 }
 
+void nmGetWindowMonitorWorkarea(const nmWindow* self, int* x, int* y, int* width, int* height) {
+    GLFWwindow* window = (GLFWwindow*)self;
+    int wx = 0;
+    int wy = 0;
+    int ww = 0;
+    int wh = 0;
+    glfwGetWindowPos(window, &wx, &wy);
+    glfwGetWindowSize(window, &ww, &wh);
+
+    const int cx = wx + ww / 2;
+    const int cy = wy + wh / 2;
+
+    int monitor_count = 0;
+    GLFWmonitor** monitors = glfwGetMonitors(&monitor_count);
+    GLFWmonitor* selected = NULL;
+    for (int i = 0; i < monitor_count; i++) {
+        int ax = 0;
+        int ay = 0;
+        int aw = 0;
+        int ah = 0;
+        glfwGetMonitorWorkarea(monitors[i], &ax, &ay, &aw, &ah);
+        if (cx >= ax && cy >= ay && cx < ax + aw && cy < ay + ah) {
+            selected = monitors[i];
+            break;
+        }
+    }
+
+    if (!selected) selected = glfwGetPrimaryMonitor();
+    if (selected) {
+        glfwGetMonitorWorkarea(selected, x, y, width, height);
+    }
+}
+
 void nmSwapBuffers(nmWindow* self) {
     glfwSwapBuffers((GLFWwindow*)self);
 }

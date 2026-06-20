@@ -173,6 +173,11 @@ void nmSetWindowFloating(nmWindow* self, bool floating);
 void nmGetWindowPos(nmWindow* self, int* x, int* y);
 void nmSetWindowPos(nmWindow* self, int x, int y);
 
+/* Work area (taskbar/dock excluded) of the monitor containing the window
+ * center, in the same screen-coordinate units nmGet/SetWindowPos use.
+ * Falls back to the primary monitor when no containing monitor is found. */
+void nmGetWindowMonitorWorkarea(const nmWindow* self, int* x, int* y, int* width, int* height);
+
 /* Framebuffer pixel size. On HiDPI displays (Retina) this can differ from the
  * window's logical size — e.g. a 800x600 window has a 1600x1200 framebuffer.
  * Use these values for swapchain / scissor / viewport — anything that talks

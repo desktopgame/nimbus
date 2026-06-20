@@ -106,7 +106,7 @@ pub fn showModal(self: *Dialog) Result {
     // Best-effort: if the modal-stack push OOMs, fall through without input
     // blocking rather than failing the whole call.
     self.app.pushModal(&self.window) catch {};
-    self.centerOnOwner();
+    self.centerOnOwnerMonitor();
     self.window.awt_window.?.setVisible(true);
     // GLFW has no OS-level modality. `input_blocked` already drops widget
     // input on the owner; floating + focus additionally keep the dialog above
@@ -141,7 +141,7 @@ pub fn show(self: *Dialog) !void {
     self.window.awt_window.?.setShouldClose(false);
     try self.app.registerDialog(self);
     self.shown = true;
-    self.centerOnOwner();
+    self.centerOnOwnerMonitor();
     self.window.awt_window.?.setVisible(true);
     self.window.repaint();
 }
@@ -194,13 +194,55 @@ pub fn isShown(self: Dialog) bool {
 
 // ── internal ────────────────────────────────────────────────────────────
 
-/// Position the dialog centered over its owner (OS screen coordinates).
-fn centerOnOwner(self: *Dialog) void {
+/// Position the dialog at the center of the owner's monitor work area.
+fn centerOnOwnerMonitor(self: *Dialog) void {
     if (self.owner.awt_window == null or self.window.awt_window == null) return;
-    const op = self.owner.awt_window.?.pos();
-    const os = self.owner.awt_window.?.size();
-    const ds = self.window.awt_window.?.size();
-    const x = op.x + @divTrunc(os.width - ds.width, 2);
-    const y = op.y + @divTrunc(os.height - ds.height, 2);
-    self.window.awt_window.?.setPos(x, y);
+    const area = self.owner.awt_window.?.monitorWorkarea();
+    const dialog_size = self.window.awt_window.?.screenSize();
+    const p = centeredTopLeft(
+        area.x,
+        area.y,
+        area.width,
+        area.height,
+        dialog_size.width,
+        dialog_size.height,
+    );
+    self.window.awt_window.?.setPos(p.x, p.y);
+}
+
+fn centeredTopLeft(
+    area_x: i32,
+    area_y: i32,
+    area_w: i32,
+    area_h: i32,
+    win_w: i32,
+    win_h: i32,
+) awt.Window.Point {
+    const x = area_x + @divTrunc(area_w - win_w, 2);
+    const y = area_y + @divTrunc(area_h - win_h, 2);
+    return .{
+        .x = @max(area_x, x),
+        .y = @max(area_y, y),
+    };
+}
+
+test "centeredTopLeft centers inside work area" {
+    try std.testing.expectEqual(
+        awt.Window.Point{ .x = 200, .y = 150 },
+        centeredTopLeft(0, 0, 800, 600, 400, 300),
+    );
+}
+
+test "centeredTopLeft clamps to work area top-left when window is larger" {
+    try std.testing.expectEqual(
+        awt.Window.Point{ .x = 10, .y = 20 },
+        centeredTopLeft(10, 20, 560, 160, 720, 480),
+    );
+}
+
+test "centeredTopLeft preserves work area offset" {
+    try std.testing.expectEqual(
+        awt.Window.Point{ .x = -1540, .y = 280 },
+        centeredTopLeft(-1920, 40, 1920, 1040, 1160, 560),
+    );
 }

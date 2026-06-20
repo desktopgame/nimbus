@@ -37,6 +37,7 @@ pub fn setShouldClose(self: Window, value: bool) void {
 
 pub const Size = struct { width: i32, height: i32 };
 pub const Point = struct { x: i32, y: i32 };
+pub const Rect = struct { x: i32, y: i32, width: i32, height: i32 };
 
 /// Per-window DPI content scale (a.k.a. DPR). 1.0 on plain 1x displays,
 /// 2.0 on Retina, 1.5 on Windows at 150%, etc. `framebufferSize` divided
@@ -61,6 +62,31 @@ pub fn pos(self: Window) Point {
 
 pub fn setPos(self: Window, x: i32, y: i32) void {
     c.nmSetWindowPos(self.handle, @intCast(x), @intCast(y));
+}
+
+/// Window size in the same screen-coordinate units used by `pos` and
+/// `setPos`. Use this for OS window placement calculations.
+pub fn screenSize(self: Window) Size {
+    var w: c_int = 0;
+    var h: c_int = 0;
+    c.nmGetWindowSize(self.handle, &w, &h);
+    return .{ .width = @intCast(w), .height = @intCast(h) };
+}
+
+/// Work area of the monitor containing this window's center, in the same
+/// screen-coordinate units used by `pos` and `setPos`.
+pub fn monitorWorkarea(self: Window) Rect {
+    var x: c_int = 0;
+    var y: c_int = 0;
+    var w: c_int = 0;
+    var h: c_int = 0;
+    c.nmGetWindowMonitorWorkarea(self.handle, &x, &y, &w, &h);
+    return .{
+        .x = @intCast(x),
+        .y = @intCast(y),
+        .width = @intCast(w),
+        .height = @intCast(h),
+    };
 }
 
 /// Resize the window to `width` x `height` logical points (the same units
