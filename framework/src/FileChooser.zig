@@ -80,17 +80,12 @@ fn osList(user_data: *anyopaque, allocator: std.mem.Allocator, path: []const u8,
 
     var it = dir.iterate();
     while (try it.next(state.io)) |ent| {
-        var entry = DirEntry{
-            .name = try allocator.dupe(u8, ent.name),
+        const name = try allocator.dupe(u8, ent.name);
+        errdefer allocator.free(name);
+        try out.append(allocator, .{
+            .name = name,
             .is_dir = ent.kind == .directory,
-        };
-        errdefer allocator.free(entry.name);
-
-        if (dir.statFile(state.io, ent.name, .{}) catch null) |st| {
-            entry.size = st.size;
-            entry.mtime = @intCast(@divFloor(st.mtime.nanoseconds, 1_000_000_000));
-        }
-        try out.append(allocator, entry);
+        });
     }
 }
 
