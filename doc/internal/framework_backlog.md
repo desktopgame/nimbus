@@ -116,6 +116,16 @@ A なら `binding.md` の `getVTable()` 記述を削除。B なら `Component.ge
 - 更新日: 2026-06-11
 - 依存: なし
 
+### 2026-06-20 追記（委譲機構の方針を一点改訂）
+`laf_design.md`（ブランチ `feat/laf-design`）で、本項目の確定事項のうち
+「**新しい委譲機構は作らない**（差し替えは `setVTable` 一本／Swing ComponentUI 風は却下）」の一点を、
+**作者承認のもと改訂した**。理由は、本項目が **LAF 固有の measure（最小サイズ計算）を予見していなかった**こと:
+Swing Metal の bevel・JTattoo の 9-slice は `paint` だけでなく寸法計算も LAF 固有になり、
+`setVTable`（paint コピー差し替え）では表現できない（`measure` はそもそも現 `VTable` に無い）。
+そこで `paint` / `measure` を構造 vtable から切り出し、別 vtable（`LookVTable`）へ隔離する。
+本項目の他の決定（Theme＝公開データ・LAF は起動時固定・ファクトリ DI）はすべて維持する。
+完了状態は変えない（本追記で矛盾を解消）。詳細は `laf_design.md` §2.11。
+
 ### 何
 各ウィジェットの paint に直書きされている色・メトリクス（例: `Button.zig` の
 `Color.rgb(0.78, 0.82, 0.92)`、フォーカスリングの `0.25, 0.45, 0.85` 等）を、

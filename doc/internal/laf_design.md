@@ -6,9 +6,10 @@ LAF（ルックアンドフィール）の差し替え機構の **設計提案**
 
 この doc は `framework_backlog.md` #4（既定 LAF を public な Theme テーブルから引く＝**完了済み**）の続きにあたる。
 #4 は「LAF とは vtable 一式の差し替え／Theme は公開データ」という線引きで、**新しい委譲機構は作らない**と
-していた。本 doc はその一点を **見直す**: paint / measure だけを別 vtable へ隔離する委譲機構（後述の `LookVTable`）を
-新設する案を採る。#4 で却下した「Swing ComponentUI 風の重い委譲機構」とは別物（VTable を 2 つに割るだけで、
-レジストリ・名前付き LAF・カスケードは持ち込まない）であることを下記で示す。
+していた。本 doc はその一点を **作者承認のもと意識的に覆す**（2026-06-20）: paint / measure だけを別 vtable
+（後述の `LookVTable`）へ隔離する委譲機構を新設する。覆す理由は **#4 が LAF 固有の measure（最小サイズ計算）を
+予見していなかった**から（Metal の bevel・JTattoo の 9-slice は寸法計算も LAF 固有で、`setVTable` では表現できない）。
+詳細は §2.11。#4 の他の決定（Theme＝公開データ・起動時固定・ファクトリ DI）は維持する。
 
 関連: theme.zig 冒頭コメント（「a LAF in nimbus is a vtable swap」「no runtime switching」）、
 `framework/doc/narrative/theme.md`、awt_backlog.md #9 / framework_backlog.md #27（描画プリミティブ）。
@@ -73,16 +74,18 @@ VTable を 2 つに分割する。
 
 **Component.LookVTable（外見・名前は仮）** — そのコンポーネントの「見た目・寸法」。LAF で差し替わる対象。
 
-- `paint`（自分の外見を描く）
+- `paint`（自分の外見を子の **下**に描く＝前フェーズ。背景など）
+- `paintOver`（自分の外見を子の **上**に描く＝後フェーズ。ボーダーなど。仮称。詳細は §2.4 の 2 フェーズ paint）
 - `measure`（intrinsic な最小サイズを計算する）
 
-`paint` と `measure` は **`user_data`（`*anyopaque`）引数を受け取る**。これは delegate 自身が持つ
+`paint` / `paintOver` / `measure` は **`user_data`（`*anyopaque`）引数を受け取る**。これは delegate 自身が持つ
 （widget 横断で共有される）データ — テクスチャハンドル・グラデーションの stop 配列・9-slice の inset 等 —
 を読むため。delegate は 1 つの Look を多数の widget インスタンスに適用するので、共有データは
 インスタンス側ではなく delegate（＋ctx）側に置く。
 
 これは **paint を `Component.VTable` から `LookVTable` へ「移す」変種**。`install` / `uninstall` /
-`processEvent` / `destroy` は構造側に残り、`paint` だけが外見側へ移動し、そこへ `measure` が加わる。
+`processEvent` / `destroy` は構造側に残り、`paint` が外見側へ移動し、そこへ後フェーズの `paintOver` と
+`measure` が加わる。
 
 ### 2.3 なぜ分離するのか（1 スロットだけ差し替えたい）
 
@@ -94,7 +97,7 @@ Container.zig:32-38）。よって個別スロットを書き換えできない�
    LAF の入れ替えで振る舞いまで作り替える羽目になる。
 2. **インスタンス毎の可変 vtable**。List のセルのように同型を大量生成する場面でメモリが無駄
    （[[project_list_cell_design]]：可視ぶんの実セル＋recycle で個数が出る）。
-3. **変わる部分（paint＋measure）だけを別 vtable に隔離して指し替える** ＝ `LookVTable`。
+3. **変わる部分（paint＋paintOver＋measure）だけを別 vtable に隔離して指し替える** ＝ `LookVTable`。
 
 → **(3) を採用**。構造は型ごとの const のまま共有し、外見だけを LAF 単位で差せる。
 
@@ -122,33 +125,41 @@ pub fn paintAt(self: *Component, parent_g: *awt.Graphics) void {
 子の再帰は **Look ではなく構造**（どの LAF でも子は同じ順序・同じクリップで描かれる）。
 paint を `LookVTable`（自分の外見のみ）へ移すには、この 2 つを分離する必要がある。
 
-**新しい巡回**（Swing の `paintComponent` vs `paintChildren` と同型）:
+**新しい巡回（2 フェーズ paint・確定）**（Swing の `paintComponent` vs `paintChildren` と同型）:
+`LookVTable` は子の **前** と **後** の 2 つの描画フックを持つ。
+
+- `paint`（前）— 子の **下**に描く。背景など。
+- `paintOver`（後）— 子の **上**に描く。ボーダーなど。**※`paintOver` は仮称**（命名は §5-1 の未決に含める）。
 
 ```
 paintAt(self, parent_g):
-    g = parent_g.clip(self.getBounds())      // クリップ設定は構造側（不変）
-    self.look.paint(self, self.look.ctx, &g) // 自分の外見だけ（LAF 差し替え対象）
-    if self.container != null:               // コンテナなら…
-        for child in children: child.paintAt(&g)  // 子を再帰（構造側・不変）
+    g = parent_g.clip(self.getBounds())          // クリップ設定は構造側（不変）
+    self.look.paint(self, self.look.ctx, &g)     // 前フェーズ＝子の下（背景など）
+    if self.container != null:                   // コンテナなら…
+        for child in children: child.paintAt(&g) // 子を再帰（構造側・不変）
+    self.look.paintOver(self, self.look.ctx, &g) // 後フェーズ＝子の上（ボーダーなど）
 ```
 
 帰結:
 
 - **Container は専用 `paint` を持たなくなる**。「子を描く」はフレームワークの `paintAt` 巡回が担い、
-  Container の Look.paint は「自分の外見」（＝ふつうのコンテナは無描画。Panel なら背景）だけになる。
+  Container の両フェーズは no-op（ふつうのコンテナは自分の外見が無い）。Panel なら前で背景・後でボーダーを描く。
 - クリップ / transform の設定（`parent_g.clip(bounds)`）と子の巡回順序（追加順）は構造側に固定され、
-  LAF からは触れない。LAF が触れるのは「自分の 1 枚の外見」だけ。
+  LAF からは触れない。LAF が触れるのは「自分の前後 2 枚の外見」だけ。
+- **ほとんどの widget は `paint` だけを使い、`paintOver` は no-op**。
+  leaf（子を持たない widget。Button など）は前後の区別が無関係なので、すべて `paint` に描けばよい
+  （`paintOver` は使わない）。`paintOver` が効くのは「子の上に重ねたい外見を持つコンテナ」＝Panel のボーダー等だけ。
 
-**詰めどころ（実コードで判明した順序問題）**: 現 `Panel.paint`（Panel.zig:119-143）は
+**Panel が現状の見た目を完全維持する（作者要望）**: 現 `Panel.paint`（Panel.zig:119-143）は
 `背景 fillRect → 子の再帰 → ボーダー fillRect` の順で、**自分の外見が子再帰の前後に割り込んでいる**
-（背景は子の前、ボーダーは子の後）。素朴な「`Look.paint(self)` → 子を再帰」では、
-ボーダーが子より先に描かれてしまう。これをどう扱うかは詰める必要がある:
+（背景は子の前、ボーダーは子の後）。この 3 段はそのまま 2 フェーズへ機械的に対応づく:
 
-- 案: Swing 同様「外見は子の前」に寄せ、ボーダーも子の前に描く（見た目が僅かに変わりうる）。
-- 案: `LookVTable` に post-children フック（子の後に呼ぶ第 2 の描画点）を足す。
-- 案: ボーダーは子をクリップしないので、子の後に上描きする現挙動を保つ別経路を用意する。
+- `背景 fillRect`（Panel.zig:126-129）→ **前フェーズ `paint`**（子の下）。
+- `子の再帰`（Panel.zig:131-133）→ フレームワークの `paintAt` 巡回（構造側）。
+- `ボーダー fillRect`（Panel.zig:135-142）→ **後フェーズ `paintOver`**（子の上）。
 
-この順序の決着は実装時の課題として残す（下記「未決」にも再掲）。
+これにより **ボーダー後描き（子の上）の現挙動が保たれ、見た目は不変**（回帰しない）。
+素朴な「`paint(self)` → 子を再帰」だけだとボーダーが子より先に描かれて崩れるが、後フェーズを設けたことで解消される。
 
 ### 2.5 measure の配線
 
@@ -222,16 +233,29 @@ ui: ?struct {
   default の `LookVTable` を指すかは詳細（未決）。
 - `processEvent` 等の構造 vtable（`component.vtable`）は従来どおり型ごとの const を指したまま。
 
-### 2.11 #4 の「新機構を作らない」との関係（明記）
+### 2.11 #4 の「新機構を作らない」を意識的に覆す（明記）
 
-framework_backlog #4 は「差し替えの座席は既存 `setVTable` のみ、新しい委譲機構は作らない」としていた。
-本 doc はこの一点を更新する。ただし #4 が **却下した重い委譲（Swing ComponentUI 風のレジストリ＋名前解決）とは
-別物**である:
+framework_backlog #4 は「差し替えの座席は既存 `setVTable` のみ、**新しい委譲機構は作らない**」「Swing
+ComponentUI 風の委譲機構新設は**却下**」としていた。
+**作者は 2026-06-20、この一点を意識的に覆すことを承認した。**
 
-- 作るのは「VTable を構造／外見の 2 つに割る」だけ。スロット総数はほぼ変わらず、レジストリ・名前付き LAF・
-  カスケードは **持ち込まない**（それらは §1.2 のとおりバインディング層）。
-- #4 が `setVTable` 一本で困っていた点（paint だけ差したいのに構造まで巻き込む、§2.3 の (1)）を、
-  外見スロットの隔離で解く。#4 の「Theme ＝ 公開データ」「起動時固定」「ファクトリ DI」はすべて維持する。
+正直に言えば、`LookVTable` は #4 の文言上の「**二つ目の差し替え機構**」そのものである（§2.3 の (1)＝`setVTable`
+一本だけ、という #4 の前提を崩す）。「別物だから #4 と矛盾しない」という和解では甘い。覆す理由を明示する:
+
+- **#4 は LAF 固有の `measure`（最小サイズ計算）を一切考慮していなかった**。#4 が見ていたのは色とメトリクスを
+  Theme テーブルへ追い出すことと、フル LAF を「既定 vtable をコピーして `paint` を差し替える」既存の
+  デコレーションパターンで実現することだった。
+- ところが新ターゲット（§4）の **Swing Metal の bevel・JTattoo の 9-slice** は、`paint` だけでなく
+  **寸法計算も LAF 固有**になる（bevel ぶんの内寸・9-slice の inset が最小サイズに効く）。
+  `setVTable`（paint コピー差し替え）では **measure を表現できない** — そもそも `measure` は現状の
+  `VTable`（Component.zig:138-155）に存在せず、各 widget が `applyMetrics` で `min_size` を焼くだけ
+  （Button.zig:115-136）。LAF ごとに寸法を差し替える受け皿が無い。
+- つまり **#4 の機構は新ターゲットに力不足**。「二つ目の機構を作らない」は、**#4 が予見しなかった要件
+  （LAF 固有の measure）のために改める**。paint と measure をセットで隔離する `LookVTable` がその受け皿になる。
+
+ただし **#4 の他の決定はすべて維持する**: 「Theme ＝ 公開データ」「LAF は起動時固定（実行時切替なし）」
+「ファクトリ DI でテーマ／Look を注入」。覆すのは「`setVTable` 一本／二つ目の機構なし」の一点のみ。
+レジストリ・名前付き LAF・カスケードは依然 **持ち込まない**（§1.2 のとおりバインディング層の仕事）。
 
 ---
 
@@ -279,21 +303,21 @@ Metal / JTattoo を実現するには awt 側に 2 つのプリミティブが�
 
 以下は意図的に未確定のまま残す。実装着手時 or 実需が出た時点で作者が決める。
 
-1. **命名**: `Component.LookVTable` / `ui` フィールド / `measure` 等はすべて仮称。
+（旧「paint と子再帰の順序問題」は **2 フェーズ paint で解決済み**。§2.4 を参照。残る論点は命名のみで、下記 1 に含む。）
+
+1. **命名**: `Component.LookVTable` / `paint` の後フェーズ `paintOver` / `ui` フィールド / `measure` 等はすべて仮称。
 2. **measure の正確なシグネチャ**: min のみか、min ＋ max か。
    既存の `size_query`（height-for-width の pure query、Component.zig:61-66 / 184）との統合をどうするか
    （measure に畳むか、別フックのまま併存させるか）。
 3. **Look を Component に持たせる正確な形**: §2.10 の `ui` フィールド案の詳細（null 既定か常時非 null か、
    ctx の所有・寿命）。
-4. **paint と子再帰の順序問題**（§2.4 詰めどころ）: Panel の「背景＝子の前／ボーダー＝子の後」を
-   どう割るか（Swing 順に寄せる／post-children フックを足す／別経路）。
-5. **外部 `setMinSize` と delegate 自動計算の潰し合い**: **保留（作者が考えたい）**。
+4. **外部 `setMinSize` と delegate 自動計算の潰し合い**: **保留（作者が考えたい）**。
    現状、leaf は `applyMetrics` が `min_size` をフィールド上書きするため外部の `setMinSize` が消える
    （Button.zig:135）。コンテナは `getMinSize` が `@max(field, layout)` で合成するので外部設定は floor として同居
    （Container.zig:142-145）。Swing の explicit-set フラグ（`isMinimumSizeSet` 流）で「明示設定は自動計算に勝つ」と
    するかは未決。初心者の罠だがブロッカーではない。override が「勝つ」か「floor」かも未決。
-6. **awt 2 プリミティブの詳細**: グラデの stop 数・軸、テクスチャのゴールデン許容 tolerance（§4.2）。
-7. **着手順**: LAF イニシアチブと text editor ロードマップ（framework_backlog.md #5：編集コア抽出＋undo）の
+5. **awt 2 プリミティブの詳細**: グラデの stop 数・軸、テクスチャのゴールデン許容 tolerance（§4.2）。
+6. **着手順**: LAF イニシアチブと text editor ロードマップ（framework_backlog.md #5：編集コア抽出＋undo）の
    どちらを先に着手するか。
 
 ---
@@ -307,6 +331,8 @@ Metal / JTattoo を実現するには awt 側に 2 つのプリミティブが�
 | 確定 | VTable を構造（install/uninstall/processEvent/**destroy**）と LookVTable（paint/measure＋user_data）へ分割（§2.2） |
 | 確定 | 分離理由は「paint＋measure だけを差し替えたい」(3) 案（§2.3） |
 | 確定 | Container は専用 paint を失い、`paintAt` 巡回が子再帰を担う（§2.4） |
+| 確定 | 2 フェーズ paint＝`paint`（子の下・背景）／子再帰／`paintOver`（子の上・ボーダー）。Panel の現状の見た目を維持（§2.4） |
+| 確定 | #4 の「新委譲機構を作らない」を作者承認のもと覆す（measure 固有化のため）。他の #4 決定は維持（§2.11） |
 | 確定 | measure 結果を既存 min_size/max_size へキャッシュ。レイアウトは無改修。コンテナは従来 computeMinSize（§2.5） |
 | 確定 | メトリクスは Look 側の定数。paint＋measure セット差し替えで寸法不整合を回避（§2.6） |
 | 確定 | default Look ＝ FlatLaf（現状描画そのまま）（§2.7） |
@@ -314,5 +340,5 @@ Metal / JTattoo を実現するには awt 側に 2 つのプリミティブが�
 | 確定 | 一括差し替えユーティリティは power-user 向け・init 前 1 回（§3） |
 | 確定 | 狙うのは FlatLaf / Metal / JTattoo。awt に grad / texture+9-slice が要る（別ワークストリーム）（§4） |
 | 提案 | Look の保持は `theme` 隣の `ui: ?{ vtable, ctx }`（§2.10） |
-| 未決 | 命名／measure シグネチャ／ui の形／paint 順序／setMinSize 衝突／awt 詳細／着手順（§5） |
+| 未決 | 命名（LookVTable / paintOver 等）／measure シグネチャ／ui の形／setMinSize 衝突／awt 詳細／着手順（§5） |
 </content>
