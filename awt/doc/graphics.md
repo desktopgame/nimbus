@@ -107,12 +107,20 @@ pub fn fillRoundRect(self: *Graphics, r: Rect, corner_radius: f32) void;  // 角
 pub fn drawCircle(self: *Graphics, r: Rect) void;  // bounding box r のアウトライン (1px)
 pub fn fillCircle(self: *Graphics, r: Rect) void;  // bounding box r 塗り
 
+pub fn fillGradientRect(self: *Graphics, r: Rect, top: Color, bottom: Color) void;  // 縦 linear グラデ塗り
+
 pub fn drawImage(self: *Graphics, image: awt.Image, x: f32, y: f32) void;
 pub fn drawImageScaled(self: *Graphics, image: awt.Image, x: f32, y: f32, w: f32, h: f32) void;
 ```
 
 色は current color、フォントは current font を参照する。
 `Image` の詳細は `image.md` を参照。
+
+`fillGradientRect` は `r` を縦方向の linear グラデーションで塗る。
+`top` が `r` の上端の色、`bottom` が下端の色で、間を線形補間する。
+alpha も補間し、blend は `.alpha` で合成する。
+色は引数で渡すため current color は参照しない。
+テクスチャはバインドせず、専用 program `Gradient` で描く (詳細は `programs.md`)。
 
 ## 機能要望
 | 機能 | 理由 / 想定対応 |
@@ -127,4 +135,3 @@ pub fn drawImageScaled(self: *Graphics, image: awt.Image, x: f32, y: f32, w: f32
 | `drawImageTinted` / `drawImageNineSlice` / `drawImageTiled` | 計画中。すべて `drawImageRegion` に畳み込み、契約を増やさない。設計は `narrative/graphics.md` |
 | `drawImageScaled` の Rect 化 | 計画中。`(image, x, y, w, h)` → `(image, dst: Rect)` に寄せて draw 系を一貫させる |
 | 複数行 `drawString` (`\n` の自動レイアウト) | テキストレイアウトは別レイヤーで対応予定 |
-| グラデーション塗り | `Image.linearGradient` で画像として生成し `drawImageScaled` で描く方針。設計は `narrative/image.md` |

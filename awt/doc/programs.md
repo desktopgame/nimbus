@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # programs
@@ -52,7 +52,24 @@ pub fn ProgramFromMeta(comptime meta: ProgramMeta) type;
 
 `ProgramFromMeta` はメタデータから program 型を comptime で生成する。
 
+## ビルトイン program
+現状のビルトイン program は `Text` / `Color` / `Image` / `RoundedRect` / `Gradient` の 5 つ。
+いずれも `ProgramFromMeta` でメタデータから生成し、`Graphics` の内部からのみ参照する。
+各 program の用途と細かなメタデータは `programs.zig` のソースに併記する。
+
+### Gradient
+矩形を縦 linear グラデーションで塗る program。`Graphics.fillGradientRect` が使う。
+
+* `vertex_layout`: `vertex_texcoord_2d` (`Image` / `RoundedRect` と共有する)。
+* `blend`: `.alpha`。テクスチャはバインドしない。
+* PS uniform (スロット 0): `extern struct { color0: [4]f32, color1: [4]f32 }`。
+  `color0` が上端色 (top)、`color1` が下端色 (bottom)。
+* shaders: `awt/src/shaders/Gradient/gradient.{hlsl,msl}.{vs,ps}`。
+  VS は uv をそのまま PS へ渡す (`RoundedRect` / `Image` と同じ素通し)。
+  PS は `lerp(color0, color1, uv.y)` で縦方向に補間する。
+
 ## 機能要望
 * シェーダーの事前コンパイル (現状はランタイムコンパイル、起動時間短縮の余地)。優先度高。
 * 1 つの program で複数の uniform ブロック (`meta.uniforms.len > 1`) を扱う API。現状 `bindUniforms` は最初のブロックのみをバインドする。
-* メタデータからシェーダー側の宣言 (HLSL / MSL の `register` / `cbuffer` 等) を自動生成する仕組み。現状はシェーダー側を作者が手書きするので、メタデータと食い違うリスクが残る。
+* メタデータからシェーダー側の宣言 (HLSL / MSL の `register` / `cbuffer` 等) を自動生成する仕組み。
+  現状はシェーダー側を作者が手書きするので、メタデータと食い違うリスクが残る。
