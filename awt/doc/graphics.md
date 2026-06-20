@@ -22,6 +22,10 @@ pub const Rect = struct {
     pub fn bottom(self: Rect) f32;  // self.y + self.height
 };
 
+pub const Insets = struct {
+    left: f32, top: f32, right: f32, bottom: f32,  // 9-slice の四辺の境界幅 (source texel 単位)
+};
+
 pub const Color = struct {
     r: f32, g: f32, b: f32, a: f32,
     // コンストラクタは color.md 参照
@@ -37,6 +41,7 @@ pub const TextFont = struct {
 
 `Color` のコンストラクタ (`rgba` / `rgb` / `bytes`) は `color.md` を参照。
 `Font` および `Font.TextSize` (`width: f32, height: f32`) は `font.md` を参照。
+`Insets` は 9-slice の四辺の境界幅 (ソース texel 単位) を表す値型で、`drawTextureNineSlice` が使う。
 
 `TextFont` 自体は値型で軽量に複製可能。
 `face` は `awt.Font` を値で保持するが、`awt.Font` の中身は awt-c の handle ポインタなので、
@@ -111,6 +116,8 @@ pub fn fillGradientRect(self: *Graphics, r: Rect, top: Color, bottom: Color) voi
 
 pub fn drawImage(self: *Graphics, image: awt.Image, x: f32, y: f32) void;
 pub fn drawImageScaled(self: *Graphics, image: awt.Image, x: f32, y: f32, w: f32, h: f32) void;
+
+pub fn drawTextureNineSlice(self: *Graphics, image: awt.Image, dst: Rect, insets: Insets, tint: Color) void;  // 9-slice 描画
 ```
 
 色は current color、フォントは current font を参照する。
@@ -122,6 +129,17 @@ alpha も補間し、blend は `.alpha` で合成する。
 色は引数で渡すため current color は参照しない。
 テクスチャはバインドせず、専用 program `Gradient` で描く (詳細は `programs.md`)。
 
+`drawTextureNineSlice` は `image` を `dst` へ 9-slice で描く。
+`insets` はソース画像の四辺の境界幅で、単位はソース texel。
+四隅は伸縮せず 1:1 で、辺は片軸・中央は両軸を線形フィルタで伸縮する。
+`tint` は Image program の tint uniform に渡る (無着色なら white)。
+新しい program は要らず、既存の `drawImage` 系と同じ Image program を再利用する。
+`insets` の合計が `dst` を超える場合 (`left + right > dst.width` 等) は inset を比例クランプし、
+幅が 0 になる辺・中央のクアッドは積まない。
+
+なお `drawImageScaled` は内部実装としてサブ UV を 1 クアッド描く private ヘルパに載せ替わるが、
+public な署名 (`image, x, y, w, h`) と契約 (`image` 全体を UV 0..1 で描く) は変わらない。
+
 ## 機能要望
 | 機能 | 理由 / 想定対応 |
 |---|---|
@@ -132,6 +150,6 @@ alpha も補間し、blend は `.alpha` で合成する。
 | `setAntiAlias` | 暗黙対応 (rect は AA 不要、滑らか形状は常時 1px AA) のため明示 API なし |
 | `save` / `restore` | `clip` で値返しすることで不要 |
 | `drawImageRegion` (src 部分指定) | 計画中。万能プリミティブとして src 矩形 → dst を描く。`programs.Image` 1 本に乗る。設計は `narrative/graphics.md` |
-| `drawImageTinted` / `drawImageNineSlice` / `drawImageTiled` | 計画中。すべて `drawImageRegion` に畳み込み、契約を増やさない。設計は `narrative/graphics.md` |
+| `drawImageTinted` / `drawImageTiled` | 計画中。`drawImageRegion` に畳み込み、契約を増やさない。設計は `narrative/graphics.md` |
 | `drawImageScaled` の Rect 化 | 計画中。`(image, x, y, w, h)` → `(image, dst: Rect)` に寄せて draw 系を一貫させる |
 | 複数行 `drawString` (`\n` の自動レイアウト) | テキストレイアウトは別レイヤーで対応予定 |
