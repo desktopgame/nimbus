@@ -47,6 +47,12 @@ pub const vtable = Component.VTable{
     .destroy = destroy,
 };
 
+pub const look_vtable = Component.LookVTable{
+    .paint = lookPaint,
+    .paintOver = lookPaintOver,
+    .measureMinSize = lookMeasureMinSize,
+};
+
 const tab_layout_vtable = LayoutManager.VTable{
     .doLayout = layoutDoLayout,
     .computeMinSize = layoutComputeMinSize,
@@ -69,7 +75,7 @@ pub fn create(allocator: std.mem.Allocator, font: awt.Graphics.TextFont) !*Tabbe
     errdefer tp.change_listeners.deinit();
 
     tp.container.component.vtable = &vtable;
-    tp.container.component.ui = null;
+    tp.container.component.ui = .{ .vtable = &look_vtable, .ctx = &Component.default_look_context };
     tp.container.component.role = .tabbed_pane;
     tp.container.component.container = &tp.container;
     tp.container.layout = &tp.layout.base;
@@ -239,6 +245,14 @@ fn layoutComputeMaxSize(_: *LayoutManager, _: *const Container) Component.Size {
 // ── vtable impl ────────────────────────────────────────────────────────────
 
 fn paint(self: *Component, g: *awt.Graphics) void {
+    lookPaint(self, &Component.default_look_context, g);
+    const tp = fromComponent(self);
+    if (tp.selected) |idx| {
+        if (idx < tp.tabs.items.len) tp.tabs.items[idx].content.paintAt(g);
+    }
+}
+
+fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
     const tp = fromComponent(self);
     const sz = self.size;
     const t = self.theme;
@@ -272,10 +286,12 @@ fn paint(self: *Component, g: *awt.Graphics) void {
 
     g.setColor(t.border_soft);
     g.fillRect(.{ .x = 0, .y = DEFAULT_TAB_HEIGHT - 1, .width = sz.width, .height = 1 });
+}
 
-    if (tp.selected) |idx| {
-        if (idx < tp.tabs.items.len) tp.tabs.items[idx].content.paintAt(g);
-    }
+fn lookPaintOver(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
+
+fn lookMeasureMinSize(_: *Component, _: *anyopaque) Component.Size {
+    return .{ .width = 0, .height = 0 };
 }
 
 fn processEvent(self: *Component, ev: *Component.Event) void {

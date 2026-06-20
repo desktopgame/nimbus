@@ -52,12 +52,24 @@ pub const vtable = Component.VTable{
     .destroy = destroy,
 };
 
+pub const look_vtable = Component.LookVTable{
+    .paint = lookPaint,
+    .paintOver = lookPaintOver,
+    .measureMinSize = lookMeasureMinSize,
+};
+
 const popup_vtable = Component.VTable{
     .install = popupInstall,
     .uninstall = popupUninstall,
     .paint = popupPaint,
     .processEvent = popupProcessEvent,
     .destroy = popupDestroyNoop,
+};
+
+const popup_look_vtable = Component.LookVTable{
+    .paint = popupLookPaint,
+    .paintOver = popupLookPaintOver,
+    .measureMinSize = popupLookMeasureMinSize,
 };
 
 pub fn create(
@@ -96,6 +108,8 @@ pub fn create(
     };
     menu.component.role = .menu;
     menu.component.a11y = .{ .name = a11yName };
+    menu.component.ui = .{ .vtable = &look_vtable, .ctx = &Component.default_look_context };
+    menu.popup_root.ui = .{ .vtable = &popup_look_vtable, .ctx = &Component.default_look_context };
     menu.popup_root.tree_children = .{ .count = treeChildCount, .at = treeChildAt };
     menu.applyMetrics();
     try Menu.vtable.install(&menu.component);
@@ -103,29 +117,28 @@ pub fn create(
 }
 
 fn applyMetrics(self: *Menu) void {
-    const m = self.font.measureString(self.text);
+    const ui = self.component.ui.?;
+    const min = ui.vtable.measureMinSize(&self.component, ui.ctx);
+    self.component.min_size = min;
     switch (self.mode) {
-        .bar => {
-            self.component.min_size = .{
-                .width = m.width + BAR_PADDING_X * 2,
-                .height = m.height + ROW_PADDING_Y * 2,
-            };
-            self.component.max_size = .{
-                .width = self.component.min_size.width,
-                .height = self.component.min_size.height,
-            };
-        },
-        .item => {
-            self.component.min_size = .{
-                .width = MenuItem.ICON_SLOT_WIDTH + m.width + ARROW_SLOT_W + ROW_PADDING_X * 2,
-                .height = m.height + MenuItem.PADDING_Y * 2,
-            };
-            self.component.max_size = .{
-                .width = std.math.inf(f32),
-                .height = self.component.min_size.height,
-            };
-        },
+        .bar => self.component.max_size = .{ .width = min.width, .height = min.height },
+        .item => self.component.max_size = .{ .width = std.math.inf(f32), .height = min.height },
     }
+}
+
+fn lookMeasureMinSize(self: *Component, _: *anyopaque) Component.Size {
+    const menu: *Menu = @fieldParentPtr("component", self);
+    const m = menu.font.measureString(menu.text);
+    return switch (menu.mode) {
+        .bar => .{
+            .width = m.width + BAR_PADDING_X * 2,
+            .height = m.height + ROW_PADDING_Y * 2,
+        },
+        .item => .{
+            .width = MenuItem.ICON_SLOT_WIDTH + m.width + ARROW_SLOT_W + ROW_PADDING_X * 2,
+            .height = m.height + MenuItem.PADDING_Y * 2,
+        },
+    };
 }
 
 pub fn setMode(self: *Menu, mode: Mode) void {
@@ -411,6 +424,10 @@ fn onModelChange(comp: *Component, _: *const ChangeEvent) void {
 }
 
 fn paint(self: *Component, g: *awt.Graphics) void {
+    lookPaint(self, &Component.default_look_context, g);
+}
+
+fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
     const menu: *Menu = @fieldParentPtr("component", self);
     const sz = self.size;
 
@@ -457,6 +474,8 @@ fn paint(self: *Component, g: *awt.Graphics) void {
         },
     }
 }
+
+fn lookPaintOver(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
 
 /// Underline the mnemonic letter (always shown in v1; Alt-reveal deferred).
 /// Uses the color currently set on `g` (= the label's text color).
@@ -548,6 +567,11 @@ fn popupUninstall(_: *Component) void {}
 fn popupDestroyNoop(_: *Component, _: std.mem.Allocator) void {}
 
 fn popupPaint(self: *Component, g: *awt.Graphics) void {
+    popupLookPaint(self, &Component.default_look_context, g);
+    popupLookPaintOver(self, &Component.default_look_context, g);
+}
+
+fn popupLookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
     const menu: *Menu = @fieldParentPtr("popup_root", self);
     const sz = self.size;
     // The popup root never goes through a factory — read the owning Menu's theme.
@@ -559,7 +583,12 @@ fn popupPaint(self: *Component, g: *awt.Graphics) void {
 
     // Items.
     for (menu.items.items) |item| item.paintAt(g);
+}
 
+fn popupLookPaintOver(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
+    const sz = self.size;
+    const menu: *Menu = @fieldParentPtr("popup_root", self);
+    const t = menu.component.theme;
     // Border (1px) drawn last so item hover backgrounds don't overlap the
     // left/right edges.
     g.setColor(t.border);
@@ -567,6 +596,10 @@ fn popupPaint(self: *Component, g: *awt.Graphics) void {
     g.fillRect(.{ .x = 0, .y = sz.height - 1, .width = sz.width, .height = 1 });
     g.fillRect(.{ .x = 0, .y = 0, .width = 1, .height = sz.height });
     g.fillRect(.{ .x = sz.width - 1, .y = 0, .width = 1, .height = sz.height });
+}
+
+fn popupLookMeasureMinSize(_: *Component, _: *anyopaque) Component.Size {
+    return .{ .width = 0, .height = 0 };
 }
 
 fn popupProcessEvent(self: *Component, ev: *Component.Event) void {

@@ -128,6 +128,12 @@ pub const vtable = Component.VTable{
     .destroy = destroy,
 };
 
+pub const look_vtable = Component.LookVTable{
+    .paint = lookPaint,
+    .paintOver = lookPaintOver,
+    .measureMinSize = lookMeasureMinSize,
+};
+
 pub fn init(
     allocator: std.mem.Allocator,
     app_ptr: *anyopaque,
@@ -191,7 +197,7 @@ pub fn init(
         .focus_controller = undefined, // filled in install
     };
     win.container.component.vtable = &vtable;
-    win.container.component.ui = null;
+    win.container.component.ui = .{ .vtable = &look_vtable, .ctx = &Component.default_look_context };
     // Default layout: BorderLayout. Lets users compose a toolbar / status /
     // sidebar / center shell with no additional setup. Override via
     // `window.container.setLayout` if a different layout is desired.
@@ -262,7 +268,7 @@ pub fn initHeadless(
         .focus_controller = undefined,
     };
     win.container.component.vtable = &vtable;
-    win.container.component.ui = null;
+    win.container.component.ui = .{ .vtable = &look_vtable, .ctx = &Component.default_look_context };
     win.container.layout = BorderLayout.get();
     return win;
 }
@@ -644,6 +650,14 @@ fn paintWindow(self: *Component, g: *awt.Graphics) void {
     for (cont.children.items) |elem| {
         elem.component.paintAt(g);
     }
+}
+
+fn lookPaint(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
+
+fn lookPaintOver(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
+
+fn lookMeasureMinSize(_: *Component, _: *anyopaque) Component.Size {
+    return .{ .width = 0, .height = 0 };
 }
 
 fn processEvent(self: *Component, ev: *Component.Event) void {

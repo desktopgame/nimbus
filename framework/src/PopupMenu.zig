@@ -31,6 +31,12 @@ const popup_vtable = Component.VTable{
     .destroy = popupDestroyNoop,
 };
 
+const popup_look_vtable = Component.LookVTable{
+    .paint = popupLookPaint,
+    .paintOver = popupLookPaintOver,
+    .measureMinSize = popupLookMeasureMinSize,
+};
+
 pub fn create(allocator: std.mem.Allocator) !*PopupMenu {
     const pm = try allocator.create(PopupMenu);
     pm.* = .{
@@ -43,6 +49,7 @@ pub fn create(allocator: std.mem.Allocator) !*PopupMenu {
     };
     pm.popup_root.role = .popup_menu;
     pm.popup_root.tree_children = .{ .count = treeChildCount, .at = treeChildAt };
+    pm.popup_root.ui = .{ .vtable = &popup_look_vtable, .ctx = &Component.default_look_context };
     return pm;
 }
 
@@ -184,6 +191,11 @@ fn popupUninstall(_: *Component) void {}
 fn popupDestroyNoop(_: *Component, _: std.mem.Allocator) void {}
 
 fn popupPaint(self: *Component, g: *awt.Graphics) void {
+    popupLookPaint(self, &Component.default_look_context, g);
+    popupLookPaintOver(self, &Component.default_look_context, g);
+}
+
+fn popupLookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
     const pm: *PopupMenu = @fieldParentPtr("popup_root", self);
     const sz = self.size;
     const t = self.theme;
@@ -192,13 +204,21 @@ fn popupPaint(self: *Component, g: *awt.Graphics) void {
     g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = sz.height });
 
     for (pm.items.items) |item| item.paintAt(g);
+}
 
+fn popupLookPaintOver(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
+    const sz = self.size;
+    const t = self.theme;
     // Border drawn last so item hover backgrounds don't overlap the edges.
     g.setColor(t.border);
     g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = 1 });
     g.fillRect(.{ .x = 0, .y = sz.height - 1, .width = sz.width, .height = 1 });
     g.fillRect(.{ .x = 0, .y = 0, .width = 1, .height = sz.height });
     g.fillRect(.{ .x = sz.width - 1, .y = 0, .width = 1, .height = sz.height });
+}
+
+fn popupLookMeasureMinSize(_: *Component, _: *anyopaque) Component.Size {
+    return .{ .width = 0, .height = 0 };
 }
 
 fn popupProcessEvent(self: *Component, ev: *Component.Event) void {

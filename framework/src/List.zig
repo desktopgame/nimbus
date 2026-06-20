@@ -214,6 +214,12 @@ pub const vtable = Component.VTable{
     .destroy = destroy,
 };
 
+pub const look_vtable = Component.LookVTable{
+    .paint = lookPaint,
+    .paintOver = lookPaintOver,
+    .measureMinSize = lookMeasureMinSize,
+};
+
 // ── construction ───────────────────────────────────────────────────────────
 
 pub fn create(allocator: std.mem.Allocator, factory: CellFactory) !*List {
@@ -253,6 +259,7 @@ fn createInternal(allocator: std.mem.Allocator, model: *ListModel, owns_model: b
         .allocator = allocator,
     };
     list.component.role = .list;
+    list.component.ui = .{ .vtable = &look_vtable, .ctx = &Component.default_look_context };
     errdefer list.change_listeners.deinit();
     errdefer list.action_listeners.deinit();
     errdefer list.context_listeners.deinit();
@@ -615,6 +622,10 @@ fn onModelChange(list: *List, _: *const ChangeEvent) void {
 }
 
 fn paint(self: *Component, g: *awt.Graphics) void {
+    lookPaint(self, &Component.default_look_context, g);
+}
+
+fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
     const list: *List = @fieldParentPtr("component", self);
     list.reconcile();
 
@@ -635,6 +646,12 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     for (list.pool.items) |pc| {
         if (pc.row != null) pc.cell.component.paintAt(g);
     }
+}
+
+fn lookPaintOver(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
+
+fn lookMeasureMinSize(self: *Component, _: *anyopaque) Component.Size {
+    return self.min_size;
 }
 
 fn processEvent(self: *Component, ev: *Component.Event) void {

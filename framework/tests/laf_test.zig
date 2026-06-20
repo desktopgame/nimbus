@@ -16,7 +16,7 @@ fn newApp() !*nimbus.Application {
         return error.SkipZigTest;
 }
 
-test "P1 widgets use default Look while other widgets stay on legacy paint" {
+test "widgets use default Look" {
     const app = try newApp();
     defer app.deinit();
 
@@ -34,6 +34,18 @@ test "P1 widgets use default Look while other widgets stay on legacy paint" {
     const tabbed = try nimbus.TabbedPane.create(std.testing.allocator, text_font);
     defer tabbed.container.component.vtable.destroy(&tabbed.container.component, std.testing.allocator);
 
+    const label = try nimbus.Label.create(std.testing.allocator, "x", text_font, nimbus.Theme.default.text);
+    defer label.component.vtable.destroy(&label.component, std.testing.allocator);
+
+    const checkbox = try nimbus.CheckBox.create(std.testing.allocator, "x", text_font, nimbus.Theme.default.text);
+    defer checkbox.component.vtable.destroy(&checkbox.component, std.testing.allocator);
+
+    const menu = try nimbus.Menu.create(std.testing.allocator, "File", text_font, nimbus.Theme.default.text);
+    defer menu.component.vtable.destroy(&menu.component, std.testing.allocator);
+
+    const popup = try nimbus.PopupMenu.create(std.testing.allocator);
+    defer popup.destroy();
+
     try std.testing.expect(button.component.ui != null);
     try std.testing.expect(button.component.ui.?.vtable == &nimbus.Button.look_vtable);
     try std.testing.expect(container.component.ui != null);
@@ -41,5 +53,14 @@ test "P1 widgets use default Look while other widgets stay on legacy paint" {
     try std.testing.expect(panel.container.component.ui != null);
     try std.testing.expect(panel.container.component.ui.?.vtable == &nimbus.Panel.look_vtable);
 
-    try std.testing.expect(tabbed.container.component.ui == null);
+    try std.testing.expect(tabbed.container.component.ui != null);
+    try std.testing.expect(tabbed.container.component.ui.?.vtable == &nimbus.TabbedPane.look_vtable);
+    try std.testing.expect(label.component.ui != null);
+    try std.testing.expect(label.component.ui.?.vtable == &nimbus.Label.look_vtable);
+    try std.testing.expect(checkbox.component.ui != null);
+    try std.testing.expect(checkbox.component.ui.?.vtable == &nimbus.CheckBox.look_vtable);
+    try std.testing.expect(menu.component.ui != null);
+    try std.testing.expect(menu.component.ui.?.vtable == &nimbus.Menu.look_vtable);
+    try std.testing.expect(menu.popup_root.ui != null);
+    try std.testing.expect(popup.popup_root.ui != null);
 }

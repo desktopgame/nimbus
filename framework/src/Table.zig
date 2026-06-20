@@ -143,12 +143,19 @@ const TableHeader = struct {
         .destroy = TableHeader.destroy,
     };
 
+    const look_vtable = Component.LookVTable{
+        .paint = TableHeader.lookPaint,
+        .paintOver = TableHeader.lookPaintOver,
+        .measureMinSize = TableHeader.lookMeasureMinSize,
+    };
+
     fn create(allocator: std.mem.Allocator, table: *Table) !*TableHeader {
         const header = try allocator.create(TableHeader);
         header.* = .{
             .component = Component.init(allocator, &TableHeader.vtable),
             .table = table,
         };
+        header.component.ui = .{ .vtable = &TableHeader.look_vtable, .ctx = &Component.default_look_context };
         header.component.setMinSize(.{ .width = table.totalWidth(), .height = HEADER_HEIGHT });
         try TableHeader.vtable.install(&header.component);
         return header;
@@ -158,8 +165,18 @@ const TableHeader = struct {
     fn uninstall(_: *Component) void {}
 
     fn paint(self: *Component, g: *awt.Graphics) void {
+        TableHeader.lookPaint(self, &Component.default_look_context, g);
+    }
+
+    fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
         const header: *TableHeader = @fieldParentPtr("component", self);
         header.table.paintHeader(g, 0, self.size.width);
+    }
+
+    fn lookPaintOver(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
+
+    fn lookMeasureMinSize(self: *Component, _: *anyopaque) Component.Size {
+        return self.min_size;
     }
 
     fn processEvent(self: *Component, ev: *Component.Event) void {
@@ -231,6 +248,12 @@ pub const vtable = Component.VTable{
     .paint = paint,
     .processEvent = processEvent,
     .destroy = destroy,
+};
+
+pub const look_vtable = Component.LookVTable{
+    .paint = lookPaint,
+    .paintOver = lookPaintOver,
+    .measureMinSize = lookMeasureMinSize,
 };
 
 // ── construction ───────────────────────────────────────────────────────────
@@ -305,6 +328,7 @@ fn createInternal(
         .allocator = allocator,
     };
     table.component.role = .table;
+    table.component.ui = .{ .vtable = &look_vtable, .ctx = &Component.default_look_context };
     errdefer table.change_listeners.deinit();
     errdefer table.action_listeners.deinit();
     errdefer table.context_listeners.deinit();
@@ -774,6 +798,10 @@ fn onModelChange(table: *Table, _: *const ChangeEvent) void {
 }
 
 fn paint(self: *Component, g: *awt.Graphics) void {
+    lookPaint(self, &Component.default_look_context, g);
+}
+
+fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
     const table: *Table = @fieldParentPtr("component", self);
     table.reconcile();
     const sz = self.size;
@@ -796,6 +824,12 @@ fn paint(self: *Component, g: *awt.Graphics) void {
             if (pc.row != null) pc.cell.component.paintAt(g);
         }
     }
+}
+
+fn lookPaintOver(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
+
+fn lookMeasureMinSize(self: *Component, _: *anyopaque) Component.Size {
+    return self.min_size;
 }
 
 fn paintHeader(self: *Table, g: *awt.Graphics, top: f32, width: f32) void {

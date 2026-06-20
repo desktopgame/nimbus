@@ -67,6 +67,12 @@ pub const vtable = Component.VTable{
     .destroy = destroy,
 };
 
+pub const look_vtable = Component.LookVTable{
+    .paint = lookPaint,
+    .paintOver = lookPaintOver,
+    .measureMinSize = lookMeasureMinSize,
+};
+
 const scroll_layout_vtable = LayoutManager.VTable{
     .doLayout = layoutDoLayout,
     .computeMinSize = layoutComputeMinSize,
@@ -104,7 +110,7 @@ pub fn create(allocator: std.mem.Allocator, view: *Component) !*ScrollPane {
     }
     // Wire the embedded container to behave as the ScrollPane component.
     sp.container.component.vtable = &vtable;
-    sp.container.component.ui = null;
+    sp.container.component.ui = .{ .vtable = &look_vtable, .ctx = &Component.default_look_context };
     sp.container.component.role = .scroll_pane;
     sp.container.component.container = &sp.container;
     sp.container.layout = &sp.layout.base;
@@ -487,6 +493,14 @@ fn uninstall(self: *Component) void {
     // are torn down earlier by container.deinit; the models outlive them).
     sp.h_model.removeChangeListener(ScrollPane, onScrollChange, sp);
     sp.v_model.removeChangeListener(ScrollPane, onScrollChange, sp);
+}
+
+fn lookPaint(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
+
+fn lookPaintOver(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
+
+fn lookMeasureMinSize(_: *Component, _: *anyopaque) Component.Size {
+    return .{ .width = 0, .height = 0 };
 }
 
 fn processEvent(self: *Component, ev: *Component.Event) void {

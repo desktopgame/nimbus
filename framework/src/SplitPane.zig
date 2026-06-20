@@ -61,6 +61,12 @@ pub const vtable = Component.VTable{
     .destroy = destroy,
 };
 
+pub const look_vtable = Component.LookVTable{
+    .paint = lookPaint,
+    .paintOver = lookPaintOver,
+    .measureMinSize = lookMeasureMinSize,
+};
+
 const split_layout_vtable = LayoutManager.VTable{
     .doLayout = layoutDoLayout,
     .computeMinSize = layoutComputeMinSize,
@@ -97,7 +103,7 @@ pub fn create(
     };
     // Wire the embedded container to behave as the SplitPane component.
     sp.container.component.vtable = &vtable;
-    sp.container.component.ui = null;
+    sp.container.component.ui = .{ .vtable = &look_vtable, .ctx = &Component.default_look_context };
     sp.container.component.role = .split_pane;
     sp.container.component.container = &sp.container;
     sp.container.layout = &sp.layout.base;
@@ -247,6 +253,11 @@ fn layoutComputeMaxSize(_: *LayoutManager, _: *const Container) Component.Size {
 // ── vtable impl ──────────────────────────────────────────────────────────
 
 fn paint(self: *Component, g: *awt.Graphics) void {
+    lookPaint(self, &Component.default_look_context, g);
+    Container.vtable.paint(self, g); // panes (disjoint rects, order moot)
+}
+
+fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
     const sp = fromComponent(self);
     const sz = self.size;
     if (sz.width > 0 and sz.height > 0 and sp.divider_size > 0) {
@@ -267,7 +278,12 @@ fn paint(self: *Component, g: *awt.Graphics) void {
         };
         g.fillRect(line);
     }
-    Container.vtable.paint(self, g); // panes (disjoint rects, order moot)
+}
+
+fn lookPaintOver(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
+
+fn lookMeasureMinSize(_: *Component, _: *anyopaque) Component.Size {
+    return .{ .width = 0, .height = 0 };
 }
 
 fn processEvent(self: *Component, ev: *Component.Event) void {

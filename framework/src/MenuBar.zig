@@ -28,6 +28,12 @@ pub const vtable = Component.VTable{
     .destroy = destroy,
 };
 
+pub const look_vtable = Component.LookVTable{
+    .paint = lookPaint,
+    .paintOver = lookPaintOver,
+    .measureMinSize = lookMeasureMinSize,
+};
+
 pub fn create(
     allocator: std.mem.Allocator,
     font: awt.Graphics.TextFont,
@@ -47,6 +53,7 @@ pub fn create(
     // Min height ≒ font ascent + padding. Computed lazily once a menu is added.
     bar.component.role = .menu_bar;
     bar.component.tree_children = .{ .count = treeChildCount, .at = treeChildAt };
+    bar.component.ui = .{ .vtable = &look_vtable, .ctx = &Component.default_look_context };
     const m = font.measureString("Mg");
     bar.component.min_size = .{ .width = 0, .height = m.height + 8 };
     bar.component.max_size = .{ .width = std.math.inf(f32), .height = bar.component.min_size.height };
@@ -102,6 +109,10 @@ fn install(_: *Component) !void {}
 fn uninstall(_: *Component) void {}
 
 fn paint(self: *Component, g: *awt.Graphics) void {
+    lookPaint(self, &Component.default_look_context, g);
+}
+
+fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
     const bar: *MenuBar = @fieldParentPtr("component", self);
     const sz = self.size;
 
@@ -118,6 +129,12 @@ fn paint(self: *Component, g: *awt.Graphics) void {
 
     // Menu labels.
     for (bar.menus.items) |menu| menu.component.paintAt(g);
+}
+
+fn lookPaintOver(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
+
+fn lookMeasureMinSize(self: *Component, _: *anyopaque) Component.Size {
+    return self.min_size;
 }
 
 fn processEvent(self: *Component, ev: *Component.Event) void {
