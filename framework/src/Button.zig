@@ -14,7 +14,7 @@ const ButtonModel = @import("ButtonModel.zig");
 const Button = @This();
 
 const PADDING_X: f32 = 12;
-const PADDING_Y: f32 = 8;
+const PADDING_Y: f32 = 4;
 const CORNER_RADIUS: f32 = 6;
 const ICON_TEXT_GAP: f32 = 6;
 const FLAT_PADDING: f32 = 4;

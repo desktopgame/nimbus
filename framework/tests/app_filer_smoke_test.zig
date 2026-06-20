@@ -417,6 +417,15 @@ test "app_filer layout: path_field is vertically centered in toolbar" {
     var robot = nimbus.Robot.init(app, &frame.window);
     robot.pump();
 
-    const y = filer.path_field.component.getBounds().y;
-    try std.testing.expect(y > 0.5);
+    // The path_field's vertical center must line up with the toolbar's vertical
+    // center. This holds whether the field fills the bar (y=0, height=bar height)
+    // or floats centered with top/bottom margin, but fails if the field clings to
+    // the top while being shorter than the bar (the bug this guards). The
+    // path_field's y is in the toolbar's (its parent's) coordinate system, so the
+    // toolbar's center is simply toolbar_height / 2.
+    const pf = filer.path_field.component.getBounds();
+    const toolbar = filer.path_field.component.parent orelse return error.TestUnexpectedResult;
+    const toolbar_center = toolbar.getBounds().height / 2;
+    const pf_center = pf.y + pf.height / 2;
+    try std.testing.expectApproxEqAbs(toolbar_center, pf_center, 1.0);
 }
