@@ -1,0 +1,17 @@
+// Pixel shader for the Gradient program (HLSL / DX12).
+// Interpolates between top and bottom colors using the quad's vertical UV.
+
+struct VsOut {
+    float4 pos : SV_Position;
+    float2 uv  : TEXCOORD0;
+};
+
+cbuffer Uniforms : register(b0) {
+    float4 color0;
+    float4 color1;
+};
+
+float4 psMain(VsOut i) : SV_Target {
+    return lerp(color0, color1, i.uv.y);
+}
+

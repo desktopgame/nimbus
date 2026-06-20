@@ -217,6 +217,29 @@ pub const Image = ProgramFromMeta(.{
     },
 });
 
+/// Gradient renders a 2-stop vertical linear gradient over a 2D quad.
+/// Quad UV y=0 maps to color0 (top), and y=1 maps to color1 (bottom).
+pub const Gradient = ProgramFromMeta(.{
+    .vertex_layout = .vertex_texcoord_2d,
+    .blend = .alpha,
+    .uniforms = &.{
+        .{
+            .stage = .pixel,
+            .slot = 0,
+            .type = extern struct {
+                color0: [4]f32,
+                color1: [4]f32,
+            },
+        },
+    },
+    .shaders = .{
+        .hlsl_vs = @embedFile("shaders/Gradient/gradient.hlsl.vs"),
+        .hlsl_ps = @embedFile("shaders/Gradient/gradient.hlsl.ps"),
+        .msl_vs = @embedFile("shaders/Gradient/gradient.msl.vs"),
+        .msl_ps = @embedFile("shaders/Gradient/gradient.msl.ps"),
+    },
+});
+
 /// RoundedRect is a signed-distance-field shape program. One pipeline covers
 /// rounded rectangles, circles, and their outlines:
 ///

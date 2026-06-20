@@ -78,6 +78,7 @@ pub const Context = struct {
     atlas: *GlyphAtlas,
     color_program: *programs.Color,
     image_program: *programs.Image,
+    gradient_program: *programs.Gradient,
     rrect_program: *programs.RoundedRect,
     text_program: *programs.Text,
 };
@@ -214,6 +215,36 @@ fn pxToNdcY(self: Graphics, px: f32) f32 {
 
 pub fn fillRect(self: *Graphics, r: Rect) void {
     self.fillRectColor(r, self.current_color);
+}
+
+pub fn fillGradientRect(self: *Graphics, r: Rect, top: Color, bottom: Color) void {
+    if (self.clipIsEmpty()) return;
+    const left = self.origin_x + r.x;
+    const top_y = self.origin_y + r.y;
+    const right = left + r.width;
+    const bottom_y = top_y + r.height;
+    const x0 = self.pxToNdcX(left);
+    const x1 = self.pxToNdcX(right);
+    const y0 = self.pxToNdcY(top_y);
+    const y1 = self.pxToNdcY(bottom_y);
+    const verts = [_]f32{
+        x0, y0, 0, 0, // TL
+        x0, y1, 0, 1, // BL
+        x1, y1, 1, 1, // BR
+        x1, y0, 1, 0, // TR
+    };
+    const vh = self.ctx.vertex_ring.pushBytes(std.mem.sliceAsBytes(verts[0..])) catch return;
+    const uh = self.ctx.uniforms.push(programs.Gradient.Uniforms{
+        .color0 = top.asArray(),
+        .color1 = bottom.asArray(),
+    }) catch return;
+
+    self.applyScissor();
+    self.ctx.gradient_program.bind(self.cb);
+    self.ctx.gradient_program.bindUniforms(self.cb, self.ctx.uniforms.*, uh);
+    self.cb.bindVertexBuffer(self.ctx.vertex_ring.buffer, 0, 4 * @sizeOf(f32), vh.offset);
+    self.cb.bindIndexBuffer(self.ctx.quad_index.buffer, .u16, 0);
+    self.cb.drawIndexed(6, 0, 0);
 }
 
 fn fillRectColor(self: *Graphics, r: Rect, color: Color) void {

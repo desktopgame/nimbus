@@ -163,6 +163,8 @@ pub fn main() !void {
     defer color_program.deinit();
     var image_program = try awt.programs.Image.init(device);
     defer image_program.deinit();
+    var gradient_program = try awt.programs.Gradient.init(device);
+    defer gradient_program.deinit();
     var rrect_program = try awt.programs.RoundedRect.init(device);
     defer rrect_program.deinit();
     var text_program = try awt.programs.Text.init(device);
@@ -183,6 +185,7 @@ pub fn main() !void {
         .atlas = &atlas,
         .color_program = &color_program,
         .image_program = &image_program,
+        .gradient_program = &gradient_program,
         .rrect_program = &rrect_program,
         .text_program = &text_program,
     };

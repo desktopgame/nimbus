@@ -108,6 +108,7 @@ theme: Theme,
 // Owned program / buffer objects (Graphics.Context holds pointers to these).
 _color_program: awt.programs.Color,
 _image_program: awt.programs.Image,
+_gradient_program: awt.programs.Gradient,
 _rrect_program: awt.programs.RoundedRect,
 _text_program: awt.programs.Text,
 _vertex_ring: awt.VertexRing,
@@ -144,6 +145,8 @@ pub fn init(allocator: std.mem.Allocator, io: std.Io) !*Application {
     errdefer app._color_program.deinit();
     app._image_program = try awt.programs.Image.init(app.device);
     errdefer app._image_program.deinit();
+    app._gradient_program = try awt.programs.Gradient.init(app.device);
+    errdefer app._gradient_program.deinit();
     app._rrect_program = try awt.programs.RoundedRect.init(app.device);
     errdefer app._rrect_program.deinit();
     app._text_program = try awt.programs.Text.init(app.device);
@@ -169,6 +172,7 @@ pub fn init(allocator: std.mem.Allocator, io: std.Io) !*Application {
         .atlas = &app._atlas,
         .color_program = &app._color_program,
         .image_program = &app._image_program,
+        .gradient_program = &app._gradient_program,
         .rrect_program = &app._rrect_program,
         .text_program = &app._text_program,
     };
@@ -228,6 +232,7 @@ pub fn deinit(self: *Application) void {
     self._vertex_ring.deinit();
     self._text_program.deinit();
     self._rrect_program.deinit();
+    self._gradient_program.deinit();
     self._image_program.deinit();
     self._color_program.deinit();
     self.device.deinit();

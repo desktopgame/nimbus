@@ -59,6 +59,25 @@ fn paintBasicShapes(ctx: PaintContext) anyerror!void {
     g.drawRoundRect(.{ .x = 260, .y = 130, .width = 120, .height = 80 }, 16);
 }
 
+pub const vertical_gradient = Scene{
+    .name = "vertical_gradient",
+    .width = 240,
+    .height = 160,
+    .clear = .{ 0.08, 0.08, 0.10, 1.0 },
+    .paint = paintVerticalGradient,
+};
+
+fn paintVerticalGradient(ctx: PaintContext) anyerror!void {
+    const g = ctx.g;
+    g.fillGradientRect(
+        .{ .x = 32, .y = 24, .width = 176, .height = 112 },
+        awt.Graphics.Color.rgb(0.20, 0.60, 0.95),
+        awt.Graphics.Color.rgb(0.95, 0.25, 0.35),
+    );
+    g.setColor(awt.Graphics.Color.rgb(0.92, 0.92, 0.95));
+    g.drawRect(.{ .x = 32, .y = 24, .width = 176, .height = 112 });
+}
+
 // ── framework layout scenes ──────────────────────────────────────────────
 
 /// Helper: build a root Container, lay it out at full ctx size, paint, free.
@@ -372,6 +391,7 @@ fn paintMenuBarClosed(ctx: PaintContext) anyerror!void {
 
 pub const all = [_]Scene{
     basic_shapes,
+    vertical_gradient,
     layout_horizontal_buttons,
     layout_vertical_grow,
     layout_right_aligned,

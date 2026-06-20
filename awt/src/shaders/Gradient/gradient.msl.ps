@@ -1,0 +1,21 @@
+// Fragment shader for the Gradient program (MSL / Metal).
+// Interpolates between top and bottom colors using the quad's vertical UV.
+
+#include <metal_stdlib>
+using namespace metal;
+
+struct VsOut {
+    float4 pos [[position]];
+    float2 uv;
+};
+
+struct Uniforms {
+    float4 color0;
+    float4 color1;
+};
+
+fragment float4 psMain(VsOut in [[stage_in]],
+                       constant Uniforms& u [[buffer(0)]]) {
+    return mix(u.color0, u.color1, in.uv.y);
+}
+

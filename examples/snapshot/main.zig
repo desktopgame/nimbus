@@ -45,6 +45,8 @@ pub fn main(init: std.process.Init) !void {
     defer rrect_program.deinit();
     var image_program = try awt.programs.Image.init(device);
     defer image_program.deinit();
+    var gradient_program = try awt.programs.Gradient.init(device);
+    defer gradient_program.deinit();
     var text_program = try awt.programs.Text.init(device);
     defer text_program.deinit();
 
@@ -64,6 +66,7 @@ pub fn main(init: std.process.Init) !void {
         .atlas = &atlas,
         .color_program = &color_program,
         .image_program = &image_program,
+        .gradient_program = &gradient_program,
         .rrect_program = &rrect_program,
         .text_program = &text_program,
     };
