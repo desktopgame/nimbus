@@ -3,7 +3,7 @@
 //! Track + a thumb whose length is proportional to the visible amount
 //! (`model.extent`). Drag the thumb, click the track to page, or wheel to
 //! step. Like `Slider` it is an ordinary leaf widget backed by a
-//! `BoundedRangeModel` — no overlay / special dispatch.
+//! `BoundedRangeModel`  Eno overlay / special dispatch.
 
 const std = @import("std");
 const awt = @import("awt");
@@ -37,7 +37,6 @@ allocator: std.mem.Allocator,
 pub const vtable = Component.VTable{
     .install = install,
     .uninstall = uninstall,
-    .paint = paint,
     .processEvent = processEvent,
     .destroy = destroy,
 };
@@ -85,7 +84,7 @@ fn createInternal(
         .owns_model = owns_model,
         .orientation = orientation,
         .unit_increment = 16,
-        .block_increment = 0, // 0 → page by extent
+        .block_increment = 0, // 0 ↁEpage by extent
         .dragging = false,
         .rollover = false,
         .drag_grab = 0,
@@ -179,7 +178,7 @@ fn trackLen(self: *const ScrollBar) f32 {
 
 /// Thumb length in px (proportional to extent / range). When the track is
 /// shorter than the minimum thumb (e.g. a hidden / zero-sized bar after the
-/// content shrinks to fit), the thumb just fills the whole track — guarding
+/// content shrinks to fit), the thumb just fills the whole track  Eguarding
 /// against `std.math.clamp`'s `lower <= upper` assertion.
 fn thumbLen(self: *const ScrollBar) f32 {
     const track = self.trackLen();
@@ -229,10 +228,6 @@ fn uninstall(self: *Component) void {
 
 fn onModelChange(comp: *Component, _: *const ChangeEvent) void {
     comp.repaint();
-}
-
-fn paint(self: *Component, g: *awt.Graphics) void {
-    lookPaint(self, &Component.default_look_context, g);
 }
 
 fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {

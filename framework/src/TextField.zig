@@ -68,13 +68,13 @@ scroll_x: f32,
 preedit_text: std.ArrayList(u8),
 preedit_target_start: usize,
 preedit_target_end: usize,
-/// Fired (and the key consumed) when Enter is pressed — "submit this field".
+/// Fired (and the key consumed) when Enter is pressed  E"submit this field".
 /// Used e.g. by a List cell editor to commit. See `textfield.md`.
 submit_listeners: ActionListenerList,
-/// Fired (and the key consumed) when Escape is pressed — "cancel". Used e.g.
+/// Fired (and the key consumed) when Escape is pressed  E"cancel". Used e.g.
 /// by a List cell editor to revert.
 cancel_listeners: ActionListenerList,
-/// Fired whenever the text content actually changes — edit
+/// Fired whenever the text content actually changes  Eedit
 /// keys, typing, cut/paste, or `setText`. NOT fired for caret movement,
 /// selection, focus, or IME preedit (uncommitted). Lets callers observe the
 /// field without polling (mirrors Swing's DocumentListener at widget level).
@@ -84,7 +84,6 @@ allocator: std.mem.Allocator,
 pub const vtable = Component.VTable{
     .install = install,
     .uninstall = uninstall,
-    .paint = paint,
     .processEvent = processEvent,
     .destroy = destroy,
 };
@@ -206,7 +205,7 @@ pub fn removeChangeListener(self: *TextField, comptime T: type, comptime f: fn (
 // ── layout ───────────────────────────────────────────────────────────────
 
 fn applyMetrics(self: *TextField) void {
-    const ui = self.component.ui.?;
+    const ui = self.component.ui;
     const min = ui.vtable.measureMinSize(&self.component, ui.ctx);
     self.component.min_size = min;
     self.component.max_size = .{ .width = std.math.inf(f32), .height = min.height };
@@ -217,7 +216,7 @@ fn applyMetrics(self: *TextField) void {
 
 fn lookMeasureMinSize(self: *Component, _: *anyopaque) Component.Size {
     const tf: *TextField = @fieldParentPtr("component", self);
-    // setPixelSize MUST come first — both metrics() and glyphAdvance read
+    // setPixelSize MUST come first  Eboth metrics() and glyphAdvance read
     // freetype state that is only valid for the most recently-set size.
     tf.font.face.setPixelSize(tf.font.pixel_size);
     const line_h = tf.font.face.metrics().line_height;
@@ -255,8 +254,8 @@ fn uninstall(self: *Component) void {
     // Best-effort: if we're the focus owner, clear focus on the way out so
     // future input does not target freed memory. Parent chain may already
     // be torn (when destroy fires inside Container.deinit), in which case
-    // requestFocus is a no-op — acceptable.
-    if (tf.has_focus) self.requestFocus(); // will route to null via cleared focus_owner if root lost? — guarded below
+    // requestFocus is a no-op  Eacceptable.
+    if (tf.has_focus) self.requestFocus(); // will route to null via cleared focus_owner if root lost?  Eguarded below
     // Direct safety: walk to a root FocusController if any and request null
     // so window state stays consistent even when has_focus snapshot lies.
     var node: ?*Component = self;
@@ -275,12 +274,8 @@ fn blinkTick(user_data: *anyopaque) void {
     const tf: *TextField = @ptrCast(@alignCast(user_data));
     tf.caret_visible = !tf.caret_visible;
     // Only the caret region truly changes, but v1 has no partial repaint;
-    // full widget repaint is acceptable per CLAUDE.md「ステップ D」.
+    // full widget repaint is acceptable per CLAUDE.md「スチE��チED、E
     tf.component.repaint();
-}
-
-fn paint(self: *Component, g: *awt.Graphics) void {
-    lookPaint(self, &Component.default_look_context, g);
 }
 
 fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
@@ -366,7 +361,7 @@ fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
         }
     }
 
-    // Caret. Hide while composing — the OS IME / candidate window
+    // Caret. Hide while composing  Ethe OS IME / candidate window
     // owns the visual cursor inside the preedit, and drawing our own
     // would just be noise.
     if (tf.has_focus and tf.caret_visible and tf.preedit_text.items.len == 0) {
@@ -477,7 +472,7 @@ fn handleKey(tf: *TextField, ev: *Component.Event, k: awt.Event.KeyEvent) void {
     // On macOS NSTextInputContext routes some keys (Shift+Left/Right, etc.)
     // both to the IME (for clause narrowing) AND through GLFW's key callback,
     // so if we react to them here too the buffer caret moves while the IME
-    // is still composing — preedit ends up painted in the middle of already-
+    // is still composing  Epreedit ends up painted in the middle of already-
     // committed text. Bail out and let the composition flow drive everything.
     if (tf.preedit_text.items.len > 0) return;
 
@@ -629,7 +624,7 @@ fn ensureCaretVisible(self: *TextField) void {
     }
 
     // +CARET_WIDTH: the trailing caret sits just past the last glyph, so the
-    // scrollable content effectively extends that far — otherwise a caret at
+    // scrollable content effectively extends that far  Eotherwise a caret at
     // end-of-text would be clipped at the right boundary.
     const end_x = self.glyphXAtByte(self.text.items.len);
     const max_scroll = @max(0, end_x + CARET_WIDTH - inner_w);
@@ -699,11 +694,11 @@ fn parentWindow(self: *TextField) ?*@import("Window.zig") {
     return null;
 }
 
-// ── byte ↔ pixel mapping ─────────────────────────────────────────────────
+// ── byte ↁEpixel mapping ─────────────────────────────────────────────────
 
 /// Return the byte position whose left edge is closest to `x_local`
 /// (widget-local pixels). When `x_local` falls inside a glyph, we split at
-/// the half-width — so clicking the right half of a character places the
+/// the half-width  Eso clicking the right half of a character places the
 /// caret after it. Returns text.items.len if `x_local` is past every glyph.
 /// Accounts for the horizontal scroll offset: a click maps to the glyph
 /// position `x_local - PADDING_X + scroll_x` in text-start coordinates.
@@ -802,7 +797,7 @@ fn nextCodepointBoundary(buf: []const u8, from: usize) usize {
 
 // ── tests ────────────────────────────────────────────────────────────────
 
-test "prev/next codepoint boundary — ASCII" {
+test "prev/next codepoint boundary  EASCII" {
     const s = "abc";
     try std.testing.expectEqual(@as(usize, 0), prevCodepointBoundary(s, 1));
     try std.testing.expectEqual(@as(usize, 1), prevCodepointBoundary(s, 2));
@@ -812,8 +807,8 @@ test "prev/next codepoint boundary — ASCII" {
     try std.testing.expectEqual(@as(usize, 3), nextCodepointBoundary(s, 3));
 }
 
-test "prev/next codepoint boundary — multi-byte" {
-    // "あ" = 0xE3 0x81 0x82 (3 bytes), "ab" = 0x61 0x62
+test "prev/next codepoint boundary  Emulti-byte" {
+    // "ぁE = 0xE3 0x81 0x82 (3 bytes), "ab" = 0x61 0x62
     const s = "あab";
     try std.testing.expectEqual(@as(usize, 3), nextCodepointBoundary(s, 0));
     try std.testing.expectEqual(@as(usize, 4), nextCodepointBoundary(s, 3));
@@ -823,7 +818,7 @@ test "prev/next codepoint boundary — multi-byte" {
     try std.testing.expectEqual(@as(usize, 4), prevCodepointBoundary(s, 5));
 }
 
-test "selection range — caret < mark and caret > mark" {
+test "selection range  Ecaret < mark and caret > mark" {
     var tf: TextField = undefined;
     tf.caret_byte = 2;
     tf.mark_byte = 5;

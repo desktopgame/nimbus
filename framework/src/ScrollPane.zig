@@ -4,7 +4,7 @@
 //! Built by composition: it embeds a `Container` (whose children are the
 //! viewport + two `ScrollBar`s) and overrides that container's vtable so it
 //! can intercept the wheel. The viewport is itself a plain `Container` holding
-//! the view at a negative offset — clipping (via `paintAt`) and event gating
+//! the view at a negative offset  Eclipping (via `paintAt`) and event gating
 //! (via `containsWindowPoint`) then fall out of the existing machinery, so no
 //! bespoke clip / hit-test code is needed.
 
@@ -62,7 +62,6 @@ const ScrollLayout = struct {
 pub const vtable = Component.VTable{
     .install = install,
     .uninstall = uninstall,
-    .paint = Container.vtable.paint, // paint children (viewport + bars)
     .processEvent = processEvent,
     .destroy = destroy,
 };
@@ -115,7 +114,7 @@ pub fn create(allocator: std.mem.Allocator, view: *Component) !*ScrollPane {
     sp.container.component.container = &sp.container;
     sp.container.layout = &sp.layout.base;
 
-    // Reserve capacity up front so the appends below are infallible — this
+    // Reserve capacity up front so the appends below are infallible  Ethis
     // keeps the errdefers simple (all fallible work happens before anything is
     // handed to `container`, which owns it on success).
     try sp.container.children.ensureTotalCapacity(allocator, 3);
@@ -255,8 +254,8 @@ pub fn setUnitIncrement(self: *ScrollPane, px: f32) void {
     self.unit_increment = px;
 }
 
-/// Scroll the minimum amount so that `rect` — expressed in the view's local
-/// coordinates (0 = view top-left) — lies within the viewport. Used by views
+/// Scroll the minimum amount so that `rect`  Eexpressed in the view's local
+/// coordinates (0 = view top-left)  Elies within the viewport. Used by views
 /// like TextArea to keep the caret visible. Over-large rects pin to the
 /// leading edge.
 pub fn scrollRectToVisible(self: *ScrollPane, rect: Component.Rect) void {
@@ -343,7 +342,7 @@ fn ensureRowHeaderPort(self: *ScrollPane) !*Container {
 /// view's optional `scrollable` hint: a tracked axis is forced to the viewport
 /// size; an untracked axis uses `max(natural, viewport)` so small content fills
 /// the viewport and large content scrolls. When the view is width-tracking AND
-/// exposes a `SizeQuery`, the height is asked via `minHeightForWidth(w)` — a
+/// exposes a `SizeQuery`, the height is asked via `minHeightForWidth(w)`  Ea
 /// pure query that does not mutate the view (replaces the old reshape-based
 /// "set bounds then re-read effectiveMinSize" round trip).
 fn measureView(self: *ScrollPane, vp_w: f32, vp_h: f32) Component.Size {
@@ -373,7 +372,7 @@ fn layoutDoLayout(_: *LayoutManager, container: *Container) void {
     const top: f32 = if (self.column_header_view) |v| v.effectiveMinSize().height else 0;
 
     // Decide bar visibility. The vertical bar steals width (and vice-versa),
-    // which can change the other axis's need — settle with a couple passes.
+    // which can change the other axis's need  Esettle with a couple passes.
     var show_v = self.v_policy == .always;
     var show_h = self.h_policy == .always;
     var iter: u8 = 0;
@@ -396,7 +395,7 @@ fn layoutDoLayout(_: *LayoutManager, container: *Container) void {
     // Scroll state: range = content size, extent = viewport size. Atomic
     // update so a stale `value` (left over from when the content was larger,
     // e.g. user scrolled down then deleted lines) is clamped down to the new
-    // valid range — otherwise `setRange` would leave `value` past the new max
+    // valid range  Eotherwise `setRange` would leave `value` past the new max
     // and `setExtent` would collapse the extent to compensate.
     self.v_model.setRangeProperties(0, self.v_model.value, toI32(view_size.height), toI32(center_h));
     self.h_model.setRangeProperties(0, self.h_model.value, toI32(view_size.width), toI32(center_w));
@@ -504,7 +503,7 @@ fn lookMeasureMinSize(_: *Component, _: *anyopaque) Component.Size {
 }
 
 fn processEvent(self: *Component, ev: *Component.Event) void {
-    // Let children (bars, then viewport → view) handle it first.
+    // Let children (bars, then viewport ↁEview) handle it first.
     Container.vtable.processEvent(self, ev);
     if (ev.isConsumed()) return;
     // An unconsumed wheel over the content scrolls the pane.
@@ -522,8 +521,8 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
 fn destroy(self: *Component, allocator: std.mem.Allocator) void {
     const c: *Container = @fieldParentPtr("component", self);
     const sp: *ScrollPane = @fieldParentPtr("container", c);
-    // container.deinit destroys children (viewport → view, hbar, vbar) and
-    // runs component.deinit → uninstall (which unsubscribes from the models
+    // container.deinit destroys children (viewport ↁEview, hbar, vbar) and
+    // runs component.deinit ↁEuninstall (which unsubscribes from the models
     // while they are still alive). Then free the models we own.
     c.deinit();
     sp.v_model.deinit();

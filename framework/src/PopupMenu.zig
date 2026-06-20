@@ -26,7 +26,6 @@ allocator: std.mem.Allocator,
 const popup_vtable = Component.VTable{
     .install = popupInstall,
     .uninstall = popupUninstall,
-    .paint = popupPaint,
     .processEvent = popupProcessEvent,
     .destroy = popupDestroyNoop,
 };
@@ -189,11 +188,6 @@ fn treeChildAt(c: *const Component, index: usize) *Component {
 fn popupInstall(_: *Component) !void {}
 fn popupUninstall(_: *Component) void {}
 fn popupDestroyNoop(_: *Component, _: std.mem.Allocator) void {}
-
-fn popupPaint(self: *Component, g: *awt.Graphics) void {
-    popupLookPaint(self, &Component.default_look_context, g);
-    popupLookPaintOver(self, &Component.default_look_context, g);
-}
 
 fn popupLookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
     const pm: *PopupMenu = @fieldParentPtr("popup_root", self);

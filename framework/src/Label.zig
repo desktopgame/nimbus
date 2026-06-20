@@ -20,7 +20,6 @@ allocator: std.mem.Allocator,
 pub const vtable = Component.VTable{
     .install = install,
     .uninstall = uninstall,
-    .paint = paint,
     .processEvent = processEvent,
     .destroy = destroy,
 };
@@ -145,7 +144,7 @@ fn contentMinSize(self: *const Label) Component.Size {
 }
 
 fn updateMinSizeFromLook(self: *Label) void {
-    const ui = self.component.ui.?;
+    const ui = self.component.ui;
     self.component.min_size = ui.vtable.measureMinSize(&self.component, ui.ctx);
 }
 
@@ -168,10 +167,6 @@ fn install(self: *Component) !void {
 
 fn uninstall(self: *Component) void {
     _ = self;
-}
-
-fn paint(self: *Component, g: *awt.Graphics) void {
-    lookPaint(self, &Component.default_look_context, g);
 }
 
 fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {

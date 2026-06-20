@@ -5,7 +5,7 @@
 //! `first` + `second`), overrides that container's vtable to paint the
 //! divider and handle the drag, and supplies its own `LayoutManager` that
 //! places the panes around `divider_location`. Layout is continuous during
-//! the drag — each move event updates the location and requests a relayout
+//! the drag  Eeach move event updates the location and requests a relayout
 //! of this subtree only.
 
 const std = @import("std");
@@ -56,7 +56,6 @@ const SplitLayout = struct {
 pub const vtable = Component.VTable{
     .install = Container.vtable.install,
     .uninstall = Container.vtable.uninstall,
-    .paint = paint,
     .processEvent = processEvent,
     .destroy = destroy,
 };
@@ -80,7 +79,7 @@ pub fn create(
     second: *Component,
 ) !*SplitPane {
     // Ownership of the panes transfers even on error (doc'd contract), so any
-    // failure below must destroy them — the caller has nothing to clean up.
+    // failure below must destroy them  Ethe caller has nothing to clean up.
     errdefer first.vtable.destroy(first, allocator);
     errdefer second.vtable.destroy(second, allocator);
 
@@ -204,13 +203,13 @@ fn layoutDoLayout(_: *LayoutManager, container: *Container) void {
     var loc: f32 = undefined;
     if (self.divider_location) |dl| {
         loc = dl;
-        // Distribute the resize delta per resize_weight (0 → first keeps px).
+        // Distribute the resize delta per resize_weight (0 ↁEfirst keeps px).
         if (self.last_main) |lm| {
             if (avail != lm) loc += (avail - lm) * self.resize_weight;
         }
     } else {
         // First layout with no explicit location: first opens at its natural
-        // (minimum) size — the sidebar default.
+        // (minimum) size  Ethe sidebar default.
         loc = self.mainAxis(self.first.effectiveMinSize());
     }
     loc = self.clampLocation(loc, avail);
@@ -251,11 +250,6 @@ fn layoutComputeMaxSize(_: *LayoutManager, _: *const Container) Component.Size {
 }
 
 // ── vtable impl ──────────────────────────────────────────────────────────
-
-fn paint(self: *Component, g: *awt.Graphics) void {
-    lookPaint(self, &Component.default_look_context, g);
-    Container.vtable.paint(self, g); // panes (disjoint rects, order moot)
-}
 
 fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
     const sp = fromComponent(self);
@@ -338,7 +332,7 @@ fn destroy(self: *Component, allocator: std.mem.Allocator) void {
     const c: *Container = @fieldParentPtr("component", self);
     const sp: *SplitPane = @fieldParentPtr("container", c);
     // container.deinit destroys the children (first, second) and runs
-    // component.deinit → uninstall.
+    // component.deinit ↁEuninstall.
     c.deinit();
     allocator.destroy(sp);
 }

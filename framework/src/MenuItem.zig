@@ -21,12 +21,12 @@ font: awt.Graphics.TextFont,
 color: awt.Graphics.Color,
 model: *ButtonModel,
 owns_model: bool,
-/// Window-wide accelerator (e.g. Cmd/Ctrl+S). Stored only — the Window's
+/// Window-wide accelerator (e.g. Cmd/Ctrl+S). Stored only  Ethe Window's
 /// accelerator scan stage walks the menu tree and matches at dispatch time;
 /// nothing is registered anywhere. Fires even while the menu is closed.
 accelerator: ?keybinding.KeyStroke,
 /// Byte index into `text` of the mnemonic character (underline paint).
-/// Matching uses `component.mnemonic` — menu-local only (plain letter while
+/// Matching uses `component.mnemonic`  Emenu-local only (plain letter while
 /// the parent menu is open), never the window-wide Alt+letter scan.
 mnemonic_index: ?usize,
 allocator: std.mem.Allocator,
@@ -34,7 +34,6 @@ allocator: std.mem.Allocator,
 pub const vtable = Component.VTable{
     .install = install,
     .uninstall = uninstall,
-    .paint = paint,
     .processEvent = processEvent,
     .destroy = destroy,
 };
@@ -103,7 +102,7 @@ fn createInternal(
 }
 
 fn applyMetrics(self: *MenuItem) void {
-    const ui = self.component.ui.?;
+    const ui = self.component.ui;
     const min = ui.vtable.measureMinSize(&self.component, ui.ctx);
     self.component.min_size = min;
     self.component.max_size = .{ .width = std.math.inf(f32), .height = min.height };
@@ -185,10 +184,6 @@ fn uninstall(self: *Component) void {
 
 fn onModelChange(comp: *Component, _: *const ChangeEvent) void {
     comp.repaint();
-}
-
-fn paint(self: *Component, g: *awt.Graphics) void {
-    lookPaint(self, &Component.default_look_context, g);
 }
 
 fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {

@@ -3,7 +3,7 @@
 //! Rows are virtualized the same way as `List` (visible range + recycle), but
 //! the cell pool is held per-column and each column has its own CellFactory.
 //! The framework never interprets a row: each column's cell casts the row item
-//! and reads its own field. Sorting is not done here — the header click only
+//! and reads its own field. Sorting is not done here  Ethe header click only
 //! notifies (SortEvent) and updates the indicator; the app reorders the model.
 //! The header is exposed as a separate borrowed Component for ScrollPane's
 //! column-header slot; the Table body itself owns only rows/cells.
@@ -50,7 +50,7 @@ pub const CellContext = struct {
     focused: bool,
 };
 
-/// Optional edit lifecycle for a cell (single-cell editing — see table.md /
+/// Optional edit lifecycle for a cell (single-cell editing  Esee table.md /
 /// narrative). Non-null only on cells of editable columns; null = read-only.
 /// Mirrors `List.CellEdit`.
 pub const CellEdit = struct {
@@ -138,7 +138,6 @@ const TableHeader = struct {
     const vtable = Component.VTable{
         .install = TableHeader.install,
         .uninstall = TableHeader.uninstall,
-        .paint = TableHeader.paint,
         .processEvent = TableHeader.processEvent,
         .destroy = TableHeader.destroy,
     };
@@ -163,10 +162,6 @@ const TableHeader = struct {
 
     fn install(_: *Component) !void {}
     fn uninstall(_: *Component) void {}
-
-    fn paint(self: *Component, g: *awt.Graphics) void {
-        TableHeader.lookPaint(self, &Component.default_look_context, g);
-    }
 
     fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
         const header: *TableHeader = @fieldParentPtr("component", self);
@@ -245,7 +240,6 @@ allocator: std.mem.Allocator,
 pub const vtable = Component.VTable{
     .install = install,
     .uninstall = uninstall,
-    .paint = paint,
     .processEvent = processEvent,
     .destroy = destroy,
 };
@@ -675,7 +669,7 @@ fn reconcile(self: *Table) void {
     }
 
     for (self.columns, 0..) |*col, ci| {
-        // 1. Release cells that scrolled out of the window — but never the
+        // 1. Release cells that scrolled out of the window  Ebut never the
         // editing cell (it stays bound so its scratch survives).
         for (col.pool.items) |*pc| {
             if (pc.row) |r| {
@@ -797,10 +791,6 @@ fn onModelChange(table: *Table, _: *const ChangeEvent) void {
     table.component.repaint();
 }
 
-fn paint(self: *Component, g: *awt.Graphics) void {
-    lookPaint(self, &Component.default_look_context, g);
-}
-
 fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
     const table: *Table = @fieldParentPtr("component", self);
     table.reconcile();
@@ -899,7 +889,7 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
 
             // A press off the editing row ends the current edit (focus-lost =
             // commit). A press inside the editing cell was already forwarded to
-            // the scratch above (same row → no commit).
+            // the scratch above (same row ↁEno commit).
             if (m.action == .press) {
                 if (table.editing) |e| {
                     if (hit_row == null or hit_row.? != e.row) table.commitEdit();
@@ -1129,7 +1119,7 @@ test "table: header click fires sort and toggles direction" {
     try std.testing.expectEqual(SortDirection.ascending, ctx.dir);
     try std.testing.expectEqual(@as(?usize, 0), t.getSortColumn());
 
-    // Click again → descending.
+    // Click again ↁEdescending.
     var e2 = Component.Event{ .payload = .{ .mouse = .{ .x = 30, .y = 10, .action = .press, .button = .left } } };
     header.vtable.processEvent(header, &e2);
     try std.testing.expectEqual(SortDirection.descending, ctx.dir);
@@ -1150,7 +1140,7 @@ test "table: dragging a column boundary resizes the column" {
     try std.testing.expect(press.isConsumed());
     try std.testing.expect(press.capture_target != null);
 
-    // Drag right to x=150 → column 0 widens to ~150.
+    // Drag right to x=150 ↁEcolumn 0 widens to ~150.
     var move = Component.Event{ .payload = .{ .mouse = .{ .x = 150, .y = 10, .action = .move } } };
     header.vtable.processEvent(header, &move);
     try std.testing.expectApproxEqAbs(@as(f32, 150), t.getColumnWidth(0), 0.001);

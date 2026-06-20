@@ -7,7 +7,7 @@
 //! centralized in `prevBoundary` / `nextBoundary` so a future move to grapheme
 //! clusters is a one-place change. Attributed text is out of scope.
 //!
-//! TextArea does not scroll itself — it sizes to its content and relies on an
+//! TextArea does not scroll itself  Eit sizes to its content and relies on an
 //! enclosing ScrollPane for clipping/offset, asking it (via ScrollController)
 //! to keep the caret visible.
 
@@ -50,7 +50,7 @@ const VisualLine = struct {
 component: Component,
 app: *Application,
 text: GapBuffer,
-/// Caret / selection anchor as logical byte offsets. caret == mark → no
+/// Caret / selection anchor as logical byte offsets. caret == mark ↁEno
 /// selection. Byte offsets are internal; public API speaks in abstract terms.
 caret: usize,
 mark: usize,
@@ -82,7 +82,6 @@ allocator: std.mem.Allocator,
 pub const vtable = Component.VTable{
     .install = install,
     .uninstall = uninstall,
-    .paint = paint,
     .processEvent = processEvent,
     .destroy = destroy,
 };
@@ -107,7 +106,7 @@ pub fn create(
     const ta = try allocator.create(TextArea);
     errdefer allocator.destroy(ta);
 
-    // Normalize line endings on the way in: CRLF / lone CR → LF. The line
+    // Normalize line endings on the way in: CRLF / lone CR ↁELF. The line
     // model keys on '\n', so a stray '\r' would otherwise survive in the buffer
     // and render as a notdef box at every line end.
     var tmp: std.ArrayList(u8) = .empty;
@@ -329,7 +328,7 @@ fn reflowAt(self: *TextArea, inner_w: f32) struct { min_w: f32, min_h: f32 } {
 }
 
 /// Recompute min/max from the current text + wrap mode and push them to the
-/// component. Called on edits / setText / setLineWrap / initial create — i.e.
+/// component. Called on edits / setText / setLineWrap / initial create  Ei.e.
 /// from paths that intentionally change observable state and want the parent
 /// notified via `markLayoutDirty`. NOT called by `setBounds` (no implicit
 /// callback there anymore); a wrapping view's actual height-at-width is
@@ -376,7 +375,7 @@ fn wrapPoint(self: *TextArea, start: usize, le: usize, wrap_w: f32) usize {
     return le;
 }
 
-// ── byte ↔ pixel / codepoint helpers ─────────────────────────────────────
+// ── byte ↁEpixel / codepoint helpers ─────────────────────────────────────
 
 const Decoded = struct { cp: u32, len: usize };
 
@@ -551,10 +550,6 @@ fn insertStripCR(self: *TextArea, pos: usize, bytes: []const u8) !usize {
 
 // ── vtable: events ─────────────────────────────────────────────────────────
 
-fn paint(self: *Component, g: *awt.Graphics) void {
-    lookPaint(self, &Component.default_look_context, g);
-}
-
 fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
     const ta: *TextArea = @fieldParentPtr("component", self);
     const sz = self.size;
@@ -576,7 +571,7 @@ fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
     // Only draw lines that intersect the visible clip. TextArea is sized to its
     // whole content (it relies on an enclosing ScrollPane for clipping), so
     // without this we would push every line's glyphs into the finite per-frame
-    // vertex ring — overflowing it drops later draws (trailing lines AND the
+    // vertex ring  Eoverflowing it drops later draws (trailing lines AND the
     // scrollbars painted afterwards) to blank. See `Graphics.clipLocalRect`.
     const vis = g.clipLocalRect();
     const total_lines = ta.lines.items.len;
@@ -819,14 +814,14 @@ fn handleChar(ta: *TextArea, ev: *Component.Event, ch: awt.Event.CharEvent) void
     ta.afterReflow(ev);
 }
 
-/// Edit that changed content → rebuild line model, then the common tail.
+/// Edit that changed content ↁErebuild line model, then the common tail.
 fn afterReflow(ta: *TextArea, ev: *Component.Event) void {
     ta.refreshMinSize();
     ta.component.markLayoutDirty();
     ta.afterEdit(ev);
 }
 
-/// Caret-only change (navigation) → no reflow, just refresh + scroll into view.
+/// Caret-only change (navigation) ↁEno reflow, just refresh + scroll into view.
 fn afterEdit(ta: *TextArea, ev: *Component.Event) void {
     ta.caret_visible = true;
     ta.ensureCaretVisible();

@@ -42,7 +42,6 @@ allocator: std.mem.Allocator,
 pub const vtable = Component.VTable{
     .install = Container.vtable.install,
     .uninstall = Container.vtable.uninstall,
-    .paint = paint,
     .processEvent = processEvent,
     .destroy = destroy,
 };
@@ -243,14 +242,6 @@ fn layoutComputeMaxSize(_: *LayoutManager, _: *const Container) Component.Size {
 }
 
 // ── vtable impl ────────────────────────────────────────────────────────────
-
-fn paint(self: *Component, g: *awt.Graphics) void {
-    lookPaint(self, &Component.default_look_context, g);
-    const tp = fromComponent(self);
-    if (tp.selected) |idx| {
-        if (idx < tp.tabs.items.len) tp.tabs.items[idx].content.paintAt(g);
-    }
-}
 
 fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
     const tp = fromComponent(self);

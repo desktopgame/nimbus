@@ -23,7 +23,6 @@ allocator: std.mem.Allocator,
 pub const vtable = Component.VTable{
     .install = install,
     .uninstall = uninstall,
-    .paint = paint,
     .processEvent = processEvent,
     .destroy = destroy,
 };
@@ -50,7 +49,7 @@ pub fn create(
         .window = null,
         .allocator = allocator,
     };
-    // Min height ≒ font ascent + padding. Computed lazily once a menu is added.
+    // Min height ≁Efont ascent + padding. Computed lazily once a menu is added.
     bar.component.role = .menu_bar;
     bar.component.tree_children = .{ .count = treeChildCount, .at = treeChildAt };
     bar.component.ui = .{ .vtable = &look_vtable, .ctx = &Component.default_look_context };
@@ -107,10 +106,6 @@ fn treeChildAt(c: *const Component, index: usize) *Component {
 
 fn install(_: *Component) !void {}
 fn uninstall(_: *Component) void {}
-
-fn paint(self: *Component, g: *awt.Graphics) void {
-    lookPaint(self, &Component.default_look_context, g);
-}
 
 fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
     const bar: *MenuBar = @fieldParentPtr("component", self);

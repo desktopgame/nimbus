@@ -1,7 +1,7 @@
 //! Vertical list with single or multiple selection. See `framework/doc/list.md`.
 //!
 //! Cells are real Component subtrees, materialized only for the visible range
-//! (plus a small buffer) and recycled as the list scrolls — the JavaFX
+//! (plus a small buffer) and recycled as the list scrolls  Ethe JavaFX
 //! VirtualFlow model. The List owns a `pool` of cells; `reconcile` binds each
 //! visible row to a cell and repositions it. Transient interaction state
 //! (pressed/hover) lives on the cell instance; persistent per-row state lives
@@ -45,7 +45,7 @@ pub const CellContext = struct {
 /// Optional edit lifecycle for a cell. Present (non-null on `Cell.edit`) only
 /// for cells that need a *durational* editing session (text editing). Cells
 /// whose write-back is atomic (button / checkbox) leave this null. See
-/// `framework/doc/list.md`「編集 (CellEditor)」.
+/// `framework/doc/list.md`「編雁E(CellEditor)、E
 pub const CellEdit = struct {
     // Enter edit mode: swap the subtree to a scratch input, seed from the item,
     // request focus on the input.
@@ -69,8 +69,7 @@ pub const Cell = struct {
     user_data: *anyopaque,
 };
 
-/// Context-menu request (right press on the list). `row` is the hit row —
-/// already selected when non-null; null = the press landed below the rows.
+/// Context-menu request (right press on the list). `row` is the hit row  E/// already selected when non-null; null = the press landed below the rows.
 /// `x`/`y` are window coordinates, ready to pass to `PopupMenu.show`.
 pub const ContextMenuEvent = struct {
     source: *anyopaque,
@@ -81,7 +80,7 @@ pub const ContextMenuEvent = struct {
 
 const ContextMenuListenerList = listener.ListenerList(ContextMenuEvent);
 
-/// How an edit session begins. See `list.md`「開始トリガとフォーカス喪失」.
+/// How an edit session begins. See `list.md`「開始トリガとフォーカス喪失、E
 pub const EditTrigger = enum {
     double_click,
     enter,
@@ -110,7 +109,7 @@ const PooledCell = struct {
 
 // ── ListModel ────────────────────────────────────────────────────────────
 
-/// Observable item source. Items are borrowed `*anyopaque` — the backing
+/// Observable item source. Items are borrowed `*anyopaque`  Ethe backing
 /// memory is owned by the caller and must outlive the List / ListModel.
 pub const ListModel = struct {
     items: std.ArrayList(*anyopaque),
@@ -196,10 +195,10 @@ has_focus: bool,
 /// Cell root the pointer is currently over, for synthesizing `mouseExited`
 /// when the pointer moves off it (same role as `Container.last_hovered`).
 hovered: ?*Component,
-editing: ?usize, // 編集中の行 (高々 1 つ)。 読み取り専用なら常に null
+editing: ?usize, // 編雁E��の衁E(高、E1 つ)、E読み取り専用なら常に null
 edit_trigger: EditTrigger,
 focus_lost: FocusLostPolicy,
-last_click_time: f64, // ダブルクリック検出用 (awt.time)
+last_click_time: f64, // ダブルクリチE��検�E用 (awt.time)
 last_click_row: ?usize,
 change_listeners: ChangeListenerList,
 action_listeners: ActionListenerList,
@@ -209,7 +208,6 @@ allocator: std.mem.Allocator,
 pub const vtable = Component.VTable{
     .install = install,
     .uninstall = uninstall,
-    .paint = paint,
     .processEvent = processEvent,
     .destroy = destroy,
 };
@@ -333,8 +331,8 @@ pub fn removeChangeListener(self: *List, comptime T: type, comptime f: fn (*T, *
     self.change_listeners.removeTyped(T, f, user_data);
 }
 
-/// Row activation: fires when a row is "opened" — left double-click on a row,
-/// or Enter on the selected row — and the gesture did not start an edit (the
+/// Row activation: fires when a row is "opened"  Eleft double-click on a row,
+/// or Enter on the selected row  Eand the gesture did not start an edit (the
 /// edit trigger has priority when the cell is editable). The activated row is
 /// `getSelected()` (selection happens before activation). This is how a file
 /// list opens an item while keeping single-click = select.
@@ -500,14 +498,14 @@ fn layoutCell(self: *List, idx: usize, row: usize, width: f32) void {
         .height = self.row_height,
     });
     // A leaf cell needs nothing more, but a Container-rooted cell (the common
-    // case — a Panel of widgets) must run its layout so children get sized;
+    // case  Ea Panel of widgets) must run its layout so children get sized;
     // plain Component.setBounds does not recurse into the layout manager.
     if (comp.container) |c| c.doLayout();
 }
 
 /// Compute the visible row window from the current scroll offset and viewport
 /// height, then ensure exactly those rows (plus buffer) are bound to cells.
-/// Idempotent — safe to call before both paint and event dispatch.
+/// Idempotent  Esafe to call before both paint and event dispatch.
 fn reconcile(self: *List) void {
     const n = self.model.getSize();
     const rh = self.row_height;
@@ -536,7 +534,7 @@ fn reconcile(self: *List) void {
         if (e_idx < first or e_idx >= last) self.commitEdit();
     }
 
-    // 1. Release cells whose row scrolled out of the window — but never the
+    // 1. Release cells whose row scrolled out of the window  Ebut never the
     // editing row (it stays bound so its scratch survives).
     for (self.pool.items) |*pc| {
         if (pc.row) |r| {
@@ -619,10 +617,6 @@ fn onModelChange(list: *List, _: *const ChangeEvent) void {
     _ = list.selection.clampToSize(list.model.getSize());
     list.syncContentHeight();
     list.component.repaint();
-}
-
-fn paint(self: *Component, g: *awt.Graphics) void {
-    lookPaint(self, &Component.default_look_context, g);
 }
 
 fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
@@ -862,7 +856,7 @@ test "list: Enter on a read-only cell fires activation, not editing" {
     try std.testing.expect(ev.isConsumed());
     try std.testing.expect(list.getEditing() == null);
 
-    // No selection → Enter neither fires nor consumes.
+    // No selection ↁEEnter neither fires nor consumes.
     list.setSelected(null);
     var ev2 = Component.Event{ .payload = .{ .key = .{ .code = .enter, .action = .press, .modifiers = .{} } } };
     list.component.vtable.processEvent(&list.component, &ev2);

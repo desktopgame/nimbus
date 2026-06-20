@@ -1568,8 +1568,17 @@ const Mover = struct {
     }
 };
 
-fn dndListPaint(self: *nimbus.Component, g: *awt.Graphics) void {
-    nimbus.List.vtable.paint(self, g);
+const dnd_list_look_vtable = nimbus.Component.LookVTable{
+    .paint = dndListLookPaint,
+    .paintOver = dndListLookPaintOver,
+    .measureMinSize = dndListLookMeasureMinSize,
+};
+
+fn dndListLookPaint(self: *nimbus.Component, ctx: *anyopaque, g: *awt.Graphics) void {
+    nimbus.List.look_vtable.paint(self, ctx, g);
+}
+
+fn dndListLookPaintOver(self: *nimbus.Component, _: *anyopaque, g: *awt.Graphics) void {
     const m = self.getTyped(Mover) orelse return;
     const is_files = self == m.filer.list.asComponent();
     const hl = if (is_files) m.files_highlight else m.places_highlight;
@@ -1582,14 +1591,21 @@ fn dndListPaint(self: *nimbus.Component, g: *awt.Graphics) void {
     }
 }
 
-const dnd_list_vt = blk: {
-    var vt = nimbus.List.vtable;
-    vt.paint = dndListPaint;
-    break :blk vt;
+fn dndListLookMeasureMinSize(self: *nimbus.Component, ctx: *anyopaque) nimbus.Component.Size {
+    return nimbus.List.look_vtable.measureMinSize(self, ctx);
+}
+
+const dnd_table_look_vtable = nimbus.Component.LookVTable{
+    .paint = dndTableLookPaint,
+    .paintOver = dndTableLookPaintOver,
+    .measureMinSize = dndTableLookMeasureMinSize,
 };
 
-fn dndTablePaint(self: *nimbus.Component, g: *awt.Graphics) void {
-    nimbus.Table.vtable.paint(self, g);
+fn dndTableLookPaint(self: *nimbus.Component, ctx: *anyopaque, g: *awt.Graphics) void {
+    nimbus.Table.look_vtable.paint(self, ctx, g);
+}
+
+fn dndTableLookPaintOver(self: *nimbus.Component, _: *anyopaque, g: *awt.Graphics) void {
     const m = self.getTyped(Mover) orelse return;
     if (m.filer.view_mode != .details) return;
     if (m.files_highlight) |row| {
@@ -1601,11 +1617,9 @@ fn dndTablePaint(self: *nimbus.Component, g: *awt.Graphics) void {
     }
 }
 
-const dnd_table_vt = blk: {
-    var vt = nimbus.Table.vtable;
-    vt.paint = dndTablePaint;
-    break :blk vt;
-};
+fn dndTableLookMeasureMinSize(self: *nimbus.Component, ctx: *anyopaque) nimbus.Component.Size {
+    return nimbus.Table.look_vtable.measureMinSize(self, ctx);
+}
 
 // ── confirm dialog ──────────────────────────────────────────────────────────
 
@@ -1747,9 +1761,9 @@ pub fn buildWithRunner(
     tbl.asComponent().drag_source = .{ .onDragStart = Mover.onDragStart, .onDrag = Mover.onDrag, .onDragDone = Mover.onDragDone, .user_data = &filer.mover };
     tbl.asComponent().drop_target = .{ .onOver = Mover.filesOnOver, .onLeave = Mover.filesOnLeave, .onDrop = Mover.filesOnDrop, .user_data = &filer.mover };
     places.asComponent().drop_target = .{ .onOver = Mover.placesOnOver, .onLeave = Mover.placesOnLeave, .onDrop = Mover.placesOnDrop, .user_data = &filer.mover };
-    lst.asComponent().vtable = &dnd_list_vt;
-    tbl.asComponent().vtable = &dnd_table_vt;
-    places.asComponent().vtable = &dnd_list_vt;
+    lst.asComponent().ui = .{ .vtable = &dnd_list_look_vtable, .ctx = &nimbus.Component.default_look_context };
+    tbl.asComponent().ui = .{ .vtable = &dnd_table_look_vtable, .ctx = &nimbus.Component.default_look_context };
+    places.asComponent().ui = .{ .vtable = &dnd_list_look_vtable, .ctx = &nimbus.Component.default_look_context };
     try lst.asComponent().putProperty(@typeName(Mover), &filer.mover, null);
     try tbl.asComponent().putProperty(@typeName(Mover), &filer.mover, null);
     try places.asComponent().putProperty(@typeName(Mover), &filer.mover, null);

@@ -47,7 +47,6 @@ allocator: std.mem.Allocator,
 pub const vtable = Component.VTable{
     .install = install,
     .uninstall = uninstall,
-    .paint = paint,
     .processEvent = processEvent,
     .destroy = destroy,
 };
@@ -61,7 +60,6 @@ pub const look_vtable = Component.LookVTable{
 const popup_vtable = Component.VTable{
     .install = popupInstall,
     .uninstall = popupUninstall,
-    .paint = popupPaint,
     .processEvent = popupProcessEvent,
     .destroy = popupDestroyNoop,
 };
@@ -117,7 +115,7 @@ pub fn create(
 }
 
 fn applyMetrics(self: *Menu) void {
-    const ui = self.component.ui.?;
+    const ui = self.component.ui;
     const min = ui.vtable.measureMinSize(&self.component, ui.ctx);
     self.component.min_size = min;
     switch (self.mode) {
@@ -221,7 +219,7 @@ pub fn doClick(self: *Menu) void {
 }
 
 /// Assign the mnemonic character (`Alt+ch` opens this bar menu; the matching
-/// letter in the label is underlined). Stores only — resolution happens in
+/// letter in the label is underlined). Stores only  Eresolution happens in
 /// the Window's mnemonic scan stage.
 pub fn setMnemonic(self: *Menu, ch: u8) void {
     self.component.mnemonic = std.ascii.toLower(ch);
@@ -320,8 +318,8 @@ fn modelOf(c: *Component) ?*ButtonModel {
 }
 
 // ── keyboard navigation (popup-local) ────────────────────────────────────
-// Highlight reuses ButtonModel.rollover (案A in framework_backlog #6b): one
-// truth for "this row is hot", keyboard and mouse sharing it — the most
+// Highlight reuses ButtonModel.rollover (桁E in framework_backlog #6b): one
+// truth for "this row is hot", keyboard and mouse sharing it  Ethe most
 // recent input wins. Disabled rows are navigable (highlight stops on them;
 // activation is what doClick guards). Separators have no model and are skipped.
 
@@ -353,7 +351,7 @@ fn setHighlight(self: *Menu, idx: usize) void {
 }
 
 /// Highlight the first navigable row. Called when a popup is opened from the
-/// keyboard (mnemonic / → / Enter on a submenu); mouse-opened popups start
+/// keyboard (mnemonic / ↁE/ Enter on a submenu); mouse-opened popups start
 /// with no highlight (Windows style).
 pub fn highlightFirst(self: *Menu) void {
     for (self.items.items, 0..) |item, i| {
@@ -365,7 +363,7 @@ pub fn highlightFirst(self: *Menu) void {
 }
 
 /// Move the highlight by `dir` rows, skipping separators, wrapping at the
-/// ends. With no current highlight, ↓ lands on the first row and ↑ on the last.
+/// ends. With no current highlight, ↁElands on the first row and ↁEon the last.
 fn moveHighlight(self: *Menu, dir: i32) void {
     const items = self.items.items;
     const n = items.len;
@@ -382,7 +380,7 @@ fn moveHighlight(self: *Menu, dir: i32) void {
 }
 
 /// Open submenu `sub` beside this popup. Shared geometry for every entry
-/// point: hover, menu-local mnemonic, → and Enter.
+/// point: hover, menu-local mnemonic, ↁEand Enter.
 fn openSubmenu(self: *Menu, sub: *Menu) void {
     if (sub.open) return;
     const w = self.window orelse return;
@@ -394,7 +392,7 @@ fn openSubmenu(self: *Menu, sub: *Menu) void {
 }
 
 /// Activate the highlighted row (Enter): leaves click (doClick carries the
-/// disabled guard — a disabled row stays highlighted but does nothing),
+/// disabled guard  Ea disabled row stays highlighted but does nothing),
 /// submenus open with their first row highlighted.
 fn activateHighlighted(self: *Menu) void {
     const idx = self.highlightedIndex() orelse return;
@@ -421,10 +419,6 @@ fn uninstall(self: *Component) void {
 
 fn onModelChange(comp: *Component, _: *const ChangeEvent) void {
     comp.repaint();
-}
-
-fn paint(self: *Component, g: *awt.Graphics) void {
-    lookPaint(self, &Component.default_look_context, g);
 }
 
 fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
@@ -566,15 +560,10 @@ fn popupInstall(_: *Component) !void {}
 fn popupUninstall(_: *Component) void {}
 fn popupDestroyNoop(_: *Component, _: std.mem.Allocator) void {}
 
-fn popupPaint(self: *Component, g: *awt.Graphics) void {
-    popupLookPaint(self, &Component.default_look_context, g);
-    popupLookPaintOver(self, &Component.default_look_context, g);
-}
-
 fn popupLookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
     const menu: *Menu = @fieldParentPtr("popup_root", self);
     const sz = self.size;
-    // The popup root never goes through a factory — read the owning Menu's theme.
+    // The popup root never goes through a factory  Eread the owning Menu's theme.
     const t = menu.component.theme;
 
     // Background.
@@ -644,8 +633,8 @@ fn popupProcessEvent(self: *Component, ev: *Component.Event) void {
         },
         .key => |k| {
             // This popup is the top modal overlay and receives keys first.
-            // Keyboard navigation per `menu.md`「キーボード操作」; ESC is NOT
-            // handled here — it falls through to Window's staged dismissTop.
+            // Keyboard navigation per `menu.md`「キーボ�Eド操作、E ESC is NOT
+            // handled here  Eit falls through to Window's staged dismissTop.
             const pressed = k.action == .press;
             const press_or_repeat = pressed or k.action == .repeat;
             if (press_or_repeat and k.code == .arrow_down) {
@@ -675,7 +664,7 @@ fn popupProcessEvent(self: *Component, ev: *Component.Event) void {
             if (pressed and k.code == .arrow_left) {
                 // One level back: a submenu closes itself (keys then route to
                 // the parent popup, the new top overlay). A top-level popup
-                // stays — menubar ←/→ switching is future work.
+                // stays  Emenubar ↁEↁEswitching is future work.
                 if (menu.mode == .item) menu.hide();
                 ev.consume();
                 return;
@@ -685,7 +674,7 @@ fn popupProcessEvent(self: *Component, ev: *Component.Event) void {
                 ev.consume();
                 return;
             }
-            // Menu-local mnemonics: a *plain* letter (no modifiers — Windows
+            // Menu-local mnemonics: a *plain* letter (no modifiers  EWindows
             // convention inside an open menu) activates the first item whose
             // mnemonic matches. Window-wide Alt+letter mnemonics never apply
             // to MenuItems (see narrative/keybinding.md).

@@ -34,7 +34,6 @@ allocator: std.mem.Allocator,
 pub const vtable = Component.VTable{
     .install = install,
     .uninstall = uninstall,
-    .paint = paint,
     .processEvent = processEvent,
     .destroy = destroy,
 };
@@ -127,7 +126,7 @@ pub fn getModel(self: RadioButton) *ToggleButtonModel {
     return self.model;
 }
 
-/// Programmatic activation: select (idempotent — the ButtonGroup turns the
+/// Programmatic activation: select (idempotent  Ethe ButtonGroup turns the
 /// previous one off) + fire. Shared by Space and any future mnemonic.
 /// No-op while disabled.
 pub fn doClick(self: *RadioButton) void {
@@ -150,7 +149,7 @@ fn a11yName(c: *const Component) ?[]const u8 {
 // ── layout ───────────────────────────────────────────────────────────────
 
 fn applyMetrics(self: *RadioButton) void {
-    const ui = self.component.ui.?;
+    const ui = self.component.ui;
     const min = ui.vtable.measureMinSize(&self.component, ui.ctx);
     self.component.min_size = min;
     self.component.max_size = .{ .width = std.math.inf(f32), .height = min.height };
@@ -183,10 +182,6 @@ fn uninstall(self: *Component) void {
 
 fn onModelChange(comp: *Component, _: *const ChangeEvent) void {
     comp.repaint();
-}
-
-fn paint(self: *Component, g: *awt.Graphics) void {
-    lookPaint(self, &Component.default_look_context, g);
 }
 
 fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {

@@ -130,21 +130,26 @@ const Reorder = struct {
     }
 };
 
-// ── vtable decoration: draw the insertion line without touching List source ──
-// List.vtable is public, so we copy it and override only `paint`. All other
-// methods keep List's implementations — no delegation stubs, no global needed.
-fn decorPaint(self: *nimbus.Component, g: *nimbus.awt.Graphics) void {
-    nimbus.List.vtable.paint(self, g); // List's own paint first
+// ── Look decoration: draw the insertion line without touching List source ──
+const decor_look_vtable = nimbus.Component.LookVTable{
+    .paint = decorLookPaint,
+    .paintOver = decorLookPaintOver,
+    .measureMinSize = decorLookMeasureMinSize,
+};
+
+fn decorLookPaint(self: *nimbus.Component, ctx: *anyopaque, g: *nimbus.awt.Graphics) void {
+    nimbus.List.look_vtable.paint(self, ctx, g);
+}
+
+fn decorLookPaintOver(self: *nimbus.Component, _: *anyopaque, g: *nimbus.awt.Graphics) void {
     if (self.getTyped(Reorder)) |r| {
         if (r.drop_at) |row| r.drawLine(g, row);
     }
 }
 
-const decor_vt = blk: {
-    var vt = nimbus.List.vtable;
-    vt.paint = decorPaint;
-    break :blk vt;
-};
+fn decorLookMeasureMinSize(self: *nimbus.Component, ctx: *anyopaque) nimbus.Component.Size {
+    return nimbus.List.look_vtable.measureMinSize(self, ctx);
+}
 
 // ── cells: plain labels (display only; drag/drop lives on the List) ──
 const Ctx = struct { app: *nimbus.Application };
@@ -223,9 +228,9 @@ pub fn main(init: std.process.Init) !void {
         .onDrop = Reorder.onDrop,
         .user_data = &reorder,
     };
-    // Decorate paint for the insertion line, and stash the controller so the
-    // decorated paint can find it from just `self` (app owns it → destroy null).
-    lst.asComponent().vtable = &decor_vt;
+    // Decorate look for the insertion line, and stash the controller so the
+    // decorated look can find it from just `self` (app owns it → destroy null).
+    lst.asComponent().ui = .{ .vtable = &decor_look_vtable, .ctx = &nimbus.Component.default_look_context };
     try lst.asComponent().putProperty(@typeName(Reorder), &reorder, null);
 
     for (0..ROW_COUNT) |i| try lst.model.add(@ptrCast(&rows[i]));

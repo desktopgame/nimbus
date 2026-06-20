@@ -31,7 +31,7 @@ pub const OverlayPolicy = OverlayManager.OverlayPolicy;
 
 container: Container,
 /// OS window. Null in headless mode (no OS window opened; rendered to
-/// `render_target` instead). See `framework/doc/robot.md`「ヘッドレスサーフェス」.
+/// `render_target` instead). See `framework/doc/robot.md`「�EチE��レスサーフェス、E
 awt_window: ?awt.Window,
 /// Swapchain presenting to `awt_window`. Null in headless mode.
 swapchain: ?awt.Swapchain,
@@ -44,11 +44,10 @@ app: *anyopaque, // *Application (avoid circular import)
 /// Borrowed reference to the Application-owned EventQueue. Input
 /// callbacks post events here instead of dispatching synchronously,
 /// so input / invokeLater / redraw all serialize through the same
-/// queue (see `framework/doc/window.md`「イベント post と dispatch」).
+/// queue (see `framework/doc/window.md`「イベンチEpost と dispatch、E.
 event_queue: *awt.EventQueue,
 /// Optional top-strip menu bar. Generic `*Component` (typically the
-/// `&MenuBar.component` set via Frame.setMenuBar). Not owned by Window —
-/// Frame manages lifetime. When non-null, the container is laid out
+/// `&MenuBar.component` set via Frame.setMenuBar). Not owned by Window  E/// Frame manages lifetime. When non-null, the container is laid out
 /// below it (container.position.y = menu_bar.size.height).
 menu_bar: ?*Component,
 /// Floating overlays (popups / drag ghost / tooltips). See `OverlayManager`.
@@ -61,7 +60,7 @@ fb_w: i32,
 fb_h: i32,
 /// Desired window geometry in logical screen units, held at the framework
 /// layer. `setPos`/`setSize` update these; Application pushes any change to
-/// the OS at each event-loop tail (see `application.md`「OS との同期」). The
+/// the OS at each event-loop tail (see `application.md`「OS との同期、E. The
 /// OS resize callback writes the realized size back here so the loop's diff
 /// does not fight a live user resize.
 win_pos: awt.Window.Point,
@@ -88,8 +87,8 @@ in_redraw: bool,
 /// handler; cleared on the matching `.release`.
 mouse_capture: ?*Component,
 /// Keyboard-focus owner. `.key` and `.char` events are delivered only to
-/// this component (raw key events never reach anyone else — see
-/// `narrative/keybinding.md`「processEvent に .key が届く範囲」).
+/// this component (raw key events never reach anyone else  Esee
+/// `narrative/keybinding.md`「processEvent に .key が届く篁E��、E.
 /// Cleared (set to null) when the owning component is torn down.
 focus_owner: ?*Component,
 /// One-shot guard for the initial-focus rule: on the first frame, focus
@@ -98,7 +97,7 @@ initial_focus_done: bool,
 /// When true, `dispatchInput` drops all user input for this window. Set by
 /// Application while a modal Dialog is active on a *different* window (the
 /// modal one stays false). This is how nimbus implements per-window modality
-/// since GLFW/OS do not (see `dialog.md`「モーダル入力ブロック」).
+/// since GLFW/OS do not (see `dialog.md`「モーダル入力ブロチE��、E.
 input_blocked: bool,
 // ── drag-and-drop controller state (see `framework/doc/dnd.md`) ──
 /// A press landed on a component with a `drag_source`; waiting to exceed the
@@ -123,7 +122,6 @@ focus_controller: Component.FocusController,
 pub const vtable = Component.VTable{
     .install = install,
     .uninstall = uninstall,
-    .paint = paintWindow,
     .processEvent = processEvent,
     .destroy = destroy,
 };
@@ -206,9 +204,8 @@ pub fn init(
 }
 
 /// Headless variant of `init`: opens no OS window and renders to an offscreen
-/// `RenderTarget` of `w`x`h`. Used by the Robot / deterministic-test path —
-/// input is injected synthetically (no OS callbacks) and `snapshotPixels` reads
-/// back the RT. See `framework/doc/robot.md`「ヘッドレスサーフェス」.
+/// `RenderTarget` of `w`x`h`. Used by the Robot / deterministic-test path  E/// input is injected synthetically (no OS callbacks) and `snapshotPixels` reads
+/// back the RT. See `framework/doc/robot.md`「�EチE��レスサーフェス、E
 pub fn initHeadless(
     allocator: std.mem.Allocator,
     app_ptr: *anyopaque,
@@ -281,8 +278,8 @@ pub fn deinit(self: *Window) void {
     // early init-failure paths may not have wired dirty_notify yet, and
     // dismissAll marks dirty at the end.
     if (self.overlays.entries.items.len != 0) self.overlays.dismissAll();
-    // Overlays are not owned (Menu/PopupMenu owners hold them) — just drop the list.
-    // menu_bar is owned by Frame, not Window — do not destroy.
+    // Overlays are not owned (Menu/PopupMenu owners hold them)  Ejust drop the list.
+    // menu_bar is owned by Frame, not Window  Edo not destroy.
     self.overlays.deinit();
     self.container.deinit(); // drops children + container component
     if (self.swapchain) |*sc| sc.deinit();
@@ -318,7 +315,7 @@ pub fn getTitle(self: Window) []const u8 {
 
 /// Move the window's top-left to (`x`, `y`) in logical screen units. The
 /// move is applied to the OS at the next event-loop tail by Application's
-/// geometry sync — `getPos` reflects the requested value immediately.
+/// geometry sync  E`getPos` reflects the requested value immediately.
 pub fn setPos(self: *Window, x: i32, y: i32) void {
     self.win_pos = .{ .x = x, .y = y };
     awt.postEmptyEvent();
@@ -372,7 +369,7 @@ pub fn shouldClose(self: Window) bool {
 pub fn dispose(self: *Window) void {
     // Raise the OS close flag; Application's loop tail will see
     // `shouldClose()` and run the normal close-collection path. Headless
-    // windows have no OS flag — set the framework-side close request.
+    // windows have no OS flag  Eset the framework-side close request.
     if (self.awt_window) |*aw| aw.setShouldClose(true) else {
         self.headless_close = true;
     }
@@ -397,7 +394,7 @@ pub fn redraw(self: *Window) void {
             bar.setBounds(.{ .x = 0, .y = 0, .width = win_w, .height = bar_h });
         }
         // `Container.setBounds` no longer auto-runs `doLayout` (was a footgun
-        // for `LayoutManager` authors — see `Container.setBounds` comment).
+        // for `LayoutManager` authors  Esee `Container.setBounds` comment).
         // Drive the layout cascade explicitly here, the one legitimate place.
         self.container.component.setBounds(.{
             .x = 0,
@@ -410,7 +407,7 @@ pub fn redraw(self: *Window) void {
     }
 
     // Initial focus: on the first frame, the first focusable in traversal
-    // order takes focus (standard dialog behavior). One-shot — once the user
+    // order takes focus (standard dialog behavior). One-shot  Eonce the user
     // clears focus by clicking empty space, we don't re-assert it.
     if (!self.initial_focus_done) {
         self.initial_focus_done = true;
@@ -467,7 +464,7 @@ pub fn redraw(self: *Window) void {
 // ── menu_bar / overlays management ───────────────────────────────────────
 
 /// Set or clear the top-strip menu bar. The component is **not owned** by
-/// Window — caller (Frame) handles lifetime. Pass null to remove.
+/// Window  Ecaller (Frame) handles lifetime. Pass null to remove.
 /// Triggers re-layout (container y-offset adjusts to bar height).
 pub fn setMenuBar(self: *Window, bar: ?*Component) !void {
     if (bar) |b| {
@@ -525,9 +522,9 @@ pub fn focusPrev(self: *Window) void {
 
 /// The single focusable enumeration shared by focusNext / focusPrev and the
 /// initial-focus rule: preorder DFS over the container tree in child add
-/// order, filtered by `isFocusEligible`. Keep it the only DFS — a future
+/// order, filtered by `isFocusEligible`. Keep it the only DFS  Ea future
 /// explicit tab-order value plugs in here and nowhere else (see
-/// `narrative/keybinding.md`「列挙の一本化」).
+/// `narrative/keybinding.md`「�E挙�E一本化、E.
 fn collectFocusables(
     c: *Component,
     list: *std.ArrayList(*Component),
@@ -549,7 +546,7 @@ fn stepFocus(self: *Window, forward: bool) void {
     if (n == 0) return;
 
     // Current owner's position in the cycle. An owner living outside the
-    // container tree (List cell editor) is not in the list — treat as "no
+    // container tree (List cell editor) is not in the list  Etreat as "no
     // position" and restart from an end.
     var idx: ?usize = null;
     if (self.focus_owner) |fo| {
@@ -578,7 +575,7 @@ fn stepFocus(self: *Window, forward: bool) void {
 fn notifyPaint(user_data: *anyopaque) void {
     const win: *Window = @ptrCast(@alignCast(user_data));
     win.paint_dirty = true;
-    // Skip the wake-up if we're already inside `redraw` — the cascade is what
+    // Skip the wake-up if we're already inside `redraw`  Ethe cascade is what
     // triggered this and the loop will just no-op those queued events.
     if (!win.in_redraw) awt.postEmptyEvent();
 }
@@ -607,7 +604,7 @@ fn install(self: *Component) !void {
     };
     try self.putProperty(@typeName(Component.DirtyNotify), @ptrCast(&win.dirty_notify), null);
 
-    // Focus controller — lets descendants call `c.requestFocus()` and have
+    // Focus controller  Elets descendants call `c.requestFocus()` and have
     // it bubble back to this Window via property lookup.
     win.focus_controller = .{
         .user_data = @ptrCast(win),
@@ -620,7 +617,7 @@ fn install(self: *Component) !void {
     win.overlays.wire(&win.dirty_notify, &win.focus_controller);
 
     // Wire OS-level input callbacks into our dispatcher. Headless windows have
-    // no OS window — input arrives only via synthetic `postInput` injection.
+    // no OS window  Einput arrives only via synthetic `postInput` injection.
     if (win.awt_window) |*aw| {
         aw.setResizeCallback(onResize, @ptrCast(win));
         aw.setRefreshCallback(onRefresh, @ptrCast(win));
@@ -641,15 +638,6 @@ fn focusControllerCallback(user_data: *anyopaque, c: ?*Component) void {
 
 fn uninstall(self: *Component) void {
     self.container = null;
-}
-
-fn paintWindow(self: *Component, g: *awt.Graphics) void {
-    // Used when Window is treated as a generic Component (not via redraw).
-    // Just delegate to children rendering.
-    const cont = self.container orelse return;
-    for (cont.children.items) |elem| {
-        elem.component.paintAt(g);
-    }
 }
 
 fn lookPaint(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
@@ -704,7 +692,7 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
                 const dx = m.x - self.drag_start.x;
                 const dy = m.y - self.drag_start.y;
                 if (dx * dx + dy * dy >= DRAG_THRESHOLD_SQ) {
-                    if (self.beginDrag(m.x, m.y)) return; // started → consume this move
+                    if (self.beginDrag(m.x, m.y)) return; // started ↁEconsume this move
                     // onDragStart declined: disarm, fall through to normal move.
                 }
             }
@@ -755,7 +743,7 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
                     return;
                 }
                 // If consumed, we're done. Otherwise still don't bubble below
-                // overlays — overlays are modal.
+                // overlays  Eoverlays are modal.
                 return;
             }
 
@@ -792,7 +780,7 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
                 //
                 // Only when the dispatch did NOT already set focus itself: a
                 // widget that called requestFocus during the press wins. This
-                // matters for focus targets the child-walk cannot reach — e.g.
+                // matters for focus targets the child-walk cannot reach  Ee.g.
                 // a List materializes its cells outside the container tree, so
                 // its in-cell editor field is invisible to findFocusableAt.
                 if (self.focus_owner == focus_before) {
@@ -809,8 +797,7 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
             }
         },
         .key => |k| {
-            // Fixed pre-stages (structural "ancestor must win" behaviors —
-            // see `narrative/keybinding.md`「却下案: キャプチャ段」):
+            // Fixed pre-stages (structural "ancestor must win" behaviors  E            // see `narrative/keybinding.md`「却下桁E キャプチャ段、E:
             // ESC cancels an active drag; all keys are swallowed while dragging.
             if (self.dragging) {
                 if (k.code == .escape and k.action == .press) self.cancelDrag();
@@ -818,7 +805,7 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
             }
             // Modal overlay gets first shot. ESC closes one level (staged:
             // submenu before parent popup); Tab is treated like an outside
-            // click — dismiss everything (cancel), then move focus on; an
+            // click  Edismiss everything (cancel), then move focus on; an
             // accelerator chord closes the popup and performs the action
             // (the user's intent is the action, not the menu).
             if (self.overlays.topModalIndex()) |ti| {
@@ -848,7 +835,7 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
                 return; // modal: don't propagate
             }
 
-            // Stage 1: the focus owner — the only component that receives the
+            // Stage 1: the focus owner  Ethe only component that receives the
             // raw `.key` through processEvent.
             if (self.focus_owner) |fo| {
                 fo.vtable.processEvent(fo, ev);
@@ -868,7 +855,7 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
             // Stages 2-4: key_bindings walked from the focus owner up to the
             // root. Including the focus owner itself is the WHEN_FOCUSED scope
             // (a binding installed on the focused widget fires after its own
-            // processEvent declined, before any ancestor's) — more specific
+            // processEvent declined, before any ancestor's)  Emore specific
             // wins. Ancestors are the WHEN_ANCESTOR / window-wide scopes
             // (default button, dialog ESC). No focus owner -> starts at root.
             var node: ?*Component = self.focus_owner orelse &self.container.component;
@@ -882,8 +869,7 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
                 }
             }
 
-            // Stage 4: accelerator scan over the menu tree (no registration —
-            // see `narrative/keybinding.md`「root 登録と走査の線引き」).
+            // Stage 4: accelerator scan over the menu tree (no registration  E            // see `narrative/keybinding.md`「root 登録と走査の線引き、E.
             if (self.findAcceleratorTarget(k)) |mi| {
                 mi.doClick();
                 ev.consume();
@@ -912,7 +898,7 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
         },
         .focus => {
             // Focus events are dispatched synchronously by requestFocusFor
-            // (B-2) directly to the gaining/losing component — they should
+            // (B-2) directly to the gaining/losing component  Ethey should
             // not normally arrive here via the event queue. No-op as a safety net.
         },
         .composition => {
@@ -938,7 +924,7 @@ pub fn postInput(self: *Window, ev: awt.Event) !void {
 }
 
 /// True for events that count as the user deliberately trying to interact
-/// with a window (mouse button press, key press) — used to decide whether
+/// with a window (mouse button press, key press)  Eused to decide whether
 /// poking a modal-blocked window should flash the modal. Excludes passive
 /// move / scroll / release so the modal does not flash on mere hover.
 fn isAttentionPoke(ev: *const awt.Event) bool {
@@ -975,13 +961,13 @@ fn findFocusableInSubtree(c: *Component, x: f32, y: f32) ?*Component {
 
 // ── keystroke scan stages (accelerator / mnemonic) ──────────────────────
 // Component-attached key semantics are resolved by walking the live tree at
-// dispatch time instead of registering at the root — no ordering or lifetime
+// dispatch time instead of registering at the root  Eno ordering or lifetime
 // traps, negligible cost on the key-press cold path. See
-// `narrative/keybinding.md`「root 登録と走査の線引き」.
+// `narrative/keybinding.md`「root 登録と走査の線引き、E
 
 /// Walk the menu tree looking for an enabled MenuItem whose accelerator
 /// matches the key event. Find-only (no side effects): the caller decides
-/// what to do around the activation — stage 4 just fires; the open-menu path
+/// what to do around the activation  Estage 4 just fires; the open-menu path
 /// dismisses the popup first.
 fn findAcceleratorTarget(self: *Window, k: awt.Event.KeyEvent) ?*MenuItem {
     const bar_c = self.menu_bar orelse return null;
@@ -1010,7 +996,7 @@ fn findMenuAccelerator(menu: *Menu, k: awt.Event.KeyEvent) ?*MenuItem {
 
 /// Stage 5: Alt+letter. Menu-bar menus first (Alt+F opening the File menu is
 /// the canonical use), then the component tree in DFS order, first match
-/// wins. Disabled targets don't fire — `doClick` carries that guard.
+/// wins. Disabled targets don't fire  E`doClick` carries that guard.
 fn mnemonicScan(self: *Window, k: awt.Event.KeyEvent) bool {
     const ch = keybinding.letterOf(k.code) orelse return false;
     if (self.menu_bar) |bar_c| {
@@ -1021,7 +1007,7 @@ fn mnemonicScan(self: *Window, k: awt.Event.KeyEvent) bool {
                     menu.doClick();
                     bar.open_menu = if (menu.open) menu else null;
                     // Keyboard-opened menus start with the first item
-                    // highlighted (mouse-opened ones don't) — Windows style.
+                    // highlighted (mouse-opened ones don't)  EWindows style.
                     if (menu.open) menu.highlightFirst();
                     return true;
                 }
@@ -1048,7 +1034,7 @@ fn mnemonicScanTree(c: *Component, ch: u8) bool {
 
 /// Mnemonic targets are widgets exposing `setMnemonic` (Button / Menu /
 /// MenuItem in v1; MenuItem mnemonics are menu-local and never reach this
-/// scan). Dispatch by vtable identity — the type-erased Component cannot
+/// scan). Dispatch by vtable identity  Ethe type-erased Component cannot
 /// carry a doClick function pointer without growing VTable.
 fn activateByMnemonic(c: *Component) void {
     if (c.vtable == &Button.vtable) {
@@ -1059,12 +1045,12 @@ fn activateByMnemonic(c: *Component) void {
 
 /// Window-wide Enter -> `btn.doClick()`, registered on the root container's
 /// key_bindings (the focus chain's terminal stage, so a focused widget that
-/// eats Enter — a Button, a future multiline editor — still wins). Pass null
+/// eats Enter  Ea Button, a future multiline editor  Estill wins). Pass null
 /// to remove.
 ///
 /// Lifetime contract: a root-registered binding references `btn` without
 /// owning it. If `btn` is removed from the live window before the window
-/// itself is torn down, call `setDefaultButton(null)` first — otherwise the
+/// itself is torn down, call `setDefaultButton(null)` first  Eotherwise the
 /// stale binding dangles.
 pub fn setDefaultButton(self: *Window, btn: ?*Button) !void {
     const root = &self.container.component;
@@ -1085,7 +1071,7 @@ fn destroy(self: *Component, allocator: std.mem.Allocator) void {
 // ── drag-and-drop controller ─────────────────────────────────────────────
 // Source-agnostic entry points. v1 feeds them from the in-app mouse gesture;
 // a future OS-drop layer can call the same updateDrag/finishDrag. See
-// `framework/doc/dnd.md`「ドラッグの司令塔」.
+// `framework/doc/dnd.md`「ドラチE��の司令塔、E
 
 /// Promote the armed gesture to an active drag. Calls the source's
 /// `onDragStart` with the press point in source-local coords; returns true if
@@ -1175,7 +1161,7 @@ fn endDrag(self: *Window) void {
 
 /// Build a `DragEvent` with the cursor translated into `target`-local coords.
 /// v1 always reports `.move` (move events carry no modifiers, so copy/move
-/// switching is deferred — see `dnd.md`).
+/// switching is deferred  Esee `dnd.md`).
 fn makeDragEvent(self: *Window, target: *Component, wx: f32, wy: f32) dnd.DragEvent {
     const o = target.absoluteOriginInWindow();
     return .{
@@ -1200,7 +1186,7 @@ const Capability = enum { drag, drop };
 /// Walks the container tree top-most-first (mirrors `findFocusableInSubtree`).
 /// Note: List cells live outside the container tree, so a draggable/droppable
 /// List is found at the List component itself (its `onDragStart` maps the local
-/// point to a row) — see `dnd.md`「List の行並べ替え」.
+/// point to a row)  Esee `dnd.md`「List の行並べ替え、E
 fn findCapabilityInSubtree(c: *Component, x: f32, y: f32, cap: Capability) ?*Component {
     if (!c.containsWindowPoint(x, y)) return null;
     if (c.container) |cont| {
@@ -1234,7 +1220,7 @@ fn onResize(
     // Track the realized logical size in our geometry model and mark it as
     // already synced with the OS, so Application's loop-tail diff does not
     // push this size back (which would fight a live user resize). See
-    // `application.md`「OS との同期」.
+    // `application.md`「OS との同期、E
     win.win_size = win.awt_window.?.size();
     const app: *Application = @ptrCast(@alignCast(win.app));
     app.noteOsGeometry(win);
@@ -1254,7 +1240,7 @@ fn onWindowPos(
     // OS moved the window (user drag, or our own setPos echoing back). Write
     // the new screen position into the geometry model and mark it synced so
     // Application's loop-tail diff does not push it back. See
-    // `application.md`「OS との同期」.
+    // `application.md`「OS との同期、E
     win.win_pos = .{ .x = @intCast(x), .y = @intCast(y) };
     const app: *Application = @ptrCast(@alignCast(win.app));
     app.noteOsGeometry(win);

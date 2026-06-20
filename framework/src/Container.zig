@@ -20,7 +20,7 @@ allocator: std.mem.Allocator,
 /// Memoized layout-computed min/max size (the result of the layout manager's
 /// `computeMinSize`/`computeMaxSize`, which walks the whole subtree). Null when
 /// stale. Invalidated by `Component.markDirty` on every container along the
-/// path from a changed node up to the root — i.e. exactly the containers whose
+/// path from a changed node up to the root  Ei.e. exactly the containers whose
 /// subtree measurement could have changed. See `doc/internal/optimize.md`.
 min_cache: ?Component.Size = null,
 max_cache: ?Component.Size = null,
@@ -32,7 +32,6 @@ last_hovered: ?*Component = null,
 pub const vtable = Component.VTable{
     .install = install,
     .uninstall = uninstall,
-    .paint = paint,
     .processEvent = processEvent,
     .destroy = destroy,
 };
@@ -58,7 +57,7 @@ pub fn deinit(self: *Container) void {
     for (self.children.items) |elem| {
         if (elem.hint_destroy) |destroy_hint| destroy_hint(elem.hint.?, self.allocator);
         // vtable.destroy is responsible for its own deinit chain
-        // (widget.deinit → component.deinit → uninstall + property cleanup).
+        // (widget.deinit ↁEcomponent.deinit ↁEuninstall + property cleanup).
         elem.component.vtable.destroy(elem.component, self.allocator);
     }
     self.children.deinit(self.allocator);
@@ -205,7 +204,7 @@ pub fn doLayout(self: *Container) void {
 /// sent a synthesized `.move` at the current (now-outside) pointer position so
 /// it re-evaluates and drops its hover state (e.g. `rollover`). If that child
 /// is itself a container, its own `.move` handling propagates the same to its
-/// hovered descendant — so leave needs no dedicated vtable hook. Shared by
+/// hovered descendant  Eso leave needs no dedicated vtable hook. Shared by
 /// Panel, which embeds a Container and routes mouse events the same way.
 ///
 /// nimbus has no OS enter/leave; "enter" needs nothing because the ordinary
@@ -228,13 +227,6 @@ fn install(self: *Component) !void {
 
 fn uninstall(self: *Component) void {
     self.container = null;
-}
-
-fn paint(self: *Component, g: *awt.Graphics) void {
-    const container = self.container orelse return;
-    for (container.children.items) |elem| {
-        elem.component.paintAt(g);
-    }
 }
 
 fn lookPaint(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
@@ -270,12 +262,12 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
             // the window's focus owner, dispatched directly by
             // `Window.dispatchInput`. Containers never forward them. (The old
             // broadcast-to-all-children fallback was deleted with the
-            // keybinding redesign — see `narrative/keybinding.md`「削除予定:
-            // フォーカス不在時の fan-out」.)
+            // keybinding redesign  Esee `narrative/keybinding.md`「削除予宁E
+            // フォーカス不在時�E fan-out、E)
         },
         .focus, .composition => {
             // Focus events are delivered directly to the gaining/losing
-            // component by Window.requestFocusFor — not through fan-out.
+            // component by Window.requestFocusFor  Enot through fan-out.
             // Composition events will be routed to focus_owner in a future
             // milestone; until then they fall on the floor here.
         },

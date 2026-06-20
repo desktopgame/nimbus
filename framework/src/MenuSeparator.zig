@@ -15,7 +15,6 @@ allocator: std.mem.Allocator,
 pub const vtable = Component.VTable{
     .install = install,
     .uninstall = uninstall,
-    .paint = paint,
     .processEvent = processEvent,
     .destroy = destroy,
 };
@@ -44,10 +43,6 @@ pub fn create(allocator: std.mem.Allocator) !*MenuSeparator {
 
 fn install(_: *Component) !void {}
 fn uninstall(_: *Component) void {}
-
-fn paint(self: *Component, g: *awt.Graphics) void {
-    lookPaint(self, &Component.default_look_context, g);
-}
 
 fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
     const w = self.size.width;

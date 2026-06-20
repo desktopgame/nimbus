@@ -4,7 +4,7 @@
 //! Visual: a bordered cell showing the currently-selected item plus a
 //! down-pointing chevron on the right edge. Clicking opens a popup
 //! (registered as a Window overlay) listing every item; clicking an item
-//! commits the selection and dismisses the popup. ↑ / ↓ keys move the
+//! commits the selection and dismisses the popup. ↁE/ ↁEkeys move the
 //! selection when focused; Enter / Space toggles the popup.
 //!
 //! v1 scope (per textfield-plan-style decisions): string items only,
@@ -53,7 +53,6 @@ allocator: std.mem.Allocator,
 pub const vtable = Component.VTable{
     .install = install,
     .uninstall = uninstall,
-    .paint = paint,
     .processEvent = processEvent,
     .destroy = destroy,
 };
@@ -67,7 +66,6 @@ pub const look_vtable = Component.LookVTable{
 const popup_vtable = Component.VTable{
     .install = popupInstall,
     .uninstall = popupUninstall,
-    .paint = popupPaint,
     .processEvent = popupProcessEvent,
     .destroy = popupDestroyNoop,
 };
@@ -201,7 +199,7 @@ pub fn removeChangeListener(
 // ── layout ───────────────────────────────────────────────────────────────
 
 fn applyMetrics(self: *ComboBox) void {
-    const ui = self.component.ui.?;
+    const ui = self.component.ui;
     const min = ui.vtable.measureMinSize(&self.component, ui.ctx);
     self.component.min_size = min;
     self.component.max_size = .{ .width = std.math.inf(f32), .height = min.height };
@@ -269,7 +267,7 @@ fn install(self: *Component) !void {
     var node: ?*Component = self;
     while (node) |cur| {
         if (cur.parent == null) {
-            // The root container's parent Window. Skip — `show` resolves
+            // The root container's parent Window. Skip  E`show` resolves
             // at click time via the Window pointer we cache then.
             break;
         }
@@ -287,10 +285,6 @@ fn uninstall(self: *Component) void {
 fn focusEligible(c: *const Component) bool {
     const cb: *const ComboBox = @fieldParentPtr("component", c);
     return cb.enabled;
-}
-
-fn paint(self: *Component, g: *awt.Graphics) void {
-    lookPaint(self, &Component.default_look_context, g);
 }
 
 fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
@@ -441,15 +435,11 @@ fn popupInstall(_: *Component) !void {}
 fn popupUninstall(_: *Component) void {}
 fn popupDestroyNoop(_: *Component, _: std.mem.Allocator) void {}
 
-fn popupPaint(self: *Component, g: *awt.Graphics) void {
-    popupLookPaint(self, &Component.default_look_context, g);
-}
-
 fn popupLookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
     const cb: *ComboBox = @fieldParentPtr("popup_root", self);
     const sz = self.size;
     const item_h = cb.itemHeight();
-    // The popup root never goes through a factory — read the owner's theme.
+    // The popup root never goes through a factory  Eread the owner's theme.
     const t = cb.component.theme;
 
     g.setColor(t.surface_input);

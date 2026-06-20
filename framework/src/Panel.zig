@@ -25,7 +25,6 @@ border: ?Border = null,
 pub const vtable = Component.VTable{
     .install = install,
     .uninstall = uninstall,
-    .paint = paint,
     .processEvent = processEvent,
     .destroy = destroy,
 };
@@ -121,32 +120,6 @@ fn install(self: *Component) !void {
 
 fn uninstall(self: *Component) void {
     self.container = null;
-}
-
-fn paint(self: *Component, g: *awt.Graphics) void {
-    const cont = self.container orelse return;
-    const panel: *Panel = @fieldParentPtr("container", cont);
-
-    const w = self.size.width;
-    const h = self.size.height;
-
-    if (panel.background) |bg| {
-        g.setColor(bg);
-        g.fillRect(.{ .x = 0, .y = 0, .width = w, .height = h });
-    }
-
-    for (cont.children.items) |elem| {
-        elem.component.paintAt(g);
-    }
-
-    if (panel.border) |b| {
-        g.setColor(b.color);
-        const t = b.thickness;
-        g.fillRect(.{ .x = 0, .y = 0, .width = w, .height = t });
-        g.fillRect(.{ .x = 0, .y = h - t, .width = w, .height = t });
-        g.fillRect(.{ .x = 0, .y = t, .width = t, .height = h - 2 * t });
-        g.fillRect(.{ .x = w - t, .y = t, .width = t, .height = h - 2 * t });
-    }
 }
 
 fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {

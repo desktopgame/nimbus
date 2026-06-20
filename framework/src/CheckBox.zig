@@ -14,7 +14,7 @@ const ToggleButtonModel = @import("ToggleButtonModel.zig");
 const CheckBox = @This();
 
 const BOX_SIZE: f32 = 16;
-const BOX_GAP: f32 = 6; // indicator → label gap
+const BOX_GAP: f32 = 6; // indicator ↁElabel gap
 const PADDING_X: f32 = 4;
 const PADDING_Y: f32 = 4;
 const FOCUS_RING: f32 = 1;
@@ -37,7 +37,6 @@ allocator: std.mem.Allocator,
 pub const vtable = Component.VTable{
     .install = install,
     .uninstall = uninstall,
-    .paint = paint,
     .processEvent = processEvent,
     .destroy = destroy,
 };
@@ -153,7 +152,7 @@ fn a11yName(c: *const Component) ?[]const u8 {
 // ── layout ───────────────────────────────────────────────────────────────
 
 fn applyMetrics(self: *CheckBox) void {
-    const ui = self.component.ui.?;
+    const ui = self.component.ui;
     const min = ui.vtable.measureMinSize(&self.component, ui.ctx);
     self.component.min_size = min;
     self.component.max_size = .{ .width = std.math.inf(f32), .height = min.height };
@@ -186,10 +185,6 @@ fn uninstall(self: *Component) void {
 
 fn onModelChange(comp: *Component, _: *const ChangeEvent) void {
     comp.repaint();
-}
-
-fn paint(self: *Component, g: *awt.Graphics) void {
-    lookPaint(self, &Component.default_look_context, g);
 }
 
 fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
@@ -248,7 +243,7 @@ fn drawBoxBorder(g: *awt.Graphics, x: f32, y: f32, w: f32, h: f32, color: awt.Gr
 }
 
 /// Stylized check mark, rendered as two diagonal strokes built
-/// from short rectangles (no line primitive in awt — same trick as
+/// from short rectangles (no line primitive in awt  Esame trick as
 /// CheckBoxMenuItem.drawCheckmark, sized to fit a 16-px box).
 fn drawCheck(g: *awt.Graphics, box_x: f32, box_y: f32, box_size: f32, color: awt.Graphics.Color) void {
     g.setColor(color);

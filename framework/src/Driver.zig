@@ -284,14 +284,12 @@ fn createTestNode(allocator: std.mem.Allocator, role: Component.Role, name: ?[]c
 const plain_vtable = Component.VTable{
     .install = plainInstall,
     .uninstall = plainUninstall,
-    .paint = plainPaint,
     .processEvent = plainProcessEvent,
     .destroy = plainDestroy,
 };
 
 fn plainInstall(_: *Component) !void {}
 fn plainUninstall(_: *Component) void {}
-fn plainPaint(_: *Component, _: *awt.Graphics) void {}
 fn plainProcessEvent(_: *Component, _: *Component.Event) void {}
 fn plainDestroy(_: *Component, _: std.mem.Allocator) void {}
 

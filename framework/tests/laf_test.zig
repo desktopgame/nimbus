@@ -45,24 +45,15 @@ test "widgets use default Look" {
 
     const popup = try nimbus.PopupMenu.create(std.testing.allocator);
     defer popup.destroy();
-
-    try std.testing.expect(button.component.ui != null);
-    try std.testing.expect(button.component.ui.?.vtable == &nimbus.Button.look_vtable);
-    try std.testing.expect(container.component.ui != null);
-    try std.testing.expect(container.component.ui.?.vtable == &nimbus.Container.look_vtable);
-    try std.testing.expect(panel.container.component.ui != null);
-    try std.testing.expect(panel.container.component.ui.?.vtable == &nimbus.Panel.look_vtable);
-
-    try std.testing.expect(tabbed.container.component.ui != null);
-    try std.testing.expect(tabbed.container.component.ui.?.vtable == &nimbus.TabbedPane.look_vtable);
-    try std.testing.expect(label.component.ui != null);
-    try std.testing.expect(label.component.ui.?.vtable == &nimbus.Label.look_vtable);
-    try std.testing.expect(checkbox.component.ui != null);
-    try std.testing.expect(checkbox.component.ui.?.vtable == &nimbus.CheckBox.look_vtable);
-    try std.testing.expect(menu.component.ui != null);
-    try std.testing.expect(menu.component.ui.?.vtable == &nimbus.Menu.look_vtable);
-    try std.testing.expect(menu.popup_root.ui != null);
-    try std.testing.expect(popup.popup_root.ui != null);
+    try std.testing.expect(button.component.ui.vtable == &nimbus.Button.look_vtable);
+    try std.testing.expect(container.component.ui.vtable == &nimbus.Container.look_vtable);
+    try std.testing.expect(panel.container.component.ui.vtable == &nimbus.Panel.look_vtable);
+    try std.testing.expect(tabbed.container.component.ui.vtable == &nimbus.TabbedPane.look_vtable);
+    try std.testing.expect(label.component.ui.vtable == &nimbus.Label.look_vtable);
+    try std.testing.expect(checkbox.component.ui.vtable == &nimbus.CheckBox.look_vtable);
+    try std.testing.expect(menu.component.ui.vtable == &nimbus.Menu.look_vtable);
+    try std.testing.expect(menu.popup_root.ui.vtable != &nimbus.Component.base_look_vtable);
+    try std.testing.expect(popup.popup_root.ui.vtable != &nimbus.Component.base_look_vtable);
 }
 
 const PaintLog = struct {

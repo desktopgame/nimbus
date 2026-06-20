@@ -144,7 +144,6 @@ pub const VTable = struct {
     /// Tear down whatever `install` set up. Conceptually a destructor — only
     /// releases resources, never fails. Callers do not need to handle errors.
     uninstall: *const fn (self: *Component) void,
-    paint: *const fn (self: *Component, g: *awt.Graphics) void,
     /// Mutable Event pointer; consumption is via `ev.consume()`. See
     /// `awt/doc/event.md` for the consumption model.
     processEvent: *const fn (self: *Component, ev: *Event) void,
@@ -167,6 +166,20 @@ pub const UI = struct {
 
 pub var default_look_context: u8 = 0;
 
+pub const base_look_vtable = LookVTable{
+    .paint = baseLookPaint,
+    .paintOver = baseLookPaintOver,
+    .measureMinSize = baseLookMeasureMinSize,
+};
+
+fn baseLookPaint(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
+
+fn baseLookPaintOver(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
+
+fn baseLookMeasureMinSize(_: *Component, _: *anyopaque) Size {
+    return .{ .width = 0, .height = 0 };
+}
+
 pub const Property = struct {
     value: *anyopaque,
     destroy: ?*const fn (*anyopaque, std.mem.Allocator) void,
@@ -176,7 +189,7 @@ pub const Property = struct {
 const Container = @import("Container.zig");
 
 vtable: *const VTable,
-ui: ?UI,
+ui: UI,
 position: Point,
 size: Size,
 min_size: Size,
@@ -234,7 +247,7 @@ allocator: std.mem.Allocator,
 pub fn init(allocator: std.mem.Allocator, vtable: *const VTable) Component {
     return .{
         .vtable = vtable,
-        .ui = null,
+        .ui = .{ .vtable = &base_look_vtable, .ctx = &default_look_context },
         .position = .{ .x = 0, .y = 0 },
         .size = .{ .width = 0, .height = 0 },
         .min_size = .{ .width = 0, .height = 0 },
@@ -603,20 +616,17 @@ pub const DirtyNotify = struct {
 };
 
 /// Helper: build a child Graphics clipped to self.getBounds and dispatch
-/// either the split Look pipeline or legacy vtable.paint.
+/// the split Look pipeline.
 pub fn paintAt(self: *Component, parent_g: *awt.Graphics) void {
     var g = parent_g.clip(self.getBounds());
-    if (self.ui) |u| {
-        u.vtable.paint(self, u.ctx, &g);
-        if (self.container) |container| {
-            for (container.children.items) |elem| {
-                elem.component.paintAt(&g);
-            }
+    const u = self.ui;
+    u.vtable.paint(self, u.ctx, &g);
+    if (self.container) |container| {
+        for (container.children.items) |elem| {
+            elem.component.paintAt(&g);
         }
-        u.vtable.paintOver(self, u.ctx, &g);
-    } else {
-        self.vtable.paint(self, &g);
     }
+    u.vtable.paintOver(self, u.ctx, &g);
 }
 
 /// Walk parent chain to compute the absolute origin of `self` within the

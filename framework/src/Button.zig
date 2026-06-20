@@ -1,9 +1,9 @@
 //! Button widget. See `framework/doc/button.md`.
 //!
 //! Visual modes (auto-detected from text / icon):
-//!   - text only        → rounded rect with border, bg by state (standard)
-//!   - icon only        → "flat" mode: no border; gray bg only on hover
-//!   - text + icon      → standard rounded rect with icon left of text
+//!   - text only        ↁErounded rect with border, bg by state (standard)
+//!   - icon only        ↁE"flat" mode: no border; gray bg only on hover
+//!   - text + icon      ↁEstandard rounded rect with icon left of text
 
 const std = @import("std");
 const awt = @import("awt");
@@ -38,7 +38,6 @@ allocator: std.mem.Allocator,
 pub const vtable = Component.VTable{
     .install = install,
     .uninstall = uninstall,
-    .paint = paint,
     .processEvent = processEvent,
     .destroy = destroy,
 };
@@ -120,7 +119,7 @@ fn iconDrawSize(self: *const Button) Component.Size {
 }
 
 fn updateMinSizeFromLook(self: *Button) void {
-    const ui = self.component.ui.?;
+    const ui = self.component.ui;
     self.component.min_size = ui.vtable.measureMinSize(&self.component, ui.ctx);
 }
 
@@ -205,7 +204,7 @@ pub fn getModel(self: Button) *ButtonModel {
 
 /// Programmatic activation: the single entry point shared by Space/Enter,
 /// mnemonics and the default-button binding (mouse keeps its own
-/// press/armed gesture). No-op while disabled — this is the one guard that
+/// press/armed gesture). No-op while disabled  Ethis is the one guard that
 /// covers every activation path.
 pub fn doClick(self: *Button) void {
     if (!self.model.enabled) return;
@@ -218,7 +217,7 @@ pub fn doClick(self: *Button) void {
 
 /// Assign the mnemonic character (`Alt+ch` activates this button window-wide;
 /// the matching letter in the label is underlined). ASCII letter / digit.
-/// Stores only — resolution happens in the Window's mnemonic scan stage.
+/// Stores only  Eresolution happens in the Window's mnemonic scan stage.
 pub fn setMnemonic(self: *Button, ch: u8) void {
     self.component.mnemonic = std.ascii.toLower(ch);
     self.mnemonic_index = std.ascii.indexOfIgnoreCase(self.text, &[1]u8{ch});
@@ -252,10 +251,6 @@ fn uninstall(self: *Component) void {
 
 fn onModelChange(comp: *Component, _: *const ChangeEvent) void {
     comp.repaint();
-}
-
-fn paint(self: *Component, g: *awt.Graphics) void {
-    lookPaint(self, &Component.default_look_context, g);
 }
 
 fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
@@ -384,8 +379,7 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
         },
         .key => |k| {
             // Space / Enter activate the focused button (raw `.key` only ever
-            // arrives here while this button is the focus owner). Press only —
-            // auto-repeat firing a button is not a thing on any platform.
+            // arrives here while this button is the focus owner). Press only  E            // auto-repeat firing a button is not a thing on any platform.
             if (k.action == .press and (k.code == .space or k.code == .enter)) {
                 button.doClick();
                 ev.consume();
