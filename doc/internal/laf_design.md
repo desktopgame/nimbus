@@ -289,7 +289,8 @@ Look（外見 vtable）を **ツリー全体へ一斉に差し替える**ユー�
 ### 4.2 awt に要る 2 つの描画プリミティブ（別ワークストリーム・依存として参照のみ）
 
 Metal / JTattoo を実現するには awt 側に 2 つのプリミティブが要る。**本 doc ではスコープ外**（依存として挙げるだけで、
-詳細設計は別途・awt 側で行う）:
+詳細設計は別途・awt 側で行う）。**詳細設計は `awt_primitives_laf.md` に切り出した**（軸 / stop 数 / 9-slice の
+inset 表現 / ゴールデン tolerance / program 配線 / フェーズ分けを確定）:
 
 1. **linear グラデーション fill**（Metal 用。Swing Nimbus 系もほぼ無料で付く）。
 2. **テクスチャ ＋ 9-slice（＋tint）**（JTattoo 用）。
@@ -301,7 +302,8 @@ Metal / JTattoo を実現するには awt 側に 2 つのプリミティブが�
   その延長に位置づく。
 - `framework_backlog.md` #27（小アイコン手組みの脱・階段描画）— #9 の framework 側 follow-up。
 
-これらの詳細（グラデの stop 数・軸、テクスチャのゴールデン許容 tolerance 等）は本 doc では決めない。
+これらの詳細（グラデの stop 数・軸、テクスチャのゴールデン許容 tolerance 等）は本 doc では決めず、
+`awt_primitives_laf.md` で確定させた。
 
 ---
 
@@ -364,6 +366,8 @@ golden が動いたら、それは LAF の見た目変更ではなく **移行�
    （Container.zig:142-145）。Swing の explicit-set フラグ（`isMinimumSizeSet` 流）で「明示設定は自動計算に勝つ」と
    するかは未決。初心者の罠だがブロッカーではない。override が「勝つ」か「floor」かも未決。
 5. **awt 2 プリミティブの詳細**: グラデの stop 数・軸、テクスチャのゴールデン許容 tolerance（§4.2）。
+   → **`awt_primitives_laf.md` に切り出して確定済み**（縦固定 2 stop・9-slice は 4 inset・per-scene tolerance）。
+   本 doc 側では未決のまま残さない。
 6. **着手順**: LAF イニシアチブと text editor ロードマップ（framework_backlog.md #5：編集コア抽出＋undo）の
    どちらを先に着手するか。
 

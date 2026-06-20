@@ -951,6 +951,8 @@ overlay overlay-lifetime 関連の textlint / 回帰対応セッションで出�
 awt に線・三角・多角形のプリミティブが無いことが原因で、本体の検討は awt 側の [awt#9](awt_backlog.md) にある
 （プリミティブを足す / テクスチャで済ませる / lucide アイコンへ置換、の 3 案とスナップショット脆化のトレードオフ）。
 本項目は awt#9 で方針が決まったら、上記 3 関数を新プリミティブ or アイコンへ載せ替えるという framework 側の follow-up。
+なお LAF（Metal / JTattoo）向けのグラデ / 9-slice プリミティブは別系統で `doc/internal/awt_primitives_laf.md` に
+設計済み（本項目の小アイコンとは目的が別だが、awt の描画語彙拡張という点で隣接する）。
 
 ### 完了条件
 awt#9 の方針に沿って 3 関数の階段描画が解消され、スナップショットテストが緑。awt#9 の完了条件と一体で達成される。

@@ -194,6 +194,11 @@ framework のキーストローク/ニーモニック実装を進めるために
 - 更新日: 2026-06-18
 - 依存: なし
 
+### 関連（LAF プリミティブ）
+本項目は小アイコン（チェック / caret）が主眼だが、グラデ / 9-slice という別系統の awt プリミティブ追加は
+`doc/internal/awt_primitives_laf.md`（LAF＝Metal / JTattoo 用）で別途設計済み。あちらも「テクスチャ経路の
+ゴールデン脆化」という本項目と同じ判断軸を扱うので、テクスチャ方式を採るときは両方を見ること。
+
 ### 何
 `awt.Graphics` の描画語彙は実質 `fillRect` / `drawRect` / `fillRoundRect`（SDF `sdfQuad`）/ `fillCircle` /
 `drawString` / `drawImage` 等で、線・三角・任意多角形・パスを直接描くプリミティブが無い。
