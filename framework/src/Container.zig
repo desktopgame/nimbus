@@ -37,13 +37,21 @@ pub const vtable = Component.VTable{
     .destroy = destroy,
 };
 
+pub const look_vtable = Component.LookVTable{
+    .paint = lookPaint,
+    .paintOver = lookPaintOver,
+    .measureMinSize = lookMeasureMinSize,
+};
+
 pub fn init(allocator: std.mem.Allocator) Container {
-    return .{
+    var container = Container{
         .component = Component.init(allocator, &vtable),
         .children = .empty,
         .layout = null,
         .allocator = allocator,
     };
+    container.component.ui = .{ .vtable = &look_vtable, .ctx = &Component.default_look_context };
+    return container;
 }
 
 pub fn deinit(self: *Container) void {
@@ -227,6 +235,14 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     for (container.children.items) |elem| {
         elem.component.paintAt(g);
     }
+}
+
+fn lookPaint(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
+
+fn lookPaintOver(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
+
+fn lookMeasureMinSize(_: *Component, _: *anyopaque) Component.Size {
+    return .{ .width = 0, .height = 0 };
 }
 
 fn processEvent(self: *Component, ev: *Component.Event) void {

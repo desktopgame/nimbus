@@ -30,6 +30,12 @@ pub const vtable = Component.VTable{
     .destroy = destroy,
 };
 
+pub const look_vtable = Component.LookVTable{
+    .paint = lookPaint,
+    .paintOver = lookPaintOver,
+    .measureMinSize = lookMeasureMinSize,
+};
+
 pub fn create(allocator: std.mem.Allocator) !*Panel {
     const panel = try allocator.create(Panel);
     errdefer allocator.destroy(panel);
@@ -46,6 +52,7 @@ pub fn create(allocator: std.mem.Allocator) !*Panel {
         .content = content,
     };
     panel.container.component.vtable = &vtable;
+    panel.container.component.ui = .{ .vtable = &look_vtable, .ctx = &Component.default_look_context };
     panel.container.component.role = .panel;
     panel.container.layout = layout;
 
@@ -140,6 +147,40 @@ fn paint(self: *Component, g: *awt.Graphics) void {
         g.fillRect(.{ .x = 0, .y = t, .width = t, .height = h - 2 * t });
         g.fillRect(.{ .x = w - t, .y = t, .width = t, .height = h - 2 * t });
     }
+}
+
+fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
+    const cont = self.container orelse return;
+    const panel: *Panel = @fieldParentPtr("container", cont);
+
+    const w = self.size.width;
+    const h = self.size.height;
+
+    if (panel.background) |bg| {
+        g.setColor(bg);
+        g.fillRect(.{ .x = 0, .y = 0, .width = w, .height = h });
+    }
+}
+
+fn lookPaintOver(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
+    const cont = self.container orelse return;
+    const panel: *Panel = @fieldParentPtr("container", cont);
+
+    const w = self.size.width;
+    const h = self.size.height;
+
+    if (panel.border) |b| {
+        g.setColor(b.color);
+        const t = b.thickness;
+        g.fillRect(.{ .x = 0, .y = 0, .width = w, .height = t });
+        g.fillRect(.{ .x = 0, .y = h - t, .width = w, .height = t });
+        g.fillRect(.{ .x = 0, .y = t, .width = t, .height = h - 2 * t });
+        g.fillRect(.{ .x = w - t, .y = t, .width = t, .height = h - 2 * t });
+    }
+}
+
+fn lookMeasureMinSize(_: *Component, _: *anyopaque) Component.Size {
+    return .{ .width = 0, .height = 0 };
 }
 
 fn processEvent(self: *Component, ev: *Component.Event) void {

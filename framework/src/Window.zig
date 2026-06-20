@@ -191,6 +191,7 @@ pub fn init(
         .focus_controller = undefined, // filled in install
     };
     win.container.component.vtable = &vtable;
+    win.container.component.ui = null;
     // Default layout: BorderLayout. Lets users compose a toolbar / status /
     // sidebar / center shell with no additional setup. Override via
     // `window.container.setLayout` if a different layout is desired.
@@ -261,6 +262,7 @@ pub fn initHeadless(
         .focus_controller = undefined,
     };
     win.container.component.vtable = &vtable;
+    win.container.component.ui = null;
     win.container.layout = BorderLayout.get();
     return win;
 }

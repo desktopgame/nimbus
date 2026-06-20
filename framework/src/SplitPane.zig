@@ -97,6 +97,7 @@ pub fn create(
     };
     // Wire the embedded container to behave as the SplitPane component.
     sp.container.component.vtable = &vtable;
+    sp.container.component.ui = null;
     sp.container.component.role = .split_pane;
     sp.container.component.container = &sp.container;
     sp.container.layout = &sp.layout.base;

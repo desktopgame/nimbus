@@ -69,6 +69,7 @@ pub fn create(allocator: std.mem.Allocator, font: awt.Graphics.TextFont) !*Tabbe
     errdefer tp.change_listeners.deinit();
 
     tp.container.component.vtable = &vtable;
+    tp.container.component.ui = null;
     tp.container.component.role = .tabbed_pane;
     tp.container.component.container = &tp.container;
     tp.container.layout = &tp.layout.base;

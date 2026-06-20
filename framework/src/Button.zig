@@ -43,6 +43,12 @@ pub const vtable = Component.VTable{
     .destroy = destroy,
 };
 
+pub const look_vtable = Component.LookVTable{
+    .paint = lookPaint,
+    .paintOver = lookPaintOver,
+    .measureMinSize = lookMeasureMinSize,
+};
+
 pub fn create(
     allocator: std.mem.Allocator,
     text: []const u8,
@@ -98,7 +104,8 @@ fn createInternal(
     b.component.a11y = .{ .name = a11yName };
     b.component.setFocusable(true);
     b.component.focus_query = .{ .isEligible = focusEligible };
-    b.applyMetrics();
+    b.component.ui = .{ .vtable = &look_vtable, .ctx = &Component.default_look_context };
+    b.updateMinSizeFromLook();
     try Button.vtable.install(&b.component);
     return b;
 }
@@ -112,11 +119,17 @@ fn iconDrawSize(self: *const Button) Component.Size {
     return .{ .width = 0, .height = 0 };
 }
 
-fn applyMetrics(self: *Button) void {
-    const has_text = self.text.len > 0;
-    const has_icon = self.icon != null;
-    const icon_sz = self.iconDrawSize();
-    const text_m = if (has_text) self.font.measureString(self.text) else awt.Font.TextSize{ .width = 0, .height = 0 };
+fn updateMinSizeFromLook(self: *Button) void {
+    const ui = self.component.ui.?;
+    self.component.min_size = ui.vtable.measureMinSize(&self.component, ui.ctx);
+}
+
+fn lookMeasureMinSize(self: *Component, _: *anyopaque) Component.Size {
+    const button: *Button = @fieldParentPtr("component", self);
+    const has_text = button.text.len > 0;
+    const has_icon = button.icon != null;
+    const icon_sz = button.iconDrawSize();
+    const text_m = if (has_text) button.font.measureString(button.text) else awt.Font.TextSize{ .width = 0, .height = 0 };
 
     var w: f32 = 0;
     var h: f32 = 0;
@@ -132,7 +145,7 @@ fn applyMetrics(self: *Button) void {
         w = text_m.width + PADDING_X * 2;
         h = text_m.height + PADDING_Y * 2;
     }
-    self.component.min_size = .{ .width = w, .height = h };
+    return .{ .width = w, .height = h };
 }
 
 pub fn getText(self: Button) []const u8 {
@@ -147,7 +160,7 @@ pub fn setText(self: *Button, text: []const u8) !void {
     if (self.component.mnemonic) |m| {
         self.mnemonic_index = std.ascii.indexOfIgnoreCase(new_text, &[1]u8{m});
     }
-    self.applyMetrics();
+    self.updateMinSizeFromLook();
     self.component.markLayoutDirty();
 }
 
@@ -156,7 +169,7 @@ pub fn getFont(self: Button) awt.Graphics.TextFont {
 }
 pub fn setFont(self: *Button, font: awt.Graphics.TextFont) void {
     self.font = font;
-    self.applyMetrics();
+    self.updateMinSizeFromLook();
     self.component.markLayoutDirty();
 }
 
@@ -173,7 +186,7 @@ pub fn getIcon(self: Button) ?awt.Image {
 }
 pub fn setIcon(self: *Button, icon: ?awt.Image) void {
     self.icon = icon;
-    self.applyMetrics();
+    self.updateMinSizeFromLook();
     self.component.markLayoutDirty();
 }
 
@@ -182,7 +195,7 @@ pub fn getIconSize(self: Button) ?Component.Size {
 }
 pub fn setIconSize(self: *Button, size: ?Component.Size) void {
     self.icon_size = size;
-    self.applyMetrics();
+    self.updateMinSizeFromLook();
     self.component.markLayoutDirty();
 }
 
@@ -242,6 +255,10 @@ fn onModelChange(comp: *Component, _: *const ChangeEvent) void {
 }
 
 fn paint(self: *Component, g: *awt.Graphics) void {
+    lookPaint(self, &Component.default_look_context, g);
+}
+
+fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
     const button: *Button = @fieldParentPtr("component", self);
     const t = self.theme;
     const sz = self.size;
@@ -322,6 +339,8 @@ fn paint(self: *Component, g: *awt.Graphics) void {
         }
     }
 }
+
+fn lookPaintOver(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
 
 fn processEvent(self: *Component, ev: *Component.Event) void {
     const button: *Button = @fieldParentPtr("component", self);

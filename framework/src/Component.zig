@@ -154,6 +154,19 @@ pub const VTable = struct {
     destroy: *const fn (self: *Component, allocator: std.mem.Allocator) void,
 };
 
+pub const LookVTable = struct {
+    paint: *const fn (self: *Component, ctx: *anyopaque, g: *awt.Graphics) void,
+    paintOver: *const fn (self: *Component, ctx: *anyopaque, g: *awt.Graphics) void,
+    measureMinSize: *const fn (self: *Component, ctx: *anyopaque) Size,
+};
+
+pub const UI = struct {
+    vtable: *const LookVTable,
+    ctx: *anyopaque,
+};
+
+pub var default_look_context: u8 = 0;
+
 pub const Property = struct {
     value: *anyopaque,
     destroy: ?*const fn (*anyopaque, std.mem.Allocator) void,
@@ -163,6 +176,7 @@ pub const Property = struct {
 const Container = @import("Container.zig");
 
 vtable: *const VTable,
+ui: ?UI,
 position: Point,
 size: Size,
 min_size: Size,
@@ -220,6 +234,7 @@ allocator: std.mem.Allocator,
 pub fn init(allocator: std.mem.Allocator, vtable: *const VTable) Component {
     return .{
         .vtable = vtable,
+        .ui = null,
         .position = .{ .x = 0, .y = 0 },
         .size = .{ .width = 0, .height = 0 },
         .min_size = .{ .width = 0, .height = 0 },
@@ -588,11 +603,20 @@ pub const DirtyNotify = struct {
 };
 
 /// Helper: build a child Graphics clipped to self.getBounds and dispatch
-/// vtable.paint. Used by Container to paint children and by the root caller
-/// to paint the root component without manual clip plumbing.
+/// either the split Look pipeline or legacy vtable.paint.
 pub fn paintAt(self: *Component, parent_g: *awt.Graphics) void {
     var g = parent_g.clip(self.getBounds());
-    self.vtable.paint(self, &g);
+    if (self.ui) |u| {
+        u.vtable.paint(self, u.ctx, &g);
+        if (self.container) |container| {
+            for (container.children.items) |elem| {
+                elem.component.paintAt(&g);
+            }
+        }
+        u.vtable.paintOver(self, u.ctx, &g);
+    } else {
+        self.vtable.paint(self, &g);
+    }
 }
 
 /// Walk parent chain to compute the absolute origin of `self` within the

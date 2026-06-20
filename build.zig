@@ -291,6 +291,7 @@ pub fn build(b: *std.Build) void {
         "framework/tests/focus_test.zig",
         "framework/tests/overlay_lifetime_test.zig",
         "framework/tests/theme_test.zig",
+        "framework/tests/laf_test.zig",
     }) |path| {
         const m = b.createModule(.{
             .root_source_file = b.path(path),
