@@ -76,16 +76,16 @@ VTable を 2 つに分割する。
 
 - `paint`（自分の外見を子の **下**に描く＝前フェーズ。背景など）
 - `paintOver`（自分の外見を子の **上**に描く＝後フェーズ。ボーダーなど。仮称。詳細は §2.4 の 2 フェーズ paint）
-- `measure`（intrinsic な最小サイズを計算する）
+- `measureMinSize`（intrinsic な最小サイズ＝`Size` を計算する。名前は仮だが採用。§2.5）
 
-`paint` / `paintOver` / `measure` は **`user_data`（`*anyopaque`）引数を受け取る**。これは delegate 自身が持つ
+`paint` / `paintOver` / `measureMinSize` は **`user_data`（`*anyopaque`）引数を受け取る**。これは delegate 自身が持つ
 （widget 横断で共有される）データ — テクスチャハンドル・グラデーションの stop 配列・9-slice の inset 等 —
 を読むため。delegate は 1 つの Look を多数の widget インスタンスに適用するので、共有データは
 インスタンス側ではなく delegate（＋ctx）側に置く。
 
 これは **paint を `Component.VTable` から `LookVTable` へ「移す」変種**。`install` / `uninstall` /
 `processEvent` / `destroy` は構造側に残り、`paint` が外見側へ移動し、そこへ後フェーズの `paintOver` と
-`measure` が加わる。
+`measureMinSize` が加わる。
 
 ### 2.3 なぜ分離するのか（1 スロットだけ差し替えたい）
 
@@ -129,7 +129,7 @@ paint を `LookVTable`（自分の外見のみ）へ移すには、この 2 つ�
 `LookVTable` は子の **前** と **後** の 2 つの描画フックを持つ。
 
 - `paint`（前）— 子の **下**に描く。背景など。
-- `paintOver`（後）— 子の **上**に描く。ボーダーなど。**※`paintOver` は仮称**（命名は §5-1 の未決に含める）。
+- `paintOver`（後）— 子の **上**に描く。ボーダーなど。**※`paintOver` は仮称**（命名は §6-1 の未決に含める）。
 
 ```
 paintAt(self, parent_g):
@@ -161,33 +161,35 @@ paintAt(self, parent_g):
 これにより **ボーダー後描き（子の上）の現挙動が保たれ、見た目は不変**（回帰しない）。
 素朴な「`paint(self)` → 子を再帰」だけだとボーダーが子より先に描かれて崩れるが、後フェーズを設けたことで解消される。
 
-### 2.5 measure の配線
+### 2.5 measureMinSize の配線（確定）
 
-`measure`（LookVTable）が **intrinsic な最小サイズ**を計算し、フレームワークがその結果を
-**既存の `Component.min_size` / `max_size` フィールドにキャッシュ**する。
+`measureMinSize`（LookVTable・名前は仮だが採用）が **intrinsic な最小サイズ（`Size`）**を計算し、
+フレームワークがその結果を **既存の `Component.min_size` フィールドにキャッシュ**する。
 
+- **戻りは最小サイズ（`Size`）のみ・確定**。max は `measureMinSize` の担当外で、widget が上限を持つ箇所
+  （例: TextField の高さ）だけ従来どおり `max_size` を設定する（measure は min 担当・max は据え置きでよい）。
 - レイアウト機構は無改修。`effectiveMinSize`（Component.zig:327-330）は従来どおり
   `min_size`（コンテナは `Container.getMinSize` の layout 合成）を読むだけ。
-  measure はその `min_size` を埋める担当に差し替わるだけで、読み手は変わらない。
+  `measureMinSize` はその `min_size` を埋める担当に差し替わるだけで、読み手は変わらない。
 - **re-measure トリガ**: 今 `applyMetrics` を呼んでいる箇所（`setText` / `setIcon` / `setFont`。
-  Button.zig:142-187）が、代わりに `Look.measure` を呼んで `min_size` を更新する。
-  Look の差し替え時にも 1 回 measure する（§3 のユーティリティ）。
+  Button.zig:142-187）が、代わりに `Look.measureMinSize` を呼んで `min_size` を更新する。
+  Look の差し替え時にも 1 回 `measureMinSize` する（§3 のユーティリティ）。
 - **コンテナは従来どおり** `layout.computeMinSize` で測る（`Container.getMinSize`、Container.zig:132-146）。
-  `Look.measure` は **leaf 用フック**であり、コンテナの measure は null / defer でよい
+  `Look.measureMinSize` は **leaf 用フック**であり、コンテナの `measureMinSize` は null / defer でよい
   （コンテナの最小サイズは子から導出され、Look では決まらない）。
-- nimbus に **「preferred size」概念は無い**（レイアウトは min ＋ grow）。よって measure が返すのは
-  min（必要なら max も）。Swing の `getPreferredSize` 相当は持ち込まない。
+- nimbus に **「preferred size」概念は無い**（レイアウトは min ＋ grow）。
+  Swing の `getPreferredSize` 相当は持ち込まない。
 
 ### 2.6 メトリクスは LAF 側の定数
 
 Button の `PADDING_X` / `PADDING_Y` / `CORNER_RADIUS` 等（Button.zig:16-20）のようなメトリクスは、
-**LAF（Look delegate）側が自分の定数として持つ**。その delegate の `measure` / `paint` がその定数を使う。
+**LAF（Look delegate）側が自分の定数として持つ**。その delegate の `measureMinSize` / `paint` がその定数を使う。
 
 - **コンポーネント側に可変メトリクスフィールドは持たせない**。まずは Look 内の定数で十分。
   将来は `user_data` 経由で渡す構造体の変数を読むかもしれない（v1 では定数）。
-- LAF 切替 ＝ delegate を丸ごと差し替える → padding 等が一緒に付いてくる → measure 再計算 → `min_size` 更新。
-- **「paint だけ差し替えて寸法が古いまま潰れる」不整合は起きない**: paint と measure は同じ `LookVTable` に
-  同居し、セットで差し替わるため。これが paint と measure を 1 つの vtable に束ねる主目的。
+- LAF 切替 ＝ delegate を丸ごと差し替える → padding 等が一緒に付いてくる → `measureMinSize` 再計算 → `min_size` 更新。
+- **「paint だけ差し替えて寸法が古いまま潰れる」不整合は起きない**: paint と `measureMinSize` は同じ `LookVTable` に
+  同居し、セットで差し替わるため。これが paint と `measureMinSize` を 1 つの vtable に束ねる主目的。
 
 ### 2.7 default Look ＝ FlatLaf 扱い
 
@@ -200,7 +202,7 @@ Button の `PADDING_X` / `PADDING_Y` / `CORNER_RADIUS` 等（Button.zig:16-20）
 ### 2.8 ctx / user_data の役割分担
 
 - **per-delegate の共有データ**（テクスチャ・グラデ stop・9-slice inset 等、widget 横断で同一）:
-  `paint` / `measure` が `user_data`（＝Look の `ctx`）経由で読む。
+  `paint` / `measureMinSize` が `user_data`（＝Look の `ctx`）経由で読む。
 - **per-instance の LAF 固有状態**（アニメーションの進行度など。稀）: 既存の Component プロパティ袋
   （`putProperty` / `getProperty` / `putTyped` / `getTyped`、Component.zig:624-662）で足りる。
   → **v1 では専用フィールド不要**。
@@ -216,12 +218,15 @@ Button の `PADDING_X` / `PADDING_Y` / `CORNER_RADIUS` 等（Button.zig:16-20）
   自前 Look は `component.theme` を読んでアプリのテーマ切替に追従してもよいし、無視してもよい
   （theme.zig 既述：「Custom-paint LAFs may read `component.theme` ... or ignore it entirely」）。
 
-### 2.10 Look を Component にどう持たせるか（提案）
+### 2.10 Look を Component にどう持たせるか（end-state は非 null で確定）
 
-既存の `theme` ポインタの隣に、Look を指すフィールドを置く案を **提案**する（正確な形は詳細で詰める）:
+既存の `theme` ポインタの隣に、Look を指すフィールドを置く（フィールド名 `ui` は仮）。
+
+**end-state では `ui` は常に非 null**（既定は built-in default Look を指す）に**確定**。
+読み手は「`ui` があれば」の分岐を持たず、常に `ui` 経由で `paint` / `measureMinSize` へ入る（**分岐レス**）。
 
 ```zig
-// 提案（名前・形は仮）
+// 名前は仮。end-state は非 null（移行期のみ ? を許す。§5 cutover 参照）
 ui: ?struct {
     vtable: *const LookVTable,
     ctx: *anyopaque,
@@ -229,8 +234,9 @@ ui: ?struct {
 ```
 
 - `theme: *const Theme` と同じく「既定はフレームワーク既定、ファクトリ DI で差す」流儀に乗せられる。
-- 既定（FlatLaf）を `null` で表し「`null` なら built-in default Look」にするか、常に非 null で
-  default の `LookVTable` を指すかは詳細（未決）。
+- 型上 `?`（optional）にするのは **移行期のフォールバックのため**（`ui` 無しは旧 `Component.VTable.paint` へ落とす）。
+  これは段階移行の足場であり、**P2 完了時の cleanup で常に非 null 化して `?` とフォールバックを撤去**する（§5 cutover）。
+- ctx の所有・寿命は詳細（未決・§6-3）。
 - `processEvent` 等の構造 vtable（`component.vtable`）は従来どおり型ごとの const を指したまま。
 
 ### 2.11 #4 の「新機構を作らない」を意識的に覆す（明記）
@@ -247,7 +253,7 @@ ComponentUI 風の委譲機構新設は**却下**」としていた。
   デコレーションパターンで実現することだった。
 - ところが新ターゲット（§4）の **Swing Metal の bevel・JTattoo の 9-slice** は、`paint` だけでなく
   **寸法計算も LAF 固有**になる（bevel ぶんの内寸・9-slice の inset が最小サイズに効く）。
-  `setVTable`（paint コピー差し替え）では **measure を表現できない** — そもそも `measure` は現状の
+  `setVTable`（paint コピー差し替え）では **measure を表現できない** — そもそも `measureMinSize` は現状の
   `VTable`（Component.zig:138-155）に存在せず、各 widget が `applyMetrics` で `min_size` を焼くだけ
   （Button.zig:115-136）。LAF ごとに寸法を差し替える受け皿が無い。
 - つまり **#4 の機構は新ターゲットに力不足**。「二つ目の機構を作らない」は、**#4 が予見しなかった要件
@@ -299,18 +305,59 @@ Metal / JTattoo を実現するには awt 側に 2 つのプリミティブが�
 
 ---
 
-## 5. 未決（解決しない・列挙のみ）
+## 5. 実装フェーズと cutover（実装計画）
+
+LAF 機構を **default Look ＝ 現状の見た目** のまま段階導入する実装計画。
+メカニズム移行のみなので、各フェーズの受け入れ条件の核は **snapshot golden が 1 枚も動かないこと**。
+
+### 5.1 ゼロピクセル不変条件（回帰ガード）
+
+default Look は現状描画をそのまま移し替えたものなので、**snapshot golden は 1 枚も変わらないはず**。
+golden が動いたら、それは LAF の見た目変更ではなく **移行のバグ**である。
+このゼロピクセル不変条件を全フェーズの回帰ガードとする（golden が動いたら移行ミスを疑う、と明記）。
+
+### 5.2 cutover（移行期はフォールバック付き）
+
+`paintAt` を `LookVTable` 経由に変えるのは **全ウィジェットに効く**ため、一斉切替はリスクが高い。
+そこで移行期は `ui` を **任意（null 可）** にし、`paintAt` を次のフォールバック付きにする:
+
+- `ui` があれば → 新経路（2 フェーズ `paint` / `paintOver` ＋ `measureMinSize`）。
+- `ui` が無ければ → 旧 `Component.VTable.paint` にフォールバック。
+
+これで **一部のウィジェットだけ default Look へ移行しても golden を動かさず段階移行できる**。
+**P2 完了時の cleanup で `ui` を常に非 null 化し、旧 paint スロットとフォールバックを撤去**する。
+これにより §2.10 の「end-state では常に非 null（分岐レス）」が **end-state として実現**する。
+
+### 5.3 フェーズ分け
+
+- **P1: 足場 ＋ 代表 3 つ**。`LookVTable` 型・`ui` フィールド・2 フェーズ `paintAt` を入れ、
+  次の代表 3 つを default Look へ移行する:
+  - **Button**（leaf）
+  - **Panel**（2 フェーズ paint＝前で背景・後でボーダー。§2.4）
+  - **素の Container**（再帰のみ・自分の外見なし）
+
+  受け入れ条件: **視覚回帰ゼロ（snapshot golden を 1 枚も変えない）＋全テスト緑**。
+- **P2: 残りの全ウィジェットを default Look へ移行**。leaf は機械的に、
+  再帰するコンテナは P1 と同型に慎重に移す。完了時に §5.2 の cleanup（`ui` 非 null 化・フォールバック撤去）。
+- **P3: 一括差し替えユーティリティ**（§3）。power-user 向け。
+  走査で per-widget-type の Look を当てる **型識別の宿題はここで詰める**。
+- **後（別イニシアチブ）**: awt の 2 プリミティブ（linear グラデ／テクスチャ＋9-slice。§4.2）と
+  実 Metal / JTattoo Look。本 doc / 本フェーズ群のスコープ外。
+
+---
+
+## 6. 未決（解決しない・列挙のみ）
 
 以下は意図的に未確定のまま残す。実装着手時 or 実需が出た時点で作者が決める。
 
 （旧「paint と子再帰の順序問題」は **2 フェーズ paint で解決済み**。§2.4 を参照。残る論点は命名のみで、下記 1 に含む。）
 
-1. **命名**: `Component.LookVTable` / `paint` の後フェーズ `paintOver` / `ui` フィールド / `measure` 等はすべて仮称。
-2. **measure の正確なシグネチャ**: min のみか、min ＋ max か。
-   既存の `size_query`（height-for-width の pure query、Component.zig:61-66 / 184）との統合をどうするか
-   （measure に畳むか、別フックのまま併存させるか）。
-3. **Look を Component に持たせる正確な形**: §2.10 の `ui` フィールド案の詳細（null 既定か常時非 null か、
-   ctx の所有・寿命）。
+1. **残りの命名**: `Component.LookVTable` / `paint` の後フェーズ `paintOver` / `ui` フィールド等は仮のまま進めてよい
+   （確定不要）。※`measure` だけは `measureMinSize` を採用済み（§2.5）。
+2. **`measureMinSize` と `size_query` の統合**: min を返す点は確定（§2.5）。残るは既存の `size_query`
+   （height-for-width の pure query、Component.zig:61-66 / 184）との統合をどうするか
+   （`measureMinSize` に畳むか、別フックのまま併存させるか）。
+3. **ctx の所有・寿命**: `ui` が常時非 null（end-state）である点は確定（§2.10）。残るは `ctx` の所有・寿命の詳細。
 4. **外部 `setMinSize` と delegate 自動計算の潰し合い**: **保留（作者が考えたい）**。
    現状、leaf は `applyMetrics` が `min_size` をフィールド上書きするため外部の `setMinSize` が消える
    （Button.zig:135）。コンテナは `getMinSize` が `@max(field, layout)` で合成するので外部設定は floor として同居
@@ -322,23 +369,24 @@ Metal / JTattoo を実現するには awt 側に 2 つのプリミティブが�
 
 ---
 
-## 6. 確定／未決サマリ
+## 7. 確定／未決サマリ
 
 | 区分 | 項目 |
 |---|---|
 | 確定 | init 時固定・実行時差し替え非対応（§1.1） |
 | 確定 | Zig コアは mechanism のみ。名前付き LAF はバインディング層（§1.2） |
-| 確定 | VTable を構造（install/uninstall/processEvent/**destroy**）と LookVTable（paint/measure＋user_data）へ分割（§2.2） |
-| 確定 | 分離理由は「paint＋measure だけを差し替えたい」(3) 案（§2.3） |
+| 確定 | VTable を構造（install/uninstall/processEvent/**destroy**）と LookVTable（paint/measureMinSize＋user_data）へ分割（§2.2） |
+| 確定 | 分離理由は「paint＋measureMinSize だけを差し替えたい」(3) 案（§2.3） |
 | 確定 | Container は専用 paint を失い、`paintAt` 巡回が子再帰を担う（§2.4） |
 | 確定 | 2 フェーズ paint＝`paint`（子の下・背景）／子再帰／`paintOver`（子の上・ボーダー）。Panel の現状の見た目を維持（§2.4） |
 | 確定 | #4 の「新委譲機構を作らない」を作者承認のもと覆す（measure 固有化のため）。他の #4 決定は維持（§2.11） |
-| 確定 | measure 結果を既存 min_size/max_size へキャッシュ。レイアウトは無改修。コンテナは従来 computeMinSize（§2.5） |
-| 確定 | メトリクスは Look 側の定数。paint＋measure セット差し替えで寸法不整合を回避（§2.6） |
+| 確定 | measure は `measureMinSize`（仮だが採用）。最小サイズ（`Size`）のみ返し min_size へキャッシュ。max は widget が従来どおり設定。コンテナは従来 computeMinSize（§2.5） |
+| 確定 | メトリクスは Look 側の定数。paint＋measureMinSize セット差し替えで寸法不整合を回避（§2.6） |
 | 確定 | default Look ＝ FlatLaf（現状描画そのまま）（§2.7） |
 | 確定 | theme と Look は分離（UIDefaults vs ComponentUI）（§2.9） |
 | 確定 | 一括差し替えユーティリティは power-user 向け・init 前 1 回（§3） |
 | 確定 | 狙うのは FlatLaf / Metal / JTattoo。awt に grad / texture+9-slice が要る（別ワークストリーム）（§4） |
-| 提案 | Look の保持は `theme` 隣の `ui: ?{ vtable, ctx }`（§2.10） |
-| 未決 | 命名（LookVTable / paintOver 等）／measure シグネチャ／ui の形／setMinSize 衝突／awt 詳細／着手順（§5） |
+| 確定 | Look 保持は `ui`（`theme` 隣）。**end-state は常に非 null**（分岐レス・移行期のみ null 可）（§2.10） |
+| 確定 | 実装フェーズ P1（足場＋Button/Panel/素 Container）→ P2（全移行＋cleanup）→ P3（一括差し替え）。ゼロピクセル不変条件が回帰ガード（§5） |
+| 未決 | 残命名（LookVTable / paintOver / ui）／`measureMinSize` と `size_query` の統合／ctx 所有・寿命／setMinSize 衝突／awt 詳細／着手順（§6） |
 </content>
