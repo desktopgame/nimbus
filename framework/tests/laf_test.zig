@@ -64,3 +64,83 @@ test "widgets use default Look" {
     try std.testing.expect(menu.popup_root.ui != null);
     try std.testing.expect(popup.popup_root.ui != null);
 }
+
+const PaintLog = struct {
+    entries: [8]u8 = undefined,
+    len: usize = 0,
+
+    fn append(self: *PaintLog, marker: u8) void {
+        self.entries[self.len] = marker;
+        self.len += 1;
+    }
+
+    fn slice(self: *const PaintLog) []const u8 {
+        return self.entries[0..self.len];
+    }
+};
+
+const RecordingLookContext = struct {
+    log: *PaintLog,
+    paint_marker: u8,
+    over_marker: u8 = 0,
+};
+
+const recording_look_vtable = nimbus.Component.LookVTable{
+    .paint = recordingPaint,
+    .paintOver = recordingPaintOver,
+    .measureMinSize = recordingMeasureMinSize,
+};
+
+fn recordingPaint(_: *nimbus.Component, ctx: *anyopaque, _: *awt.Graphics) void {
+    const rec: *RecordingLookContext = @ptrCast(@alignCast(ctx));
+    rec.log.append(rec.paint_marker);
+}
+
+fn recordingPaintOver(_: *nimbus.Component, ctx: *anyopaque, _: *awt.Graphics) void {
+    const rec: *RecordingLookContext = @ptrCast(@alignCast(ctx));
+    if (rec.over_marker != 0) rec.log.append(rec.over_marker);
+}
+
+fn recordingMeasureMinSize(_: *nimbus.Component, _: *anyopaque) nimbus.Component.Size {
+    return .{ .width = 0, .height = 0 };
+}
+
+test "paintAt dispatches Look paint, children, then paintOver" {
+    const allocator = std.testing.allocator;
+    var log = PaintLog{};
+
+    const parent = try nimbus.Container.create(allocator);
+    defer parent.component.vtable.destroy(&parent.component, allocator);
+    const child1 = try nimbus.Container.create(allocator);
+    const child2 = try nimbus.Container.create(allocator);
+
+    var parent_ctx = RecordingLookContext{ .log = &log, .paint_marker = 'P', .over_marker = 'O' };
+    var child1_ctx = RecordingLookContext{ .log = &log, .paint_marker = '1' };
+    var child2_ctx = RecordingLookContext{ .log = &log, .paint_marker = '2' };
+    parent.component.ui = .{ .vtable = &recording_look_vtable, .ctx = &parent_ctx };
+    child1.component.ui = .{ .vtable = &recording_look_vtable, .ctx = &child1_ctx };
+    child2.component.ui = .{ .vtable = &recording_look_vtable, .ctx = &child2_ctx };
+
+    parent.component.setBounds(.{ .x = 0, .y = 0, .width = 100, .height = 80 });
+    child1.component.setBounds(.{ .x = 0, .y = 0, .width = 40, .height = 30 });
+    child2.component.setBounds(.{ .x = 40, .y = 0, .width = 40, .height = 30 });
+    try parent.add(&child1.component);
+    try parent.add(&child2.component);
+
+    var g = awt.Graphics{
+        .cb = undefined,
+        .ctx = undefined,
+        .window_w = 100,
+        .window_h = 80,
+        .fb_w = 100,
+        .fb_h = 80,
+        .origin_x = 0,
+        .origin_y = 0,
+        .clip_rect = .{ .x = 0, .y = 0, .width = 100, .height = 80 },
+        .current_color = awt.Graphics.Color.rgb(0, 0, 0),
+        .current_font = null,
+    };
+
+    parent.component.paintAt(&g);
+    try std.testing.expectEqualStrings("P12O", log.slice());
+}
