@@ -58,12 +58,24 @@ pub const vtable = Component.VTable{
     .destroy = destroy,
 };
 
+pub const look_vtable = Component.LookVTable{
+    .paint = lookPaint,
+    .paintOver = lookPaintOver,
+    .measureMinSize = lookMeasureMinSize,
+};
+
 const popup_vtable = Component.VTable{
     .install = popupInstall,
     .uninstall = popupUninstall,
     .paint = popupPaint,
     .processEvent = popupProcessEvent,
     .destroy = popupDestroyNoop,
+};
+
+const popup_look_vtable = Component.LookVTable{
+    .paint = popupLookPaint,
+    .paintOver = popupLookPaintOver,
+    .measureMinSize = popupLookMeasureMinSize,
 };
 
 pub fn create(
@@ -102,6 +114,8 @@ pub fn create(
         .allocator = allocator,
     };
     cb.component.role = .combobox;
+    cb.component.ui = .{ .vtable = &look_vtable, .ctx = &Component.default_look_context };
+    cb.popup_root.ui = .{ .vtable = &popup_look_vtable, .ctx = &Component.default_look_context };
     cb.applyMetrics();
     try ComboBox.vtable.install(&cb.component);
     return cb;
@@ -187,17 +201,24 @@ pub fn removeChangeListener(
 // ── layout ───────────────────────────────────────────────────────────────
 
 fn applyMetrics(self: *ComboBox) void {
+    const ui = self.component.ui.?;
+    const min = ui.vtable.measureMinSize(&self.component, ui.ctx);
+    self.component.min_size = min;
+    self.component.max_size = .{ .width = std.math.inf(f32), .height = min.height };
+}
+
+fn lookMeasureMinSize(self: *Component, _: *anyopaque) Component.Size {
+    const cb: *ComboBox = @fieldParentPtr("component", self);
     // Closed-state width = max item label width + chevron + paddings.
     var max_w: f32 = 0;
-    for (self.items.items) |s| {
-        const m = self.font.measureString(s);
+    for (cb.items.items) |s| {
+        const m = cb.font.measureString(s);
         if (m.width > max_w) max_w = m.width;
     }
-    const line_h = self.font.face.metrics().line_height;
+    const line_h = cb.font.face.metrics().line_height;
     const min_w = max_w + PADDING_X * 2 + CHEVRON_W;
     const min_h = line_h + PADDING_Y * 2;
-    self.component.min_size = .{ .width = min_w, .height = min_h };
-    self.component.max_size = .{ .width = std.math.inf(f32), .height = min_h };
+    return .{ .width = min_w, .height = min_h };
 }
 
 fn itemHeight(self: ComboBox) f32 {
@@ -269,6 +290,10 @@ fn focusEligible(c: *const Component) bool {
 }
 
 fn paint(self: *Component, g: *awt.Graphics) void {
+    lookPaint(self, &Component.default_look_context, g);
+}
+
+fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
     const cb: *ComboBox = @fieldParentPtr("component", self);
     const t = self.theme;
     const sz = self.size;
@@ -292,6 +317,8 @@ fn paint(self: *Component, g: *awt.Graphics) void {
     // Chevron in the right slot.
     drawChevron(g, sz.width - CHEVRON_W, 0, CHEVRON_W, sz.height, t.text);
 }
+
+fn lookPaintOver(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
 
 fn drawBorder(g: *awt.Graphics, x: f32, y: f32, w: f32, h: f32, color: awt.Graphics.Color) void {
     g.setColor(color);
@@ -415,6 +442,10 @@ fn popupUninstall(_: *Component) void {}
 fn popupDestroyNoop(_: *Component, _: std.mem.Allocator) void {}
 
 fn popupPaint(self: *Component, g: *awt.Graphics) void {
+    popupLookPaint(self, &Component.default_look_context, g);
+}
+
+fn popupLookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
     const cb: *ComboBox = @fieldParentPtr("popup_root", self);
     const sz = self.size;
     const item_h = cb.itemHeight();
@@ -443,6 +474,12 @@ fn popupPaint(self: *Component, g: *awt.Graphics) void {
     g.fillRect(.{ .x = 0, .y = sz.height - 1, .width = sz.width, .height = 1 });
     g.fillRect(.{ .x = 0, .y = 0, .width = 1, .height = sz.height });
     g.fillRect(.{ .x = sz.width - 1, .y = 0, .width = 1, .height = sz.height });
+}
+
+fn popupLookPaintOver(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
+
+fn popupLookMeasureMinSize(_: *Component, _: *anyopaque) Component.Size {
+    return .{ .width = 0, .height = 0 };
 }
 
 fn popupProcessEvent(self: *Component, ev: *Component.Event) void {

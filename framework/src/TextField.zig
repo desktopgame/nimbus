@@ -89,6 +89,12 @@ pub const vtable = Component.VTable{
     .destroy = destroy,
 };
 
+pub const look_vtable = Component.LookVTable{
+    .paint = lookPaint,
+    .paintOver = lookPaintOver,
+    .measureMinSize = lookMeasureMinSize,
+};
+
 pub fn create(
     allocator: std.mem.Allocator,
     app: *Application,
@@ -128,6 +134,7 @@ pub fn create(
     };
     tf.component.role = .text_field;
     tf.component.a11y = .{ .name = a11yName };
+    tf.component.ui = .{ .vtable = &look_vtable, .ctx = &Component.default_look_context };
     tf.applyMetrics();
     try TextField.vtable.install(&tf.component);
     return tf;
@@ -199,21 +206,28 @@ pub fn removeChangeListener(self: *TextField, comptime T: type, comptime f: fn (
 // ── layout ───────────────────────────────────────────────────────────────
 
 fn applyMetrics(self: *TextField) void {
-    // setPixelSize MUST come first — both metrics() and glyphAdvance read
-    // freetype state that is only valid for the most recently-set size.
-    self.font.face.setPixelSize(self.font.pixel_size);
-    const line_h = self.font.face.metrics().line_height;
-    // Use 'M' as the canonical column-width sample (a common Western
-    // convention; CJK columns naturally take ~2x this in advance units,
-    // which is fine for a baseline).
-    const sample_adv = self.font.face.glyphAdvance('M');
-    const w = sample_adv * DEFAULT_COLUMNS + PADDING_X * 2;
-    const h = line_h + PADDING_Y * 2;
-    self.component.min_size = .{ .width = w, .height = h };
-    self.component.max_size = .{ .width = std.math.inf(f32), .height = h };
+    const ui = self.component.ui.?;
+    const min = ui.vtable.measureMinSize(&self.component, ui.ctx);
+    self.component.min_size = min;
+    self.component.max_size = .{ .width = std.math.inf(f32), .height = min.height };
     // Do not touch grow_x here. Its default 0 comes from Component.init, and
     // metrics recalculation (including setText) must not overwrite caller
     // layout policy such as setGrowX(1).
+}
+
+fn lookMeasureMinSize(self: *Component, _: *anyopaque) Component.Size {
+    const tf: *TextField = @fieldParentPtr("component", self);
+    // setPixelSize MUST come first — both metrics() and glyphAdvance read
+    // freetype state that is only valid for the most recently-set size.
+    tf.font.face.setPixelSize(tf.font.pixel_size);
+    const line_h = tf.font.face.metrics().line_height;
+    // Use 'M' as the canonical column-width sample (a common Western
+    // convention; CJK columns naturally take ~2x this in advance units,
+    // which is fine for a baseline).
+    const sample_adv = tf.font.face.glyphAdvance('M');
+    const w = sample_adv * DEFAULT_COLUMNS + PADDING_X * 2;
+    const h = line_h + PADDING_Y * 2;
+    return .{ .width = w, .height = h };
 }
 
 fn a11yName(c: *const Component) ?[]const u8 {
@@ -266,6 +280,10 @@ fn blinkTick(user_data: *anyopaque) void {
 }
 
 fn paint(self: *Component, g: *awt.Graphics) void {
+    lookPaint(self, &Component.default_look_context, g);
+}
+
+fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
     const tf: *TextField = @fieldParentPtr("component", self);
     const sz = self.size;
 
@@ -362,6 +380,8 @@ fn paint(self: *Component, g: *awt.Graphics) void {
         });
     }
 }
+
+fn lookPaintOver(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
 
 fn processEvent(self: *Component, ev: *Component.Event) void {
     const tf: *TextField = @fieldParentPtr("component", self);

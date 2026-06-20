@@ -20,6 +20,12 @@ pub const vtable = Component.VTable{
     .destroy = destroy,
 };
 
+pub const look_vtable = Component.LookVTable{
+    .paint = lookPaint,
+    .paintOver = lookPaintOver,
+    .measureMinSize = lookMeasureMinSize,
+};
+
 pub fn create(allocator: std.mem.Allocator) !*MenuSeparator {
     const s = try allocator.create(MenuSeparator);
     errdefer allocator.destroy(s);
@@ -28,8 +34,10 @@ pub fn create(allocator: std.mem.Allocator) !*MenuSeparator {
         .allocator = allocator,
     };
     s.component.role = .separator;
-    const h = LINE_THICKNESS + PADDING_Y * 2;
-    s.component.min_size = .{ .width = 0, .height = h };
+    s.component.ui = .{ .vtable = &look_vtable, .ctx = &Component.default_look_context };
+    const min = lookMeasureMinSize(&s.component, &Component.default_look_context);
+    s.component.min_size = min;
+    const h = min.height;
     s.component.max_size = .{ .width = std.math.inf(f32), .height = h };
     return s;
 }
@@ -38,6 +46,10 @@ fn install(_: *Component) !void {}
 fn uninstall(_: *Component) void {}
 
 fn paint(self: *Component, g: *awt.Graphics) void {
+    lookPaint(self, &Component.default_look_context, g);
+}
+
+fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
     const w = self.size.width;
     g.setColor(self.theme.separator);
     g.fillRect(.{
@@ -46,6 +58,12 @@ fn paint(self: *Component, g: *awt.Graphics) void {
         .width = w,
         .height = LINE_THICKNESS,
     });
+}
+
+fn lookPaintOver(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
+
+fn lookMeasureMinSize(_: *Component, _: *anyopaque) Component.Size {
+    return .{ .width = 0, .height = LINE_THICKNESS + PADDING_Y * 2 };
 }
 
 fn processEvent(_: *Component, _: *Component.Event) void {

@@ -25,6 +25,12 @@ pub const vtable = Component.VTable{
     .destroy = destroy,
 };
 
+pub const look_vtable = Component.LookVTable{
+    .paint = lookPaint,
+    .paintOver = lookPaintOver,
+    .measureMinSize = lookMeasureMinSize,
+};
+
 pub fn init(
     allocator: std.mem.Allocator,
     text: []const u8,
@@ -42,7 +48,8 @@ pub fn init(
     };
     l.component.role = .label;
     l.component.a11y = .{ .name = a11yName };
-    l.component.min_size = l.contentMinSize();
+    l.component.ui = .{ .vtable = &look_vtable, .ctx = &Component.default_look_context };
+    l.component.min_size = lookMeasureMinSize(&l.component, &Component.default_look_context);
     return l;
 }
 
@@ -70,7 +77,8 @@ pub fn setText(self: *Label, text: []const u8) !void {
     const new_text = try self.allocator.dupe(u8, text);
     self.allocator.free(self.text);
     self.text = new_text;
-    self.component.setMinSize(self.contentMinSize());
+    self.updateMinSizeFromLook();
+    self.component.markLayoutDirty();
 }
 
 pub fn getText(self: Label) []const u8 {
@@ -79,7 +87,8 @@ pub fn getText(self: Label) []const u8 {
 
 pub fn setFont(self: *Label, font: awt.Graphics.TextFont) void {
     self.font = font;
-    self.component.setMinSize(self.contentMinSize());
+    self.updateMinSizeFromLook();
+    self.component.markLayoutDirty();
 }
 
 pub fn getFont(self: Label) awt.Graphics.TextFont {
@@ -103,7 +112,7 @@ pub fn getIcon(self: Label) ?awt.Image {
 /// (Application's built-in icon cache satisfies this). Pass null to clear.
 pub fn setIcon(self: *Label, icon: ?awt.Image) void {
     self.icon = icon;
-    self.component.setMinSize(self.contentMinSize());
+    self.updateMinSizeFromLook();
     self.component.markLayoutDirty();
 }
 
@@ -113,7 +122,7 @@ pub fn getIconSize(self: Label) ?Component.Size {
 
 pub fn setIconSize(self: *Label, size: ?Component.Size) void {
     self.icon_size = size;
-    self.component.setMinSize(self.contentMinSize());
+    self.updateMinSizeFromLook();
     self.component.markLayoutDirty();
 }
 
@@ -135,6 +144,16 @@ fn contentMinSize(self: *const Label) Component.Size {
     };
 }
 
+fn updateMinSizeFromLook(self: *Label) void {
+    const ui = self.component.ui.?;
+    self.component.min_size = ui.vtable.measureMinSize(&self.component, ui.ctx);
+}
+
+fn lookMeasureMinSize(self: *Component, _: *anyopaque) Component.Size {
+    const label: *Label = @fieldParentPtr("component", self);
+    return label.contentMinSize();
+}
+
 fn a11yName(c: *const Component) ?[]const u8 {
     const l: *const Label = @fieldParentPtr("component", c);
     if (l.text.len == 0) return null;
@@ -152,6 +171,10 @@ fn uninstall(self: *Component) void {
 }
 
 fn paint(self: *Component, g: *awt.Graphics) void {
+    lookPaint(self, &Component.default_look_context, g);
+}
+
+fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
     const label: *Label = @fieldParentPtr("component", self);
     // Text-only path is unchanged from the icon-less Label (top-left), so
     // existing layouts / snapshots are unaffected.
@@ -179,6 +202,8 @@ fn paint(self: *Component, g: *awt.Graphics) void {
         g.drawString(label.text, x, ty);
     }
 }
+
+fn lookPaintOver(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
 
 fn processEvent(self: *Component, ev: *Component.Event) void {
     _ = self;

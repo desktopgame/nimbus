@@ -87,6 +87,12 @@ pub const vtable = Component.VTable{
     .destroy = destroy,
 };
 
+pub const look_vtable = Component.LookVTable{
+    .paint = lookPaint,
+    .paintOver = lookPaintOver,
+    .measureMinSize = lookMeasureMinSize,
+};
+
 const size_query = Component.SizeQuery{
     .minHeightForWidth = sizeQueryMinHeightForWidth,
 };
@@ -137,6 +143,7 @@ pub fn create(
         .allocator = allocator,
     };
     ta.component.role = .text_area;
+    ta.component.ui = .{ .vtable = &look_vtable, .ctx = &Component.default_look_context };
     ta.refreshMinSize();
     try TextArea.vtable.install(&ta.component);
     return ta;
@@ -328,9 +335,20 @@ fn reflowAt(self: *TextArea, inner_w: f32) struct { min_w: f32, min_h: f32 } {
 /// callback there anymore); a wrapping view's actual height-at-width is
 /// instead delivered through `SizeQuery.minHeightForWidth`.
 fn refreshMinSize(self: *TextArea) void {
-    const r = self.reflowAt(self.wrapWidth());
+    const r = self.measureMinSizeFromLook();
     self.component.setMinSize(.{ .width = r.min_w, .height = r.min_h });
     self.component.setMaxSize(.{ .width = std.math.inf(f32), .height = std.math.inf(f32) });
+}
+
+fn measureMinSizeFromLook(self: *TextArea) struct { min_w: f32, min_h: f32 } {
+    const s = lookMeasureMinSize(&self.component, &Component.default_look_context);
+    return .{ .min_w = s.width, .min_h = s.height };
+}
+
+fn lookMeasureMinSize(self: *Component, _: *anyopaque) Component.Size {
+    const ta: *TextArea = @fieldParentPtr("component", self);
+    const r = ta.reflowAt(ta.wrapWidth());
+    return .{ .width = r.min_w, .height = r.min_h };
 }
 
 /// Logical index of the next '\n' in [from, total), or `total` if none.
@@ -534,6 +552,10 @@ fn insertStripCR(self: *TextArea, pos: usize, bytes: []const u8) !usize {
 // ── vtable: events ─────────────────────────────────────────────────────────
 
 fn paint(self: *Component, g: *awt.Graphics) void {
+    lookPaint(self, &Component.default_look_context, g);
+}
+
+fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
     const ta: *TextArea = @fieldParentPtr("component", self);
     const sz = self.size;
 
@@ -628,6 +650,8 @@ fn paint(self: *Component, g: *awt.Graphics) void {
         g.fillRect(.{ .x = cg.x, .y = cg.y, .width = CARET_WIDTH, .height = cg.line_h });
     }
 }
+
+fn lookPaintOver(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
 
 fn processEvent(self: *Component, ev: *Component.Event) void {
     const ta: *TextArea = @fieldParentPtr("component", self);

@@ -42,6 +42,12 @@ pub const vtable = Component.VTable{
     .destroy = destroy,
 };
 
+pub const look_vtable = Component.LookVTable{
+    .paint = lookPaint,
+    .paintOver = lookPaintOver,
+    .measureMinSize = lookMeasureMinSize,
+};
+
 pub fn create(
     allocator: std.mem.Allocator,
     orientation: Orientation,
@@ -86,26 +92,36 @@ fn createInternal(
         .allocator = allocator,
     };
     sb.component.role = .scroll_bar;
+    sb.component.ui = .{ .vtable = &look_vtable, .ctx = &Component.default_look_context };
     sb.applyDefaultLayoutAttrs();
     try ScrollBar.vtable.install(&sb.component);
     return sb;
 }
 
 fn applyDefaultLayoutAttrs(self: *ScrollBar) void {
+    const min = lookMeasureMinSize(&self.component, &Component.default_look_context);
     switch (self.orientation) {
         .horizontal => {
-            self.component.min_size = .{ .width = MIN_THUMB * 2, .height = THICKNESS };
+            self.component.min_size = min;
             self.component.max_size = .{ .width = std.math.inf(f32), .height = THICKNESS };
             self.component.grow_x = 1;
             self.component.grow_y = 0;
         },
         .vertical => {
-            self.component.min_size = .{ .width = THICKNESS, .height = MIN_THUMB * 2 };
+            self.component.min_size = min;
             self.component.max_size = .{ .width = THICKNESS, .height = std.math.inf(f32) };
             self.component.grow_x = 0;
             self.component.grow_y = 1;
         },
     }
+}
+
+fn lookMeasureMinSize(self: *Component, _: *anyopaque) Component.Size {
+    const sb: *ScrollBar = @fieldParentPtr("component", self);
+    return switch (sb.orientation) {
+        .horizontal => .{ .width = MIN_THUMB * 2, .height = THICKNESS },
+        .vertical => .{ .width = THICKNESS, .height = MIN_THUMB * 2 },
+    };
 }
 
 // ── public API ───────────────────────────────────────────────────────────
@@ -216,6 +232,10 @@ fn onModelChange(comp: *Component, _: *const ChangeEvent) void {
 }
 
 fn paint(self: *Component, g: *awt.Graphics) void {
+    lookPaint(self, &Component.default_look_context, g);
+}
+
+fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
     const sb: *ScrollBar = @fieldParentPtr("component", self);
     const sz = self.size;
     // Hidden / collapsed bar (e.g. content fits, so this axis needs no bar).
@@ -241,6 +261,8 @@ fn paint(self: *Component, g: *awt.Graphics) void {
         ),
     }
 }
+
+fn lookPaintOver(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
 
 fn processEvent(self: *Component, ev: *Component.Event) void {
     const sb: *ScrollBar = @fieldParentPtr("component", self);

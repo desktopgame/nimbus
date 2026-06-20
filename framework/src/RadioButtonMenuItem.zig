@@ -29,6 +29,12 @@ pub const vtable = Component.VTable{
     .destroy = destroy,
 };
 
+pub const look_vtable = Component.LookVTable{
+    .paint = lookPaint,
+    .paintOver = lookPaintOver,
+    .measureMinSize = lookMeasureMinSize,
+};
+
 pub fn create(
     allocator: std.mem.Allocator,
     text: []const u8,
@@ -78,19 +84,26 @@ fn createInternal(
     };
     item.component.role = .radio_button_menu_item;
     item.component.a11y = .{ .name = a11yName };
+    item.component.ui = .{ .vtable = &look_vtable, .ctx = &Component.default_look_context };
     item.applyMetrics();
     try RadioButtonMenuItem.vtable.install(&item.component);
     return item;
 }
 
 fn applyMetrics(self: *RadioButtonMenuItem) void {
-    const m = self.font.measureString(self.text);
-    const min = Component.Size{
+    const ui = self.component.ui.?;
+    const min = ui.vtable.measureMinSize(&self.component, ui.ctx);
+    self.component.min_size = min;
+    self.component.max_size = .{ .width = std.math.inf(f32), .height = min.height };
+}
+
+fn lookMeasureMinSize(self: *Component, _: *anyopaque) Component.Size {
+    const item: *RadioButtonMenuItem = @fieldParentPtr("component", self);
+    const m = item.font.measureString(item.text);
+    return .{
         .width = MenuItem.ICON_SLOT_WIDTH + m.width + MenuItem.ACCEL_SLOT_WIDTH + MenuItem.PADDING_X * 2,
         .height = m.height + MenuItem.PADDING_Y * 2,
     };
-    self.component.min_size = min;
-    self.component.max_size = .{ .width = std.math.inf(f32), .height = min.height };
 }
 
 pub fn getText(self: RadioButtonMenuItem) []const u8 {
@@ -159,6 +172,10 @@ fn onModelChange(comp: *Component, _: *const ChangeEvent) void {
 }
 
 fn paint(self: *Component, g: *awt.Graphics) void {
+    lookPaint(self, &Component.default_look_context, g);
+}
+
+fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
     const item: *RadioButtonMenuItem = @fieldParentPtr("component", self);
     const t = self.theme;
     const sz = self.size;
@@ -204,6 +221,8 @@ fn paint(self: *Component, g: *awt.Graphics) void {
         }
     }
 }
+
+fn lookPaintOver(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
 
 fn drawRadioDot(g: *awt.Graphics, x0: f32, row_h: f32, color: awt.Graphics.Color) void {
     g.setColor(color);

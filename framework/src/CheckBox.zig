@@ -42,6 +42,12 @@ pub const vtable = Component.VTable{
     .destroy = destroy,
 };
 
+pub const look_vtable = Component.LookVTable{
+    .paint = lookPaint,
+    .paintOver = lookPaintOver,
+    .measureMinSize = lookMeasureMinSize,
+};
+
 pub fn create(
     allocator: std.mem.Allocator,
     text: []const u8,
@@ -93,6 +99,7 @@ fn createInternal(
     cb.component.role = .checkbox;
     cb.component.a11y = .{ .name = a11yName };
     cb.component.focus_query = .{ .isEligible = focusEligible };
+    cb.component.ui = .{ .vtable = &look_vtable, .ctx = &Component.default_look_context };
     cb.applyMetrics();
     try CheckBox.vtable.install(&cb.component);
     return cb;
@@ -146,14 +153,20 @@ fn a11yName(c: *const Component) ?[]const u8 {
 // ── layout ───────────────────────────────────────────────────────────────
 
 fn applyMetrics(self: *CheckBox) void {
-    const m = self.font.measureString(self.text);
+    const ui = self.component.ui.?;
+    const min = ui.vtable.measureMinSize(&self.component, ui.ctx);
+    self.component.min_size = min;
+    self.component.max_size = .{ .width = std.math.inf(f32), .height = min.height };
+}
+
+fn lookMeasureMinSize(self: *Component, _: *anyopaque) Component.Size {
+    const cb: *CheckBox = @fieldParentPtr("component", self);
+    const m = cb.font.measureString(cb.text);
     const content_h = @max(BOX_SIZE, m.height);
-    const min = Component.Size{
+    return .{
         .width = BOX_SIZE + BOX_GAP + m.width + PADDING_X * 2,
         .height = content_h + PADDING_Y * 2,
     };
-    self.component.min_size = min;
-    self.component.max_size = .{ .width = std.math.inf(f32), .height = min.height };
 }
 
 // ── vtable impl ──────────────────────────────────────────────────────────
@@ -176,6 +189,10 @@ fn onModelChange(comp: *Component, _: *const ChangeEvent) void {
 }
 
 fn paint(self: *Component, g: *awt.Graphics) void {
+    lookPaint(self, &Component.default_look_context, g);
+}
+
+fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
     const cb: *CheckBox = @fieldParentPtr("component", self);
     const t = self.theme;
     const sz = self.size;
@@ -217,6 +234,8 @@ fn paint(self: *Component, g: *awt.Graphics) void {
         g.drawRect(.{ .x = 1, .y = 1, .width = sz.width - 2, .height = sz.height - 2 });
     }
 }
+
+fn lookPaintOver(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
 
 /// Open border (4 strips) so the colored fill underneath shows through
 /// to the user without rasterizing a separate stroke pass.

@@ -35,6 +35,12 @@ pub const vtable = Component.VTable{
     .destroy = destroy,
 };
 
+pub const look_vtable = Component.LookVTable{
+    .paint = lookPaint,
+    .paintOver = lookPaintOver,
+    .measureMinSize = lookMeasureMinSize,
+};
+
 pub fn create(
     allocator: std.mem.Allocator,
     orientation: Orientation,
@@ -77,28 +83,38 @@ fn createInternal(
     };
     s.component.role = .slider;
     s.component.setFocusable(true);
+    s.component.ui = .{ .vtable = &look_vtable, .ctx = &Component.default_look_context };
     s.applyDefaultLayoutAttrs();
     try Slider.vtable.install(&s.component);
     return s;
 }
 
 fn applyDefaultLayoutAttrs(self: *Slider) void {
-    const long_min: f32 = THUMB_RADIUS * 4;
-    const cross_size: f32 = THUMB_RADIUS * 2 + 4;
+    const min = lookMeasureMinSize(&self.component, &Component.default_look_context);
     switch (self.orientation) {
         .horizontal => {
-            self.component.min_size = .{ .width = long_min, .height = cross_size };
-            self.component.max_size = .{ .width = std.math.inf(f32), .height = cross_size };
+            self.component.min_size = min;
+            self.component.max_size = .{ .width = std.math.inf(f32), .height = min.height };
             self.component.grow_x = 1;
             self.component.grow_y = 0;
         },
         .vertical => {
-            self.component.min_size = .{ .width = cross_size, .height = long_min };
-            self.component.max_size = .{ .width = cross_size, .height = std.math.inf(f32) };
+            self.component.min_size = min;
+            self.component.max_size = .{ .width = min.width, .height = std.math.inf(f32) };
             self.component.grow_x = 0;
             self.component.grow_y = 1;
         },
     }
+}
+
+fn lookMeasureMinSize(self: *Component, _: *anyopaque) Component.Size {
+    const slider: *Slider = @fieldParentPtr("component", self);
+    const long_min: f32 = THUMB_RADIUS * 4;
+    const cross_size: f32 = THUMB_RADIUS * 2 + 4;
+    return switch (slider.orientation) {
+        .horizontal => .{ .width = long_min, .height = cross_size },
+        .vertical => .{ .width = cross_size, .height = long_min },
+    };
 }
 
 pub fn getOrientation(self: Slider) Orientation {
@@ -163,6 +179,10 @@ fn onModelChange(comp: *Component, _: *const ChangeEvent) void {
 }
 
 fn paint(self: *Component, g: *awt.Graphics) void {
+    lookPaint(self, &Component.default_look_context, g);
+}
+
+fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
     const slider: *Slider = @fieldParentPtr("component", self);
     const t = self.theme;
     const sz = self.size;
@@ -218,6 +238,8 @@ fn paint(self: *Component, g: *awt.Graphics) void {
         g.drawRect(.{ .x = 1, .y = 1, .width = sz.width - 2, .height = sz.height - 2 });
     }
 }
+
+fn lookPaintOver(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
 
 fn processEvent(self: *Component, ev: *Component.Event) void {
     const slider: *Slider = @fieldParentPtr("component", self);
