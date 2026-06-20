@@ -3,6 +3,10 @@ unsafe: true
 ---
 
 # box_layout
+
+Cross-axis `stretch` assigns the container cross size and then clamps by the
+child min/max size. If max-size clamping leaves extra cross-axis space, the
+clamped stretch child is centered in that leftover space.
 水平または垂直に子を並べる `LayoutManager`。
 分配アルゴリズムは `{REPO_ROOT}/doc/internal/layout-design.md`「子の分配アルゴリズム」の 1-pass clamp を採用する。
 Swing の `BoxLayout` / CSS flexbox の単純化版に相当する。

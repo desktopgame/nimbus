@@ -100,9 +100,9 @@ test "BoxLayout spacing contributes to min size and child gaps" {
     root.setBounds(.{ .x = 0, .y = 0, .width = 400, .height = 100 });
     root.doLayout();
 
-    try expectBounds(l1.asComponent(), 0, 0, 50, 30);
-    try expectBounds(l2.asComponent(), 57, 0, 80, 40);
-    try expectBounds(l3.asComponent(), 144, 0, 60, 25);
+    try expectBounds(l1.asComponent(), 0, 35, 50, 30);
+    try expectBounds(l2.asComponent(), 57, 30, 80, 40);
+    try expectBounds(l3.asComponent(), 144, 37.5, 60, 25);
 }
 
 test "Container owns allocated layouts and ignores singleton layouts" {

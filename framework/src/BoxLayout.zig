@@ -2,7 +2,8 @@
 //!
 //! Algorithm: 1-pass clamp. Sum mins, distribute excess by grow weight,
 //! clamp at max, leave any leftover as gap at the end. Cross-axis stretches
-//! to container size (clamped by child min/max).
+//! to container size (clamped by child min/max); a stretch child clamped below
+//! the container cross size is centered in the leftover cross space.
 
 const std = @import("std");
 const Component = @import("Component.zig");
@@ -155,8 +156,8 @@ fn doLayout(self: *LayoutManager, container: *Container) void {
         if (cross < child_cmin) cross = child_cmin;
 
         const cross_pos: f32 = switch (align_v) {
-            .stretch, .start => 0,
-            .center => (cross_size - cross) / 2,
+            .start => 0,
+            .stretch, .center => (cross_size - cross) / 2,
             .end => cross_size - cross,
         };
 
@@ -213,4 +214,29 @@ fn computeMaxSize(self: *LayoutManager, container: *const Container) Component.S
         .horizontal => .{ .width = main_total, .height = cross_max },
         .vertical => .{ .width = cross_max, .height = main_total },
     };
+}
+
+test "box layout centers stretch child when cross size is clamped by max" {
+    const allocator = std.testing.allocator;
+    const parent = try Container.create(allocator);
+    defer parent.component.vtable.destroy(&parent.component, allocator);
+    parent.setLayout(horizontal());
+    parent.component.setBounds(.{ .x = 0, .y = 0, .width = 100, .height = 40 });
+
+    const clamped = try Container.create(allocator);
+    clamped.component.setMinSize(.{ .width = 10, .height = 10 });
+    clamped.component.setMaxSize(.{ .width = 10, .height = 20 });
+    try parent.add(&clamped.component);
+
+    const full = try Container.create(allocator);
+    full.component.setMinSize(.{ .width = 10, .height = 10 });
+    full.component.setMaxSize(.{ .width = 10, .height = std.math.inf(f32) });
+    try parent.add(&full.component);
+
+    parent.doLayout();
+
+    try std.testing.expectEqual(@as(f32, 20), clamped.component.size.height);
+    try std.testing.expectEqual(@as(f32, 10), clamped.component.position.y);
+    try std.testing.expectEqual(@as(f32, 40), full.component.size.height);
+    try std.testing.expectEqual(@as(f32, 0), full.component.position.y);
 }

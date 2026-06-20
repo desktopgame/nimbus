@@ -48,9 +48,9 @@ test "horizontal: 3 fixed-size children pack from the left" {
 
     // Each child takes its min/max width on the main axis. Cross axis
     // collapses to max=h (stretch clamped). Pack-left → x cumulates.
-    try expectBounds(&l1.container.component, 0, 0, 50, 30);
-    try expectBounds(&l2.container.component, 50, 0, 80, 40);
-    try expectBounds(&l3.container.component, 130, 0, 60, 25);
+    try expectBounds(&l1.container.component, 0, 35, 50, 30);
+    try expectBounds(&l2.container.component, 50, 30, 80, 40);
+    try expectBounds(&l3.container.component, 130, 37.5, 60, 25);
 }
 
 test "horizontal: single grow child eats leftover space" {
@@ -75,9 +75,9 @@ test "horizontal: single grow child eats leftover space" {
     root.doLayout();
 
     // sum_min = 40 + 20 + 40 = 100, excess = 200 → all goes to `mid`.
-    try expectBounds(&left.container.component, 0, 0, 40, 30);
-    try expectBounds(&mid.container.component, 40, 0, 220, 30);
-    try expectBounds(&right.container.component, 260, 0, 40, 30);
+    try expectBounds(&left.container.component, 0, 10, 40, 30);
+    try expectBounds(&mid.container.component, 40, 10, 220, 30);
+    try expectBounds(&right.container.component, 260, 10, 40, 30);
 }
 
 test "horizontal: grow split by weight" {
@@ -101,8 +101,8 @@ test "horizontal: grow split by weight" {
     root.doLayout();
 
     // sum_min = 0, distributable = 400. Split 1:3 → 100 / 300.
-    try expectBounds(&c1.container.component, 0, 0, 100, 20);
-    try expectBounds(&c2.container.component, 100, 0, 300, 20);
+    try expectBounds(&c1.container.component, 0, 15, 100, 20);
+    try expectBounds(&c2.container.component, 100, 15, 300, 20);
 }
 
 test "horizontal: max_size caps grown width" {
@@ -120,7 +120,7 @@ test "horizontal: max_size caps grown width" {
     root.setBounds(.{ .x = 0, .y = 0, .width = 500, .height = 40 });
     root.doLayout();
 
-    try expectBounds(&capped.container.component, 0, 0, 80, 25);
+    try expectBounds(&capped.container.component, 0, 7.5, 80, 25);
 }
 
 test "vertical: 3 fixed-size children pack from the top" {
@@ -139,9 +139,9 @@ test "vertical: 3 fixed-size children pack from the top" {
     root.setBounds(.{ .x = 0, .y = 0, .width = 200, .height = 300 });
     root.doLayout();
 
-    try expectBounds(&l1.container.component, 0, 0, 100, 20);
-    try expectBounds(&l2.container.component, 0, 20, 80, 30);
-    try expectBounds(&l3.container.component, 0, 50, 60, 15);
+    try expectBounds(&l1.container.component, 50, 0, 100, 20);
+    try expectBounds(&l2.container.component, 60, 20, 80, 30);
+    try expectBounds(&l3.container.component, 70, 50, 60, 15);
 }
 
 test "vertical: cross-axis alignment (start / center / end / stretch)" {
@@ -218,5 +218,5 @@ test "nested: vertical box with a horizontal row reports correct min size" {
     // Inner row should be sized as 80 (sum of child widths) × 25 (max
     // child height). Cross axis stretches up to row.effectiveMaxSize().width
     // = sum of child max widths = 30+50 = 80, so the row collapses to 80.
-    try expectBounds(&row.component, 0, 0, 80, 25);
+    try expectBounds(&row.component, 60, 0, 80, 25);
 }
