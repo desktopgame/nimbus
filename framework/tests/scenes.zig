@@ -286,6 +286,251 @@ fn paintToggleComboboxClosed(ctx: PaintContext) anyerror!void {
     setup.paint();
 }
 
+// Composite widget scenes ----------------------------------------------------
+
+pub const panel_paint_over_child = Scene{
+    .name = "panel_paint_over_child",
+    .width = 260,
+    .height = 180,
+    .paint = paintPanelPaintOverChild,
+};
+
+fn paintPanelPaintOverChild(ctx: PaintContext) anyerror!void {
+    const panel = try nimbus.Panel.create(ctx.allocator);
+    defer panel.asComponent().vtable.destroy(panel.asComponent(), ctx.allocator);
+
+    panel.setBackground(awt.Graphics.Color.rgb(0.97, 0.98, 1.00));
+    panel.setBorder(.{
+        .thickness = 10,
+        .color = awt.Graphics.Color.rgb(0.12, 0.17, 0.24),
+    });
+    panel.container.setLayout(null);
+    panel.asComponent().setBounds(.{ .x = 24, .y = 22, .width = 210, .height = 130 });
+
+    const child = try nimbus.Panel.create(ctx.allocator);
+    child.setBackground(awt.Graphics.Color.rgb(0.94, 0.42, 0.26));
+    child.asComponent().setBounds(.{ .x = 0, .y = 0, .width = 210, .height = 130 });
+    try panel.container.add(child.asComponent());
+
+    panel.asComponent().paintAt(ctx.g);
+}
+
+pub const split_pane_divider = Scene{
+    .name = "split_pane_divider",
+    .width = 360,
+    .height = 150,
+    .paint = paintSplitPaneDivider,
+};
+
+fn paintSplitPaneDivider(ctx: PaintContext) anyerror!void {
+    const left = try coloredLeaf(ctx.allocator, 60, 80, awt.Graphics.Color.rgb(0.30, 0.55, 0.88));
+    const right = try coloredLeaf(ctx.allocator, 80, 80, awt.Graphics.Color.rgb(0.86, 0.52, 0.28));
+    const split = try nimbus.SplitPane.create(ctx.allocator, .horizontal, left.asComponent(), right.asComponent());
+    defer split.asComponent().vtable.destroy(split.asComponent(), ctx.allocator);
+
+    split.setDividerSize(12);
+    split.setDividerLocation(138);
+    split.asComponent().setBounds(.{ .x = 22, .y = 24, .width = 316, .height = 102 });
+    split.container.doLayout();
+    split.asComponent().paintAt(ctx.g);
+}
+
+pub const scroll_pane_bars = Scene{
+    .name = "scroll_pane_bars",
+    .width = 300,
+    .height = 220,
+    .paint = paintScrollPaneBars,
+};
+
+fn paintScrollPaneBars(ctx: PaintContext) anyerror!void {
+    const view = try nimbus.Panel.create(ctx.allocator);
+    view.setBackground(awt.Graphics.Color.rgb(0.78, 0.90, 0.78));
+    view.asComponent().setMinSize(.{ .width = 420, .height = 320 });
+
+    const font = nimbus.awt.Graphics.TextFont{ .face = ctx.font, .pixel_size = 14 };
+    const label = try nimbus.Label.create(ctx.allocator, "large view", font, awt.Graphics.Color.rgb(0.10, 0.16, 0.10));
+    label.component.setBounds(.{ .x = 18, .y = 16, .width = 140, .height = 24 });
+    try view.container.add(&label.component);
+
+    const sp = try nimbus.ScrollPane.create(ctx.allocator, view.asComponent());
+    defer sp.asComponent().vtable.destroy(sp.asComponent(), ctx.allocator);
+    sp.setHorizontalPolicy(.always);
+    sp.setVerticalPolicy(.always);
+    sp.setScrollX(48);
+    sp.setScrollY(36);
+    sp.asComponent().setBounds(.{ .x = 24, .y = 20, .width = 236, .height = 164 });
+    sp.container.doLayout();
+    sp.asComponent().paintAt(ctx.g);
+}
+
+var list_cell_font: ?awt.Font = null;
+
+const TableRow = struct {
+    name: []const u8,
+    kind: []const u8,
+    size: []const u8,
+};
+
+const TextCell = struct {
+    label: *nimbus.Label,
+
+    fn createList(_: *anyopaque, allocator: std.mem.Allocator) anyerror!nimbus.List.Cell {
+        const self = try allocator.create(TextCell);
+        errdefer allocator.destroy(self);
+        const font = nimbus.awt.Graphics.TextFont{ .face = list_cell_font.?, .pixel_size = 14 };
+        self.* = .{
+            .label = try nimbus.Label.create(allocator, "", font, awt.Graphics.Color.rgb(0.08, 0.10, 0.12)),
+        };
+        self.label.component.setMinSize(.{ .width = 0, .height = 22 });
+        return .{
+            .component = &self.label.component,
+            .update = updateList,
+            .destroy = destroyList,
+            .user_data = self,
+        };
+    }
+
+    fn updateList(user_data: *anyopaque, cell_ctx: nimbus.List.CellContext) void {
+        const self: *TextCell = @ptrCast(@alignCast(user_data));
+        const text_ptr: *[]const u8 = @ptrCast(@alignCast(cell_ctx.value));
+        self.label.setText(text_ptr.*) catch {};
+    }
+
+    fn destroyList(user_data: *anyopaque, allocator: std.mem.Allocator) void {
+        const self: *TextCell = @ptrCast(@alignCast(user_data));
+        self.label.component.vtable.destroy(&self.label.component, allocator);
+        allocator.destroy(self);
+    }
+
+    fn createTable(_: *anyopaque, allocator: std.mem.Allocator) anyerror!nimbus.Table.Cell {
+        const self = try allocator.create(TextCell);
+        errdefer allocator.destroy(self);
+        const font = nimbus.awt.Graphics.TextFont{ .face = list_cell_font.?, .pixel_size = 13 };
+        self.* = .{
+            .label = try nimbus.Label.create(allocator, "", font, awt.Graphics.Color.rgb(0.08, 0.10, 0.12)),
+        };
+        self.label.component.setMinSize(.{ .width = 0, .height = 20 });
+        return .{
+            .component = &self.label.component,
+            .update = updateTable,
+            .destroy = destroyTable,
+            .user_data = self,
+        };
+    }
+
+    fn updateTable(user_data: *anyopaque, cell_ctx: nimbus.Table.CellContext) void {
+        const self: *TextCell = @ptrCast(@alignCast(user_data));
+        const row: *TableRow = @ptrCast(@alignCast(cell_ctx.value));
+        const text = switch (cell_ctx.col) {
+            0 => row.name,
+            1 => row.kind,
+            else => row.size,
+        };
+        self.label.setText(text) catch {};
+    }
+
+    fn destroyTable(user_data: *anyopaque, allocator: std.mem.Allocator) void {
+        destroyList(user_data, allocator);
+    }
+};
+
+pub const list_selection = Scene{
+    .name = "list_selection",
+    .width = 260,
+    .height = 170,
+    .paint = paintListSelection,
+};
+
+fn paintListSelection(ctx: PaintContext) anyerror!void {
+    list_cell_font = ctx.font;
+    var model = nimbus.List.ListModel.init(ctx.allocator);
+    defer model.deinit();
+    var rows = [_][]const u8{ "Alpha", "Beta selected", "Gamma", "Delta" };
+    for (&rows) |*row| try model.add(@ptrCast(row));
+
+    var factory_ctx: u8 = 0;
+    const factory = nimbus.List.CellFactory{
+        .create = TextCell.createList,
+        .user_data = &factory_ctx,
+    };
+    const list = try nimbus.List.createWithModel(ctx.allocator, &model, factory);
+    defer list.asComponent().vtable.destroy(list.asComponent(), ctx.allocator);
+    list.setRowHeight(30);
+    list.setSelected(1);
+    list.asComponent().setBounds(.{ .x = 28, .y = 24, .width = 196, .height = 120 });
+    list.asComponent().paintAt(ctx.g);
+}
+
+pub const table_header_grid = Scene{
+    .name = "table_header_grid",
+    .width = 390,
+    .height = 210,
+    .paint = paintTableHeaderGrid,
+};
+
+fn paintTableHeaderGrid(ctx: PaintContext) anyerror!void {
+    list_cell_font = ctx.font;
+    var model = nimbus.Table.Model.init(ctx.allocator);
+    defer model.deinit();
+    var rows = [_]TableRow{
+        .{ .name = "README.md", .kind = "doc", .size = "12 KB" },
+        .{ .name = "src", .kind = "dir", .size = "--" },
+        .{ .name = "nimbus.zig", .kind = "zig", .size = "7 KB" },
+        .{ .name = "assets", .kind = "dir", .size = "--" },
+    };
+    for (&rows) |*row| try model.add(@ptrCast(row));
+
+    var factory_ctx: u8 = 0;
+    const columns = [_]nimbus.Table.Column{
+        .{ .title = "Name", .width = 150, .factory = .{ .create = TextCell.createTable, .user_data = &factory_ctx } },
+        .{ .title = "Kind", .width = 90, .factory = .{ .create = TextCell.createTable, .user_data = &factory_ctx } },
+        .{ .title = "Size", .width = 80, .factory = .{ .create = TextCell.createTable, .user_data = &factory_ctx } },
+    };
+    const table = try nimbus.Table.createWithModel(ctx.allocator, &model, &columns, .{ .face = ctx.font, .pixel_size = 13 });
+    table.setSelected(1);
+    table.setSortIndicator(0, .ascending);
+
+    const sp = try nimbus.ScrollPane.create(ctx.allocator, table.asComponent());
+    defer sp.asComponent().vtable.destroy(sp.asComponent(), ctx.allocator);
+    try sp.setColumnHeaderView(try table.headerView());
+    sp.setHorizontalPolicy(.always);
+    sp.setVerticalPolicy(.always);
+    sp.asComponent().setBounds(.{ .x = 20, .y = 22, .width = 338, .height = 148 });
+    sp.container.doLayout();
+    sp.asComponent().paintAt(ctx.g);
+}
+
+pub const popup_menu_open = Scene{
+    .name = "popup_menu_open",
+    .width = 230,
+    .height = 160,
+    .paint = paintPopupMenuOpen,
+};
+
+fn paintPopupMenuOpen(ctx: PaintContext) anyerror!void {
+    const font = nimbus.awt.Graphics.TextFont{ .face = ctx.font, .pixel_size = 14 };
+    const color = awt.Graphics.Color.rgb(0.08, 0.10, 0.12);
+    const popup = try nimbus.PopupMenu.create(ctx.allocator);
+    defer popup.destroy();
+
+    try popup.add(&(try nimbus.MenuItem.create(ctx.allocator, "Open", font, color)).component);
+    try popup.add(&(try nimbus.MenuItem.create(ctx.allocator, "Save As", font, color)).component);
+    try popup.addSeparator();
+    try popup.add(&(try nimbus.MenuItem.create(ctx.allocator, "Close", font, color)).component);
+
+    popup.popup_root.position = .{ .x = 38, .y = 24 };
+    popup.popup_root.size = .{ .width = 136, .height = 1 };
+    var cur_y: f32 = 1;
+    for (popup.items.items) |item| {
+        popup.popup_root.size.height += item.min_size.height;
+        item.parent = &popup.popup_root;
+        item.setBounds(.{ .x = 0, .y = cur_y, .width = 136, .height = item.min_size.height });
+        cur_y += item.min_size.height;
+    }
+    popup.popup_root.size.height += 1;
+    popup.popup_root.paintAt(ctx.g);
+}
+
 // ── TabbedPane scene ───────────────────────────────────────────────────────
 
 /// TabbedPane with three tabs and the middle tab selected. The colored pages

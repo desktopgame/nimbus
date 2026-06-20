@@ -63,6 +63,30 @@ test "snapshot: toggle_combobox_closed" {
     try runScene(scenes.toggle_combobox_closed);
 }
 
+test "snapshot: panel_paint_over_child" {
+    try runScene(scenes.panel_paint_over_child);
+}
+
+test "snapshot: split_pane_divider" {
+    try runScene(scenes.split_pane_divider);
+}
+
+test "snapshot: scroll_pane_bars" {
+    try runScene(scenes.scroll_pane_bars);
+}
+
+test "snapshot: list_selection" {
+    try runScene(scenes.list_selection);
+}
+
+test "snapshot: table_header_grid" {
+    try runScene(scenes.table_header_grid);
+}
+
+test "snapshot: popup_menu_open" {
+    try runScene(scenes.popup_menu_open);
+}
+
 test "snapshot: tabbed_pane" {
     try runScene(scenes.tabbed_pane);
 }
