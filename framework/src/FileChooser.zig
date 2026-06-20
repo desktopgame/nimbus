@@ -560,7 +560,10 @@ pub const FileChooser = struct {
         const split = try app.splitPane(.horizontal, &places_sp.container.component, &card_holder.component);
         split.setDividerLocation(180);
         split.setResizeWeight(0);
-        try BorderLayout.add(body, .center, split.asComponent());
+        const center = try app.container();
+        center.setLayout(try PaddingLayout.create(a, .{ .top = 8, .bottom = 8 }));
+        try center.add(split.asComponent());
+        try BorderLayout.add(body, .center, &center.component);
 
         const south = try app.container();
         south.setLayout(try BoxLayout.horizontalSpaced(a, 8));
