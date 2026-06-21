@@ -765,6 +765,86 @@ test "Metal table reaches Table header through ScrollPane column header" {
     try std.testing.expect(table.header_view.?.component.ui.vtable == &nimbus.laf.metal.metal_tableheader_look);
 }
 
+test "Metal tabbed pane measureMinSize without GPU device" {
+    const allocator = std.testing.allocator;
+    var text_font = try initTestTextFont();
+    defer deinitTestTextFont(&text_font);
+
+    const tabs = try nimbus.TabbedPane.create(allocator, text_font);
+    defer tabs.asComponent().vtable.destroy(tabs.asComponent(), allocator);
+
+    try expectSizeBitEqual(.{ .width = 0, .height = 0 }, nimbus.laf.metal.metal_tabbedpane_look.measureMinSize(
+        tabs.asComponent(),
+        &nimbus.laf.metal.metal_palette,
+    ));
+}
+
+test "Metal table reaches TabbedPane" {
+    const allocator = std.testing.allocator;
+    var text_font = try initTestTextFont();
+    defer deinitTestTextFont(&text_font);
+
+    const root = try nimbus.Container.create(allocator);
+    defer root.component.vtable.destroy(&root.component, allocator);
+
+    const tabs = try nimbus.TabbedPane.create(allocator, text_font);
+    try root.add(tabs.asComponent());
+
+    nimbus.laf.applyLook(&root.component, nimbus.laf.metal.metalTable());
+
+    try std.testing.expect(tabs.asComponent().ui.vtable == &nimbus.laf.metal.metal_tabbedpane_look);
+}
+
+test "Metal TabbedPane keeps hidden tab content at zero size" {
+    const allocator = std.testing.allocator;
+    var text_font = try initTestTextFont();
+    defer deinitTestTextFont(&text_font);
+
+    const tabs = try nimbus.TabbedPane.create(allocator, text_font);
+    defer tabs.asComponent().vtable.destroy(tabs.asComponent(), allocator);
+
+    try tabs.addTab("One", (try nimbus.Panel.create(allocator)).asComponent());
+    try tabs.addTab("Two", (try nimbus.Panel.create(allocator)).asComponent());
+    try tabs.addTab("Three", (try nimbus.Panel.create(allocator)).asComponent());
+    tabs.setSelectedIndex(1);
+    nimbus.laf.applyLook(tabs.asComponent(), nimbus.laf.metal.metalTable());
+
+    tabs.asComponent().setBounds(.{ .x = 0, .y = 0, .width = 320, .height = 180 });
+    tabs.container.doLayout();
+
+    const first = tabs.getContentAt(0);
+    const selected = tabs.getContentAt(1);
+    const third = tabs.getContentAt(2);
+    try expectSizeBitEqual(.{ .width = 0, .height = 0 }, first.size);
+    try expectSizeBitEqual(.{ .width = 320, .height = 154 }, selected.size);
+    try expectSizeBitEqual(.{ .width = 0, .height = 0 }, third.size);
+}
+
+test "Metal TabbedPane tab geometry matches hit testing" {
+    const allocator = std.testing.allocator;
+    var text_font = try initTestTextFont();
+    defer deinitTestTextFont(&text_font);
+
+    const tabs = try nimbus.TabbedPane.create(allocator, text_font);
+    defer tabs.asComponent().vtable.destroy(tabs.asComponent(), allocator);
+
+    const titles = [_][]const u8{ "Overview", "Activity", "Settings" };
+    inline for (titles) |title| {
+        try tabs.addTab(title, (try nimbus.Panel.create(allocator)).asComponent());
+    }
+    nimbus.laf.applyLook(tabs.asComponent(), nimbus.laf.metal.metalTable());
+
+    const tab_height: f32 = 26;
+    const tab_hpad: f32 = 12;
+    var x: f32 = 0;
+    for (titles, 0..) |title, i| {
+        const w = text_font.measureString(title).width + 2 * tab_hpad;
+        const center_x = x + w / 2;
+        try std.testing.expectEqual(@as(?usize, i), tabs.tabAt(center_x, tab_height / 2));
+        x += w;
+    }
+}
+
 test "Metal table reaches ComboBox popup detached root" {
     const allocator = std.testing.allocator;
     var text_font = try initTestTextFont();

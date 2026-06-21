@@ -12,6 +12,7 @@ const ScrollPane = @import("../ScrollPane.zig");
 const Slider = @import("../Slider.zig");
 const SplitPane = @import("../SplitPane.zig");
 const Table = @import("../Table.zig");
+const TabbedPane = @import("../TabbedPane.zig");
 const laf = @import("../laf.zig");
 
 const Color = awt.Graphics.Color;
@@ -40,6 +41,8 @@ const SCROLLBAR_THUMB_INSET: f32 = 2;
 const COLLECTION_BUFFER_ROWS: usize = 2;
 const TABLE_HEADER_HEIGHT: f32 = 26;
 const TABLE_HEADER_PAD: f32 = 6;
+const TP_TAB_HEIGHT: f32 = 26;
+const TP_TAB_HPAD: f32 = 12;
 
 pub const MetalPalette = struct {
     body_enabled_top: Color,
@@ -175,6 +178,12 @@ pub const metal_tableheader_look = Component.LookVTable{
     .measureMinSize = measureOwnMinSize,
 };
 
+pub const metal_tabbedpane_look = Component.LookVTable{
+    .paint = paintTabbedPane,
+    .paintOver = paintOver,
+    .measureMinSize = measureZeroMinSize,
+};
+
 const metal_table = [_]laf.RemapEntry{
     .{
         .from = &Button.look_vtable,
@@ -227,6 +236,10 @@ const metal_table = [_]laf.RemapEntry{
     .{
         .from = &Table.TableHeader.look_vtable,
         .to = .{ .vtable = &metal_tableheader_look, .ctx = &metal_palette },
+    },
+    .{
+        .from = &TabbedPane.look_vtable,
+        .to = .{ .vtable = &metal_tabbedpane_look, .ctx = &metal_palette },
     },
 };
 
@@ -891,6 +904,69 @@ fn paintTableHeader(self: *Component, ctx: *anyopaque, g: *awt.Graphics) void {
 
     g.setColor(palette.border);
     g.fillRect(.{ .x = 0, .y = TABLE_HEADER_HEIGHT - 1, .width = width, .height = 1 });
+}
+
+fn paintTabbedPane(self: *Component, ctx: *anyopaque, g: *awt.Graphics) void {
+    const cont = self.container orelse return;
+    const tp: *TabbedPane = @fieldParentPtr("container", cont);
+    const palette: *MetalPalette = @ptrCast(@alignCast(ctx));
+    const sz = self.size;
+
+    g.setColor(palette.body_disabled_top);
+    g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = TP_TAB_HEIGHT });
+    g.setColor(palette.border);
+    g.fillRect(.{ .x = 0, .y = TP_TAB_HEIGHT - 1, .width = sz.width, .height = 1 });
+
+    g.setFont(tp.font);
+    var x: f32 = 0;
+    for (tp.tabs.items, 0..) |tab, i| {
+        const w = tabbedPaneTabWidth(tp, tab.title);
+        const selected = tp.selected != null and tp.selected.? == i;
+        const body = if (selected)
+            bodyGradient(palette, true, false, false)
+        else
+            bodyGradient(palette, false, false, false);
+
+        g.fillGradientRect(.{ .x = x, .y = 0, .width = w, .height = TP_TAB_HEIGHT }, body.top, body.bottom);
+        if (selected) {
+            drawTabRaised(g, x, 0, w, TP_TAB_HEIGHT, palette);
+        } else {
+            drawInsetBevel(g, x, 0, w, TP_TAB_HEIGHT, palette);
+            g.setColor(palette.bevel_dark);
+            g.fillRect(.{ .x = x + w - 1, .y = 1, .width = 1, .height = TP_TAB_HEIGHT - 2 });
+            g.setColor(palette.bevel_light);
+            g.fillRect(.{ .x = x + w, .y = 1, .width = 1, .height = TP_TAB_HEIGHT - 2 });
+        }
+
+        const m = tp.font.measureString(tab.title);
+        const ty = (TP_TAB_HEIGHT - m.height) / 2;
+        g.setColor(palette.indicator_mark);
+        g.drawString(tab.title, x + TP_TAB_HPAD, ty);
+
+        if (selected) {
+            g.setColor(palette.focus_ring);
+            g.fillRect(.{ .x = x, .y = TP_TAB_HEIGHT - 2, .width = w, .height = 2 });
+        }
+        x += w;
+    }
+}
+
+fn tabbedPaneTabWidth(tp: *const TabbedPane, title: []const u8) f32 {
+    return tp.font.measureString(title).width + 2 * TP_TAB_HPAD;
+}
+
+fn drawTabRaised(g: *awt.Graphics, x: f32, y: f32, w: f32, h: f32, palette: *const MetalPalette) void {
+    g.setColor(palette.border);
+    g.fillRect(.{ .x = x, .y = y, .width = w, .height = 1 });
+    g.fillRect(.{ .x = x, .y = y, .width = 1, .height = h });
+    g.fillRect(.{ .x = x + w - 1, .y = y, .width = 1, .height = h });
+
+    g.setColor(palette.bevel_light);
+    g.fillRect(.{ .x = x + 1, .y = y + 1, .width = w - 2, .height = 1 });
+    g.fillRect(.{ .x = x + 1, .y = y + 1, .width = 1, .height = h - 2 });
+
+    g.setColor(palette.bevel_dark);
+    g.fillRect(.{ .x = x + w - 2, .y = y + 1, .width = 1, .height = h - 2 });
 }
 
 fn paintMetalSortIndicator(g: *awt.Graphics, palette: *const MetalPalette, col_right: f32, ascending: bool) void {

@@ -195,7 +195,7 @@ fn stripWidth(self: *const TabbedPane) f32 {
     return w;
 }
 
-fn tabAt(self: *const TabbedPane, x: f32, y: f32) ?usize {
+pub fn tabAt(self: *const TabbedPane, x: f32, y: f32) ?usize {
     if (y < 0 or y >= DEFAULT_TAB_HEIGHT or x < 0) return null;
     var tx: f32 = 0;
     for (self.tabs.items, 0..) |tab, i| {

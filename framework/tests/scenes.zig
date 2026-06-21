@@ -1050,6 +1050,13 @@ pub const tabbed_pane = Scene{
     .paint = paintTabbedPane,
 };
 
+pub const metal_tabbed_pane = Scene{
+    .name = "metal_tabbed_pane",
+    .width = 420,
+    .height = 220,
+    .paint = paintMetalTabbedPane,
+};
+
 fn tabPage(
     allocator: std.mem.Allocator,
     font: nimbus.awt.Graphics.TextFont,
@@ -1072,6 +1079,14 @@ fn tabPage(
 }
 
 fn paintTabbedPane(ctx: PaintContext) anyerror!void {
+    try paintTabbedPaneWithLook(ctx, false);
+}
+
+fn paintMetalTabbedPane(ctx: PaintContext) anyerror!void {
+    try paintTabbedPaneWithLook(ctx, true);
+}
+
+fn paintTabbedPaneWithLook(ctx: PaintContext, metal: bool) anyerror!void {
     var setup = try Setup.init(ctx);
     defer setup.deinit();
     setup.container.setLayout(nimbus.BorderLayout.get());
@@ -1093,5 +1108,6 @@ fn paintTabbedPane(ctx: PaintContext) anyerror!void {
     tabs.setSelectedIndex(1);
 
     try nimbus.BorderLayout.add(setup.container, .center, tabs.asComponent());
+    if (metal) nimbus.laf.applyLook(tabs.asComponent(), nimbus.laf.metal.metalTable());
     setup.paint();
 }

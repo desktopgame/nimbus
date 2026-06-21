@@ -159,6 +159,10 @@ test "snapshot: tabbed_pane" {
     try runScene(scenes.tabbed_pane);
 }
 
+test "snapshot: metal_tabbed_pane" {
+    try runScene(scenes.metal_tabbed_pane);
+}
+
 fn runScene(scene: scenes.Scene) !void {
     const allocator = std.testing.allocator;
 
