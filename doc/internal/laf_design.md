@@ -275,6 +275,9 @@ Look（外見 vtable）を **ツリー全体へ一斉に差し替える**ユー�
 - 位置づけ: **power-user / irregular なツール**。`init` / `initWithTheme` と並ぶ第一級 API ではなく、
   脇に置く（普通の利用者は名前付き LAF をバインディング層から選ぶだけ。生の Look 差し替えは上級者向け）。
 
+このユーティリティ（P3）の確定設計は [laf_enabler.md](laf_enabler.md) に切り出した
+（remap 表の表現・`applyLook` の署名と巡回・部分 LAF・ゼロピクセルテスト・ctx 寿命）。
+
 ---
 
 ## 4. 狙う LAF と awt 依存
@@ -343,6 +346,8 @@ golden が動いたら、それは LAF の見た目変更ではなく **移行�
   再帰するコンテナは P1 と同型に慎重に移す。完了時に §5.2 の cleanup（`ui` 非 null 化・フォールバック撤去）。
 - **P3: 一括差し替えユーティリティ**（§3）。power-user 向け。
   走査で per-widget-type の Look を当てる **型識別の宿題はここで詰める**。
+  → 確定設計は [laf_enabler.md](laf_enabler.md)（型識別は §5.3 の宿題を「型ごと一意な
+  `&Type.look_vtable` を型タグに流用」で解いた。§2.2）。
 - **後（別イニシアチブ）**: awt の 2 プリミティブ（linear グラデ／テクスチャ＋9-slice。§4.2）と
   実 Metal / JTattoo Look。本 doc / 本フェーズ群のスコープ外。
 
