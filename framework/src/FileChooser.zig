@@ -154,6 +154,11 @@ pub const Place = struct {
     kind: PlaceEntry.Kind,
 };
 
+pub const Ancestor = struct {
+    name: []const u8,
+    path: []const u8,
+};
+
 pub const ChooserCore = struct {
     allocator: std.mem.Allocator,
     source: DirSource,
@@ -267,6 +272,42 @@ pub const ChooserCore = struct {
     pub fn selectPlace(self: *ChooserCore, index: usize) !void {
         if (index >= self.places.items.len) return;
         try self.loadDir(self.places.items[index].path);
+    }
+
+    pub fn ancestorChain(allocator: std.mem.Allocator, cur: []const u8) !std.ArrayList(Ancestor) {
+        var reverse: std.ArrayList(Ancestor) = .empty;
+        errdefer freeAncestorChain(allocator, &reverse);
+
+        var path = cur;
+        while (path.len > 0) {
+            {
+                const display = ancestorDisplayName(path);
+                const name_dup = try allocator.dupe(u8, display);
+                errdefer allocator.free(name_dup);
+                const path_dup = try allocator.dupe(u8, path);
+                errdefer allocator.free(path_dup);
+                try reverse.append(allocator, .{
+                    .name = name_dup,
+                    .path = path_dup,
+                });
+            }
+
+            const parent = std.fs.path.dirname(path) orelse break;
+            if (std.mem.eql(u8, parent, path)) break;
+            path = parent;
+        }
+
+        var result: std.ArrayList(Ancestor) = .empty;
+        errdefer freeAncestorChain(allocator, &result);
+        try result.ensureTotalCapacity(allocator, reverse.items.len);
+        var i = reverse.items.len;
+        while (i > 0) {
+            i -= 1;
+            result.appendAssumeCapacity(reverse.items[i]);
+        }
+        reverse.clearRetainingCapacity();
+        reverse.deinit(allocator);
+        return result;
     }
 
     pub fn setSelectedFromList(self: *ChooserCore, name: []const u8) !void {
@@ -398,12 +439,13 @@ pub const FileChooser = struct {
     places_model: List.ListModel,
     files_list: *List,
     places_list: *List,
-    path_field: *TextField,
+    look_in_combo: *ComboBox,
+    look_in_paths: std.ArrayList([]const u8),
+    syncing_look_in: bool,
     filename_field: *TextField,
     filter_combo: *ComboBox,
     ok_button: *Button,
     cancel_button: *Button,
-    up_button: *Button,
     icon_folder: awt.Image,
     icon_file: awt.Image,
     icon_home: awt.Image,
@@ -446,12 +488,13 @@ pub const FileChooser = struct {
             .places_model = List.ListModel.init(allocator),
             .files_list = undefined,
             .places_list = undefined,
-            .path_field = undefined,
+            .look_in_combo = undefined,
+            .look_in_paths = .empty,
+            .syncing_look_in = false,
             .filename_field = undefined,
             .filter_combo = undefined,
             .ok_button = undefined,
             .cancel_button = undefined,
-            .up_button = undefined,
             .icon_folder = try app.icon(.folder),
             .icon_file = try app.icon(.file),
             .icon_home = try app.icon(.house),
@@ -460,6 +503,8 @@ pub const FileChooser = struct {
         errdefer {
             self.files_model.deinit();
             self.places_model.deinit();
+            self.clearLookInPaths();
+            self.look_in_paths.deinit(allocator);
         }
 
         try self.buildUi();
@@ -473,6 +518,8 @@ pub const FileChooser = struct {
         self.dialog.destroy();
         self.files_model.deinit();
         self.places_model.deinit();
+        self.clearLookInPaths();
+        self.look_in_paths.deinit(self.allocator);
         self.core.deinit();
         self.allocator.destroy(self);
     }
@@ -532,13 +579,24 @@ pub const FileChooser = struct {
 
         const north = try app.container();
         north.setLayout(try BoxLayout.horizontalSpaced(a, 8));
-        self.up_button = try app.button("Up");
-        self.path_field = try app.textField("");
-        self.path_field.component.setGrowX(1);
-        try self.up_button.getModel().addActionListener(FileChooser, onUp, self);
-        try self.path_field.addSubmitListener(FileChooser, onPathSubmit, self);
-        try north.add(&self.up_button.component);
-        try north.add(&self.path_field.component);
+        const look_in_label = try app.label("Look In:");
+        self.look_in_combo = try app.comboBox(&.{"."});
+        self.look_in_combo.component.setGrowX(1);
+        const up_button = try app.button("Up");
+        const home_button = try app.button("Home");
+        const details_button = try app.button("Details");
+        const list_button = try app.button("List");
+        try self.look_in_combo.addChangeListener(FileChooser, onLookInChanged, self);
+        try up_button.getModel().addActionListener(FileChooser, onUp, self);
+        try home_button.getModel().addActionListener(FileChooser, onHome, self);
+        try details_button.getModel().addActionListener(FileChooser, onDetails, self);
+        try list_button.getModel().addActionListener(FileChooser, onList, self);
+        try north.add(&look_in_label.component);
+        try north.add(&self.look_in_combo.component);
+        try north.add(&up_button.component);
+        try north.add(&home_button.component);
+        try north.add(&details_button.component);
+        try north.add(&list_button.component);
         try BorderLayout.add(body, .north, &north.component);
 
         self.places_list = try app.listWithModel(&self.places_model, .{ .create = createPlaceCell, .user_data = self });
@@ -610,8 +668,29 @@ pub const FileChooser = struct {
         self.filter_combo.setSelectedIndex(self.core.selected_filter);
     }
 
+    fn rebuildLookInCombo(self: *FileChooser) !void {
+        var chain = try ChooserCore.ancestorChain(self.allocator, self.core.getCurrentDirectory());
+        defer freeAncestorChain(self.allocator, &chain);
+
+        var names: std.ArrayList([]const u8) = .empty;
+        defer names.deinit(self.allocator);
+        try names.ensureTotalCapacity(self.allocator, chain.items.len);
+
+        self.clearLookInPaths();
+        try self.look_in_paths.ensureTotalCapacity(self.allocator, chain.items.len);
+        for (chain.items) |ancestor| {
+            names.appendAssumeCapacity(ancestor.name);
+            self.look_in_paths.appendAssumeCapacity(try self.allocator.dupe(u8, ancestor.path));
+        }
+
+        self.syncing_look_in = true;
+        defer self.syncing_look_in = false;
+        try self.look_in_combo.setItems(names.items);
+        if (chain.items.len > 0) self.look_in_combo.setSelectedIndex(chain.items.len - 1);
+    }
+
     fn syncFieldsFromCore(self: *FileChooser) !void {
-        try self.path_field.setText(self.core.getCurrentDirectory());
+        try self.rebuildLookInCombo();
         try self.filename_field.setText(self.core.filename.items);
     }
 
@@ -647,6 +726,25 @@ pub const FileChooser = struct {
         }
     }
 
+    fn clearLookInPaths(self: *FileChooser) void {
+        for (self.look_in_paths.items) |path| self.allocator.free(path);
+        self.look_in_paths.clearRetainingCapacity();
+    }
+
+    fn homePlaceIndex(self: *const FileChooser) ?usize {
+        for (self.core.places.items, 0..) |place, i| {
+            if (place.kind == .home) return i;
+        }
+        return null;
+    }
+
+    fn navigateToPlaceIndex(self: *FileChooser, idx: usize) !void {
+        self.files_model.clear();
+        try self.core.selectPlace(idx);
+        try self.rebuildFilesModel();
+        try self.syncFieldsFromCore();
+    }
+
     fn onUp(self: *FileChooser, _: *const ActionEvent) void {
         self.files_model.clear();
         self.core.up() catch {};
@@ -654,16 +752,33 @@ pub const FileChooser = struct {
         self.syncFieldsFromCore() catch {};
     }
 
-    fn onPathSubmit(self: *FileChooser, _: *const ActionEvent) void {
-        self.reloadPath(self.path_field.getText()) catch {};
-    }
-
     fn onPlaceSelected(self: *FileChooser, _: *const ChangeEvent) void {
         const idx = self.places_list.getSelected() orelse return;
-        self.files_model.clear();
-        self.core.selectPlace(idx) catch return;
-        self.rebuildFilesModel() catch {};
-        self.syncFieldsFromCore() catch {};
+        self.navigateToPlaceIndex(idx) catch {};
+    }
+
+    fn onLookInChanged(self: *FileChooser, _: *const ChangeEvent) void {
+        if (self.syncing_look_in) return;
+        const idx = self.look_in_combo.getSelectedIndex();
+        if (idx >= self.look_in_paths.items.len) return;
+        const path = self.look_in_paths.items[idx];
+        if (std.mem.eql(u8, path, self.core.getCurrentDirectory())) return;
+        self.reloadPath(path) catch {};
+    }
+
+    fn onHome(self: *FileChooser, _: *const ActionEvent) void {
+        const idx = self.homePlaceIndex() orelse return;
+        self.navigateToPlaceIndex(idx) catch {};
+    }
+
+    fn onDetails(self: *FileChooser, _: *const ActionEvent) void {
+        _ = self;
+        // Details view is implemented in the next seam.
+    }
+
+    fn onList(self: *FileChooser, _: *const ActionEvent) void {
+        _ = self;
+        // List view is already the only active view in this seam.
     }
 
     fn onFileSelected(self: *FileChooser, _: *const ChangeEvent) void {
@@ -841,6 +956,21 @@ fn basename(path: []const u8) []const u8 {
     return std.fs.path.basename(path);
 }
 
+fn ancestorDisplayName(path: []const u8) []const u8 {
+    if (std.fs.path.dirname(path) == null) return path;
+    const name = basename(path);
+    if (name.len == 0) return path;
+    return name;
+}
+
+fn freeAncestorChain(allocator: std.mem.Allocator, chain: *std.ArrayList(Ancestor)) void {
+    for (chain.items) |ancestor| {
+        allocator.free(ancestor.name);
+        allocator.free(ancestor.path);
+    }
+    chain.deinit(allocator);
+}
+
 fn copyPath(buf: *[PATH_BUF]u8, len: *usize, path: []const u8) !void {
     if (path.len > buf.len) return error.PathTooLong;
     @memcpy(buf[0..path.len], path);
@@ -894,6 +1024,7 @@ const FakeDirSource = struct {
     allocator: std.mem.Allocator,
     dirs: std.ArrayList(FakeDir),
     places: std.ArrayList(PlaceEntry),
+    list_calls: usize = 0,
 
     const FakeDir = struct {
         path: []const u8,
@@ -966,6 +1097,7 @@ fn fakeSource(user_data: *anyopaque) *FakeDirSource {
 
 fn fakeList(user_data: *anyopaque, allocator: std.mem.Allocator, path: []const u8, out: *std.ArrayList(DirEntry)) !void {
     const fake = fakeSource(user_data);
+    fake.list_calls += 1;
     const dir = fake.findDir(path) orelse return error.FileNotFound;
     try out.ensureTotalCapacity(allocator, dir.entries.items.len);
     for (dir.entries.items) |entry| {
@@ -1030,7 +1162,37 @@ fn populateFake(allocator: std.mem.Allocator) !FakeDirSource {
         .{ .name = "Users", .is_dir = true },
         .{ .name = "boot.ini", .is_dir = false },
     });
+    try fake.addDir("C:\\Users", &.{
+        .{ .name = "me", .is_dir = true },
+    });
+    try fake.addDir("C:\\Users\\me", &.{
+        .{ .name = "note.txt", .is_dir = false },
+    });
     return fake;
+}
+
+test "ancestor chain splits POSIX and Windows paths from root" {
+    var posix = try ChooserCore.ancestorChain(std.testing.allocator, "/home/me/docs");
+    defer freeAncestorChain(std.testing.allocator, &posix);
+    try std.testing.expectEqual(@as(usize, 4), posix.items.len);
+    try std.testing.expectEqualStrings("/", posix.items[0].name);
+    try std.testing.expectEqualStrings("/", posix.items[0].path);
+    try std.testing.expectEqualStrings("home", posix.items[1].name);
+    try std.testing.expectEqualStrings("/home", posix.items[1].path);
+    try std.testing.expectEqualStrings("me", posix.items[2].name);
+    try std.testing.expectEqualStrings("/home/me", posix.items[2].path);
+    try std.testing.expectEqualStrings("docs", posix.items[3].name);
+    try std.testing.expectEqualStrings("/home/me/docs", posix.items[3].path);
+
+    var windows = try ChooserCore.ancestorChain(std.testing.allocator, "C:\\Users\\me");
+    defer freeAncestorChain(std.testing.allocator, &windows);
+    try std.testing.expectEqual(@as(usize, 3), windows.items.len);
+    try std.testing.expectEqualStrings("C:\\", windows.items[0].name);
+    try std.testing.expectEqualStrings("C:\\", windows.items[0].path);
+    try std.testing.expectEqualStrings("Users", windows.items[1].name);
+    try std.testing.expectEqualStrings("C:\\Users", windows.items[1].path);
+    try std.testing.expectEqualStrings("me", windows.items[2].name);
+    try std.testing.expectEqualStrings("C:\\Users\\me", windows.items[2].path);
 }
 
 test "navigation cd up selectPlace and drive root up no-op" {
@@ -1105,6 +1267,61 @@ test "reload replaces owned entry store without leaks or stale entries" {
     try core.loadDir("/tmp");
     try expectVisibleNames(&core, &.{"scratch.txt"});
     try std.testing.expectEqualStrings("/tmp", core.getCurrentDirectory());
+}
+
+test "home place index resolves home and missing home stays no-op" {
+    awt.setLogCallback(@import("Robot.zig").QuietLog.cb, null);
+    const app = Application.initHeadless(std.testing.allocator, std.testing.io) catch return error.SkipZigTest;
+    defer app.deinit();
+    const frame = try app.frameHeadless("owner", 320, 200);
+
+    var fake = try populateFake(std.testing.allocator);
+    defer fake.deinit();
+    const chooser = try FileChooser.createWithSource(app, &frame.window, fake.source());
+    defer chooser.destroy();
+
+    try std.testing.expectEqual(@as(?usize, 0), chooser.homePlaceIndex());
+    try chooser.reloadPath("/tmp");
+    try std.testing.expectEqualStrings("/tmp", chooser.getCurrentDirectory());
+    var action_source: u8 = 0;
+    const ev = ActionEvent{ .source = &action_source };
+    FileChooser.onHome(chooser, &ev);
+    try std.testing.expectEqualStrings("/home/me", chooser.getCurrentDirectory());
+
+    var no_home = FakeDirSource.init(std.testing.allocator);
+    defer no_home.deinit();
+    try no_home.addPlace("Root", "/", .root);
+    try no_home.addDir("/", &.{
+        .{ .name = "tmp", .is_dir = true },
+    });
+    const chooser_no_home = try FileChooser.createWithSource(app, &frame.window, no_home.source());
+    defer chooser_no_home.destroy();
+
+    const before_calls = no_home.list_calls;
+    try std.testing.expectEqual(@as(?usize, null), chooser_no_home.homePlaceIndex());
+    FileChooser.onHome(chooser_no_home, &ev);
+    try std.testing.expectEqualStrings("/", chooser_no_home.getCurrentDirectory());
+    try std.testing.expectEqual(before_calls, no_home.list_calls);
+}
+
+test "look in rebuild does not navigate through change listener" {
+    awt.setLogCallback(@import("Robot.zig").QuietLog.cb, null);
+    const app = Application.initHeadless(std.testing.allocator, std.testing.io) catch return error.SkipZigTest;
+    defer app.deinit();
+    const frame = try app.frameHeadless("owner", 320, 200);
+
+    var fake = try populateFake(std.testing.allocator);
+    defer fake.deinit();
+    const chooser = try FileChooser.createWithSource(app, &frame.window, fake.source());
+    defer chooser.destroy();
+
+    try chooser.reloadPath("/home/me/docs");
+    const before_calls = fake.list_calls;
+    try chooser.rebuildLookInCombo();
+    try std.testing.expectEqual(before_calls, fake.list_calls);
+    try std.testing.expectEqual(@as(usize, 4), chooser.look_in_paths.items.len);
+    try std.testing.expectEqualStrings("/home/me/docs", chooser.getCurrentDirectory());
+    try std.testing.expectEqualStrings("/home/me/docs", chooser.look_in_paths.items[3]);
 }
 
 test "file chooser widget reload helper repopulates borrowed list model" {
