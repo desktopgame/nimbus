@@ -7,7 +7,8 @@ LAF 機構の **P3＝enabler** の設計提案。enabler とは「ある LAF（L
 この doc は `laf_design.md` の流儀を継ぎ、**「確定」と「未決」を明確に分ける**。実装はしない（コードは書かない）。
 
 関連: [laf_design.md](laf_design.md)（§2 機構の確定・§3 ユーティリティの位置づけ・§5.3 フェーズ分け）、
-`framework/src/Component.zig`（`LookVTable` / `UI` / `paintAt`）、`framework/tests/laf_test.zig`（既存の Look テスト）。
+`framework/src/Component.zig`（`LookVTable` / `UI` / `paintAt`）、`framework/tests/laf_test.zig`（既存の Look テスト）、
+[border_model.md](border_model.md)（枠所有の整理。ScrollPane の枠 `look_vtable` を Group C で metalTable が remap する）。
 
 ---
 

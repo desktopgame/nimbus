@@ -8,7 +8,8 @@ Button Metal（[laf_metal_button.md](laf_metal_button.md)）／選択系 Metal�
 関連: [laf_metal_button.md](laf_metal_button.md)（MetalPalette・`bodyGradient`・`drawBevel`／`drawInsetBevel`・`drawRectBorder`・
 `drawChevron` ヘルパ）、[laf_metal_selection.md](laf_metal_selection.md)（`metalTable()` への追記方式・true leaf re-measure）、
 [laf_enabler.md](laf_enabler.md)（`applyLook` / `RemapEntry` / **automation walk が container.children を辿る** §3.3.3・GPU 非ゲート §5.0）、
-[awt_primitives_laf.md](awt_primitives_laf.md)（`fillGradientRect`）。
+[awt_primitives_laf.md](awt_primitives_laf.md)（`fillGradientRect`）、
+[border_model.md](border_model.md)（枠所有の整理＝ScrollPane が FlatLaf 枠を自前で持つ土台。Group C の Metal 沈みベベル枠はこの上に乗る）。
 
 ---
 
