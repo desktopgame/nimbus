@@ -415,6 +415,8 @@ Metal Look の `ctx`（自前パレット等）が **ツリー生存中ずっと
 - **standalone `PopupMenu` の個別適用を誰が呼ぶか**: §3.7.2 の通り window root から届かないため
   `applyLook(&pm.popup_root, table)` を個別に当てる必要がある。これを利用者の手作業に委ねるか、
   バインディング層の名前付き LAF 適用が PopupMenu 群を集めて自動で回すかは未決（コア機構は個別適用を提供するだけ）。
+- **detached_look_roots は ComboBox にも要る**: ComboBox のドロップダウン（`popup_root`）も Menu と同型の遅延 attach
+  なので、Metal を届けるには ComboBox にも detached facet を設定する（[laf_metal_selection.md](laf_metal_selection.md) §4.2 で確定）。
 
 ---
 
