@@ -23,6 +23,7 @@ component: Component,
 model: *ButtonModel,
 owns_model: bool,
 text: []const u8,
+a11y_name: ?[]const u8,
 font: awt.Graphics.TextFont,
 color: awt.Graphics.Color,
 icon: ?awt.Image,
@@ -91,6 +92,7 @@ fn createInternal(
         .model = model,
         .owns_model = owns_model,
         .text = text_dup,
+        .a11y_name = null,
         .font = font,
         .color = color,
         .icon = null,
@@ -163,6 +165,14 @@ pub fn setText(self: *Button, text: []const u8) !void {
     self.component.markLayoutDirty();
 }
 
+pub fn setA11yName(self: *Button, name: ?[]const u8) !void {
+    if (self.a11y_name) |old| self.allocator.free(old);
+    self.a11y_name = null;
+    if (name) |n| {
+        self.a11y_name = try self.allocator.dupe(u8, n);
+    }
+}
+
 pub fn getFont(self: Button) awt.Graphics.TextFont {
     return self.font;
 }
@@ -231,6 +241,7 @@ fn focusEligible(c: *const Component) bool {
 
 fn a11yName(c: *const Component) ?[]const u8 {
     const b: *const Button = @fieldParentPtr("component", c);
+    if (b.a11y_name) |name| return name;
     if (b.text.len == 0) return null;
     return b.text;
 }
@@ -396,9 +407,25 @@ fn destroy(self: *Component, allocator: std.mem.Allocator) void {
     const button: *Button = @fieldParentPtr("component", self);
     self.deinit(); // uninstall + property cleanup
     allocator.free(button.text);
+    if (button.a11y_name) |name| allocator.free(name);
     if (button.owns_model) {
         button.model.deinit();
         allocator.destroy(button.model);
     }
     allocator.destroy(button);
+}
+
+test "button a11y name override falls back to text when cleared" {
+    const Application = @import("Application.zig");
+    const app = Application.initHeadless(std.testing.allocator, std.testing.io) catch return error.SkipZigTest;
+    defer app.deinit();
+
+    const button = try app.button("Fallback");
+    defer button.component.vtable.destroy(&button.component, std.testing.allocator);
+
+    try std.testing.expectEqualStrings("Fallback", a11yName(&button.component).?);
+    try button.setA11yName("Override");
+    try std.testing.expectEqualStrings("Override", a11yName(&button.component).?);
+    try button.setA11yName(null);
+    try std.testing.expectEqualStrings("Fallback", a11yName(&button.component).?);
 }
