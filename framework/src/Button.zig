@@ -416,12 +416,21 @@ fn destroy(self: *Component, allocator: std.mem.Allocator) void {
 }
 
 test "button a11y name override falls back to text when cleared" {
-    const Application = @import("Application.zig");
-    const app = Application.initHeadless(std.testing.allocator, std.testing.io) catch return error.SkipZigTest;
-    defer app.deinit();
-
-    const button = try app.button("Fallback");
-    defer button.component.vtable.destroy(&button.component, std.testing.allocator);
+    var button = Button{
+        .component = Component.init(std.testing.allocator, &vtable),
+        .model = undefined,
+        .owns_model = false,
+        .text = "Fallback",
+        .a11y_name = null,
+        .font = undefined,
+        .color = undefined,
+        .icon = null,
+        .icon_size = null,
+        .focused = false,
+        .mnemonic_index = null,
+        .allocator = std.testing.allocator,
+    };
+    defer if (button.a11y_name) |name| std.testing.allocator.free(name);
 
     try std.testing.expectEqualStrings("Fallback", a11yName(&button.component).?);
     try button.setA11yName("Override");
