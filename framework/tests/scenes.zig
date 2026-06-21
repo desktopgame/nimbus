@@ -286,6 +286,39 @@ fn paintToggleComboboxClosed(ctx: PaintContext) anyerror!void {
     setup.paint();
 }
 
+pub const metal_buttons = Scene{
+    .name = "metal_buttons",
+    .width = 300,
+    .height = 150,
+    .paint = paintMetalButtons,
+};
+
+fn paintMetalButtons(ctx: PaintContext) anyerror!void {
+    var setup = try Setup.init(ctx);
+    defer setup.deinit();
+
+    const font = nimbus.awt.Graphics.TextFont{ .face = ctx.font, .pixel_size = 14 };
+    const text = awt.Graphics.Color.rgb(0.08, 0.10, 0.12);
+
+    const normal = try nimbus.Button.create(ctx.allocator, "Normal", font, text);
+    const pressed = try nimbus.Button.create(ctx.allocator, "Pressed", font, text);
+    pressed.getModel().setArmed(true);
+    pressed.getModel().setPressed(true);
+    const disabled = try nimbus.Button.create(ctx.allocator, "Disabled", font, text);
+    disabled.getModel().setEnabled(false);
+
+    try setup.container.add(&normal.component);
+    try setup.container.add(&pressed.component);
+    try setup.container.add(&disabled.component);
+    nimbus.laf.applyLook(&setup.container.component, nimbus.laf.metal.buttonTable());
+
+    normal.component.setBounds(.{ .x = 24, .y = 18, .width = 132, .height = 36 });
+    pressed.component.setBounds(.{ .x = 24, .y = 58, .width = 132, .height = 36 });
+    disabled.component.setBounds(.{ .x = 24, .y = 98, .width = 132, .height = 36 });
+
+    setup.paint();
+}
+
 // Composite widget scenes ----------------------------------------------------
 
 pub const panel_paint_over_child = Scene{

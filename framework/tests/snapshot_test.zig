@@ -63,6 +63,10 @@ test "snapshot: toggle_combobox_closed" {
     try runScene(scenes.toggle_combobox_closed);
 }
 
+test "snapshot: metal_buttons" {
+    try runScene(scenes.metal_buttons);
+}
+
 test "snapshot: panel_paint_over_child" {
     try runScene(scenes.panel_paint_over_child);
 }

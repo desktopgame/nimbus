@@ -350,6 +350,33 @@ test "applyLook remaps partial fake LAF and invalidates container size cache" {
     try expectSizeBitEqual(fake_menu_item_ctx.size, popup_item.component.min_size);
 }
 
+test "Metal Button measureMinSize uses Metal padding without GPU device" {
+    const allocator = std.testing.allocator;
+    var text_font = try initTestTextFont();
+    defer deinitTestTextFont(&text_font);
+
+    const button = try nimbus.Button.create(allocator, "OK", text_font, nimbus.Theme.default.text);
+    defer button.component.vtable.destroy(&button.component, allocator);
+
+    const text_m = text_font.measureString("OK");
+    const metal_min = nimbus.laf.metal.metal_button_look.measureMinSize(
+        &button.component,
+        &nimbus.laf.metal.metal_palette,
+    );
+    const expected_metal = nimbus.Component.Size{
+        .width = text_m.width + 14 * 2,
+        .height = text_m.height + 7 * 2,
+    };
+    const expected_flat = nimbus.Component.Size{
+        .width = text_m.width + 12 * 2,
+        .height = text_m.height + 4 * 2,
+    };
+
+    try expectSizeBitEqual(expected_metal, metal_min);
+    try expectSizeBitEqual(expected_flat, button.component.min_size);
+    try std.testing.expect(!nimbus.Component.Size.eql(button.component.min_size, metal_min));
+}
+
 test "paintAt dispatches Look paint, children, then paintOver" {
     const allocator = std.testing.allocator;
     var log = PaintLog{};

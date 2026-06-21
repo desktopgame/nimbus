@@ -1,5 +1,7 @@
 const Component = @import("Component.zig");
 
+pub const metal = @import("laf/metal.zig");
+
 pub const RemapEntry = struct {
     from: *const Component.LookVTable,
     to: Component.UI,

@@ -13,6 +13,9 @@ awtの低レベルAPIを使用して、プリミティブ図形（矩形、円�
 ## widget_simple
 frameworkのAPIを使用して、ボタン、スライダー、ラベルを横一列に並べる。
 
+## widget_metalbutton
+frameworkのLAF APIを使用して、ButtonだけMetal Lookへ差し替えた例
+
 ## widget_menu
 frameworkのAPIを使用して、メニュー、ポップアップメニューを表示する。
 
