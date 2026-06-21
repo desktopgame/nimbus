@@ -1046,3 +1046,85 @@ rowHeader / corner を入れた場合はそのレイアウト・所有も doc + 
 - awt は既存 `paintAt` / `drawImage` / `Container` で充足（追加プリミティブ不要・awt_backlog 起票なし）。
 - テスト: 領域計算・同期オフセットは GPU 非依存の純ロジック（`ScrollPane.create` は device / フォント不要）、ヘッダー実描画のみ snapshot / Robot ゲート。
 - リスク明記: `ScrollLayout` は埋め込み値なので deinit を付けない（invalid-free）、`TableHeader` は Table より長生きさせない、Table 移行で HEADER_HEIGHT 前提の既存テストは書き換え。
+
+## #29 フォーム整列用のレイアウトマネージャ（GridLayout / GridBagLayout 系）
+- 状態: 未着手
+- 優先度: 中（FileChooser / 設定ダイアログ等のフォーム整列で実需化済み）
+- 影響範囲: framework 新規 LayoutManager（GridLayout）、`Application` ファクトリ or 自由関数、`FileChooser.zig`（下部の整列箇所の書き直し）、`layout-design.md` / 新規 doc
+- 更新日: 2026-06-21
+- 依存: なし（関連: #30 LAF×min_size footgun ＝この hack が踏んだ罠 / #19 レイアウトの便利ユーティリティ）
+
+### 何
+行×列でラベル列をそろえる**グリッド系レイアウトマネージャ**を足す。最初は 2 列フォーム
+（ラベル＋フィールドの行を縦に積み、ラベル列の幅をそろえる）が組める最小の `GridLayout` でよい。
+列幅を**レイアウト時に算出**するのが肝で、各 widget の `min_size` には焼き込まない（＝LAF 非依存・#30 の罠を踏まない）。
+GridBagLayout 相当（セルの結合・weight・anchor・fill）は将来の additive 拡張として見据えるだけにする。
+
+### なぜ（保留理由 / 実需）
+FileChooser 下部の `File Name:` / `Files of Type:` ラベルを等幅にそろえるのに、各ラベルの
+`min_size.width` を手で最大自然幅へ合わせる hack を使った（ブランチ `feat/fc-swing`・79651ff〜81cd075）。
+本来は列幅をレイアウト時に算出するレイアウトマネージャの仕事で、ラベルの寸法に直書きするのは筋が悪い
+（LAF 再適用での再測定と相性が悪く #30 の footgun を踏む。short 側に右余白を足してフィールド左端をそろえる、
+固定 104px の当て推量、といった逃げが必要になった）。nimbus には現状
+`BorderLayout` / `BoxLayout` / `PaddingLayout` / `CardLayout`（FileChooser 私有）はあるが、
+行×列でラベル列をそろえるグリッド系が無い。設定ダイアログ等フォーム整列の需要は今後も繰り返し出る。
+
+### 候補アプローチ
+- 案A: 最小 `GridLayout`（固定 N 列・各列幅 = その列セルの自然幅の最大）を足す。2 列フォームに必要十分。
+  メリット: 実需（ラベル整列）に絞れて小さい。`min_size` 焼き込みをやめられる。
+  デメリット: セル結合・weight・fill が無い（複雑なフォームには将来 GridBag が要る）。
+- 案B: 最初から GridBagLayout 相当（weight / anchor / fill / 列スパン）を入れる。
+  メリット: 汎用。デメリット: 決め事が多く実需（2 列フォーム）を大きく超える。先回り。
+- 判断軸: 当面のフォーム整列（A で足りる）か、汎用グリッドまで一気に見るか。CLAUDE.md「目指すゴール」は
+  GridBagLayout を将来像に挙げるが、point-of-need では最小から。
+- 推奨: 案A（最小 GridLayout で実需を満たし、GridBag は additive に後追い）。最終判断は作者。
+
+### 決めること
+案A/B。列幅算出の規約（自然幅の最大か min_width 指定併用か）。行高の扱い（行内最大か固定か）。
+セル間スペーシング / 整列の API 形（`BoxLayout.*Spaced` と揃えるか）。ファクトリで出すか自由関数か。
+
+### 完了条件
+FileChooser 下部を新レイアウトで書き直し、`min_size` 直書き hack（#30）を撤去。
+LAF を後から当て直しても整列が崩れないことをテスト（列幅算出を GPU 非依存の純レイアウト計算で検証）。doc 追従。
+
+## #30 footgun＝LAF 再適用が min_size を上書きする / min_size は setMinSize 経由必須
+- 状態: 未着手
+- 優先度: 中
+- 影響範囲: framework の `laf.zig`（applyLook の再測定条件）/ `Component.zig`（`min_size` / `min_size_explicit` / `setMinSize`）、関連 doc（`laf.md` か component 周り）、`min_size` を直書きしている既存箇所の監査
+- 更新日: 2026-06-21
+- 依存: なし（関連: #29 ＝この罠の回避にレイアウトマネージャを使う本来解）
+
+### 何
+LAF 再適用が非明示の `min_size` を黙って上書きする footgun を doc 化し、規約（min_size は `setMinSize` 経由必須）を定める。
+可能なら検知 / 回帰テストも添える。
+
+### 現象（確定事実）
+`laf.zig:28` の `applyLook` は「コンテナでない and `tree_children` 無し and `!min_size_explicit`」のノードを
+**再測定して `min_size` を上書き**する。`component.min_size.width` を直書きすると `min_size_explicit` が立たないため、
+後から LAF を当て直すと再測定で上書きされ、設定が黙って消える。
+
+### 実例（feat/fc-swing で再現）
+FileChooser 下部ラベルの等幅化を `min_size` 直書きでやったら LAF 再適用で崩れた（fc-layout で再現）。
+`setMinSize`（`min_size_explicit=true`）に直したら `applyLook` が再測定をスキップして保たれた（81cd075）。
+
+### なぜ罠が二重か
+- (a) LAF 再適用で**非 explicit な `min_size` が消える**（再測定が黙って上書きする）。
+- (b) `min_size` は**直書きできてしまう**（`pub` フィールド）。`setMinSize` より手軽に見えるので誤用しやすい。
+
+### 候補アプローチ（どれを採るかは作者判断）
+- 案①: 「`min_size` は必ず `setMinSize` 経由」という規約を doc 化（`laf.md` か component 周りの doc）。
+  メリット: 低コストで効く。デメリット: 強制力は無い（規約頼み）。
+- 案②: debug ビルドで `min_size` 直書きを検知する仕組み。
+  メリット: 誤用を機械的に止められる。デメリット: フィールド直書きの検知は難しい（実装手段が無ければ見送り）。
+- 案③: `applyLook` の再測定条件・`min_size_explicit` の意味を doc に明記する。
+  メリット: 罠の所在が doc から辿れる。デメリット: 規約（①）と合わせないと「読めば分かる」止まり。
+- 判断軸: 規約で足りる（①③）か、機械的な防御まで要る（②）か。①③は両立してよい。
+- 推奨: まず①③（規約＋仕組みの明記）。②は実装手段があれば追加。最終判断は作者。
+
+### 決めること
+採る案（①/②/③ の組み合わせ）。規約 doc の置き場所（`laf.md` か component 周りか）。
+`min_size` を触る既存箇所を `setMinSize` 経由へ寄せる監査をどこまでやるか。
+
+### 完了条件
+規約を doc 化し、`min_size` を触る既存箇所が `setMinSize` 経由かを監査。
+可能なら回帰テスト（`setMinSize` したノードが `applyLook` 後も `min_size` を保つ・直書きは上書きされる、を純ロジックで）。
