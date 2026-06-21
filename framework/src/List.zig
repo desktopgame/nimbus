@@ -429,7 +429,7 @@ fn eqOpt(a: ?usize, b: ?usize) bool {
 /// `tracks_viewport_width` hint).
 fn syncContentHeight(self: *List) void {
     const h = @as(f32, @floatFromInt(self.model.getSize())) * self.row_height;
-    self.component.setMinSize(.{ .width = 0, .height = h });
+    self.component.setMinSizeDerived(.{ .width = 0, .height = h });
 }
 
 fn findCellRowIndex(self: *List, row: usize) ?usize {

@@ -335,7 +335,7 @@ fn reflowAt(self: *TextArea, inner_w: f32) struct { min_w: f32, min_h: f32 } {
 /// instead delivered through `SizeQuery.minHeightForWidth`.
 fn refreshMinSize(self: *TextArea) void {
     const r = self.measureMinSizeFromLook();
-    self.component.setMinSize(.{ .width = r.min_w, .height = r.min_h });
+    self.component.setMinSizeDerived(.{ .width = r.min_w, .height = r.min_h });
     self.component.setMaxSize(.{ .width = std.math.inf(f32), .height = std.math.inf(f32) });
 }
 

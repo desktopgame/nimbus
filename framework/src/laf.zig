@@ -25,7 +25,7 @@ fn walk(node: *Component, table: LookTable) void {
     if (node.container) |container| {
         container.invalidateSizeCache();
     }
-    if (node.container == null and node.tree_children == null) {
+    if (node.container == null and node.tree_children == null and !node.min_size_explicit) {
         node.min_size = node.ui.vtable.measureMinSize(node, node.ui.ctx);
     }
 

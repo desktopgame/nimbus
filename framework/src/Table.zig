@@ -155,7 +155,7 @@ const TableHeader = struct {
             .table = table,
         };
         header.component.ui = .{ .vtable = &TableHeader.look_vtable, .ctx = &Component.default_look_context };
-        header.component.setMinSize(.{ .width = table.totalWidth(), .height = HEADER_HEIGHT });
+        header.component.setMinSizeDerived(.{ .width = table.totalWidth(), .height = HEADER_HEIGHT });
         try TableHeader.vtable.install(&header.component);
         return header;
     }
@@ -558,9 +558,9 @@ fn columnAtBoundary(self: *const Table, lx: f32) ?usize {
 
 fn syncContentSize(self: *Table) void {
     const h = @as(f32, @floatFromInt(self.model.getSize())) * self.row_height;
-    self.component.setMinSize(.{ .width = self.totalWidth(), .height = h });
+    self.component.setMinSizeDerived(.{ .width = self.totalWidth(), .height = h });
     if (self.header_view) |header| {
-        header.component.setMinSize(.{ .width = self.totalWidth(), .height = HEADER_HEIGHT });
+        header.component.setMinSizeDerived(.{ .width = self.totalWidth(), .height = HEADER_HEIGHT });
     }
 }
 
@@ -1165,7 +1165,7 @@ test "table: replacing a scrollpane column header clears stale TableHeader" {
     try std.testing.expect(t.header_view != null);
 
     const replacement = try Panel.create(a);
-    replacement.asComponent().setMinSize(.{ .width = 160, .height = HEADER_HEIGHT });
+    replacement.asComponent().setMinSizeDerived(.{ .width = 160, .height = HEADER_HEIGHT });
     try sp.setColumnHeaderView(replacement.asComponent());
     try std.testing.expect(t.header_view == null);
 

@@ -201,6 +201,7 @@ ui: UI,
 position: Point,
 size: Size,
 min_size: Size,
+min_size_explicit: bool,
 max_size: Size,
 grow_x: f32,
 grow_y: f32,
@@ -261,6 +262,7 @@ pub fn init(allocator: std.mem.Allocator, vtable: *const VTable) Component {
         .position = .{ .x = 0, .y = 0 },
         .size = .{ .width = 0, .height = 0 },
         .min_size = .{ .width = 0, .height = 0 },
+        .min_size_explicit = false,
         .max_size = .{ .width = std.math.inf(f32), .height = std.math.inf(f32) },
         .grow_x = 0,
         .grow_y = 0,
@@ -339,6 +341,15 @@ pub fn getMinSize(self: *const Component) Size {
 }
 
 pub fn setMinSize(self: *Component, s: Size) void {
+    self.min_size_explicit = true;
+    if (Size.eql(self.min_size, s)) return;
+    self.min_size = s;
+    self.markLayoutDirty();
+}
+
+/// Update a widget-derived minimum size without marking it as an application
+/// override. Public `setMinSize` is the explicit app-facing path.
+pub fn setMinSizeDerived(self: *Component, s: Size) void {
     if (Size.eql(self.min_size, s)) return;
     self.min_size = s;
     self.markLayoutDirty();

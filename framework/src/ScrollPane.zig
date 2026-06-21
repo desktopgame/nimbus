@@ -534,7 +534,7 @@ const Panel = @import("Panel.zig");
 
 fn testPanel(a: std.mem.Allocator, w: f32, h: f32) !*Panel {
     const p = try Panel.create(a);
-    p.asComponent().setMinSize(.{ .width = w, .height = h });
+    p.asComponent().setMinSizeDerived(.{ .width = w, .height = h });
     return p;
 }
 
@@ -630,7 +630,7 @@ test "scrollpane: corners collapse when either band is zero" {
     try std.testing.expectApproxEqAbs(@as(f32, 32), corner.asComponent().size.width, 0.001);
     try std.testing.expectApproxEqAbs(@as(f32, 26), corner.asComponent().size.height, 0.001);
 
-    row_header.asComponent().setMinSize(.{ .width = 0, .height = 80 });
+    row_header.asComponent().setMinSizeDerived(.{ .width = 0, .height = 80 });
     layoutTestPane(sp, 100, 100);
 
     try std.testing.expectApproxEqAbs(@as(f32, 0), corner.asComponent().size.width, 0.001);

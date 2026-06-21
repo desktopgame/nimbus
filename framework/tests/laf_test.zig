@@ -258,6 +258,71 @@ fn fakeMeasureMinSize(_: *nimbus.Component, ctx: *anyopaque) nimbus.Component.Si
     return fake.size;
 }
 
+const bare_component_vtable = nimbus.Component.VTable{
+    .install = bareInstall,
+    .uninstall = bareUninstall,
+    .processEvent = bareProcessEvent,
+    .destroy = bareDestroy,
+};
+
+fn bareInstall(_: *nimbus.Component) !void {}
+fn bareUninstall(_: *nimbus.Component) void {}
+fn bareProcessEvent(_: *nimbus.Component, _: *nimbus.Component.Event) void {}
+fn bareDestroy(_: *nimbus.Component, _: std.mem.Allocator) void {}
+
+test "applyLook preserves explicit leaf min size and remeasures derived leaves" {
+    const allocator = std.testing.allocator;
+    var explicit_leaf = nimbus.Component.init(allocator, &bare_component_vtable);
+    defer explicit_leaf.deinit();
+    var implicit_leaf = nimbus.Component.init(allocator, &bare_component_vtable);
+    defer implicit_leaf.deinit();
+    var derived_leaf = nimbus.Component.init(allocator, &bare_component_vtable);
+    defer derived_leaf.deinit();
+
+    const explicit_min = nimbus.Component.Size{ .width = 11, .height = 180 };
+    explicit_leaf.setMinSize(explicit_min);
+    try std.testing.expect(explicit_leaf.min_size_explicit);
+
+    implicit_leaf.min_size = .{ .width = 1, .height = 2 };
+
+    const derived_min = nimbus.Component.Size{ .width = 21, .height = 22 };
+    derived_leaf.setMinSizeDerived(derived_min);
+    try std.testing.expect(!derived_leaf.min_size_explicit);
+
+    var fake_ctx = FakeLookContext{ .size = .{ .width = 33, .height = 44 } };
+    const table = [_]nimbus.laf.RemapEntry{
+        .{
+            .from = &nimbus.Component.base_look_vtable,
+            .to = .{ .vtable = &fake_button_look, .ctx = &fake_ctx },
+        },
+    };
+
+    nimbus.laf.applyLook(&explicit_leaf, &table);
+    try std.testing.expect(explicit_leaf.ui.vtable == &fake_button_look);
+    try expectSizeBitEqual(explicit_min, explicit_leaf.min_size);
+
+    nimbus.laf.applyLook(&implicit_leaf, &table);
+    try expectSizeBitEqual(fake_ctx.size, implicit_leaf.min_size);
+
+    nimbus.laf.applyLook(&derived_leaf, &table);
+    try expectSizeBitEqual(fake_ctx.size, derived_leaf.min_size);
+}
+
+test "applyLook metal table keeps explicit vertical slider height" {
+    const allocator = std.testing.allocator;
+    const slider = try nimbus.Slider.create(allocator, .vertical, 0, 60, 100);
+    defer slider.component.vtable.destroy(&slider.component, allocator);
+
+    slider.component.setMinSize(.{
+        .width = slider.component.getMinSize().width,
+        .height = 180,
+    });
+    nimbus.laf.applyLook(&slider.component, nimbus.laf.metal.metalTable());
+
+    try std.testing.expect(slider.component.min_size_explicit);
+    try std.testing.expectApproxEqAbs(@as(f32, 180), slider.component.getMinSize().height, 0.001);
+}
+
 test "applyLook remaps partial fake LAF and invalidates container size cache" {
     const allocator = std.testing.allocator;
     var text_font = try initTestTextFont();
