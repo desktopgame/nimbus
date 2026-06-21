@@ -6,6 +6,7 @@ Button Metal（[laf_metal_button.md](laf_metal_button.md)・develop マージ済
 
 関連: [laf_metal_button.md](laf_metal_button.md)（MetalPalette・`metal_button_look`・外枠全面塗り→縦グラデ→ベベル レシピ）、
 [laf_enabler.md](laf_enabler.md)（`applyLook` / `RemapEntry` / **detached_look_roots facet** §3.7・GPU 非ゲート §5.0）、
+[laf_metal_range.md](laf_metal_range.md)（Group B＝レンジ系 Slider / ScrollBar の Metal 化）、
 [awt_primitives_laf.md](awt_primitives_laf.md)（`fillGradientRect`）。
 
 ---

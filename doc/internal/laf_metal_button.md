@@ -237,7 +237,8 @@ min 算出（FlatLaf と同形）:
 5. **モジュール名 `metal.zig` / `buttonTable` / `MetalPalette`**: 仮。`laf_design.md` §6-1 の命名未決の延長で確定不要。
 6. **複数 Button エントリの将来統合**: 他 widget を Metal 化する際、各 Look の表をどう合成して 1 枚の表にするか
    （`buttonTable()` を `metalTable()` へ拡張する等）は本フェーズ外。
-   → Group A（選択系）への横展開と `metalTable()` 化は [laf_metal_selection.md](laf_metal_selection.md) で確定。
+   → Group A（選択系）への横展開と `metalTable()` 化は [laf_metal_selection.md](laf_metal_selection.md)、
+   Group B（レンジ系 Slider / ScrollBar）は [laf_metal_range.md](laf_metal_range.md) で確定。
 
 ---
 
