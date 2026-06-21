@@ -11,6 +11,7 @@ pub const Theme = @import("theme.zig").Theme;
 pub const Label = @import("Label.zig");
 pub const LayoutManager = @import("LayoutManager.zig");
 pub const listener = @import("listener.zig");
+pub const laf = @import("laf.zig");
 pub const ChangeEvent = listener.ChangeEvent;
 pub const ActionEvent = listener.ActionEvent;
 pub const ChangeListenerList = listener.ChangeListenerList;

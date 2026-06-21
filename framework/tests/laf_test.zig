@@ -96,6 +96,184 @@ fn recordingMeasureMinSize(_: *nimbus.Component, _: *anyopaque) nimbus.Component
     return .{ .width = 0, .height = 0 };
 }
 
+const ComponentSnapshot = struct {
+    component: *nimbus.Component,
+    vtable: *const nimbus.Component.LookVTable,
+    ctx: *anyopaque,
+    min_size: nimbus.Component.Size,
+};
+
+fn collectSnapshots(out: *std.ArrayList(ComponentSnapshot), node: *nimbus.Component) !void {
+    try out.append(std.testing.allocator, .{
+        .component = node,
+        .vtable = node.ui.vtable,
+        .ctx = node.ui.ctx,
+        .min_size = node.min_size,
+    });
+    if (node.container) |container| {
+        for (container.children.items) |elem| {
+            try collectSnapshots(out, elem.component);
+        }
+    }
+}
+
+fn expectSizeBitEqual(expected: nimbus.Component.Size, actual: nimbus.Component.Size) !void {
+    try std.testing.expectEqual(@as(u32, @bitCast(expected.width)), @as(u32, @bitCast(actual.width)));
+    try std.testing.expectEqual(@as(u32, @bitCast(expected.height)), @as(u32, @bitCast(actual.height)));
+}
+
+fn expectSnapshotsUnchanged(snapshots: []const ComponentSnapshot) !void {
+    for (snapshots) |snapshot| {
+        try std.testing.expect(snapshot.component.ui.vtable == snapshot.vtable);
+        try std.testing.expect(snapshot.component.ui.ctx == snapshot.ctx);
+        try expectSizeBitEqual(snapshot.min_size, snapshot.component.min_size);
+    }
+}
+
+const identity_laf = [_]nimbus.laf.RemapEntry{
+    .{ .from = &nimbus.Button.look_vtable, .to = .{ .vtable = &nimbus.Button.look_vtable, .ctx = &nimbus.Component.default_look_context } },
+    .{ .from = &nimbus.CheckBox.look_vtable, .to = .{ .vtable = &nimbus.CheckBox.look_vtable, .ctx = &nimbus.Component.default_look_context } },
+    .{ .from = &nimbus.CheckBoxMenuItem.look_vtable, .to = .{ .vtable = &nimbus.CheckBoxMenuItem.look_vtable, .ctx = &nimbus.Component.default_look_context } },
+    .{ .from = &nimbus.ComboBox.look_vtable, .to = .{ .vtable = &nimbus.ComboBox.look_vtable, .ctx = &nimbus.Component.default_look_context } },
+    .{ .from = &nimbus.Container.look_vtable, .to = .{ .vtable = &nimbus.Container.look_vtable, .ctx = &nimbus.Component.default_look_context } },
+    .{ .from = &nimbus.Label.look_vtable, .to = .{ .vtable = &nimbus.Label.look_vtable, .ctx = &nimbus.Component.default_look_context } },
+    .{ .from = &nimbus.List.look_vtable, .to = .{ .vtable = &nimbus.List.look_vtable, .ctx = &nimbus.Component.default_look_context } },
+    .{ .from = &nimbus.Menu.look_vtable, .to = .{ .vtable = &nimbus.Menu.look_vtable, .ctx = &nimbus.Component.default_look_context } },
+    .{ .from = &nimbus.MenuBar.look_vtable, .to = .{ .vtable = &nimbus.MenuBar.look_vtable, .ctx = &nimbus.Component.default_look_context } },
+    .{ .from = &nimbus.MenuItem.look_vtable, .to = .{ .vtable = &nimbus.MenuItem.look_vtable, .ctx = &nimbus.Component.default_look_context } },
+    .{ .from = &nimbus.MenuSeparator.look_vtable, .to = .{ .vtable = &nimbus.MenuSeparator.look_vtable, .ctx = &nimbus.Component.default_look_context } },
+    .{ .from = &nimbus.Panel.look_vtable, .to = .{ .vtable = &nimbus.Panel.look_vtable, .ctx = &nimbus.Component.default_look_context } },
+    .{ .from = &nimbus.RadioButton.look_vtable, .to = .{ .vtable = &nimbus.RadioButton.look_vtable, .ctx = &nimbus.Component.default_look_context } },
+    .{ .from = &nimbus.RadioButtonMenuItem.look_vtable, .to = .{ .vtable = &nimbus.RadioButtonMenuItem.look_vtable, .ctx = &nimbus.Component.default_look_context } },
+    .{ .from = &nimbus.ScrollBar.look_vtable, .to = .{ .vtable = &nimbus.ScrollBar.look_vtable, .ctx = &nimbus.Component.default_look_context } },
+    .{ .from = &nimbus.ScrollPane.look_vtable, .to = .{ .vtable = &nimbus.ScrollPane.look_vtable, .ctx = &nimbus.Component.default_look_context } },
+    .{ .from = &nimbus.Slider.look_vtable, .to = .{ .vtable = &nimbus.Slider.look_vtable, .ctx = &nimbus.Component.default_look_context } },
+    .{ .from = &nimbus.SplitPane.look_vtable, .to = .{ .vtable = &nimbus.SplitPane.look_vtable, .ctx = &nimbus.Component.default_look_context } },
+    .{ .from = &nimbus.TabbedPane.look_vtable, .to = .{ .vtable = &nimbus.TabbedPane.look_vtable, .ctx = &nimbus.Component.default_look_context } },
+    .{ .from = &nimbus.Table.look_vtable, .to = .{ .vtable = &nimbus.Table.look_vtable, .ctx = &nimbus.Component.default_look_context } },
+    .{ .from = &nimbus.TextArea.look_vtable, .to = .{ .vtable = &nimbus.TextArea.look_vtable, .ctx = &nimbus.Component.default_look_context } },
+    .{ .from = &nimbus.TextField.look_vtable, .to = .{ .vtable = &nimbus.TextField.look_vtable, .ctx = &nimbus.Component.default_look_context } },
+    .{ .from = &nimbus.Window.look_vtable, .to = .{ .vtable = &nimbus.Window.look_vtable, .ctx = &nimbus.Component.default_look_context } },
+};
+
+test "applyLook with FlatLaf identity table preserves component state" {
+    const app = try newApp();
+    defer app.deinit();
+
+    const allocator = std.testing.allocator;
+    const text_font = awt.Graphics.TextFont{ .face = app.default_font, .pixel_size = 14 };
+
+    const root = try nimbus.Container.create(allocator);
+    defer root.component.vtable.destroy(&root.component, allocator);
+    root.setLayout(nimbus.BoxLayout.vertical());
+
+    const button = try nimbus.Button.create(allocator, "Apply", text_font, nimbus.Theme.default.text);
+    try root.add(&button.component);
+
+    const panel = try nimbus.Panel.create(allocator);
+    try root.add(panel.asComponent());
+
+    const label = try nimbus.Label.create(allocator, "Label", text_font, nimbus.Theme.default.text);
+    try panel.asContainer().add(&label.component);
+
+    const checkbox = try nimbus.CheckBox.create(allocator, "Check", text_font, nimbus.Theme.default.text);
+    try root.add(&checkbox.component);
+
+    var snapshots: std.ArrayList(ComponentSnapshot) = .empty;
+    defer snapshots.deinit(allocator);
+    try collectSnapshots(&snapshots, &root.component);
+
+    nimbus.laf.applyLook(&root.component, &identity_laf);
+    try expectSnapshotsUnchanged(snapshots.items);
+
+    nimbus.laf.applyLook(&root.component, &identity_laf);
+    try expectSnapshotsUnchanged(snapshots.items);
+}
+
+const FakeLookContext = struct {
+    size: nimbus.Component.Size,
+};
+
+const fake_button_look = nimbus.Component.LookVTable{
+    .paint = fakePaint,
+    .paintOver = fakePaintOver,
+    .measureMinSize = fakeMeasureMinSize,
+};
+
+const fake_panel_look = nimbus.Component.LookVTable{
+    .paint = fakePaint,
+    .paintOver = fakePaintOver,
+    .measureMinSize = fakeMeasureMinSize,
+};
+
+fn fakePaint(_: *nimbus.Component, _: *anyopaque, _: *awt.Graphics) void {}
+
+fn fakePaintOver(_: *nimbus.Component, _: *anyopaque, _: *awt.Graphics) void {}
+
+fn fakeMeasureMinSize(_: *nimbus.Component, ctx: *anyopaque) nimbus.Component.Size {
+    const fake: *FakeLookContext = @ptrCast(@alignCast(ctx));
+    return fake.size;
+}
+
+test "applyLook remaps partial fake LAF and invalidates container size cache" {
+    const app = try newApp();
+    defer app.deinit();
+
+    const allocator = std.testing.allocator;
+    const text_font = awt.Graphics.TextFont{ .face = app.default_font, .pixel_size = 14 };
+
+    const root = try nimbus.Container.create(allocator);
+    defer root.component.vtable.destroy(&root.component, allocator);
+    root.setLayout(nimbus.BoxLayout.vertical());
+
+    const button = try nimbus.Button.create(allocator, "Button", text_font, nimbus.Theme.default.text);
+    try root.add(&button.component);
+    const original_button_min = button.component.min_size;
+
+    const panel = try nimbus.Panel.create(allocator);
+    const original_panel_min = panel.container.component.min_size;
+    try root.add(panel.asComponent());
+
+    const label = try nimbus.Label.create(allocator, "Label", text_font, nimbus.Theme.default.text);
+    const original_label_min = label.component.min_size;
+    try root.add(&label.component);
+
+    const plain_container = try nimbus.Container.create(allocator);
+    plain_container.setLayout(nimbus.BoxLayout.horizontal());
+    try root.add(&plain_container.component);
+
+    _ = root.getMinSize();
+    _ = plain_container.getMinSize();
+    try std.testing.expect(root.min_cache != null);
+    try std.testing.expect(plain_container.min_cache != null);
+
+    var fake_button_ctx = FakeLookContext{ .size = .{ .width = 123, .height = 45 } };
+    var fake_panel_ctx = FakeLookContext{ .size = .{ .width = 67, .height = 89 } };
+    const table = [_]nimbus.laf.RemapEntry{
+        .{ .from = &nimbus.Button.look_vtable, .to = .{ .vtable = &fake_button_look, .ctx = &fake_button_ctx } },
+        .{ .from = &nimbus.Panel.look_vtable, .to = .{ .vtable = &fake_panel_look, .ctx = &fake_panel_ctx } },
+    };
+
+    nimbus.laf.applyLook(&root.component, &table);
+
+    try std.testing.expect(button.component.ui.vtable == &fake_button_look);
+    try std.testing.expect(button.component.ui.ctx == @as(*anyopaque, @ptrCast(&fake_button_ctx)));
+    try expectSizeBitEqual(fake_button_ctx.size, button.component.min_size);
+    try std.testing.expect(!nimbus.Component.Size.eql(original_button_min, button.component.min_size));
+
+    try std.testing.expect(panel.container.component.ui.vtable == &fake_panel_look);
+    try std.testing.expect(panel.container.component.ui.ctx == @as(*anyopaque, @ptrCast(&fake_panel_ctx)));
+    try expectSizeBitEqual(original_panel_min, panel.container.component.min_size);
+
+    try std.testing.expect(label.component.ui.vtable == &nimbus.Label.look_vtable);
+    try std.testing.expect(label.component.ui.ctx == @as(*anyopaque, @ptrCast(&nimbus.Component.default_look_context)));
+    try expectSizeBitEqual(original_label_min, label.component.min_size);
+
+    try std.testing.expect(plain_container.component.ui.vtable == &nimbus.Container.look_vtable);
+    try std.testing.expect(root.min_cache == null);
+    try std.testing.expect(plain_container.min_cache == null);
+}
+
 test "paintAt dispatches Look paint, children, then paintOver" {
     const allocator = std.testing.allocator;
     var log = PaintLog{};
