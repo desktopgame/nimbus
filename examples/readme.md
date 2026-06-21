@@ -16,6 +16,13 @@ frameworkのAPIを使用して、ボタン、スライダー、ラベルを横�
 ## widget_metalbutton
 frameworkのLAF APIを使用して、ButtonだけMetal Lookへ差し替えた例
 
+## widget_showcase
+frameworkのAPIを使用して、全 widget を1つのウィンドウに集めた LAF ショーケース（JTattoo Acryl デモ風のタブ分け）。
+MenuBar（File / Edit / Help）と TabbedPane のタブ（Form / Buttons / Text / Slider / Lists / Split）で全 widget を一覧する。
+既定は FlatLaf。ファイル先頭の `const USE_METAL` を `true` にすると、起動時に `nimbus.laf.applyLook` で Metal Look を当てる
+（現状は Button のみ Metal 化。Step 3 で全 widget に拡張予定）。LAF を全 widget に当てて目視＋ゴールデン化する土台シーン。
+実行は `zig build run-widget_showcase`。
+
 ## widget_menu
 frameworkのAPIを使用して、メニュー、ポップアップメニューを表示する。
 
