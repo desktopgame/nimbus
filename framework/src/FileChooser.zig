@@ -10,6 +10,7 @@ const Component = @import("Component.zig");
 const ComboBox = @import("ComboBox.zig");
 const Container = @import("Container.zig");
 const Dialog = @import("Dialog.zig");
+const GridLayout = @import("GridLayout.zig");
 const Label = @import("Label.zig");
 const LayoutManager = @import("LayoutManager.zig");
 const List = @import("List.zig");
@@ -720,20 +721,17 @@ pub const FileChooser = struct {
 
         const south = try app.container();
         south.setLayout(try BoxLayout.verticalSpaced(a, 8));
-        const row1 = try app.container();
-        row1.setLayout(try BoxLayout.horizontalSpaced(a, 8));
-        const row2 = try app.container();
-        row2.setLayout(try BoxLayout.horizontalSpaced(a, 8));
+        const form = try app.container();
+        form.setLayout(try GridLayout.create(a, 2, .{ .col_spacing = 8, .row_spacing = 8 }));
         const row3 = try app.container();
         row3.setLayout(try BoxLayout.horizontalSpaced(a, 8));
 
         const file_name_label = try app.label("File Name:");
+        file_name_label.component.setAlignY(.center);
         self.filename_field = try app.textField("");
         self.filename_field.component.setGrowX(1);
         const files_type_label = try app.label("Files of Type:");
-        const south_label_width = @max(file_name_label.component.min_size.width, files_type_label.component.min_size.width);
-        file_name_label.component.setMinSize(.{ .width = south_label_width, .height = file_name_label.component.min_size.height });
-        files_type_label.component.setMinSize(.{ .width = south_label_width, .height = files_type_label.component.min_size.height });
+        files_type_label.component.setAlignY(.center);
         self.filter_combo = try app.comboBox(&.{"All Files"});
         self.filter_combo.component.setGrowX(1);
         self.ok_button = try app.button("OK");
@@ -744,15 +742,14 @@ pub const FileChooser = struct {
         try self.filter_combo.addChangeListener(FileChooser, onFilterChanged, self);
         try self.ok_button.getModel().addActionListener(FileChooser, onOk, self);
         try self.cancel_button.getModel().addActionListener(FileChooser, onCancel, self);
-        try row1.add(&file_name_label.component);
-        try row1.add(&self.filename_field.component);
-        try row2.add(&files_type_label.component);
-        try row2.add(&self.filter_combo.component);
+        try form.add(&file_name_label.component);
+        try form.add(&self.filename_field.component);
+        try form.add(&files_type_label.component);
+        try form.add(&self.filter_combo.component);
         try row3.add(&glue.component);
         try row3.add(&self.ok_button.component);
         try row3.add(&self.cancel_button.component);
-        try south.add(&row1.component);
-        try south.add(&row2.component);
+        try south.add(&form.component);
         try south.add(&row3.component);
         try BorderLayout.add(body, .south, &south.component);
     }

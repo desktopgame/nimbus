@@ -83,21 +83,15 @@ fn page(app: *nimbus.Application) !*nimbus.Panel {
     return root;
 }
 
-fn addFormRow(app: *nimbus.Application, parent: *nimbus.Container, label_text: []const u8, input: *nimbus.Component) !void {
-    const row = try app.container();
-    row.setLayout(try nimbus.BoxLayout.horizontalSpaced(app.allocator, 8));
-
+fn addFormCell(app: *nimbus.Application, grid: *nimbus.Container, label_text: []const u8, input: *nimbus.Component) !void {
     const label = try app.label(label_text);
-    label.component.setMinSize(.{ .width = 100, .height = label.component.getMinSize().height });
-    label.component.setMaxSize(.{ .width = 100, .height = std.math.inf(f32) });
     label.component.setAlignY(.center);
 
     input.setGrowX(1);
     input.setAlignY(.center);
 
-    try row.add(&label.component);
-    try row.add(input);
-    try parent.add(&row.component);
+    try grid.add(&label.component);
+    try grid.add(input);
 }
 
 fn groupPanel(app: *nimbus.Application, title: []const u8) !*nimbus.Panel {
@@ -153,12 +147,17 @@ fn buildMenu(app: *nimbus.Application, frame: *nimbus.Frame) !*nimbus.ButtonGrou
 fn buildFormTab(app: *nimbus.Application) !*nimbus.Panel {
     const root = try page(app);
 
+    const form = try app.container();
+    form.setLayout(try nimbus.GridLayout.create(app.allocator, 2, .{ .col_spacing = 8, .row_spacing = 8 }));
+
     const salutations = [_][]const u8{ "Mr.", "Ms.", "Dr.", "Prof." };
-    try addFormRow(app, root.asContainer(), "Salutation", &(try app.comboBox(&salutations)).component);
-    try addFormRow(app, root.asContainer(), "First Name", &(try app.textField("Jane")).component);
-    try addFormRow(app, root.asContainer(), "Last Name", &(try app.textField("Nimbus")).component);
-    try addFormRow(app, root.asContainer(), "Company", &(try app.textField("Example Labs")).component);
-    try addFormRow(app, root.asContainer(), "Email", &(try app.textField("jane@example.test")).component);
+    try addFormCell(app, form, "Salutation", &(try app.comboBox(&salutations)).component);
+    try addFormCell(app, form, "First Name", &(try app.textField("Jane")).component);
+    try addFormCell(app, form, "Last Name", &(try app.textField("Nimbus")).component);
+    try addFormCell(app, form, "Company", &(try app.textField("Example Labs")).component);
+    try addFormCell(app, form, "Email", &(try app.textField("jane@example.test")).component);
+
+    try root.asContainer().add(&form.component);
 
     return root;
 }

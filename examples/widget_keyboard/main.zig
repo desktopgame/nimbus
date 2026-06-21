@@ -107,16 +107,12 @@ fn onSliderChange(s: *State, _: *const ChangeEvent) void {
 
 // ── ui assembly ──────────────────────────────────────────────────────────
 
-fn labeledRow(app: *nimbus.Application, text: []const u8, child: *nimbus.Component) !*nimbus.Container {
-    const row = try app.container();
-    row.setLayout(nimbus.BoxLayout.horizontal());
+fn addLabeledCell(app: *nimbus.Application, grid: *nimbus.Container, text: []const u8, child: *nimbus.Component) !void {
     const l = try app.label(text);
     l.component.setAlignY(.center);
-    l.component.setMinSize(.{ .width = 110, .height = l.component.getMinSize().height });
     child.setAlignY(.center);
-    try row.add(&l.component);
-    try row.add(child);
-    return row;
+    try grid.add(&l.component);
+    try grid.add(child);
 }
 
 pub fn main(init: std.process.Init) !void {
@@ -179,15 +175,19 @@ pub fn main(init: std.process.Init) !void {
     const slider = try app.slider(.horizontal, 0, 50, 100);
     slider.component.setGrowX(1);
 
-    try column.add(&(try labeledRow(app, "Name:", &field.component)).component);
+    const form = try app.container();
+    form.setLayout(try nimbus.GridLayout.create(app.allocator, 2, .{ .col_spacing = 8, .row_spacing = 8 }));
+    try addLabeledCell(app, form, "Name:", &field.component);
+    try addLabeledCell(app, form, "Color:", &combo.component);
+    try addLabeledCell(app, form, "Volume:", &slider.component);
+
+    try column.add(&form.component);
     try column.add(&extras.component);
     const radio_row = try app.container();
     radio_row.setLayout(nimbus.BoxLayout.horizontal());
     try radio_row.add(&rb_a.component);
     try radio_row.add(&rb_b.component);
     try column.add(&radio_row.component);
-    try column.add(&(try labeledRow(app, "Color:", &combo.component)).component);
-    try column.add(&(try labeledRow(app, "Volume:", &slider.component)).component);
 
     // Button row: mnemonics, a disabled button (Tab skips it), the default button.
     const buttons = try app.container();
