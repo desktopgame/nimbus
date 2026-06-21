@@ -732,8 +732,8 @@ pub const FileChooser = struct {
         self.filename_field.component.setGrowX(1);
         const files_type_label = try app.label("Files of Type:");
         const south_label_width = @max(file_name_label.component.min_size.width, files_type_label.component.min_size.width);
-        file_name_label.component.min_size.width = south_label_width;
-        files_type_label.component.min_size.width = south_label_width;
+        file_name_label.component.setMinSize(.{ .width = south_label_width, .height = file_name_label.component.min_size.height });
+        files_type_label.component.setMinSize(.{ .width = south_label_width, .height = files_type_label.component.min_size.height });
         self.filter_combo = try app.comboBox(&.{"All Files"});
         self.filter_combo.component.setGrowX(1);
         self.ok_button = try app.button("OK");
