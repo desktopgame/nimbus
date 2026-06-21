@@ -11,16 +11,20 @@ const ComboBox = @import("ComboBox.zig");
 const Container = @import("Container.zig");
 const Dialog = @import("Dialog.zig");
 const Label = @import("Label.zig");
+const LayoutManager = @import("LayoutManager.zig");
 const List = @import("List.zig");
 const PaddingLayout = @import("PaddingLayout.zig");
 const ScrollPane = @import("ScrollPane.zig");
 const SplitPane = @import("SplitPane.zig");
+const Table = @import("Table.zig");
 const TextField = @import("TextField.zig");
 const Window = @import("Window.zig");
 const ActionEvent = @import("listener.zig").ActionEvent;
 const ChangeEvent = @import("listener.zig").ChangeEvent;
 
 const PATH_BUF = 4096;
+const FILE_ROW_HEIGHT = 28;
+const FILE_ICON = 18;
 
 extern "kernel32" fn GetLogicalDrives() callconv(.winapi) u32;
 
@@ -157,6 +161,45 @@ pub const Place = struct {
 pub const Ancestor = struct {
     name: []const u8,
     path: []const u8,
+};
+
+const ViewMode = enum { list, details };
+
+const CardLayout = struct {
+    base: LayoutManager,
+    active: ?*Component = null,
+
+    const vt = LayoutManager.VTable{
+        .doLayout = doLayout,
+        .computeMinSize = minSize,
+        .computeMaxSize = maxSize,
+    };
+
+    fn doLayout(lm: *LayoutManager, c: *Container) void {
+        const self: *CardLayout = @fieldParentPtr("base", lm);
+        for (c.children.items) |elem| {
+            const show = self.active != null and elem.component == self.active.?;
+            elem.component.setBounds(if (show)
+                .{ .x = 0, .y = 0, .width = c.component.size.width, .height = c.component.size.height }
+            else
+                .{ .x = 0, .y = 0, .width = 0, .height = 0 });
+        }
+    }
+
+    fn minSize(_: *LayoutManager, _: *const Container) Component.Size {
+        return .{ .width = 0, .height = 0 };
+    }
+
+    fn maxSize(_: *LayoutManager, _: *const Container) Component.Size {
+        return .{ .width = std.math.inf(f32), .height = std.math.inf(f32) };
+    }
+};
+
+const SortCtx = struct { col: usize, dir: Table.SortDirection };
+
+const ViewSwitchPlan = struct {
+    mode: ViewMode,
+    carry: ?usize,
 };
 
 pub const ChooserCore = struct {
@@ -438,6 +481,14 @@ pub const FileChooser = struct {
     files_model: List.ListModel,
     places_model: List.ListModel,
     files_list: *List,
+    files_table: *Table,
+    list_sp: *ScrollPane,
+    table_sp: *ScrollPane,
+    card_holder: *Container,
+    card: CardLayout,
+    view_mode: ViewMode,
+    sort_col: usize,
+    sort_dir: Table.SortDirection,
     places_list: *List,
     look_in_combo: *ComboBox,
     look_in_paths: std.ArrayList([]const u8),
@@ -487,6 +538,14 @@ pub const FileChooser = struct {
             .files_model = List.ListModel.init(allocator),
             .places_model = List.ListModel.init(allocator),
             .files_list = undefined,
+            .files_table = undefined,
+            .list_sp = undefined,
+            .table_sp = undefined,
+            .card_holder = undefined,
+            .card = .{ .base = .{ .vtable = &CardLayout.vt } },
+            .view_mode = .list,
+            .sort_col = 0,
+            .sort_dir = .ascending,
             .places_list = undefined,
             .look_in_combo = undefined,
             .look_in_paths = .empty,
@@ -600,20 +659,37 @@ pub const FileChooser = struct {
         try BorderLayout.add(body, .north, &north.component);
 
         self.places_list = try app.listWithModel(&self.places_model, .{ .create = createPlaceCell, .user_data = self });
-        self.places_list.setRowHeight(28);
+        self.places_list.setRowHeight(FILE_ROW_HEIGHT);
         try self.places_list.addChangeListener(FileChooser, onPlaceSelected, self);
         const places_sp = try app.scrollPane(self.places_list.asComponent());
         places_sp.container.component.min_size.width = 180;
 
         self.files_list = try app.listWithModel(&self.files_model, .{ .create = createFileCell, .user_data = self });
-        self.files_list.setRowHeight(28);
+        self.files_list.asComponent().setName("files-list");
+        self.files_list.setRowHeight(FILE_ROW_HEIGHT);
         try self.files_list.addChangeListener(FileChooser, onFileSelected, self);
         try self.files_list.addActionListener(FileChooser, onFileActivated, self);
-        const files_sp = try app.scrollPane(self.files_list.asComponent());
+        self.list_sp = try app.scrollPane(self.files_list.asComponent());
+
+        self.files_table = try app.tableWithModel(&self.files_model, &.{
+            .{ .title = "Name", .width = 300, .factory = .{ .create = createNameCell, .user_data = self } },
+            .{ .title = "Size", .width = 90, .factory = .{ .create = createSizeCell, .user_data = self } },
+            .{ .title = "Modified", .width = 150, .factory = .{ .create = createDateCell, .user_data = self } },
+        });
+        self.files_table.setRowHeight(FILE_ROW_HEIGHT);
+        self.files_table.setSortIndicator(0, .ascending);
+        try self.files_table.addChangeListener(FileChooser, onFileSelected, self);
+        try self.files_table.addActionListener(FileChooser, onFileActivated, self);
+        try self.files_table.addSortListener(FileChooser, onSort, self);
+        self.table_sp = try app.scrollPane(self.files_table.asComponent());
+        try self.table_sp.setColumnHeaderView(try self.files_table.headerView());
 
         const card_holder = try app.container();
-        card_holder.setLayout(BorderLayout.get());
-        try BorderLayout.add(card_holder, .center, &files_sp.container.component);
+        self.card_holder = card_holder;
+        card_holder.setLayout(&self.card.base);
+        try card_holder.add(self.list_sp.asComponent());
+        try card_holder.add(self.table_sp.asComponent());
+        self.card.active = self.list_sp.asComponent();
 
         const split = try app.splitPane(.horizontal, &places_sp.container.component, &card_holder.component);
         split.setDividerLocation(180);
@@ -643,11 +719,20 @@ pub const FileChooser = struct {
     fn rebuildFilesModel(self: *FileChooser) !void {
         self.files_model.clear();
         self.files_list.clearSelection();
+        self.files_table.clearSelection();
+
+        var entries: std.ArrayList(*Entry) = .empty;
+        defer entries.deinit(self.allocator);
+        try entries.ensureTotalCapacity(self.allocator, self.core.visibleEntryCount());
         var i: usize = 0;
         while (i < self.core.visibleEntryCount()) : (i += 1) {
-            try self.files_model.add(@ptrCast(self.core.visibleEntryAt(i).?));
+            entries.appendAssumeCapacity(self.core.visibleEntryAt(i).?);
         }
+        std.sort.pdq(*Entry, entries.items, SortCtx{ .col = self.sort_col, .dir = self.sort_dir }, entrySortLess);
+
+        for (entries.items) |entry| try self.files_model.add(@ptrCast(entry));
         self.files_list.asComponent().markLayoutDirty();
+        self.files_table.asComponent().markLayoutDirty();
     }
 
     fn rebuildPlacesModel(self: *FileChooser) !void {
@@ -701,8 +786,42 @@ pub const FileChooser = struct {
         try self.syncFieldsFromCore();
     }
 
+    fn selectedIndex(self: *FileChooser) ?usize {
+        return switch (self.view_mode) {
+            .list => self.files_list.getSelected(),
+            .details => self.files_table.getSelected(),
+        };
+    }
+
+    fn setActiveSelected(self: *FileChooser, idx: ?usize) void {
+        switch (self.view_mode) {
+            .list => self.files_list.setSelected(idx),
+            .details => self.files_table.setSelected(idx),
+        }
+    }
+
+    fn activeFilesComponent(self: *FileChooser) *Component {
+        return switch (self.view_mode) {
+            .list => self.files_list.asComponent(),
+            .details => self.files_table.asComponent(),
+        };
+    }
+
+    fn setViewMode(self: *FileChooser, mode: ViewMode) void {
+        const plan = viewSwitchPlan(self.view_mode, mode, self.selectedIndex()) orelse return;
+        self.view_mode = plan.mode;
+        self.card.active = switch (mode) {
+            .list => self.list_sp.asComponent(),
+            .details => self.table_sp.asComponent(),
+        };
+        self.card_holder.component.markLayoutDirty();
+        self.card_holder.component.repaint();
+        self.setActiveSelected(plan.carry);
+        self.activeFilesComponent().requestFocus();
+    }
+
     fn selectedVisibleEntry(self: *FileChooser) ?*Entry {
-        const idx = self.files_list.getSelected() orelse return null;
+        const idx = self.selectedIndex() orelse return null;
         const raw = self.files_model.getElementAt(idx) orelse return null;
         return @ptrCast(@alignCast(raw));
     }
@@ -772,13 +891,11 @@ pub const FileChooser = struct {
     }
 
     fn onDetails(self: *FileChooser, _: *const ActionEvent) void {
-        _ = self;
-        // Details view is implemented in the next seam.
+        self.setViewMode(.details);
     }
 
     fn onList(self: *FileChooser, _: *const ActionEvent) void {
-        _ = self;
-        // List view is already the only active view in this seam.
+        self.setViewMode(.list);
     }
 
     fn onFileSelected(self: *FileChooser, _: *const ChangeEvent) void {
@@ -798,6 +915,26 @@ pub const FileChooser = struct {
         self.files_model.clear();
         self.core.setFilter(self.filter_combo.getSelectedIndex());
         self.rebuildFilesModel() catch {};
+    }
+
+    fn onSort(self: *FileChooser, e: *const Table.SortEvent) void {
+        self.sort_col = e.column;
+        self.sort_dir = e.direction;
+        const keep = self.selectedVisibleEntry();
+        self.rebuildFilesModel() catch {};
+        if (keep) |entry| self.selectEntryPointer(entry);
+    }
+
+    fn selectEntryPointer(self: *FileChooser, entry: *Entry) void {
+        var i: usize = 0;
+        while (i < self.files_model.getSize()) : (i += 1) {
+            const raw = self.files_model.getElementAt(i) orelse continue;
+            const cur: *Entry = @ptrCast(@alignCast(raw));
+            if (cur == entry) {
+                self.setActiveSelected(i);
+                return;
+            }
+        }
     }
 
     fn onOk(self: *FileChooser, _: *const ActionEvent) void {
@@ -896,6 +1033,93 @@ fn createFileCell(user_data: *anyopaque, allocator: std.mem.Allocator) anyerror!
     };
 }
 
+const NameCell = struct {
+    root: *Container,
+    label: *Label,
+    chooser: *FileChooser,
+
+    fn update(user_data: *anyopaque, ctx: Table.CellContext) void {
+        const self: *NameCell = @ptrCast(@alignCast(user_data));
+        const e: *Entry = @ptrCast(@alignCast(ctx.value));
+        self.label.setText(e.name) catch {};
+        self.label.setIcon(if (e.is_dir) self.chooser.icon_folder else self.chooser.icon_file);
+    }
+
+    fn destroy(user_data: *anyopaque, allocator: std.mem.Allocator) void {
+        const self: *NameCell = @ptrCast(@alignCast(user_data));
+        self.root.component.vtable.destroy(&self.root.component, allocator);
+        allocator.destroy(self);
+    }
+};
+
+fn createNameCell(user_data: *anyopaque, allocator: std.mem.Allocator) anyerror!Table.Cell {
+    const chooser: *FileChooser = @ptrCast(@alignCast(user_data));
+    const cell = try allocator.create(NameCell);
+    errdefer allocator.destroy(cell);
+
+    const root = try chooser.app.container();
+    errdefer root.component.vtable.destroy(&root.component, allocator);
+    root.setLayout(try PaddingLayout.create(allocator, .{ .left = 6, .right = 6 }));
+
+    const label = try chooser.app.label("");
+    label.setIconSize(.{ .width = FILE_ICON, .height = FILE_ICON });
+    try root.add(&label.component);
+
+    cell.* = .{ .root = root, .label = label, .chooser = chooser };
+    return .{
+        .component = &root.component,
+        .update = NameCell.update,
+        .destroy = NameCell.destroy,
+        .user_data = cell,
+    };
+}
+
+const TextKind = enum { size, date };
+
+const TextCell = struct {
+    label: *Label,
+    kind: TextKind,
+    buf: [40]u8 = undefined,
+
+    fn update(user_data: *anyopaque, ctx: Table.CellContext) void {
+        const self: *TextCell = @ptrCast(@alignCast(user_data));
+        const e: *Entry = @ptrCast(@alignCast(ctx.value));
+        const text = switch (self.kind) {
+            .size => if (e.is_dir) "" else fmtSize(&self.buf, e.size),
+            .date => fmtDate(&self.buf, e.mtime),
+        };
+        self.label.setText(text) catch {};
+    }
+
+    fn destroy(user_data: *anyopaque, allocator: std.mem.Allocator) void {
+        const self: *TextCell = @ptrCast(@alignCast(user_data));
+        self.label.component.vtable.destroy(&self.label.component, allocator);
+        allocator.destroy(self);
+    }
+};
+
+fn createSizeCell(user_data: *anyopaque, allocator: std.mem.Allocator) anyerror!Table.Cell {
+    return createTextCell(user_data, allocator, .size);
+}
+
+fn createDateCell(user_data: *anyopaque, allocator: std.mem.Allocator) anyerror!Table.Cell {
+    return createTextCell(user_data, allocator, .date);
+}
+
+fn createTextCell(user_data: *anyopaque, allocator: std.mem.Allocator, kind: TextKind) anyerror!Table.Cell {
+    const chooser: *FileChooser = @ptrCast(@alignCast(user_data));
+    const cell = try allocator.create(TextCell);
+    errdefer allocator.destroy(cell);
+    const label = try chooser.app.label("");
+    cell.* = .{ .label = label, .kind = kind };
+    return .{
+        .component = &label.component,
+        .update = TextCell.update,
+        .destroy = TextCell.destroy,
+        .user_data = cell,
+    };
+}
+
 const PlaceCell = struct {
     root: *Container,
     label: *Label,
@@ -945,6 +1169,27 @@ fn entryLess(_: void, a: *Entry, b: *Entry) bool {
     return std.ascii.lessThanIgnoreCase(a.name, b.name);
 }
 
+fn entrySortLess(ctx: SortCtx, a: *Entry, b: *Entry) bool {
+    if (a.is_dir != b.is_dir) return a.is_dir;
+    const eq = switch (ctx.col) {
+        1 => a.size == b.size,
+        2 => a.mtime == b.mtime,
+        else => std.ascii.eqlIgnoreCase(a.name, b.name),
+    };
+    if (eq) return std.ascii.lessThanIgnoreCase(a.name, b.name);
+    const less = switch (ctx.col) {
+        1 => a.size < b.size,
+        2 => a.mtime < b.mtime,
+        else => std.ascii.lessThanIgnoreCase(a.name, b.name),
+    };
+    return if (ctx.dir == .ascending) less else !less;
+}
+
+fn viewSwitchPlan(current: ViewMode, mode: ViewMode, selected: ?usize) ?ViewSwitchPlan {
+    if (current == mode) return null;
+    return .{ .mode = mode, .carry = selected };
+}
+
 fn hasExtension(name: []const u8, ext: []const u8) bool {
     if (ext.len == 0) return true;
     const dot = std.mem.lastIndexOfScalar(u8, name, '.') orelse return false;
@@ -954,6 +1199,31 @@ fn hasExtension(name: []const u8, ext: []const u8) bool {
 
 fn basename(path: []const u8) []const u8 {
     return std.fs.path.basename(path);
+}
+
+fn fmtSize(buf: []u8, n: u64) []const u8 {
+    if (n < 1024) return std.fmt.bufPrint(buf, "{d} B", .{n}) catch "";
+    const kb = n / 1024;
+    if (kb < 1024) return std.fmt.bufPrint(buf, "{d} KB", .{kb}) catch "";
+    const mb = kb / 1024;
+    if (mb < 1024) return std.fmt.bufPrint(buf, "{d} MB", .{mb}) catch "";
+    return std.fmt.bufPrint(buf, "{d} GB", .{mb / 1024}) catch "";
+}
+
+fn fmtDate(buf: []u8, secs: i64) []const u8 {
+    if (secs <= 0) return "";
+    const es = std.time.epoch.EpochSeconds{ .secs = @intCast(secs) };
+    const ed = es.getEpochDay();
+    const yd = ed.calculateYearDay();
+    const md = yd.calculateMonthDay();
+    const ds = es.getDaySeconds();
+    return std.fmt.bufPrint(buf, "{d:0>4}-{d:0>2}-{d:0>2} {d:0>2}:{d:0>2}", .{
+        yd.year,
+        md.month.numeric(),
+        md.day_index + 1,
+        ds.getHoursIntoDay(),
+        ds.getMinutesIntoHour(),
+    }) catch "";
 }
 
 fn ancestorDisplayName(path: []const u8) []const u8 {
@@ -1269,6 +1539,38 @@ test "reload replaces owned entry store without leaks or stale entries" {
     try std.testing.expectEqualStrings("/tmp", core.getCurrentDirectory());
 }
 
+test "details sort keeps folders first and applies column keys" {
+    var dir_b = Entry{ .name = "zeta", .is_dir = true };
+    var dir_a = Entry{ .name = "Alpha", .is_dir = true };
+    var small = Entry{ .name = "small.txt", .is_dir = false, .size = 10, .mtime = 20 };
+    var large = Entry{ .name = "large.txt", .is_dir = false, .size = 100, .mtime = 10 };
+    var same = Entry{ .name = "Same.txt", .is_dir = false, .size = 100, .mtime = 30 };
+
+    var by_size = [_]*Entry{ &small, &dir_b, &large, &dir_a, &same };
+    std.sort.pdq(*Entry, &by_size, SortCtx{ .col = 1, .dir = .descending }, entrySortLess);
+    try std.testing.expectEqualStrings("Alpha", by_size[0].name);
+    try std.testing.expectEqualStrings("zeta", by_size[1].name);
+    try std.testing.expectEqualStrings("large.txt", by_size[2].name);
+    try std.testing.expectEqualStrings("Same.txt", by_size[3].name);
+    try std.testing.expectEqualStrings("small.txt", by_size[4].name);
+
+    var by_date = [_]*Entry{ &small, &large, &same };
+    std.sort.pdq(*Entry, &by_date, SortCtx{ .col = 2, .dir = .ascending }, entrySortLess);
+    try std.testing.expectEqualStrings("large.txt", by_date[0].name);
+    try std.testing.expectEqualStrings("small.txt", by_date[1].name);
+    try std.testing.expectEqualStrings("Same.txt", by_date[2].name);
+}
+
+test "view switch plan carries selected index and ignores same mode" {
+    try std.testing.expectEqual(@as(?ViewSwitchPlan, null), viewSwitchPlan(.list, .list, 2));
+    const to_details = viewSwitchPlan(.list, .details, 2).?;
+    try std.testing.expectEqual(ViewMode.details, to_details.mode);
+    try std.testing.expectEqual(@as(?usize, 2), to_details.carry);
+    const to_list = viewSwitchPlan(.details, .list, null).?;
+    try std.testing.expectEqual(ViewMode.list, to_list.mode);
+    try std.testing.expectEqual(@as(?usize, null), to_list.carry);
+}
+
 test "home place index resolves home and missing home stays no-op" {
     awt.setLogCallback(@import("Robot.zig").QuietLog.cb, null);
     const app = Application.initHeadless(std.testing.allocator, std.testing.io) catch return error.SkipZigTest;
@@ -1368,6 +1670,26 @@ test "file chooser headless smoke selects a file and closes with OK" {
     robot.pump();
 
     chooser.files_list.setSelected(1);
+    const selected_before = chooser.selectedVisibleEntry().?;
+    try driver.clickOn(.{ .role = .button, .text = "Details" });
+    robot.pump();
+    try std.testing.expectEqual(ViewMode.details, chooser.view_mode);
+    try std.testing.expectEqual(chooser.table_sp.asComponent(), chooser.card.active.?);
+    try std.testing.expectEqual(@as(?usize, 1), chooser.files_table.getSelected());
+    try std.testing.expectEqual(selected_before, chooser.selectedVisibleEntry().?);
+    try std.testing.expect(chooser.files_model.getSize() > 0);
+    _ = try driver.find(.{ .role = .table });
+
+    try driver.clickOn(.{ .role = .button, .text = "List" });
+    robot.pump();
+    try std.testing.expectEqual(ViewMode.list, chooser.view_mode);
+    try std.testing.expectEqual(chooser.list_sp.asComponent(), chooser.card.active.?);
+    try std.testing.expectEqual(@as(?usize, 1), chooser.files_list.getSelected());
+    _ = try driver.find(.{ .role = .list, .name = "files-list" });
+
+    try driver.clickOn(.{ .role = .button, .text = "Details" });
+    robot.pump();
+    try std.testing.expectEqual(selected_before, chooser.selectedVisibleEntry().?);
     chooser.core.selected_len = 0;
     try driver.clickOn(.{ .role = .button, .text = "OK" });
     robot.pump();
