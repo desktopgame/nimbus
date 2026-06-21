@@ -25,7 +25,6 @@ const ChangeEvent = @import("listener.zig").ChangeEvent;
 const PATH_BUF = 4096;
 const FILE_ROW_HEIGHT = 28;
 const FILE_ICON = 18;
-const SOUTH_LABEL_WIDTH = 104;
 
 extern "kernel32" fn GetLogicalDrives() callconv(.winapi) u32;
 
@@ -729,11 +728,12 @@ pub const FileChooser = struct {
         row3.setLayout(try BoxLayout.horizontalSpaced(a, 8));
 
         const file_name_label = try app.label("File Name:");
-        file_name_label.component.min_size.width = SOUTH_LABEL_WIDTH;
         self.filename_field = try app.textField("");
         self.filename_field.component.setGrowX(1);
         const files_type_label = try app.label("Files of Type:");
-        files_type_label.component.min_size.width = SOUTH_LABEL_WIDTH;
+        const south_label_width = @max(file_name_label.component.min_size.width, files_type_label.component.min_size.width);
+        file_name_label.component.min_size.width = south_label_width;
+        files_type_label.component.min_size.width = south_label_width;
         self.filter_combo = try app.comboBox(&.{"All Files"});
         self.filter_combo.component.setGrowX(1);
         self.ok_button = try app.button("OK");
