@@ -202,6 +202,7 @@ pub fn build(b: *std.Build) void {
     addExample(b, "snapshot", framework_mod, scenes_mod, target, optimize);
     addExample(b, "widget_simple", framework_mod, null, target, optimize);
     addExample(b, "widget_metalbutton", framework_mod, null, target, optimize);
+    addExample(b, "widget_showcase", framework_mod, null, target, optimize);
     addExample(b, "widget_menu", framework_mod, null, target, optimize);
     addExample(b, "widget_textfield", framework_mod, null, target, optimize);
     addExample(b, "widget_textarea", framework_mod, null, target, optimize);
