@@ -95,6 +95,18 @@ test "snapshot: metal_scroll_pane_bars" {
     try runScene(scenes.metal_scroll_pane_bars);
 }
 
+test "snapshot: metal_scroll_pane_focused" {
+    try runScene(scenes.metal_scroll_pane_focused);
+}
+
+test "snapshot: metal_panel_border" {
+    try runScene(scenes.metal_panel_border);
+}
+
+test "snapshot: metal_split_pane_divider" {
+    try runScene(scenes.metal_split_pane_divider);
+}
+
 test "snapshot: panel_paint_over_child" {
     try runScene(scenes.panel_paint_over_child);
 }

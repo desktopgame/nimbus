@@ -111,6 +111,25 @@ fn deinitTestTextFont(font: *awt.Graphics.TextFont) void {
     awt.deinit();
 }
 
+const FocusStub = struct {
+    owner: ?*nimbus.Component = null,
+
+    fn request(_: *anyopaque, _: ?*nimbus.Component) void {}
+
+    fn current(user_data: *anyopaque) ?*nimbus.Component {
+        const self: *FocusStub = @ptrCast(@alignCast(user_data));
+        return self.owner;
+    }
+
+    fn controller(self: *FocusStub) nimbus.Component.FocusController {
+        return .{
+            .user_data = @ptrCast(self),
+            .request_focus_for = request,
+            .current_owner = current,
+        };
+    }
+};
+
 const ComponentSnapshot = struct {
     component: *nimbus.Component,
     vtable: *const nimbus.Component.LookVTable,
@@ -521,6 +540,61 @@ test "Metal range widgets measureMinSize without GPU device" {
     ));
 }
 
+test "Metal container widgets measureMinSize without GPU device" {
+    const allocator = std.testing.allocator;
+
+    const panel = try nimbus.Panel.create(allocator);
+    defer panel.asComponent().vtable.destroy(panel.asComponent(), allocator);
+
+    const split_left = try nimbus.Panel.create(allocator);
+    const split_right = try nimbus.Panel.create(allocator);
+    const split = try nimbus.SplitPane.create(allocator, .horizontal, split_left.asComponent(), split_right.asComponent());
+    defer split.asComponent().vtable.destroy(split.asComponent(), allocator);
+
+    const view = try nimbus.Panel.create(allocator);
+    const scroll = try nimbus.ScrollPane.create(allocator, view.asComponent());
+    defer scroll.asComponent().vtable.destroy(scroll.asComponent(), allocator);
+
+    try expectSizeBitEqual(.{ .width = 0, .height = 0 }, nimbus.laf.metal.metal_panel_look.measureMinSize(
+        panel.asComponent(),
+        &nimbus.laf.metal.metal_palette,
+    ));
+    try expectSizeBitEqual(.{ .width = 0, .height = 0 }, nimbus.laf.metal.metal_splitpane_look.measureMinSize(
+        split.asComponent(),
+        &nimbus.laf.metal.metal_palette,
+    ));
+    try expectSizeBitEqual(.{ .width = 0, .height = 0 }, nimbus.laf.metal.metal_scrollpane_look.measureMinSize(
+        scroll.asComponent(),
+        &nimbus.laf.metal.metal_palette,
+    ));
+}
+
+test "Metal table reaches Part A container widgets" {
+    const allocator = std.testing.allocator;
+
+    const root = try nimbus.Container.create(allocator);
+    defer root.component.vtable.destroy(&root.component, allocator);
+    root.setLayout(nimbus.BoxLayout.vertical());
+
+    const panel = try nimbus.Panel.create(allocator);
+    try root.add(panel.asComponent());
+
+    const split_left = try nimbus.Panel.create(allocator);
+    const split_right = try nimbus.Panel.create(allocator);
+    const split = try nimbus.SplitPane.create(allocator, .horizontal, split_left.asComponent(), split_right.asComponent());
+    try root.add(split.asComponent());
+
+    const view = try nimbus.Panel.create(allocator);
+    const scroll = try nimbus.ScrollPane.create(allocator, view.asComponent());
+    try root.add(scroll.asComponent());
+
+    nimbus.laf.applyLook(&root.component, nimbus.laf.metal.metalTable());
+
+    try std.testing.expect(panel.asComponent().ui.vtable == &nimbus.laf.metal.metal_panel_look);
+    try std.testing.expect(split.asComponent().ui.vtable == &nimbus.laf.metal.metal_splitpane_look);
+    try std.testing.expect(scroll.asComponent().ui.vtable == &nimbus.laf.metal.metal_scrollpane_look);
+}
+
 test "Metal table reaches ComboBox popup detached root" {
     const allocator = std.testing.allocator;
     var text_font = try initTestTextFont();
@@ -571,8 +645,41 @@ test "Metal table reaches range widgets and ScrollPane bars" {
 
     try std.testing.expect(slider.component.ui.vtable == &nimbus.laf.metal.metal_slider_look);
     try std.testing.expect(scrollbar.component.ui.vtable == &nimbus.laf.metal.metal_scrollbar_look);
+    try std.testing.expect(sp.asComponent().ui.vtable == &nimbus.laf.metal.metal_scrollpane_look);
     try std.testing.expect(sp.hbar.component.ui.vtable == &nimbus.laf.metal.metal_scrollbar_look);
     try std.testing.expect(sp.vbar.component.ui.vtable == &nimbus.laf.metal.metal_scrollbar_look);
+}
+
+test "ScrollPane focusOwner descendant predicate works with FocusController stub" {
+    const allocator = std.testing.allocator;
+
+    const root = try nimbus.Container.create(allocator);
+    defer root.component.vtable.destroy(&root.component, allocator);
+
+    var focus_stub = FocusStub{};
+    var focus_controller = focus_stub.controller();
+    try root.component.putProperty(@typeName(nimbus.Component.FocusController), @ptrCast(&focus_controller), null);
+
+    const view = try nimbus.Panel.create(allocator);
+    const scroll = try nimbus.ScrollPane.create(allocator, view.asComponent());
+    try root.add(scroll.asComponent());
+
+    focus_stub.owner = view.asComponent();
+    try std.testing.expect(scroll.asComponent().focusOwner() == view.asComponent());
+    try std.testing.expect(scroll.asComponent().isSelfOrDescendant(view.asComponent()));
+    const focused = if (scroll.asComponent().focusOwner()) |owner|
+        scroll.asComponent().isSelfOrDescendant(owner)
+    else
+        false;
+    try std.testing.expect(focused);
+
+    focus_stub.owner = null;
+    try std.testing.expect(scroll.asComponent().focusOwner() == null);
+    const unfocused = if (scroll.asComponent().focusOwner()) |owner|
+        scroll.asComponent().isSelfOrDescendant(owner)
+    else
+        false;
+    try std.testing.expect(!unfocused);
 }
 
 test "paintAt dispatches Look paint, children, then paintOver" {

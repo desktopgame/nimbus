@@ -4,9 +4,12 @@ const Button = @import("../Button.zig");
 const CheckBox = @import("../CheckBox.zig");
 const ComboBox = @import("../ComboBox.zig");
 const Component = @import("../Component.zig");
+const Panel = @import("../Panel.zig");
 const RadioButton = @import("../RadioButton.zig");
 const ScrollBar = @import("../ScrollBar.zig");
+const ScrollPane = @import("../ScrollPane.zig");
 const Slider = @import("../Slider.zig");
+const SplitPane = @import("../SplitPane.zig");
 const laf = @import("../laf.zig");
 
 const Color = awt.Graphics.Color;
@@ -131,6 +134,24 @@ pub const metal_scrollbar_look = Component.LookVTable{
     .measureMinSize = measureScrollBarMinSize,
 };
 
+pub const metal_panel_look = Component.LookVTable{
+    .paint = paintPanel,
+    .paintOver = paintPanelOver,
+    .measureMinSize = measureZeroMinSize,
+};
+
+pub const metal_scrollpane_look = Component.LookVTable{
+    .paint = paintOver,
+    .paintOver = paintScrollPaneOver,
+    .measureMinSize = measureZeroMinSize,
+};
+
+pub const metal_splitpane_look = Component.LookVTable{
+    .paint = paintSplitPane,
+    .paintOver = paintOver,
+    .measureMinSize = measureZeroMinSize,
+};
+
 const metal_table = [_]laf.RemapEntry{
     .{
         .from = &Button.look_vtable,
@@ -159,6 +180,18 @@ const metal_table = [_]laf.RemapEntry{
     .{
         .from = &ScrollBar.look_vtable,
         .to = .{ .vtable = &metal_scrollbar_look, .ctx = &metal_palette },
+    },
+    .{
+        .from = &Panel.look_vtable,
+        .to = .{ .vtable = &metal_panel_look, .ctx = &metal_palette },
+    },
+    .{
+        .from = &ScrollPane.look_vtable,
+        .to = .{ .vtable = &metal_scrollpane_look, .ctx = &metal_palette },
+    },
+    .{
+        .from = &SplitPane.look_vtable,
+        .to = .{ .vtable = &metal_splitpane_look, .ctx = &metal_palette },
     },
 };
 
@@ -489,6 +522,72 @@ fn measureScrollBarMinSize(self: *Component, _: *anyopaque) Component.Size {
         .horizontal => .{ .width = SCROLLBAR_MIN_THUMB * 2, .height = ScrollBar.THICKNESS },
         .vertical => .{ .width = ScrollBar.THICKNESS, .height = SCROLLBAR_MIN_THUMB * 2 },
     };
+}
+
+fn paintPanel(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
+    const cont = self.container orelse return;
+    const panel: *Panel = @fieldParentPtr("container", cont);
+    if (panel.background) |bg| {
+        g.setColor(bg);
+        g.fillRect(.{ .x = 0, .y = 0, .width = self.size.width, .height = self.size.height });
+    }
+}
+
+fn paintPanelOver(self: *Component, ctx: *anyopaque, g: *awt.Graphics) void {
+    const cont = self.container orelse return;
+    const panel: *Panel = @fieldParentPtr("container", cont);
+    const border = panel.border orelse return;
+    const palette: *MetalPalette = @ptrCast(@alignCast(ctx));
+    const sz = self.size;
+    const limit = @min(border.thickness, @min(sz.width, sz.height) / 2);
+    var inset: f32 = 0;
+    while (inset < limit) : (inset += 1) {
+        drawInsetBevel(g, inset - 1, inset - 1, sz.width - inset * 2 + 2, sz.height - inset * 2 + 2, palette);
+    }
+}
+
+fn paintScrollPaneOver(self: *Component, ctx: *anyopaque, g: *awt.Graphics) void {
+    const sz = self.size;
+    if (sz.width <= 0 or sz.height <= 0) return;
+    const palette: *MetalPalette = @ptrCast(@alignCast(ctx));
+    const owner = self.focusOwner();
+    const focused = if (owner) |o| self.isSelfOrDescendant(o) else false;
+
+    drawRectBorder(g, 0, 0, sz.width, sz.height, if (focused) palette.focus_ring else palette.border);
+    drawInsetBevel(g, 0, 0, sz.width, sz.height, palette);
+}
+
+fn paintSplitPane(self: *Component, ctx: *anyopaque, g: *awt.Graphics) void {
+    const cont = self.container orelse return;
+    const sp: *SplitPane = @fieldParentPtr("container", cont);
+    const sz = self.size;
+    if (sz.width <= 0 or sz.height <= 0 or sp.divider_size <= 0) return;
+
+    const palette: *MetalPalette = @ptrCast(@alignCast(ctx));
+    const start = switch (sp.orientation) {
+        .horizontal => sp.first.size.width,
+        .vertical => sp.first.size.height,
+    };
+    const strip: awt.Graphics.Rect = switch (sp.orientation) {
+        .horizontal => .{ .x = start, .y = 0, .width = sp.divider_size, .height = sz.height },
+        .vertical => .{ .x = 0, .y = start, .width = sz.width, .height = sp.divider_size },
+    };
+    const active = sp.drag != null or sp.rollover;
+    const body = bodyGradient(palette, true, active, false);
+    g.fillGradientRect(strip, body.top, body.bottom);
+    drawRectBorder(g, strip.x, strip.y, strip.width, strip.height, if (active) palette.border else palette.border_disabled);
+    drawBevelAt(g, strip.x, strip.y, strip.width, strip.height, palette.bevel_light, palette.bevel_dark);
+
+    g.setColor(if (active) palette.border else palette.bevel_dark);
+    const seam: awt.Graphics.Rect = switch (sp.orientation) {
+        .horizontal => .{ .x = start + sp.divider_size / 2 - 0.5, .y = 1, .width = 1, .height = sz.height - 2 },
+        .vertical => .{ .x = 1, .y = start + sp.divider_size / 2 - 0.5, .width = sz.width - 2, .height = 1 },
+    };
+    g.fillRect(seam);
+}
+
+fn measureZeroMinSize(_: *Component, _: *anyopaque) Component.Size {
+    return .{ .width = 0, .height = 0 };
 }
 
 fn measureMinSize(self: *Component, _: *anyopaque) Component.Size {

@@ -578,7 +578,69 @@ fn paintMetalScrollPaneBars(ctx: PaintContext) anyerror!void {
     sp.asComponent().paintAt(ctx.g);
 }
 
+pub const metal_scroll_pane_focused = Scene{
+    .name = "metal_scroll_pane_focused",
+    .width = 300,
+    .height = 220,
+    .paint = paintMetalScrollPaneFocused,
+};
+
+fn paintMetalScrollPaneFocused(ctx: PaintContext) anyerror!void {
+    var focus_stub = FocusStub{};
+
+    const view = try nimbus.Panel.create(ctx.allocator);
+    view.setBackground(awt.Graphics.Color.rgb(0.78, 0.90, 0.78));
+    view.asComponent().setMinSize(.{ .width = 420, .height = 320 });
+    focus_stub.owner = view.asComponent();
+
+    const font = nimbus.awt.Graphics.TextFont{ .face = ctx.font, .pixel_size = 14 };
+    const label = try nimbus.Label.create(ctx.allocator, "focused view", font, awt.Graphics.Color.rgb(0.10, 0.16, 0.10));
+    label.component.setBounds(.{ .x = 18, .y = 16, .width = 140, .height = 24 });
+    try view.container.add(&label.component);
+
+    const sp = try nimbus.ScrollPane.create(ctx.allocator, view.asComponent());
+    defer sp.asComponent().vtable.destroy(sp.asComponent(), ctx.allocator);
+    var focus_controller = focus_stub.controller();
+    try sp.asComponent().putProperty(@typeName(nimbus.Component.FocusController), @ptrCast(&focus_controller), null);
+    sp.setHorizontalPolicy(.always);
+    sp.setVerticalPolicy(.always);
+    sp.setScrollX(48);
+    sp.setScrollY(36);
+    nimbus.laf.applyLook(sp.asComponent(), nimbus.laf.metal.metalTable());
+    sp.asComponent().setBounds(.{ .x = 24, .y = 20, .width = 236, .height = 164 });
+    sp.container.doLayout();
+    sp.asComponent().paintAt(ctx.g);
+}
+
 // Composite widget scenes ----------------------------------------------------
+
+pub const metal_panel_border = Scene{
+    .name = "metal_panel_border",
+    .width = 260,
+    .height = 180,
+    .paint = paintMetalPanelBorder,
+};
+
+fn paintMetalPanelBorder(ctx: PaintContext) anyerror!void {
+    const panel = try nimbus.Panel.create(ctx.allocator);
+    defer panel.asComponent().vtable.destroy(panel.asComponent(), ctx.allocator);
+
+    panel.setBackground(awt.Graphics.Color.rgb(0.97, 0.98, 1.00));
+    panel.setBorder(.{
+        .thickness = 10,
+        .color = awt.Graphics.Color.rgb(0.12, 0.17, 0.24),
+    });
+    panel.container.setLayout(null);
+    panel.asComponent().setBounds(.{ .x = 24, .y = 22, .width = 210, .height = 130 });
+
+    const child = try nimbus.Panel.create(ctx.allocator);
+    child.setBackground(awt.Graphics.Color.rgb(0.94, 0.42, 0.26));
+    child.asComponent().setBounds(.{ .x = 0, .y = 0, .width = 210, .height = 130 });
+    try panel.container.add(child.asComponent());
+
+    nimbus.laf.applyLook(panel.asComponent(), nimbus.laf.metal.metalTable());
+    panel.asComponent().paintAt(ctx.g);
+}
 
 pub const panel_paint_over_child = Scene{
     .name = "panel_paint_over_child",
@@ -622,6 +684,28 @@ fn paintSplitPaneDivider(ctx: PaintContext) anyerror!void {
 
     split.setDividerSize(12);
     split.setDividerLocation(138);
+    split.asComponent().setBounds(.{ .x = 22, .y = 24, .width = 316, .height = 102 });
+    split.container.doLayout();
+    split.asComponent().paintAt(ctx.g);
+}
+
+pub const metal_split_pane_divider = Scene{
+    .name = "metal_split_pane_divider",
+    .width = 360,
+    .height = 150,
+    .paint = paintMetalSplitPaneDivider,
+};
+
+fn paintMetalSplitPaneDivider(ctx: PaintContext) anyerror!void {
+    const left = try coloredLeaf(ctx.allocator, 60, 80, awt.Graphics.Color.rgb(0.30, 0.55, 0.88));
+    const right = try coloredLeaf(ctx.allocator, 80, 80, awt.Graphics.Color.rgb(0.86, 0.52, 0.28));
+    const split = try nimbus.SplitPane.create(ctx.allocator, .horizontal, left.asComponent(), right.asComponent());
+    defer split.asComponent().vtable.destroy(split.asComponent(), ctx.allocator);
+
+    split.setDividerSize(12);
+    split.setDividerLocation(138);
+    split.rollover = true;
+    nimbus.laf.applyLook(split.asComponent(), nimbus.laf.metal.metalTable());
     split.asComponent().setBounds(.{ .x = 22, .y = 24, .width = 316, .height = 102 });
     split.container.doLayout();
     split.asComponent().paintAt(ctx.g);
