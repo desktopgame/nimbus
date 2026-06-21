@@ -74,6 +74,14 @@ pub const TreeChildren = struct {
     at: *const fn (self: *const Component, index: usize) *Component,
 };
 
+/// Opt-in Look traversal roots that are not part of the automation tree.
+/// Menu popups are the motivating case: the menu owns a popup root that must
+/// receive LAF remaps, but it should not appear as an automation child.
+pub const DetachedLookRoots = struct {
+    count: *const fn (self: *const Component) usize,
+    at: *const fn (self: *const Component, index: usize) *Component,
+};
+
 /// Accessibility / automation role: a stable, semantic widget kind the
 /// Robot/Driver layer uses to address and snapshot widgets by meaning rather
 /// than by coordinates or pixels. Distinct from `name`, which is debug-only and
@@ -218,6 +226,8 @@ a11y: ?A11y,
 /// Automation tree child facet (opt-in; null = no non-container children).
 /// See `TreeChildren`.
 tree_children: ?TreeChildren,
+/// Look traversal roots outside the automation tree. See `DetachedLookRoots`.
+detached_look_roots: ?DetachedLookRoots,
 parent: ?*Component,
 container: ?*Container,
 /// True if this component can receive keyboard focus. Default false (Label,
@@ -263,6 +273,7 @@ pub fn init(allocator: std.mem.Allocator, vtable: *const VTable) Component {
         .role = .none,
         .a11y = null,
         .tree_children = null,
+        .detached_look_roots = null,
         .parent = null,
         .container = null,
         .focusable = false,

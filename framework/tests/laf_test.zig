@@ -96,6 +96,21 @@ fn recordingMeasureMinSize(_: *nimbus.Component, _: *anyopaque) nimbus.Component
     return .{ .width = 0, .height = 0 };
 }
 
+fn initTestTextFont() !awt.Graphics.TextFont {
+    awt.setLogCallback(quietLog, null);
+    try awt.init();
+    errdefer awt.deinit();
+    return .{
+        .face = try awt.Font.init(nimbus.noto.noto_sans_jp_regular, 0),
+        .pixel_size = 14,
+    };
+}
+
+fn deinitTestTextFont(font: *awt.Graphics.TextFont) void {
+    font.face.deinit();
+    awt.deinit();
+}
+
 const ComponentSnapshot = struct {
     component: *nimbus.Component,
     vtable: *const nimbus.Component.LookVTable,
@@ -110,9 +125,14 @@ fn collectSnapshots(out: *std.ArrayList(ComponentSnapshot), node: *nimbus.Compon
         .ctx = node.ui.ctx,
         .min_size = node.min_size,
     });
-    if (node.container) |container| {
-        for (container.children.items) |elem| {
-            try collectSnapshots(out, elem.component);
+    const child_count = node.automationChildCount();
+    for (0..child_count) |i| {
+        try collectSnapshots(out, node.automationChildAt(i));
+    }
+    if (node.detached_look_roots) |roots| {
+        const root_count = roots.count(node);
+        for (0..root_count) |i| {
+            try collectSnapshots(out, roots.at(node, i));
         }
     }
 }
@@ -157,11 +177,9 @@ const identity_laf = [_]nimbus.laf.RemapEntry{
 };
 
 test "applyLook with FlatLaf identity table preserves component state" {
-    const app = try newApp();
-    defer app.deinit();
-
     const allocator = std.testing.allocator;
-    const text_font = awt.Graphics.TextFont{ .face = app.default_font, .pixel_size = 14 };
+    var text_font = try initTestTextFont();
+    defer deinitTestTextFont(&text_font);
 
     const root = try nimbus.Container.create(allocator);
     defer root.component.vtable.destroy(&root.component, allocator);
@@ -178,6 +196,13 @@ test "applyLook with FlatLaf identity table preserves component state" {
 
     const checkbox = try nimbus.CheckBox.create(allocator, "Check", text_font, nimbus.Theme.default.text);
     try root.add(&checkbox.component);
+
+    const menu_bar = try nimbus.MenuBar.create(allocator, text_font, nimbus.Theme.default.text);
+    try root.add(&menu_bar.component);
+    const file_menu = try nimbus.Menu.create(allocator, "File", text_font, nimbus.Theme.default.text);
+    try menu_bar.add(file_menu);
+    const open_item = try nimbus.MenuItem.create(allocator, "Open", text_font, nimbus.Theme.default.text);
+    try file_menu.add(&open_item.component);
 
     var snapshots: std.ArrayList(ComponentSnapshot) = .empty;
     defer snapshots.deinit(allocator);
@@ -206,6 +231,24 @@ const fake_panel_look = nimbus.Component.LookVTable{
     .measureMinSize = fakeMeasureMinSize,
 };
 
+const fake_menu_bar_look = nimbus.Component.LookVTable{
+    .paint = fakePaint,
+    .paintOver = fakePaintOver,
+    .measureMinSize = fakeMeasureMinSize,
+};
+
+const fake_menu_look = nimbus.Component.LookVTable{
+    .paint = fakePaint,
+    .paintOver = fakePaintOver,
+    .measureMinSize = fakeMeasureMinSize,
+};
+
+const fake_menu_item_look = nimbus.Component.LookVTable{
+    .paint = fakePaint,
+    .paintOver = fakePaintOver,
+    .measureMinSize = fakeMeasureMinSize,
+};
+
 fn fakePaint(_: *nimbus.Component, _: *anyopaque, _: *awt.Graphics) void {}
 
 fn fakePaintOver(_: *nimbus.Component, _: *anyopaque, _: *awt.Graphics) void {}
@@ -216,11 +259,9 @@ fn fakeMeasureMinSize(_: *nimbus.Component, ctx: *anyopaque) nimbus.Component.Si
 }
 
 test "applyLook remaps partial fake LAF and invalidates container size cache" {
-    const app = try newApp();
-    defer app.deinit();
-
     const allocator = std.testing.allocator;
-    const text_font = awt.Graphics.TextFont{ .face = app.default_font, .pixel_size = 14 };
+    var text_font = try initTestTextFont();
+    defer deinitTestTextFont(&text_font);
 
     const root = try nimbus.Container.create(allocator);
     defer root.component.vtable.destroy(&root.component, allocator);
@@ -242,6 +283,15 @@ test "applyLook remaps partial fake LAF and invalidates container size cache" {
     plain_container.setLayout(nimbus.BoxLayout.horizontal());
     try root.add(&plain_container.component);
 
+    const menu_bar = try nimbus.MenuBar.create(allocator, text_font, nimbus.Theme.default.text);
+    const original_menu_bar_min = menu_bar.component.min_size;
+    try root.add(&menu_bar.component);
+
+    const file_menu = try nimbus.Menu.create(allocator, "File", text_font, nimbus.Theme.default.text);
+    try menu_bar.add(file_menu);
+    const open_item = try nimbus.MenuItem.create(allocator, "Open", text_font, nimbus.Theme.default.text);
+    try file_menu.add(&open_item.component);
+
     _ = root.getMinSize();
     _ = plain_container.getMinSize();
     try std.testing.expect(root.min_cache != null);
@@ -249,9 +299,15 @@ test "applyLook remaps partial fake LAF and invalidates container size cache" {
 
     var fake_button_ctx = FakeLookContext{ .size = .{ .width = 123, .height = 45 } };
     var fake_panel_ctx = FakeLookContext{ .size = .{ .width = 67, .height = 89 } };
+    var fake_menu_bar_ctx = FakeLookContext{ .size = .{ .width = 7, .height = 8 } };
+    var fake_menu_ctx = FakeLookContext{ .size = .{ .width = 222, .height = 33 } };
+    var fake_menu_item_ctx = FakeLookContext{ .size = .{ .width = 111, .height = 22 } };
     const table = [_]nimbus.laf.RemapEntry{
         .{ .from = &nimbus.Button.look_vtable, .to = .{ .vtable = &fake_button_look, .ctx = &fake_button_ctx } },
         .{ .from = &nimbus.Panel.look_vtable, .to = .{ .vtable = &fake_panel_look, .ctx = &fake_panel_ctx } },
+        .{ .from = &nimbus.MenuBar.look_vtable, .to = .{ .vtable = &fake_menu_bar_look, .ctx = &fake_menu_bar_ctx } },
+        .{ .from = &nimbus.Menu.look_vtable, .to = .{ .vtable = &fake_menu_look, .ctx = &fake_menu_ctx } },
+        .{ .from = &nimbus.MenuItem.look_vtable, .to = .{ .vtable = &fake_menu_item_look, .ctx = &fake_menu_item_ctx } },
     };
 
     nimbus.laf.applyLook(&root.component, &table);
@@ -272,6 +328,26 @@ test "applyLook remaps partial fake LAF and invalidates container size cache" {
     try std.testing.expect(plain_container.component.ui.vtable == &nimbus.Container.look_vtable);
     try std.testing.expect(root.min_cache == null);
     try std.testing.expect(plain_container.min_cache == null);
+
+    try std.testing.expect(menu_bar.component.ui.vtable == &fake_menu_bar_look);
+    try std.testing.expect(menu_bar.component.ui.ctx == @as(*anyopaque, @ptrCast(&fake_menu_bar_ctx)));
+    try expectSizeBitEqual(original_menu_bar_min, menu_bar.component.min_size);
+    try std.testing.expect(file_menu.component.ui.vtable == &fake_menu_look);
+    try std.testing.expect(file_menu.component.ui.ctx == @as(*anyopaque, @ptrCast(&fake_menu_ctx)));
+    try expectSizeBitEqual(fake_menu_ctx.size, file_menu.component.min_size);
+    try std.testing.expect(open_item.component.ui.vtable == &fake_menu_item_look);
+    try std.testing.expect(open_item.component.ui.ctx == @as(*anyopaque, @ptrCast(&fake_menu_item_ctx)));
+    try expectSizeBitEqual(fake_menu_item_ctx.size, open_item.component.min_size);
+
+    const popup = try nimbus.PopupMenu.create(allocator);
+    defer popup.destroy();
+    const popup_item = try nimbus.MenuItem.create(allocator, "Standalone", text_font, nimbus.Theme.default.text);
+    try popup.add(&popup_item.component);
+
+    nimbus.laf.applyLook(&popup.popup_root, &table);
+    try std.testing.expect(popup_item.component.ui.vtable == &fake_menu_item_look);
+    try std.testing.expect(popup_item.component.ui.ctx == @as(*anyopaque, @ptrCast(&fake_menu_item_ctx)));
+    try expectSizeBitEqual(fake_menu_item_ctx.size, popup_item.component.min_size);
 }
 
 test "paintAt dispatches Look paint, children, then paintOver" {

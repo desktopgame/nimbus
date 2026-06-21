@@ -106,6 +106,7 @@ pub fn create(
     };
     menu.component.role = .menu;
     menu.component.a11y = .{ .name = a11yName };
+    menu.component.detached_look_roots = .{ .count = detachedLookRootCount, .at = detachedLookRootAt };
     menu.component.ui = .{ .vtable = &look_vtable, .ctx = &Component.default_look_context };
     menu.popup_root.ui = .{ .vtable = &popup_look_vtable, .ctx = &Component.default_look_context };
     menu.popup_root.tree_children = .{ .count = treeChildCount, .at = treeChildAt };
@@ -554,6 +555,16 @@ fn treeChildCount(c: *const Component) usize {
 fn treeChildAt(c: *const Component, index: usize) *Component {
     const menu: *const Menu = @fieldParentPtr("popup_root", c);
     return menu.items.items[index];
+}
+
+fn detachedLookRootCount(_: *const Component) usize {
+    return 1;
+}
+
+fn detachedLookRootAt(c: *const Component, index: usize) *Component {
+    std.debug.assert(index == 0);
+    const menu: *const Menu = @fieldParentPtr("component", c);
+    return @constCast(&menu.popup_root);
 }
 
 fn popupInstall(_: *Component) !void {}

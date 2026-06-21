@@ -22,10 +22,19 @@ fn walk(node: *Component, table: LookTable) void {
 
     if (node.container) |container| {
         container.invalidateSizeCache();
-        for (container.children.items) |elem| {
-            walk(elem.component, table);
-        }
-    } else {
+    }
+    if (node.container == null and node.tree_children == null) {
         node.min_size = node.ui.vtable.measureMinSize(node, node.ui.ctx);
+    }
+
+    const child_count = node.automationChildCount();
+    for (0..child_count) |i| {
+        walk(node.automationChildAt(i), table);
+    }
+    if (node.detached_look_roots) |roots| {
+        const root_count = roots.count(node);
+        for (0..root_count) |i| {
+            walk(roots.at(node, i), table);
+        }
     }
 }
