@@ -139,8 +139,16 @@ test "snapshot: list_selection" {
     try runScene(scenes.list_selection);
 }
 
+test "snapshot: metal_list_selection" {
+    try runScene(scenes.metal_list_selection);
+}
+
 test "snapshot: table_header_grid" {
     try runScene(scenes.table_header_grid);
+}
+
+test "snapshot: metal_table_header_grid" {
+    try runScene(scenes.metal_table_header_grid);
 }
 
 test "snapshot: popup_menu_open" {

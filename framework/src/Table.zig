@@ -131,7 +131,7 @@ const HeaderDrag = struct {
     grab: f32,
 };
 
-const TableHeader = struct {
+pub const TableHeader = struct {
     component: Component,
     table: *Table,
 
@@ -142,7 +142,7 @@ const TableHeader = struct {
         .destroy = TableHeader.destroy,
     };
 
-    const look_vtable = Component.LookVTable{
+    pub const look_vtable = Component.LookVTable{
         .paint = TableHeader.lookPaint,
         .paintOver = TableHeader.lookPaintOver,
         .measureMinSize = TableHeader.lookMeasureMinSize,

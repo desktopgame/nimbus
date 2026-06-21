@@ -130,6 +130,68 @@ const FocusStub = struct {
     }
 };
 
+const TestTextCell = struct {
+    label: *nimbus.Label,
+
+    fn createList(_: *anyopaque, allocator: std.mem.Allocator) anyerror!nimbus.List.Cell {
+        const self = try allocator.create(TestTextCell);
+        errdefer allocator.destroy(self);
+        self.* = .{
+            .label = try nimbus.Label.create(
+                allocator,
+                "",
+                test_text_font.?,
+                nimbus.Theme.default.text,
+            ),
+        };
+        return .{
+            .component = &self.label.component,
+            .update = updateList,
+            .destroy = destroy,
+            .user_data = self,
+        };
+    }
+
+    fn createTable(_: *anyopaque, allocator: std.mem.Allocator) anyerror!nimbus.Table.Cell {
+        const self = try allocator.create(TestTextCell);
+        errdefer allocator.destroy(self);
+        self.* = .{
+            .label = try nimbus.Label.create(
+                allocator,
+                "",
+                test_text_font.?,
+                nimbus.Theme.default.text,
+            ),
+        };
+        return .{
+            .component = &self.label.component,
+            .update = updateTable,
+            .destroy = destroy,
+            .user_data = self,
+        };
+    }
+
+    fn updateList(user_data: *anyopaque, cell_ctx: nimbus.List.CellContext) void {
+        const self: *TestTextCell = @ptrCast(@alignCast(user_data));
+        const text: *[]const u8 = @ptrCast(@alignCast(cell_ctx.value));
+        self.label.setText(text.*) catch {};
+    }
+
+    fn updateTable(user_data: *anyopaque, cell_ctx: nimbus.Table.CellContext) void {
+        const self: *TestTextCell = @ptrCast(@alignCast(user_data));
+        const text: *[]const u8 = @ptrCast(@alignCast(cell_ctx.value));
+        self.label.setText(text.*) catch {};
+    }
+
+    fn destroy(user_data: *anyopaque, allocator: std.mem.Allocator) void {
+        const self: *TestTextCell = @ptrCast(@alignCast(user_data));
+        self.label.component.vtable.destroy(&self.label.component, allocator);
+        allocator.destroy(self);
+    }
+};
+
+var test_text_font: ?awt.Graphics.TextFont = null;
+
 const ComponentSnapshot = struct {
     component: *nimbus.Component,
     vtable: *const nimbus.Component.LookVTable,
@@ -593,6 +655,114 @@ test "Metal table reaches Part A container widgets" {
     try std.testing.expect(panel.asComponent().ui.vtable == &nimbus.laf.metal.metal_panel_look);
     try std.testing.expect(split.asComponent().ui.vtable == &nimbus.laf.metal.metal_splitpane_look);
     try std.testing.expect(scroll.asComponent().ui.vtable == &nimbus.laf.metal.metal_scrollpane_look);
+}
+
+test "Metal collection widgets measureMinSize without GPU device" {
+    const allocator = std.testing.allocator;
+    var text_font = try initTestTextFont();
+    defer deinitTestTextFont(&text_font);
+    test_text_font = text_font;
+    defer test_text_font = null;
+
+    var list_model = nimbus.List.ListModel.init(allocator);
+    defer list_model.deinit();
+    var list_row: []const u8 = "row";
+    try list_model.add(@ptrCast(&list_row));
+
+    var factory_ctx: u8 = 0;
+    const list = try nimbus.List.createWithModel(allocator, &list_model, .{
+        .create = TestTextCell.createList,
+        .user_data = &factory_ctx,
+    });
+    defer list.asComponent().vtable.destroy(list.asComponent(), allocator);
+    const list_min = list.asComponent().min_size;
+
+    var table_model = nimbus.Table.Model.init(allocator);
+    defer table_model.deinit();
+    var table_row: []const u8 = "cell";
+    try table_model.add(@ptrCast(&table_row));
+    const columns = [_]nimbus.Table.Column{
+        .{ .title = "Name", .width = 120, .factory = .{ .create = TestTextCell.createTable, .user_data = &factory_ctx } },
+    };
+    const table = try nimbus.Table.createWithModel(allocator, &table_model, &columns, text_font);
+    defer table.asComponent().vtable.destroy(table.asComponent(), allocator);
+    const table_min = table.asComponent().min_size;
+
+    try expectSizeBitEqual(list_min, nimbus.laf.metal.metal_list_look.measureMinSize(
+        list.asComponent(),
+        &nimbus.laf.metal.metal_palette,
+    ));
+    try expectSizeBitEqual(table_min, nimbus.laf.metal.metal_table_look.measureMinSize(
+        table.asComponent(),
+        &nimbus.laf.metal.metal_palette,
+    ));
+}
+
+test "Metal table reaches Part B collection widgets" {
+    const allocator = std.testing.allocator;
+    var text_font = try initTestTextFont();
+    defer deinitTestTextFont(&text_font);
+    test_text_font = text_font;
+    defer test_text_font = null;
+
+    var list_model = nimbus.List.ListModel.init(allocator);
+    defer list_model.deinit();
+    var list_row: []const u8 = "list row";
+    try list_model.add(@ptrCast(&list_row));
+
+    var table_model = nimbus.Table.Model.init(allocator);
+    defer table_model.deinit();
+    var table_row: []const u8 = "table row";
+    try table_model.add(@ptrCast(&table_row));
+
+    const root = try nimbus.Container.create(allocator);
+    defer root.component.vtable.destroy(&root.component, allocator);
+    root.setLayout(nimbus.BoxLayout.vertical());
+
+    var factory_ctx: u8 = 0;
+    const list = try nimbus.List.createWithModel(allocator, &list_model, .{
+        .create = TestTextCell.createList,
+        .user_data = &factory_ctx,
+    });
+    try root.add(list.asComponent());
+
+    const columns = [_]nimbus.Table.Column{
+        .{ .title = "Name", .width = 120, .factory = .{ .create = TestTextCell.createTable, .user_data = &factory_ctx } },
+    };
+    const table = try nimbus.Table.createWithModel(allocator, &table_model, &columns, text_font);
+    try root.add(table.asComponent());
+
+    nimbus.laf.applyLook(&root.component, nimbus.laf.metal.metalTable());
+
+    try std.testing.expect(list.asComponent().ui.vtable == &nimbus.laf.metal.metal_list_look);
+    try std.testing.expect(table.asComponent().ui.vtable == &nimbus.laf.metal.metal_table_look);
+}
+
+test "Metal table reaches Table header through ScrollPane column header" {
+    const allocator = std.testing.allocator;
+    var text_font = try initTestTextFont();
+    defer deinitTestTextFont(&text_font);
+    test_text_font = text_font;
+    defer test_text_font = null;
+
+    var table_model = nimbus.Table.Model.init(allocator);
+    defer table_model.deinit();
+    var table_row: []const u8 = "table row";
+    try table_model.add(@ptrCast(&table_row));
+
+    var factory_ctx: u8 = 0;
+    const columns = [_]nimbus.Table.Column{
+        .{ .title = "Name", .width = 120, .factory = .{ .create = TestTextCell.createTable, .user_data = &factory_ctx } },
+    };
+    const table = try nimbus.Table.createWithModel(allocator, &table_model, &columns, text_font);
+    const scroll = try nimbus.ScrollPane.create(allocator, table.asComponent());
+    defer scroll.asComponent().vtable.destroy(scroll.asComponent(), allocator);
+    try scroll.setColumnHeaderView(try table.headerView());
+
+    nimbus.laf.applyLook(scroll.asComponent(), nimbus.laf.metal.metalTable());
+
+    try std.testing.expect(table.asComponent().ui.vtable == &nimbus.laf.metal.metal_table_look);
+    try std.testing.expect(table.header_view.?.component.ui.vtable == &nimbus.laf.metal.metal_tableheader_look);
 }
 
 test "Metal table reaches ComboBox popup detached root" {

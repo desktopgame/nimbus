@@ -4,12 +4,14 @@ const Button = @import("../Button.zig");
 const CheckBox = @import("../CheckBox.zig");
 const ComboBox = @import("../ComboBox.zig");
 const Component = @import("../Component.zig");
+const List = @import("../List.zig");
 const Panel = @import("../Panel.zig");
 const RadioButton = @import("../RadioButton.zig");
 const ScrollBar = @import("../ScrollBar.zig");
 const ScrollPane = @import("../ScrollPane.zig");
 const Slider = @import("../Slider.zig");
 const SplitPane = @import("../SplitPane.zig");
+const Table = @import("../Table.zig");
 const laf = @import("../laf.zig");
 
 const Color = awt.Graphics.Color;
@@ -35,6 +37,9 @@ const SLIDER_THUMB_RADIUS: f32 = 8;
 const SLIDER_TRACK_THICKNESS: f32 = 6;
 const SCROLLBAR_MIN_THUMB: f32 = 20;
 const SCROLLBAR_THUMB_INSET: f32 = 2;
+const COLLECTION_BUFFER_ROWS: usize = 2;
+const TABLE_HEADER_HEIGHT: f32 = 26;
+const TABLE_HEADER_PAD: f32 = 6;
 
 pub const MetalPalette = struct {
     body_enabled_top: Color,
@@ -152,6 +157,24 @@ pub const metal_splitpane_look = Component.LookVTable{
     .measureMinSize = measureZeroMinSize,
 };
 
+pub const metal_list_look = Component.LookVTable{
+    .paint = paintList,
+    .paintOver = paintOver,
+    .measureMinSize = measureOwnMinSize,
+};
+
+pub const metal_table_look = Component.LookVTable{
+    .paint = paintTable,
+    .paintOver = paintOver,
+    .measureMinSize = measureOwnMinSize,
+};
+
+pub const metal_tableheader_look = Component.LookVTable{
+    .paint = paintTableHeader,
+    .paintOver = paintOver,
+    .measureMinSize = measureOwnMinSize,
+};
+
 const metal_table = [_]laf.RemapEntry{
     .{
         .from = &Button.look_vtable,
@@ -192,6 +215,18 @@ const metal_table = [_]laf.RemapEntry{
     .{
         .from = &SplitPane.look_vtable,
         .to = .{ .vtable = &metal_splitpane_look, .ctx = &metal_palette },
+    },
+    .{
+        .from = &List.look_vtable,
+        .to = .{ .vtable = &metal_list_look, .ctx = &metal_palette },
+    },
+    .{
+        .from = &Table.look_vtable,
+        .to = .{ .vtable = &metal_table_look, .ctx = &metal_palette },
+    },
+    .{
+        .from = &Table.TableHeader.look_vtable,
+        .to = .{ .vtable = &metal_tableheader_look, .ctx = &metal_palette },
     },
 };
 
@@ -588,6 +623,296 @@ fn paintSplitPane(self: *Component, ctx: *anyopaque, g: *awt.Graphics) void {
 
 fn measureZeroMinSize(_: *Component, _: *anyopaque) Component.Size {
     return .{ .width = 0, .height = 0 };
+}
+
+fn measureOwnMinSize(self: *Component, _: *anyopaque) Component.Size {
+    return self.min_size;
+}
+
+fn paintList(self: *Component, ctx: *anyopaque, g: *awt.Graphics) void {
+    const list: *List = @fieldParentPtr("component", self);
+    reconcileList(list);
+    const palette: *MetalPalette = @ptrCast(@alignCast(ctx));
+
+    g.setColor(palette.well_bg);
+    g.fillRect(.{ .x = 0, .y = 0, .width = self.size.width, .height = self.size.height });
+
+    g.setColor(palette.select_bg);
+    for (list.selection.indices()) |r| {
+        g.fillRect(.{
+            .x = 0,
+            .y = @as(f32, @floatFromInt(r)) * list.row_height,
+            .width = self.size.width,
+            .height = list.row_height,
+        });
+    }
+
+    for (list.pool.items) |pc| {
+        if (pc.row != null) pc.cell.component.paintAt(g);
+    }
+}
+
+fn reconcileList(list: *List) void {
+    const n = list.model.getSize();
+    const rh = list.row_height;
+    if (rh <= 0) return;
+    const width = list.component.size.width;
+    const scroll_top = @max(0, -list.component.position.y);
+    const vp_h = if (list.component.parent) |p| p.size.height else list.component.size.height;
+
+    const first_f = @floor(scroll_top / rh);
+    var first: usize = if (first_f <= 0) 0 else @intFromFloat(first_f);
+    first = if (first > COLLECTION_BUFFER_ROWS) first - COLLECTION_BUFFER_ROWS else 0;
+
+    const last_f = @ceil((scroll_top + vp_h) / rh);
+    var last: usize = if (last_f <= 0) 0 else @intFromFloat(last_f);
+    last += COLLECTION_BUFFER_ROWS;
+    if (last > n) last = n;
+    if (first > n) first = n;
+
+    if (list.editing) |e_idx| {
+        if (e_idx < first or e_idx >= last) list.commitEdit();
+    }
+
+    for (list.pool.items) |*pc| {
+        if (pc.row) |r| {
+            const is_editing = if (list.editing) |e| e == r else false;
+            if ((r < first or r >= last) and !is_editing) pc.row = null;
+        }
+    }
+
+    var row = first;
+    while (row < last) : (row += 1) {
+        if (findListCellRowIndex(list, row) == null) {
+            const idx = acquireListCell(list) catch return;
+            list.pool.items[idx].row = row;
+            bindListCell(list, idx, row);
+        }
+    }
+
+    for (list.pool.items, 0..) |pc, i| {
+        if (pc.row) |r| layoutListCell(list, i, r, width);
+    }
+}
+
+fn findListCellRowIndex(list: *List, row: usize) ?usize {
+    for (list.pool.items, 0..) |pc, i| {
+        if (pc.row) |r| {
+            if (r == row) return i;
+        }
+    }
+    return null;
+}
+
+fn acquireListCell(list: *List) !usize {
+    for (list.pool.items, 0..) |pc, i| {
+        if (pc.row == null) return i;
+    }
+    const cell = try list.factory.create(list.factory.user_data, list.allocator);
+    cell.component.parent = &list.component;
+    list.pool.append(list.allocator, .{ .cell = cell, .row = null }) catch |e| {
+        cell.destroy(cell.user_data, list.allocator);
+        return e;
+    };
+    return list.pool.items.len - 1;
+}
+
+fn bindListCell(list: *List, idx: usize, row: usize) void {
+    const value = list.model.getElementAt(row) orelse return;
+    const pc = &list.pool.items[idx];
+    pc.cell.update(pc.cell.user_data, .{
+        .list = list,
+        .value = value,
+        .index = row,
+        .selected = list.selection.isSelected(row),
+        .focused = list.has_focus and optUsizeEql(list.selection.getLead(), row),
+    });
+}
+
+fn layoutListCell(list: *List, idx: usize, row: usize, width: f32) void {
+    const comp = list.pool.items[idx].cell.component;
+    comp.setBounds(.{
+        .x = 0,
+        .y = @as(f32, @floatFromInt(row)) * list.row_height,
+        .width = width,
+        .height = list.row_height,
+    });
+    if (comp.container) |c| c.doLayout();
+}
+
+fn paintTable(self: *Component, ctx: *anyopaque, g: *awt.Graphics) void {
+    const table: *Table = @fieldParentPtr("component", self);
+    reconcileTable(table);
+    const palette: *MetalPalette = @ptrCast(@alignCast(ctx));
+    const sz = self.size;
+
+    g.setColor(palette.well_bg);
+    g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = sz.height });
+
+    g.setColor(palette.select_bg);
+    for (table.selection.indices()) |r| {
+        g.fillRect(.{
+            .x = 0,
+            .y = @as(f32, @floatFromInt(r)) * table.row_height,
+            .width = sz.width,
+            .height = table.row_height,
+        });
+    }
+
+    for (table.columns) |*col| {
+        for (col.pool.items) |pc| {
+            if (pc.row != null) pc.cell.component.paintAt(g);
+        }
+    }
+}
+
+fn reconcileTable(table: *Table) void {
+    const n = table.model.getSize();
+    const rh = table.row_height;
+    if (rh <= 0) return;
+
+    const scroll_top = @max(0, -table.component.position.y);
+    const vp_h = if (table.component.parent) |p| p.size.height else table.component.size.height;
+    const bot = scroll_top + vp_h;
+
+    var first_f = @floor(scroll_top / rh);
+    if (first_f < 0) first_f = 0;
+    var first: usize = @intFromFloat(first_f);
+    first = if (first > COLLECTION_BUFFER_ROWS) first - COLLECTION_BUFFER_ROWS else 0;
+
+    var last_f = @ceil(bot / rh);
+    if (last_f < 0) last_f = 0;
+    var last: usize = @intFromFloat(last_f);
+    last += COLLECTION_BUFFER_ROWS;
+    if (last > n) last = n;
+    if (first > n) first = n;
+
+    if (table.editing) |e| {
+        if (e.row < first or e.row >= last) table.commitEdit();
+    }
+
+    for (table.columns, 0..) |*col, ci| {
+        for (col.pool.items) |*pc| {
+            if (pc.row) |r| {
+                const is_editing = if (table.editing) |e| (e.row == r and e.col == ci) else false;
+                if ((r < first or r >= last) and !is_editing) pc.row = null;
+            }
+        }
+
+        var row = first;
+        while (row < last) : (row += 1) {
+            if (findTableCellRowIndex(col, row) == null) {
+                const idx = acquireTableCell(table, col) catch return;
+                col.pool.items[idx].row = row;
+                bindTableCell(table, col, idx, row, ci);
+            }
+        }
+
+        for (col.pool.items, 0..) |pc, i| {
+            if (pc.row) |r| layoutTableCell(table, col, ci, i, r);
+        }
+    }
+}
+
+fn findTableCellRowIndex(col: anytype, row: usize) ?usize {
+    for (col.pool.items, 0..) |pc, i| {
+        if (pc.row) |r| {
+            if (r == row) return i;
+        }
+    }
+    return null;
+}
+
+fn acquireTableCell(table: *Table, col: anytype) !usize {
+    for (col.pool.items, 0..) |pc, i| {
+        if (pc.row == null) return i;
+    }
+    const cell = try col.factory.create(col.factory.user_data, table.allocator);
+    cell.component.parent = &table.component;
+    col.pool.append(table.allocator, .{ .cell = cell, .row = null }) catch |e| {
+        cell.destroy(cell.user_data, table.allocator);
+        return e;
+    };
+    return col.pool.items.len - 1;
+}
+
+fn bindTableCell(table: *Table, col: anytype, idx: usize, row: usize, ci: usize) void {
+    const value = table.model.getElementAt(row) orelse return;
+    const pc = &col.pool.items[idx];
+    pc.cell.update(pc.cell.user_data, .{
+        .table = table,
+        .value = value,
+        .row = row,
+        .col = ci,
+        .selected = table.selection.isSelected(row),
+        .focused = table.has_focus and optUsizeEql(table.selection.getLead(), row),
+    });
+}
+
+fn layoutTableCell(table: *Table, col: anytype, ci: usize, idx: usize, row: usize) void {
+    const comp = col.pool.items[idx].cell.component;
+    comp.setBounds(.{
+        .x = tableColumnX(table, ci),
+        .y = @as(f32, @floatFromInt(row)) * table.row_height,
+        .width = col.width,
+        .height = table.row_height,
+    });
+    if (comp.container) |c| c.doLayout();
+}
+
+fn paintTableHeader(self: *Component, ctx: *anyopaque, g: *awt.Graphics) void {
+    const header: *Table.TableHeader = @fieldParentPtr("component", self);
+    const table = header.table;
+    const palette: *MetalPalette = @ptrCast(@alignCast(ctx));
+    const width = self.size.width;
+    const body = bodyGradient(palette, true, false, false);
+
+    g.fillGradientRect(.{ .x = 0, .y = 0, .width = width, .height = TABLE_HEADER_HEIGHT }, body.top, body.bottom);
+    drawBevel(g, .{ .width = width, .height = TABLE_HEADER_HEIGHT }, palette.bevel_light, palette.bevel_dark);
+
+    g.setFont(table.header_font);
+    var x: f32 = 0;
+    for (table.columns, 0..) |col, ci| {
+        const m = table.header_font.measureString(col.title);
+        const ty = (TABLE_HEADER_HEIGHT - m.height) / 2;
+        g.setColor(palette.indicator_mark);
+        g.drawString(col.title, x + TABLE_HEADER_PAD, ty);
+
+        if (table.sort_column) |sc| {
+            if (sc == ci) paintMetalSortIndicator(g, palette, x + col.width, table.sort_direction == .ascending);
+        }
+
+        g.setColor(palette.bevel_dark);
+        g.fillRect(.{ .x = x + col.width - 1, .y = 1, .width = 1, .height = TABLE_HEADER_HEIGHT - 2 });
+        g.setColor(palette.bevel_light);
+        g.fillRect(.{ .x = x + col.width, .y = 1, .width = 1, .height = TABLE_HEADER_HEIGHT - 2 });
+        x += col.width;
+    }
+
+    g.setColor(palette.border);
+    g.fillRect(.{ .x = 0, .y = TABLE_HEADER_HEIGHT - 1, .width = width, .height = 1 });
+}
+
+fn paintMetalSortIndicator(g: *awt.Graphics, palette: *const MetalPalette, col_right: f32, ascending: bool) void {
+    g.setColor(palette.indicator_mark);
+    const cx = col_right - TABLE_HEADER_PAD - 4;
+    const cy = TABLE_HEADER_HEIGHT / 2;
+    var i: usize = 0;
+    while (i < 4) : (i += 1) {
+        const step: f32 = @floatFromInt(i);
+        const hw = if (ascending) (step + 1) else (4 - step);
+        g.fillRect(.{ .x = cx - hw, .y = cy - 4 + step * 2, .width = hw * 2, .height = 2 });
+    }
+}
+
+fn tableColumnX(table: *const Table, col: usize) f32 {
+    var x: f32 = 0;
+    for (table.columns[0..col]) |c| x += c.width;
+    return x;
+}
+
+fn optUsizeEql(a: ?usize, b: usize) bool {
+    return if (a) |value| value == b else false;
 }
 
 fn measureMinSize(self: *Component, _: *anyopaque) Component.Size {

@@ -917,7 +917,22 @@ pub const list_selection = Scene{
     .paint = paintListSelection,
 };
 
+pub const metal_list_selection = Scene{
+    .name = "metal_list_selection",
+    .width = 260,
+    .height = 170,
+    .paint = paintMetalListSelection,
+};
+
 fn paintListSelection(ctx: PaintContext) anyerror!void {
+    try paintListSelectionWithLook(ctx, false);
+}
+
+fn paintMetalListSelection(ctx: PaintContext) anyerror!void {
+    try paintListSelectionWithLook(ctx, true);
+}
+
+fn paintListSelectionWithLook(ctx: PaintContext, metal: bool) anyerror!void {
     list_cell_font = ctx.font;
     var model = nimbus.List.ListModel.init(ctx.allocator);
     defer model.deinit();
@@ -934,6 +949,7 @@ fn paintListSelection(ctx: PaintContext) anyerror!void {
     list.setRowHeight(30);
     list.setSelected(1);
     list.asComponent().setBounds(.{ .x = 28, .y = 24, .width = 196, .height = 120 });
+    if (metal) nimbus.laf.applyLook(list.asComponent(), nimbus.laf.metal.metalTable());
     list.asComponent().paintAt(ctx.g);
 }
 
@@ -944,7 +960,22 @@ pub const table_header_grid = Scene{
     .paint = paintTableHeaderGrid,
 };
 
+pub const metal_table_header_grid = Scene{
+    .name = "metal_table_header_grid",
+    .width = 390,
+    .height = 210,
+    .paint = paintMetalTableHeaderGrid,
+};
+
 fn paintTableHeaderGrid(ctx: PaintContext) anyerror!void {
+    try paintTableHeaderGridWithLook(ctx, false);
+}
+
+fn paintMetalTableHeaderGrid(ctx: PaintContext) anyerror!void {
+    try paintTableHeaderGridWithLook(ctx, true);
+}
+
+fn paintTableHeaderGridWithLook(ctx: PaintContext, metal: bool) anyerror!void {
     list_cell_font = ctx.font;
     var model = nimbus.Table.Model.init(ctx.allocator);
     defer model.deinit();
@@ -971,6 +1002,7 @@ fn paintTableHeaderGrid(ctx: PaintContext) anyerror!void {
     try sp.setColumnHeaderView(try table.headerView());
     sp.setHorizontalPolicy(.always);
     sp.setVerticalPolicy(.always);
+    if (metal) nimbus.laf.applyLook(sp.asComponent(), nimbus.laf.metal.metalTable());
     sp.asComponent().setBounds(.{ .x = 20, .y = 22, .width = 338, .height = 148 });
     sp.container.doLayout();
     sp.asComponent().paintAt(ctx.g);
