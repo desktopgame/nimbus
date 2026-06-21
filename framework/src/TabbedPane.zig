@@ -16,8 +16,8 @@ const ChangeEvent = listener.ChangeEvent;
 
 pub const TabbedPane = @This();
 
-const DEFAULT_TAB_HEIGHT: f32 = 26;
-const TAB_HPAD: f32 = 12;
+pub const DEFAULT_TAB_HEIGHT: f32 = 26;
+pub const TAB_HPAD: f32 = 12;
 
 const Tab = struct {
     title: []u8,
@@ -185,7 +185,7 @@ fn applyTheme(c: *Component, theme: *const @import("theme.zig").Theme) void {
     }
 }
 
-fn tabWidth(self: *const TabbedPane, title: []const u8) f32 {
+pub fn tabWidth(self: *const TabbedPane, title: []const u8) f32 {
     return self.font.measureString(title).width + 2 * TAB_HPAD;
 }
 

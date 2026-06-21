@@ -41,8 +41,6 @@ const SCROLLBAR_THUMB_INSET: f32 = 2;
 const COLLECTION_BUFFER_ROWS: usize = 2;
 const TABLE_HEADER_HEIGHT: f32 = 26;
 const TABLE_HEADER_PAD: f32 = 6;
-const TP_TAB_HEIGHT: f32 = 26;
-const TP_TAB_HPAD: f32 = 12;
 
 pub const MetalPalette = struct {
     body_enabled_top: Color,
@@ -911,11 +909,12 @@ fn paintTabbedPane(self: *Component, ctx: *anyopaque, g: *awt.Graphics) void {
     const tp: *TabbedPane = @fieldParentPtr("container", cont);
     const palette: *MetalPalette = @ptrCast(@alignCast(ctx));
     const sz = self.size;
+    const tab_height = tabbedPaneTabHeight();
 
     g.setColor(palette.body_disabled_top);
-    g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = TP_TAB_HEIGHT });
+    g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = tab_height });
     g.setColor(palette.border);
-    g.fillRect(.{ .x = 0, .y = TP_TAB_HEIGHT - 1, .width = sz.width, .height = 1 });
+    g.fillRect(.{ .x = 0, .y = tab_height - 1, .width = sz.width, .height = 1 });
 
     g.setFont(tp.font);
     var x: f32 = 0;
@@ -927,32 +926,36 @@ fn paintTabbedPane(self: *Component, ctx: *anyopaque, g: *awt.Graphics) void {
         else
             bodyGradient(palette, false, false, false);
 
-        g.fillGradientRect(.{ .x = x, .y = 0, .width = w, .height = TP_TAB_HEIGHT }, body.top, body.bottom);
+        g.fillGradientRect(.{ .x = x, .y = 0, .width = w, .height = tab_height }, body.top, body.bottom);
         if (selected) {
-            drawTabRaised(g, x, 0, w, TP_TAB_HEIGHT, palette);
+            drawTabRaised(g, x, 0, w, tab_height, palette);
         } else {
-            drawInsetBevel(g, x, 0, w, TP_TAB_HEIGHT, palette);
+            drawInsetBevel(g, x, 0, w, tab_height, palette);
             g.setColor(palette.bevel_dark);
-            g.fillRect(.{ .x = x + w - 1, .y = 1, .width = 1, .height = TP_TAB_HEIGHT - 2 });
+            g.fillRect(.{ .x = x + w - 1, .y = 1, .width = 1, .height = tab_height - 2 });
             g.setColor(palette.bevel_light);
-            g.fillRect(.{ .x = x + w, .y = 1, .width = 1, .height = TP_TAB_HEIGHT - 2 });
+            g.fillRect(.{ .x = x + w, .y = 1, .width = 1, .height = tab_height - 2 });
         }
 
         const m = tp.font.measureString(tab.title);
-        const ty = (TP_TAB_HEIGHT - m.height) / 2;
+        const ty = (tab_height - m.height) / 2;
         g.setColor(palette.indicator_mark);
-        g.drawString(tab.title, x + TP_TAB_HPAD, ty);
+        g.drawString(tab.title, x + TabbedPane.TAB_HPAD, ty);
 
         if (selected) {
             g.setColor(palette.focus_ring);
-            g.fillRect(.{ .x = x, .y = TP_TAB_HEIGHT - 2, .width = w, .height = 2 });
+            g.fillRect(.{ .x = x, .y = tab_height - 2, .width = w, .height = 2 });
         }
         x += w;
     }
 }
 
-fn tabbedPaneTabWidth(tp: *const TabbedPane, title: []const u8) f32 {
-    return tp.font.measureString(title).width + 2 * TP_TAB_HPAD;
+pub fn tabbedPaneTabHeight() f32 {
+    return TabbedPane.DEFAULT_TAB_HEIGHT;
+}
+
+pub fn tabbedPaneTabWidth(tp: *const TabbedPane, title: []const u8) f32 {
+    return tp.tabWidth(title);
 }
 
 fn drawTabRaised(g: *awt.Graphics, x: f32, y: f32, w: f32, h: f32, palette: *const MetalPalette) void {

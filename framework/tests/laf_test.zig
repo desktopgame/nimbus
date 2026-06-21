@@ -834,13 +834,14 @@ test "Metal TabbedPane tab geometry matches hit testing" {
     }
     nimbus.laf.applyLook(tabs.asComponent(), nimbus.laf.metal.metalTable());
 
-    const tab_height: f32 = 26;
-    const tab_hpad: f32 = 12;
+    const tab_height = nimbus.laf.metal.tabbedPaneTabHeight();
     var x: f32 = 0;
     for (titles, 0..) |title, i| {
-        const w = text_font.measureString(title).width + 2 * tab_hpad;
-        const center_x = x + w / 2;
-        try std.testing.expectEqual(@as(?usize, i), tabs.tabAt(center_x, tab_height / 2));
+        const w = nimbus.laf.metal.tabbedPaneTabWidth(tabs, title);
+        const y = tab_height / 2;
+        try std.testing.expectEqual(@as(?usize, i), tabs.tabAt(x + 0.5, y));
+        try std.testing.expectEqual(@as(?usize, i), tabs.tabAt(x + w / 2, y));
+        try std.testing.expectEqual(@as(?usize, i), tabs.tabAt(x + w - 0.5, y));
         x += w;
     }
 }
