@@ -319,6 +319,117 @@ fn paintMetalButtons(ctx: PaintContext) anyerror!void {
     setup.paint();
 }
 
+pub const metal_checkboxes = Scene{
+    .name = "metal_checkboxes",
+    .width = 300,
+    .height = 120,
+    .paint = paintMetalCheckboxes,
+};
+
+fn paintMetalCheckboxes(ctx: PaintContext) anyerror!void {
+    var setup = try Setup.init(ctx);
+    defer setup.deinit();
+    setup.container.setLayout(nimbus.BoxLayout.vertical());
+
+    const font = nimbus.awt.Graphics.TextFont{ .face = ctx.font, .pixel_size = 14 };
+    const text = awt.Graphics.Color.rgb(0.08, 0.10, 0.12);
+
+    const normal = try nimbus.CheckBox.create(ctx.allocator, "Unchecked", font, text);
+    const checked = try nimbus.CheckBox.create(ctx.allocator, "Checked", font, text);
+    checked.setSelected(true);
+    const disabled = try nimbus.CheckBox.create(ctx.allocator, "Disabled", font, text);
+    disabled.setSelected(true);
+    disabled.getModel().button.setEnabled(false);
+
+    try setup.container.add(&normal.component);
+    try setup.container.add(&checked.component);
+    try setup.container.add(&disabled.component);
+    nimbus.laf.applyLook(&setup.container.component, nimbus.laf.metal.metalTable());
+    setup.paint();
+}
+
+pub const metal_radios = Scene{
+    .name = "metal_radios",
+    .width = 300,
+    .height = 120,
+    .paint = paintMetalRadios,
+};
+
+fn paintMetalRadios(ctx: PaintContext) anyerror!void {
+    var setup = try Setup.init(ctx);
+    defer setup.deinit();
+    setup.container.setLayout(nimbus.BoxLayout.vertical());
+
+    const font = nimbus.awt.Graphics.TextFont{ .face = ctx.font, .pixel_size = 14 };
+    const text = awt.Graphics.Color.rgb(0.08, 0.10, 0.12);
+
+    const normal = try nimbus.RadioButton.create(ctx.allocator, "Small", font, text);
+    const selected = try nimbus.RadioButton.create(ctx.allocator, "Medium", font, text);
+    selected.setSelected(true);
+    const disabled = try nimbus.RadioButton.create(ctx.allocator, "Disabled", font, text);
+    disabled.setSelected(true);
+    disabled.getModel().button.setEnabled(false);
+
+    try setup.container.add(&normal.component);
+    try setup.container.add(&selected.component);
+    try setup.container.add(&disabled.component);
+    nimbus.laf.applyLook(&setup.container.component, nimbus.laf.metal.metalTable());
+    setup.paint();
+}
+
+pub const metal_combobox_closed = Scene{
+    .name = "metal_combobox_closed",
+    .width = 300,
+    .height = 90,
+    .paint = paintMetalComboboxClosed,
+};
+
+fn paintMetalComboboxClosed(ctx: PaintContext) anyerror!void {
+    var setup = try Setup.init(ctx);
+    defer setup.deinit();
+    setup.container.setLayout(nimbus.BoxLayout.vertical());
+
+    const font = nimbus.awt.Graphics.TextFont{ .face = ctx.font, .pixel_size = 14 };
+    const text = awt.Graphics.Color.rgb(0.08, 0.10, 0.12);
+    const items = [_][]const u8{ "Apple", "Banana", "Cherry" };
+
+    const normal = try nimbus.ComboBox.create(ctx.allocator, &items, font, text);
+    normal.setSelectedIndex(1);
+    const disabled = try nimbus.ComboBox.create(ctx.allocator, &items, font, text);
+    disabled.setSelectedIndex(2);
+    disabled.setEnabled(false);
+
+    try setup.container.add(&normal.component);
+    try setup.container.add(&disabled.component);
+    nimbus.laf.applyLook(&setup.container.component, nimbus.laf.metal.metalTable());
+    setup.paint();
+}
+
+pub const metal_combobox_popup = Scene{
+    .name = "metal_combobox_popup",
+    .width = 260,
+    .height = 150,
+    .paint = paintMetalComboboxPopup,
+};
+
+fn paintMetalComboboxPopup(ctx: PaintContext) anyerror!void {
+    const font = nimbus.awt.Graphics.TextFont{ .face = ctx.font, .pixel_size = 14 };
+    const text = awt.Graphics.Color.rgb(0.08, 0.10, 0.12);
+    const items = [_][]const u8{ "Apple", "Banana", "Cherry", "Date" };
+    const combo = try nimbus.ComboBox.create(ctx.allocator, &items, font, text);
+    defer combo.component.vtable.destroy(&combo.component, ctx.allocator);
+
+    combo.setSelectedIndex(1);
+    combo.hovered_index = 2;
+    combo.component.setBounds(.{ .x = 28, .y = 18, .width = 160, .height = combo.component.min_size.height });
+    combo.popup_root.position = .{ .x = 28, .y = 52 };
+    combo.popup_root.size = .{ .width = 160, .height = (font.face.metrics().line_height + 8) * @as(f32, @floatFromInt(items.len)) };
+    nimbus.laf.applyLook(&combo.component, nimbus.laf.metal.metalTable());
+
+    combo.component.paintAt(ctx.g);
+    combo.popup_root.paintAt(ctx.g);
+}
+
 // Composite widget scenes ----------------------------------------------------
 
 pub const panel_paint_over_child = Scene{

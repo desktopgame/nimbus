@@ -1,6 +1,9 @@
 const awt = @import("awt");
 const Button = @import("../Button.zig");
+const CheckBox = @import("../CheckBox.zig");
+const ComboBox = @import("../ComboBox.zig");
 const Component = @import("../Component.zig");
+const RadioButton = @import("../RadioButton.zig");
 const laf = @import("../laf.zig");
 
 const Color = awt.Graphics.Color;
@@ -9,6 +12,19 @@ const PADDING_X: f32 = 14;
 const PADDING_Y: f32 = 7;
 const ICON_TEXT_GAP: f32 = 6;
 const FLAT_PADDING: f32 = 4;
+const CB_BOX_SIZE: f32 = 16;
+const CB_BOX_GAP: f32 = 6;
+const CB_PADDING_X: f32 = 4;
+const CB_PADDING_Y: f32 = 4;
+const RB_CIRCLE_SIZE: f32 = 16;
+const RB_CIRCLE_GAP: f32 = 6;
+const RB_PADDING_X: f32 = 4;
+const RB_PADDING_Y: f32 = 4;
+const COMBO_PADDING_X: f32 = 8;
+const COMBO_PADDING_Y: f32 = 4;
+const COMBO_CHEVRON_W: f32 = 18;
+const COMBO_ITEM_PADDING_Y: f32 = 4;
+const BORDER_WIDTH: f32 = 1;
 
 pub const MetalPalette = struct {
     body_enabled_top: Color,
@@ -27,6 +43,13 @@ pub const MetalPalette = struct {
     focus_ring: Color,
     flat_hover: Color,
     flat_armed: Color,
+    well_bg: Color,
+    well_disabled: Color,
+    indicator_border: Color,
+    indicator_mark: Color,
+    indicator_mark_disabled: Color,
+    select_bg: Color,
+    select_text: Color,
 };
 
 pub var metal_palette = MetalPalette{
@@ -46,6 +69,13 @@ pub var metal_palette = MetalPalette{
     .focus_ring = Color.bytes(99, 130, 191, 255),
     .flat_hover = Color.bytes(214, 226, 240, 255),
     .flat_armed = Color.bytes(190, 205, 224, 255),
+    .well_bg = Color.bytes(255, 255, 255, 255),
+    .well_disabled = Color.bytes(224, 225, 228, 255),
+    .indicator_border = Color.bytes(122, 138, 153, 255),
+    .indicator_mark = Color.bytes(51, 51, 51, 255),
+    .indicator_mark_disabled = Color.bytes(153, 153, 153, 255),
+    .select_bg = Color.bytes(99, 130, 191, 255),
+    .select_text = Color.bytes(255, 255, 255, 255),
 };
 
 pub const metal_button_look = Component.LookVTable{
@@ -54,15 +84,59 @@ pub const metal_button_look = Component.LookVTable{
     .measureMinSize = measureMinSize,
 };
 
-const button_table = [_]laf.RemapEntry{
+pub const metal_checkbox_look = Component.LookVTable{
+    .paint = paintCheckBox,
+    .paintOver = paintOver,
+    .measureMinSize = measureCheckBoxMinSize,
+};
+
+pub const metal_radio_look = Component.LookVTable{
+    .paint = paintRadioButton,
+    .paintOver = paintOver,
+    .measureMinSize = measureRadioButtonMinSize,
+};
+
+pub const metal_combobox_look = Component.LookVTable{
+    .paint = paintComboBox,
+    .paintOver = paintOver,
+    .measureMinSize = measureComboBoxMinSize,
+};
+
+pub const metal_combobox_popup_look = Component.LookVTable{
+    .paint = paintComboBoxPopup,
+    .paintOver = paintOver,
+    .measureMinSize = measureComboBoxPopupMinSize,
+};
+
+const metal_table = [_]laf.RemapEntry{
     .{
         .from = &Button.look_vtable,
         .to = .{ .vtable = &metal_button_look, .ctx = &metal_palette },
     },
+    .{
+        .from = &CheckBox.look_vtable,
+        .to = .{ .vtable = &metal_checkbox_look, .ctx = &metal_palette },
+    },
+    .{
+        .from = &RadioButton.look_vtable,
+        .to = .{ .vtable = &metal_radio_look, .ctx = &metal_palette },
+    },
+    .{
+        .from = &ComboBox.look_vtable,
+        .to = .{ .vtable = &metal_combobox_look, .ctx = &metal_palette },
+    },
+    .{
+        .from = &ComboBox.popup_look_vtable,
+        .to = .{ .vtable = &metal_combobox_popup_look, .ctx = &metal_palette },
+    },
 };
 
+pub fn metalTable() laf.LookTable {
+    return &metal_table;
+}
+
 pub fn buttonTable() laf.LookTable {
-    return &button_table;
+    return metal_table[0..1];
 }
 
 fn paint(self: *Component, ctx: *anyopaque, g: *awt.Graphics) void {
@@ -115,6 +189,176 @@ fn paint(self: *Component, ctx: *anyopaque, g: *awt.Graphics) void {
 
 fn paintOver(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
 
+fn paintCheckBox(self: *Component, ctx: *anyopaque, g: *awt.Graphics) void {
+    const cb: *CheckBox = @fieldParentPtr("component", self);
+    const palette: *MetalPalette = @ptrCast(@alignCast(ctx));
+    const sz = self.size;
+    const btn = &cb.model.button;
+    const selected = cb.model.isSelected();
+    const enabled = btn.enabled;
+
+    const box_x = CB_PADDING_X;
+    const box_y = (sz.height - CB_BOX_SIZE) / 2;
+    g.setColor(if (enabled) palette.well_bg else palette.well_disabled);
+    g.fillRect(.{ .x = box_x, .y = box_y, .width = CB_BOX_SIZE, .height = CB_BOX_SIZE });
+    drawInsetBevel(g, box_x, box_y, CB_BOX_SIZE, CB_BOX_SIZE, palette);
+    drawRectBorder(g, box_x, box_y, CB_BOX_SIZE, CB_BOX_SIZE, if (enabled) palette.indicator_border else palette.border_disabled);
+
+    if (selected) {
+        drawCheck(g, box_x, box_y, CB_BOX_SIZE, if (enabled) palette.indicator_mark else palette.indicator_mark_disabled);
+    }
+
+    const text_color = if (enabled) cb.color else palette.text_disabled;
+    const m = cb.font.measureString(cb.text);
+    const text_x = box_x + CB_BOX_SIZE + CB_BOX_GAP;
+    const text_y = (sz.height - m.height) / 2;
+    g.setFont(cb.font);
+    g.setColor(text_color);
+    g.drawString(cb.text, text_x, text_y);
+
+    if (cb.focused) {
+        g.setColor(palette.focus_ring);
+        g.drawRect(.{ .x = 1, .y = 1, .width = sz.width - 2, .height = sz.height - 2 });
+    }
+}
+
+fn measureCheckBoxMinSize(self: *Component, _: *anyopaque) Component.Size {
+    const cb: *CheckBox = @fieldParentPtr("component", self);
+    const m = cb.font.measureString(cb.text);
+    return .{
+        .width = CB_BOX_SIZE + CB_BOX_GAP + m.width + CB_PADDING_X * 2,
+        .height = @max(CB_BOX_SIZE, m.height) + CB_PADDING_Y * 2,
+    };
+}
+
+fn paintRadioButton(self: *Component, ctx: *anyopaque, g: *awt.Graphics) void {
+    const rb: *RadioButton = @fieldParentPtr("component", self);
+    const palette: *MetalPalette = @ptrCast(@alignCast(ctx));
+    const sz = self.size;
+    const enabled = rb.model.button.enabled;
+    const selected = rb.model.isSelected();
+    const circle_x = RB_PADDING_X;
+    const circle_y = (sz.height - RB_CIRCLE_SIZE) / 2;
+
+    g.setColor(if (enabled) palette.well_bg else palette.well_disabled);
+    g.fillCircle(.{ .x = circle_x, .y = circle_y, .width = RB_CIRCLE_SIZE, .height = RB_CIRCLE_SIZE });
+    g.setColor(if (enabled) palette.indicator_border else palette.border_disabled);
+    g.drawCircle(.{ .x = circle_x, .y = circle_y, .width = RB_CIRCLE_SIZE, .height = RB_CIRCLE_SIZE });
+
+    if (selected) {
+        const dot_inset: f32 = 4;
+        g.setColor(if (enabled) palette.indicator_mark else palette.indicator_mark_disabled);
+        g.fillCircle(.{
+            .x = circle_x + dot_inset,
+            .y = circle_y + dot_inset,
+            .width = RB_CIRCLE_SIZE - dot_inset * 2,
+            .height = RB_CIRCLE_SIZE - dot_inset * 2,
+        });
+    }
+
+    const text_color = if (enabled) rb.color else palette.text_disabled;
+    const m = rb.font.measureString(rb.text);
+    const text_x = circle_x + RB_CIRCLE_SIZE + RB_CIRCLE_GAP;
+    const text_y = (sz.height - m.height) / 2;
+    g.setFont(rb.font);
+    g.setColor(text_color);
+    g.drawString(rb.text, text_x, text_y);
+
+    if (rb.focused) {
+        g.setColor(palette.focus_ring);
+        g.drawRect(.{ .x = 1, .y = 1, .width = sz.width - 2, .height = sz.height - 2 });
+    }
+}
+
+fn measureRadioButtonMinSize(self: *Component, _: *anyopaque) Component.Size {
+    const rb: *RadioButton = @fieldParentPtr("component", self);
+    const m = rb.font.measureString(rb.text);
+    return .{
+        .width = RB_CIRCLE_SIZE + RB_CIRCLE_GAP + m.width + RB_PADDING_X * 2,
+        .height = @max(RB_CIRCLE_SIZE, m.height) + RB_PADDING_Y * 2,
+    };
+}
+
+fn paintComboBox(self: *Component, ctx: *anyopaque, g: *awt.Graphics) void {
+    const cb: *ComboBox = @fieldParentPtr("component", self);
+    const palette: *MetalPalette = @ptrCast(@alignCast(ctx));
+    const sz = self.size;
+    const enabled = cb.enabled;
+
+    g.setColor(if (enabled) palette.well_bg else palette.well_disabled);
+    g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = sz.height });
+    drawRectBorder(g, 0, 0, sz.width, sz.height, palette.indicator_border);
+
+    if (cb.getSelectedItem()) |s| {
+        const m = cb.font.measureString(s);
+        const text_y = (sz.height - m.height) / 2;
+        g.setFont(cb.font);
+        g.setColor(if (enabled) cb.color else palette.text_disabled);
+        g.drawString(s, COMBO_PADDING_X, text_y);
+    }
+
+    const arrow_x = sz.width - COMBO_CHEVRON_W;
+    const body = bodyGradient(palette, enabled, false, false);
+    g.fillGradientRect(
+        .{ .x = arrow_x, .y = 1, .width = COMBO_CHEVRON_W - 1, .height = sz.height - 2 },
+        body.top,
+        body.bottom,
+    );
+    if (enabled) {
+        drawBevelAt(g, arrow_x, 0, COMBO_CHEVRON_W, sz.height, palette.bevel_light, palette.bevel_dark);
+    }
+    g.setColor(palette.indicator_border);
+    g.fillRect(.{ .x = arrow_x, .y = 0, .width = BORDER_WIDTH, .height = sz.height });
+    drawChevron(g, arrow_x, 0, COMBO_CHEVRON_W, sz.height, if (enabled) palette.indicator_mark else palette.indicator_mark_disabled);
+
+    if (cb.has_focus) {
+        g.setColor(palette.focus_ring);
+        g.drawRect(.{ .x = 1, .y = 1, .width = sz.width - 2, .height = sz.height - 2 });
+    }
+}
+
+fn measureComboBoxMinSize(self: *Component, _: *anyopaque) Component.Size {
+    const cb: *ComboBox = @fieldParentPtr("component", self);
+    var max_w: f32 = 0;
+    for (cb.items.items) |s| {
+        const m = cb.font.measureString(s);
+        if (m.width > max_w) max_w = m.width;
+    }
+    const line_h = cb.font.face.metrics().line_height;
+    return .{
+        .width = max_w + COMBO_PADDING_X * 2 + COMBO_CHEVRON_W,
+        .height = line_h + COMBO_PADDING_Y * 2,
+    };
+}
+
+fn paintComboBoxPopup(self: *Component, ctx: *anyopaque, g: *awt.Graphics) void {
+    const cb: *ComboBox = @fieldParentPtr("popup_root", self);
+    const palette: *MetalPalette = @ptrCast(@alignCast(ctx));
+    const sz = self.size;
+    const item_h = cb.font.face.metrics().line_height + COMBO_ITEM_PADDING_Y * 2;
+
+    g.setColor(palette.well_bg);
+    g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = sz.height });
+
+    g.setFont(cb.font);
+    for (cb.items.items, 0..) |s, idx| {
+        const y_top: f32 = @as(f32, @floatFromInt(idx)) * item_h;
+        const is_hover = cb.hovered_index == idx;
+        if (is_hover) {
+            g.setColor(palette.select_bg);
+            g.fillRect(.{ .x = 0, .y = y_top, .width = sz.width, .height = item_h });
+        }
+        g.setColor(if (is_hover) palette.select_text else cb.color);
+        g.drawString(s, COMBO_PADDING_X, y_top + COMBO_ITEM_PADDING_Y);
+    }
+
+    drawRectBorder(g, 0, 0, sz.width, sz.height, palette.indicator_border);
+}
+
+fn measureComboBoxPopupMinSize(_: *Component, _: *anyopaque) Component.Size {
+    return .{ .width = 0, .height = 0 };
+}
+
 fn measureMinSize(self: *Component, _: *anyopaque) Component.Size {
     const button: *Button = @fieldParentPtr("component", self);
     const has_text = button.text.len > 0;
@@ -159,13 +403,68 @@ fn bodyGradient(
 }
 
 fn drawBevel(g: *awt.Graphics, sz: Component.Size, top_left: Color, bottom_right: Color) void {
+    drawBevelAt(g, 0, 0, sz.width, sz.height, top_left, bottom_right);
+}
+
+fn drawBevelAt(g: *awt.Graphics, x: f32, y: f32, w: f32, h: f32, top_left: Color, bottom_right: Color) void {
     g.setColor(top_left);
-    g.fillRect(.{ .x = 1, .y = 1, .width = sz.width - 2, .height = 1 });
-    g.fillRect(.{ .x = 1, .y = 1, .width = 1, .height = sz.height - 2 });
+    g.fillRect(.{ .x = x + 1, .y = y + 1, .width = w - 2, .height = 1 });
+    g.fillRect(.{ .x = x + 1, .y = y + 1, .width = 1, .height = h - 2 });
 
     g.setColor(bottom_right);
-    g.fillRect(.{ .x = 1, .y = sz.height - 2, .width = sz.width - 2, .height = 1 });
-    g.fillRect(.{ .x = sz.width - 2, .y = 1, .width = 1, .height = sz.height - 2 });
+    g.fillRect(.{ .x = x + 1, .y = y + h - 2, .width = w - 2, .height = 1 });
+    g.fillRect(.{ .x = x + w - 2, .y = y + 1, .width = 1, .height = h - 2 });
+}
+
+fn drawInsetBevel(g: *awt.Graphics, x: f32, y: f32, w: f32, h: f32, palette: *const MetalPalette) void {
+    drawBevelAt(g, x, y, w, h, palette.bevel_dark, palette.bevel_light);
+}
+
+fn drawRectBorder(g: *awt.Graphics, x: f32, y: f32, w: f32, h: f32, color: Color) void {
+    g.setColor(color);
+    g.fillRect(.{ .x = x, .y = y, .width = w, .height = BORDER_WIDTH });
+    g.fillRect(.{ .x = x, .y = y + h - BORDER_WIDTH, .width = w, .height = BORDER_WIDTH });
+    g.fillRect(.{ .x = x, .y = y, .width = BORDER_WIDTH, .height = h });
+    g.fillRect(.{ .x = x + w - BORDER_WIDTH, .y = y, .width = BORDER_WIDTH, .height = h });
+}
+
+fn drawCheck(g: *awt.Graphics, box_x: f32, box_y: f32, box_size: f32, color: Color) void {
+    g.setColor(color);
+    const inset: f32 = 3;
+    const cx = box_x + inset;
+    const cy = box_y + inset;
+    const span = box_size - inset * 2;
+    const dot: f32 = 2;
+    var i: usize = 0;
+    while (i < 4) : (i += 1) {
+        const f: f32 = @floatFromInt(i);
+        g.fillRect(.{ .x = cx + f, .y = cy + span * 0.5 + f, .width = dot, .height = dot });
+    }
+    i = 0;
+    while (i < 6) : (i += 1) {
+        const f: f32 = @floatFromInt(i);
+        g.fillRect(.{ .x = cx + 3 + f, .y = cy + span - 1 - f, .width = dot, .height = dot });
+    }
+}
+
+fn drawChevron(g: *awt.Graphics, x: f32, y: f32, w: f32, h: f32, color: Color) void {
+    g.setColor(color);
+    const center_x = x + w / 2;
+    const triangle_h: f32 = 5;
+    const triangle_w: f32 = 8;
+    const top_y = y + (h - triangle_h) / 2;
+    var row: i32 = 0;
+    while (row < @as(i32, @intFromFloat(triangle_h))) : (row += 1) {
+        const rf: f32 = @floatFromInt(row);
+        const strip_w = triangle_w - rf * 2;
+        if (strip_w <= 0) break;
+        g.fillRect(.{
+            .x = center_x - strip_w / 2,
+            .y = top_y + rf,
+            .width = strip_w,
+            .height = 1,
+        });
+    }
 }
 
 fn paintContent(

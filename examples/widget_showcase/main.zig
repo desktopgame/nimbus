@@ -6,7 +6,8 @@
 const std = @import("std");
 const nimbus = @import("nimbus");
 
-const USE_METAL = false;
+const Laf = enum { flatlaf, metal };
+const LAF: Laf = .flatlaf;
 
 const TableRow = struct {
     name: []const u8,
@@ -361,8 +362,9 @@ pub fn main(init: std.process.Init) !void {
 
     try nimbus.BorderLayout.add(&frame.window.container, .center, tabs.asComponent());
 
-    if (USE_METAL) {
-        nimbus.laf.applyLook(&frame.window.container.component, nimbus.laf.metal.buttonTable());
+    switch (LAF) {
+        .flatlaf => {},
+        .metal => nimbus.laf.applyLook(&frame.window.container.component, nimbus.laf.metal.metalTable()),
     }
 
     std.debug.print("Widget showcase. Close the window to exit.\n", .{});

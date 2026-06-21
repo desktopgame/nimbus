@@ -67,6 +67,22 @@ test "snapshot: metal_buttons" {
     try runScene(scenes.metal_buttons);
 }
 
+test "snapshot: metal_checkboxes" {
+    try runScene(scenes.metal_checkboxes);
+}
+
+test "snapshot: metal_radios" {
+    try runScene(scenes.metal_radios);
+}
+
+test "snapshot: metal_combobox_closed" {
+    try runScene(scenes.metal_combobox_closed);
+}
+
+test "snapshot: metal_combobox_popup" {
+    try runScene(scenes.metal_combobox_popup);
+}
+
 test "snapshot: panel_paint_over_child" {
     try runScene(scenes.panel_paint_over_child);
 }

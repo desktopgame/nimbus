@@ -70,7 +70,7 @@ const popup_vtable = Component.VTable{
     .destroy = popupDestroyNoop,
 };
 
-const popup_look_vtable = Component.LookVTable{
+pub const popup_look_vtable = Component.LookVTable{
     .paint = popupLookPaint,
     .paintOver = popupLookPaintOver,
     .measureMinSize = popupLookMeasureMinSize,
@@ -112,6 +112,7 @@ pub fn create(
         .allocator = allocator,
     };
     cb.component.role = .combobox;
+    cb.component.detached_look_roots = .{ .count = detachedLookRootCount, .at = detachedLookRootAt };
     cb.component.ui = .{ .vtable = &look_vtable, .ctx = &Component.default_look_context };
     cb.popup_root.ui = .{ .vtable = &popup_look_vtable, .ctx = &Component.default_look_context };
     cb.applyMetrics();
@@ -555,4 +556,14 @@ fn parentWindow(c: *Component) ?*Window {
         node = cur.parent;
     }
     return null;
+}
+
+fn detachedLookRootCount(_: *const Component) usize {
+    return 1;
+}
+
+fn detachedLookRootAt(c: *const Component, index: usize) *Component {
+    std.debug.assert(index == 0);
+    const cb: *const ComboBox = @fieldParentPtr("component", c);
+    return @constCast(&cb.popup_root);
 }

@@ -377,6 +377,82 @@ test "Metal Button measureMinSize uses Metal padding without GPU device" {
     try std.testing.expect(!nimbus.Component.Size.eql(button.component.min_size, metal_min));
 }
 
+test "Metal selection widgets measureMinSize without GPU device" {
+    const allocator = std.testing.allocator;
+    var text_font = try initTestTextFont();
+    defer deinitTestTextFont(&text_font);
+
+    const checkbox = try nimbus.CheckBox.create(allocator, "Check", text_font, nimbus.Theme.default.text);
+    defer checkbox.component.vtable.destroy(&checkbox.component, allocator);
+    const radio = try nimbus.RadioButton.create(allocator, "Radio", text_font, nimbus.Theme.default.text);
+    defer radio.component.vtable.destroy(&radio.component, allocator);
+    const items = [_][]const u8{ "Short", "Longer item" };
+    const combo = try nimbus.ComboBox.create(allocator, &items, text_font, nimbus.Theme.default.text);
+    defer combo.component.vtable.destroy(&combo.component, allocator);
+
+    const check_text = text_font.measureString("Check");
+    const radio_text = text_font.measureString("Radio");
+    const combo_text = text_font.measureString("Longer item");
+    const line_h = text_font.face.metrics().line_height;
+
+    const metal_check = nimbus.laf.metal.metal_checkbox_look.measureMinSize(
+        &checkbox.component,
+        &nimbus.laf.metal.metal_palette,
+    );
+    const metal_radio = nimbus.laf.metal.metal_radio_look.measureMinSize(
+        &radio.component,
+        &nimbus.laf.metal.metal_palette,
+    );
+    const metal_combo = nimbus.laf.metal.metal_combobox_look.measureMinSize(
+        &combo.component,
+        &nimbus.laf.metal.metal_palette,
+    );
+
+    try expectSizeBitEqual(.{
+        .width = 16 + 6 + check_text.width + 4 * 2,
+        .height = @max(@as(f32, 16), check_text.height) + 4 * 2,
+    }, metal_check);
+    try expectSizeBitEqual(.{
+        .width = 16 + 6 + radio_text.width + 4 * 2,
+        .height = @max(@as(f32, 16), radio_text.height) + 4 * 2,
+    }, metal_radio);
+    try expectSizeBitEqual(.{
+        .width = combo_text.width + 8 * 2 + 18,
+        .height = line_h + 4 * 2,
+    }, metal_combo);
+
+    try expectSizeBitEqual(checkbox.component.min_size, metal_check);
+    try expectSizeBitEqual(radio.component.min_size, metal_radio);
+    try std.testing.expect(!nimbus.Component.Size.eql(combo.component.min_size, metal_combo));
+}
+
+test "Metal table reaches ComboBox popup detached root" {
+    const allocator = std.testing.allocator;
+    var text_font = try initTestTextFont();
+    defer deinitTestTextFont(&text_font);
+
+    const root = try nimbus.Container.create(allocator);
+    defer root.component.vtable.destroy(&root.component, allocator);
+    root.setLayout(nimbus.BoxLayout.vertical());
+
+    const checkbox = try nimbus.CheckBox.create(allocator, "Check", text_font, nimbus.Theme.default.text);
+    try root.add(&checkbox.component);
+    const radio = try nimbus.RadioButton.create(allocator, "Radio", text_font, nimbus.Theme.default.text);
+    try root.add(&radio.component);
+    const items = [_][]const u8{ "One", "Two" };
+    const combo = try nimbus.ComboBox.create(allocator, &items, text_font, nimbus.Theme.default.text);
+    try root.add(&combo.component);
+
+    try std.testing.expect(combo.popup_root.ui.vtable == &nimbus.ComboBox.popup_look_vtable);
+
+    nimbus.laf.applyLook(&root.component, nimbus.laf.metal.metalTable());
+
+    try std.testing.expect(checkbox.component.ui.vtable == &nimbus.laf.metal.metal_checkbox_look);
+    try std.testing.expect(radio.component.ui.vtable == &nimbus.laf.metal.metal_radio_look);
+    try std.testing.expect(combo.component.ui.vtable == &nimbus.laf.metal.metal_combobox_look);
+    try std.testing.expect(combo.popup_root.ui.vtable == &nimbus.laf.metal.metal_combobox_popup_look);
+}
+
 test "paintAt dispatches Look paint, children, then paintOver" {
     const allocator = std.testing.allocator;
     var log = PaintLog{};
