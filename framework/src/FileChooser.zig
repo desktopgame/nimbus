@@ -25,6 +25,7 @@ const ChangeEvent = @import("listener.zig").ChangeEvent;
 const PATH_BUF = 4096;
 const FILE_ROW_HEIGHT = 28;
 const FILE_ICON = 18;
+const SOUTH_LABEL_WIDTH = 104;
 
 extern "kernel32" fn GetLogicalDrives() callconv(.winapi) u32;
 
@@ -700,19 +701,40 @@ pub const FileChooser = struct {
         try BorderLayout.add(body, .center, &center.component);
 
         const south = try app.container();
-        south.setLayout(try BoxLayout.horizontalSpaced(a, 8));
+        south.setLayout(try BoxLayout.verticalSpaced(a, 8));
+        const row1 = try app.container();
+        row1.setLayout(try BoxLayout.horizontalSpaced(a, 8));
+        const row2 = try app.container();
+        row2.setLayout(try BoxLayout.horizontalSpaced(a, 8));
+        const row3 = try app.container();
+        row3.setLayout(try BoxLayout.horizontalSpaced(a, 8));
+
+        const file_name_label = try app.label("File Name:");
+        file_name_label.component.min_size.width = SOUTH_LABEL_WIDTH;
         self.filename_field = try app.textField("");
         self.filename_field.component.setGrowX(1);
+        const files_type_label = try app.label("Files of Type:");
+        files_type_label.component.min_size.width = SOUTH_LABEL_WIDTH;
         self.filter_combo = try app.comboBox(&.{"All Files"});
+        self.filter_combo.component.setGrowX(1);
         self.ok_button = try app.button("OK");
         self.cancel_button = try app.button("Cancel");
+        const glue = try app.container();
+        glue.component.setGrowX(1);
+
         try self.filter_combo.addChangeListener(FileChooser, onFilterChanged, self);
         try self.ok_button.getModel().addActionListener(FileChooser, onOk, self);
         try self.cancel_button.getModel().addActionListener(FileChooser, onCancel, self);
-        try south.add(&self.filename_field.component);
-        try south.add(&self.filter_combo.component);
-        try south.add(&self.ok_button.component);
-        try south.add(&self.cancel_button.component);
+        try row1.add(&file_name_label.component);
+        try row1.add(&self.filename_field.component);
+        try row2.add(&files_type_label.component);
+        try row2.add(&self.filter_combo.component);
+        try row3.add(&glue.component);
+        try row3.add(&self.ok_button.component);
+        try row3.add(&self.cancel_button.component);
+        try south.add(&row1.component);
+        try south.add(&row2.component);
+        try south.add(&row3.component);
         try BorderLayout.add(body, .south, &south.component);
     }
 
