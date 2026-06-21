@@ -27,7 +27,7 @@ const vtable = LayoutManager.VTable{
 };
 
 pub fn create(allocator: std.mem.Allocator, n_cols: usize, opts: Options) !*LayoutManager {
-    std.debug.assert(n_cols > 0);
+    if (n_cols == 0) return error.InvalidColumnCount;
     const layout = try allocator.create(GridLayout);
     layout.* = .{
         .base = .{ .vtable = &vtable },
@@ -311,6 +311,23 @@ test "grid layout applies horizontal alignment inside column frame" {
     try expectRect(&stretch.component, 0, 30, 30, 10);
 }
 
+test "grid layout clamps stretched cell to finite max width and centers it" {
+    const allocator = std.testing.allocator;
+    const parent = try Container.create(allocator);
+    defer parent.component.vtable.destroy(&parent.component, allocator);
+    parent.setLayout(try create(allocator, 1, .{}));
+    parent.component.setBounds(.{ .x = 0, .y = 0, .width = 50, .height = 30 });
+
+    const clamped = try makeChild(parent, 10, 10);
+    clamped.component.setMaxSize(.{ .width = 20, .height = std.math.inf(f32) });
+    const wide = try makeChild(parent, 50, 10);
+
+    parent.doLayout();
+
+    try expectRect(&clamped.component, 15, 0, 20, 10);
+    try expectRect(&wide.component, 0, 10, 50, 10);
+}
+
 test "grid layout computes min size from columns rows and gaps" {
     const allocator = std.testing.allocator;
     const parent = try Container.create(allocator);
@@ -324,6 +341,24 @@ test "grid layout computes min size from columns rows and gaps" {
     const min = parent.getMinSize();
     try std.testing.expectEqual(@as(f32, 53), min.width);
     try std.testing.expectEqual(@as(f32, 29), min.height);
+}
+
+test "grid layout rejects zero columns" {
+    try std.testing.expectError(error.InvalidColumnCount, create(std.testing.allocator, 0, .{}));
+}
+
+test "grid layout handles empty containers as zero size" {
+    const allocator = std.testing.allocator;
+    const parent = try Container.create(allocator);
+    defer parent.component.vtable.destroy(&parent.component, allocator);
+    parent.setLayout(try create(allocator, 3, .{ .col_spacing = 2, .row_spacing = 1 }));
+    parent.component.setBounds(.{ .x = 0, .y = 0, .width = 100, .height = 50 });
+
+    parent.doLayout();
+
+    const min = parent.getMinSize();
+    try std.testing.expectEqual(@as(f32, 0), min.width);
+    try std.testing.expectEqual(@as(f32, 0), min.height);
 }
 
 test "grid layout ignores missing cells in ragged final row" {
@@ -376,6 +411,10 @@ test "grid layout keeps cell min size implicit and recomputes columns after natu
     parent.doLayout();
     try std.testing.expect(!short_label.component.min_size_explicit);
     try std.testing.expect(!long_label.component.min_size_explicit);
+    try std.testing.expectEqual(@as(f32, 10), short_label.component.min_size.width);
+    try std.testing.expectEqual(@as(f32, 20), field_a.component.min_size.width);
+    try std.testing.expectEqual(@as(f32, 30), long_label.component.min_size.width);
+    try std.testing.expectEqual(@as(f32, 20), field_b.component.min_size.width);
     try expectRect(&short_label.component, 0, 0, 30, 10);
     try expectRect(&long_label.component, 0, 10, 30, 10);
 
@@ -384,6 +423,10 @@ test "grid layout keeps cell min size implicit and recomputes columns after natu
 
     try std.testing.expect(!short_label.component.min_size_explicit);
     try std.testing.expect(!long_label.component.min_size_explicit);
+    try std.testing.expectEqual(@as(f32, 50), short_label.component.min_size.width);
+    try std.testing.expectEqual(@as(f32, 20), field_a.component.min_size.width);
+    try std.testing.expectEqual(@as(f32, 30), long_label.component.min_size.width);
+    try std.testing.expectEqual(@as(f32, 20), field_b.component.min_size.width);
     try expectRect(&short_label.component, 0, 0, 50, 10);
     try expectRect(&long_label.component, 0, 10, 50, 10);
     try expectRect(&field_a.component, 50, 0, 20, 10);
