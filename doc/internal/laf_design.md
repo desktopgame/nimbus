@@ -366,11 +366,12 @@ golden が動いたら、それは LAF の見た目変更ではなく **移行�
    （height-for-width の pure query、Component.zig:61-66 / 184）との統合をどうするか
    （`measureMinSize` に畳むか、別フックのまま併存させるか）。
 3. **ctx の所有・寿命**: `ui` が常時非 null（end-state）である点は確定（§2.10）。残るは `ctx` の所有・寿命の詳細。
-4. **外部 `setMinSize` と delegate 自動計算の潰し合い**: **保留（作者が考えたい）**。
-   現状、leaf は `applyMetrics` が `min_size` をフィールド上書きするため外部の `setMinSize` が消える
-   （Button.zig:135）。コンテナは `getMinSize` が `@max(field, layout)` で合成するので外部設定は floor として同居
-   （Container.zig:142-145）。Swing の explicit-set フラグ（`isMinimumSizeSet` 流）で「明示設定は自動計算に勝つ」と
-   するかは未決。初心者の罠だがブロッカーではない。override が「勝つ」か「floor」かも未決。
+4. **外部 `setMinSize` と delegate 自動計算の潰し合い**: **min_size については解決済み**。
+   `applyLook` の true-leaf re-measure が外部 `setMinSize` を潰す実需（showcase の縦スライダー）が出たため、
+   Swing の `isMinimumSizeSet` 流の explicit-set フラグ（`Component.min_size_explicit`）を導入し、
+   **明示は「絶対勝ち」＝re-measure をスキップ**（floor ではない）とした。コンテナは `getMinSize` の
+   `@max(field, layout)` floor 同居のまま無改修。確定設計は [min_size_explicit.md](min_size_explicit.md)。
+   色 override 等への横展開（フィールド別フラグ）は将来課題として同 doc §6。
 5. **awt 2 プリミティブの詳細**: グラデの stop 数・軸、テクスチャのゴールデン許容 tolerance（§4.2）。
    → **`awt_primitives_laf.md` に切り出して確定済み**（縦固定 2 stop・9-slice は 4 inset・per-scene tolerance）。
    本 doc 側では未決のまま残さない。

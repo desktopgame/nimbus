@@ -408,8 +408,9 @@ Metal Look の `ctx`（自前パレット等）が **ツリー生存中ずっと
 - **`measureMinSize` と `size_query` の統合**: height-for-width の `size_query`（`Component.zig:211`）は
   enabler では触らない（layout が従来どおり読む）。統合可否は `laf_design.md` §6-2 のまま未決。
 - **外部 `setMinSize` と delegate 自動計算の潰し合い**: true leaf の re-measure が `min_size` を上書きするため、
-  外部 `setMinSize` は enabler 後に消える（`laf_design.md` §6-4 の未決そのまま）。enabler はこの既存挙動を
-  変えない（true leaf 上書き・container は floor 同居）。explicit-set フラグ導入は未決。
+  外部 `setMinSize` は enabler 後に消える問題は **explicit-set フラグで解決**（`Component.min_size_explicit` を
+  公開 `setMinSize` で立て、`applyLook` の re-measure を `!min_size_explicit` でガード）。
+  確定設計は [min_size_explicit.md](min_size_explicit.md)。container は従来どおり floor 同居で無改修。
 - **重ねがけ／再適用**: 一度 remap したツリーへ別の表を当てる（実行時切替もどき）は v1 非対応（§2.3 前提）。
   将来やるなら「現 Look → default へ戻す逆写し」か「元 default vtable をノードに保持」かの設計が要る＝未決。
 - **standalone `PopupMenu` の個別適用を誰が呼ぶか**: §3.7.2 の通り window root から届かないため
