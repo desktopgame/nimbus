@@ -55,7 +55,8 @@ enabler は **「機構＋FlatLaf 自己適用テスト」まで**を作る。
 - awt の 2 描画プリミティブ（linear グラデ／テクスチャ＋9-slice）。`awt_primitives_laf.md` で別途確定済み。
 
 enabler の正しさは **Metal の絵がゼロのまま**（FlatLaf 自己適用＋フェイク LAF の純ロジック assert）で検証する。
-実 Metal Look は enabler が完成してから縦スライスで足す。
+実 Metal Look は enabler が完成してから縦スライスで足す（Button 縦スライスの設計 spec は
+[laf_metal_button.md](laf_metal_button.md)）。
 
 ---
 

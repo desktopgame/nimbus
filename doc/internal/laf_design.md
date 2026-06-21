@@ -287,6 +287,7 @@ Look（外見 vtable）を **ツリー全体へ一斉に差し替える**ユー�
 - **FlatLaf（既定）**: 現状描画そのまま。現状の awt プリミティブ（`fillRect` / `fillRoundRect` /
   `drawString` 等）で描ける。追加プリミティブ不要。
 - **Swing Metal**: linear 縦グラデーション ＋ bevel ＋ bumps。
+  Button 縦スライス（初の実 Metal Look）の設計 spec は [laf_metal_button.md](laf_metal_button.md)。
 - **JTattoo**: テクスチャ（skin）ベース。
 
 ### 4.2 awt に要る 2 つの描画プリミティブ（別ワークストリーム・依存として参照のみ）

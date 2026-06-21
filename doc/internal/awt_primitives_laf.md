@@ -20,6 +20,7 @@ laf_design の流儀に倣い、**「確定」と「未決」を明確に分け�
 
 - **Metal は「縦 linear グラデ＋bevel」まで**。bumps（点描）はやらない → 点描テクスチャ / ディザは **不要**。
   bevel は既存 `fillRect` / `drawRect` の光 / 影エッジで描けるので **新プリミティブ不要**（本 doc の対象外）。
+  グラデ＋bevel を実際に Button へ組む Look 側の設計は [laf_metal_button.md](laf_metal_button.md)。
 - **JTattoo は機構だけ**。本家スキン素材は同梱しない。awt は texture + 9-slice の **機構**だけ出す。
   名前付き LAF・スキン調達はバインディング層 / サンプルの仕事（`laf_design.md` §1.2）。
 - **C バックエンド無改修で足せる**ことが両プリミティブの前提（下記 §1.0）。頂点カラー方式
