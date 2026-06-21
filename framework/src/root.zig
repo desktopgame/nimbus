@@ -19,6 +19,7 @@ pub const ActionListenerList = listener.ActionListenerList;
 pub const BoxLayout = @import("BoxLayout.zig");
 pub const BorderLayout = @import("BorderLayout.zig");
 pub const PaddingLayout = @import("PaddingLayout.zig");
+pub const GridLayout = @import("GridLayout.zig");
 pub const Insets = PaddingLayout.Insets;
 pub const Panel = @import("Panel.zig");
 pub const Border = @import("Border.zig");
