@@ -535,6 +535,32 @@ pub fn requestFocus(self: *Component) void {
     }
 }
 
+/// Return the current focus owner from the root `FocusController`.
+/// Null when this component is not attached to a focus-aware root.
+pub fn focusOwner(self: *Component) ?*Component {
+    var node: ?*Component = self;
+    while (node) |cur| {
+        if (cur.parent == null) {
+            if (cur.getTyped(FocusController)) |fc| {
+                return fc.current_owner(fc.user_data);
+            }
+            return null;
+        }
+        node = cur.parent;
+    }
+    return null;
+}
+
+/// True when `other` is this component or a descendant in the parent chain.
+pub fn isSelfOrDescendant(self: *Component, other: *Component) bool {
+    var node: ?*Component = other;
+    while (node) |cur| {
+        if (cur == self) return true;
+        node = cur.parent;
+    }
+    return false;
+}
+
 /// Property type that Window installs on each root Component so that
 /// `Component.requestFocus()` can bubble up and reach the Window's
 /// focus-owner state without a direct framework→framework dependency
@@ -542,6 +568,7 @@ pub fn requestFocus(self: *Component) void {
 pub const FocusController = struct {
     user_data: *anyopaque,
     request_focus_for: *const fn (*anyopaque, ?*Component) void,
+    current_owner: *const fn (*anyopaque) ?*Component,
 };
 
 /// Property type a `ScrollPane` installs on its viewport so a scrolled view can

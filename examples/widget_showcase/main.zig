@@ -229,6 +229,16 @@ fn buildTextTab(app: *nimbus.Application) !*nimbus.Panel {
     sp.asComponent().setGrowY(1);
     try root.asContainer().add(sp.asComponent());
 
+    const plain_area = try app.textArea(
+        \\Plain TextArea without ScrollPane.
+        \\Border decorator keeps this framed.
+    );
+    plain_area.component.setGrowX(1);
+    plain_area.component.setMinSize(.{ .width = 0, .height = 52 });
+    const framed_plain = try app.border(&plain_area.component);
+    framed_plain.asComponent().setGrowX(1);
+    try root.asContainer().add(framed_plain.asComponent());
+
     return root;
 }
 

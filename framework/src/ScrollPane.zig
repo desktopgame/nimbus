@@ -496,7 +496,20 @@ fn uninstall(self: *Component) void {
 
 fn lookPaint(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
 
-fn lookPaintOver(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
+fn lookPaintOver(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
+    const w = self.size.width;
+    const h = self.size.height;
+    const t: f32 = 1;
+    if (w <= 0 or h <= 0) return;
+
+    const owner = self.focusOwner();
+    const focused = if (owner) |o| self.isSelfOrDescendant(o) else false;
+    g.setColor(if (focused) self.theme.accent else self.theme.border);
+    g.fillRect(.{ .x = 0, .y = 0, .width = w, .height = t });
+    g.fillRect(.{ .x = 0, .y = h - t, .width = w, .height = t });
+    g.fillRect(.{ .x = 0, .y = 0, .width = t, .height = h });
+    g.fillRect(.{ .x = w - t, .y = 0, .width = t, .height = h });
+}
 
 fn lookMeasureMinSize(_: *Component, _: *anyopaque) Component.Size {
     return .{ .width = 0, .height = 0 };

@@ -107,6 +107,22 @@ test "snapshot: scroll_pane_bars" {
     try runScene(scenes.scroll_pane_bars);
 }
 
+test "snapshot: text_area_framed_in_scroll_pane" {
+    try runScene(scenes.text_area_framed_in_scroll_pane);
+}
+
+test "snapshot: text_area_framed_in_scroll_pane_focused" {
+    try runScene(scenes.text_area_framed_in_scroll_pane_focused);
+}
+
+test "snapshot: text_area_plain" {
+    try runScene(scenes.text_area_plain);
+}
+
+test "snapshot: text_area_in_border" {
+    try runScene(scenes.text_area_in_border);
+}
+
 test "snapshot: list_selection" {
     try runScene(scenes.list_selection);
 }

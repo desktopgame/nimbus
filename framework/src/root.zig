@@ -21,6 +21,7 @@ pub const BorderLayout = @import("BorderLayout.zig");
 pub const PaddingLayout = @import("PaddingLayout.zig");
 pub const Insets = PaddingLayout.Insets;
 pub const Panel = @import("Panel.zig");
+pub const Border = @import("Border.zig");
 pub const BoundedRangeModel = @import("BoundedRangeModel.zig");
 pub const Slider = @import("Slider.zig");
 pub const ButtonModel = @import("ButtonModel.zig");

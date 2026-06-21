@@ -6,6 +6,7 @@ const Component = @import("Component.zig");
 const Container = @import("Container.zig");
 const Label = @import("Label.zig");
 const Panel = @import("Panel.zig");
+const Border = @import("Border.zig");
 const Button = @import("Button.zig");
 const CheckBox = @import("CheckBox.zig");
 const RadioButton = @import("RadioButton.zig");
@@ -678,6 +679,12 @@ pub fn panel(self: *Application) !*Panel {
     const p = try Panel.create(self.allocator);
     self.applyTheme(p.asComponent());
     return p;
+}
+
+pub fn border(self: *Application, child: *Component) !*Border {
+    const b = try Border.create(self.allocator, child, self.theme.border);
+    self.applyTheme(b.asComponent());
+    return b;
 }
 
 pub fn button(self: *Application, text: []const u8) !*Button {

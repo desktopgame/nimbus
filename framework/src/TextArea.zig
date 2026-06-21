@@ -26,12 +26,11 @@ const CARET_WIDTH: f32 = 1;
 const DEFAULT_COLUMNS: f32 = 40;
 const DEFAULT_ROWS: f32 = 6;
 const BLINK_PERIOD_MS: u32 = 500;
-const BORDER_WIDTH: f32 = 1;
 
-// Colors come from `component.theme`: frame = border (accent when focused),
-// preedit underlines = ime_preedit_underline / ime_preedit_target. The
-// selection highlight is derived from accent (see `selectionColor`) so it
-// tracks accent automatically. See `framework/doc/theme.md`.
+// Colors come from `component.theme`: preedit underlines =
+// ime_preedit_underline / ime_preedit_target. The selection highlight is
+// derived from accent (see `selectionColor`) so it tracks accent automatically.
+// See `framework/doc/theme.md`.
 
 /// Selection highlight: the theme accent at 40% alpha (derived, not a token).
 fn selectionColor(t: *const @import("theme.zig").Theme) awt.Graphics.Color {
@@ -556,12 +555,6 @@ fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
 
     g.setColor(ta.background);
     g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = sz.height });
-
-    g.setColor(if (ta.has_focus) self.theme.accent else self.theme.border);
-    g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = BORDER_WIDTH });
-    g.fillRect(.{ .x = 0, .y = sz.height - BORDER_WIDTH, .width = sz.width, .height = BORDER_WIDTH });
-    g.fillRect(.{ .x = 0, .y = 0, .width = BORDER_WIDTH, .height = sz.height });
-    g.fillRect(.{ .x = sz.width - BORDER_WIDTH, .y = 0, .width = BORDER_WIDTH, .height = sz.height });
 
     ta.font.face.setPixelSize(ta.font.pixel_size);
     const line_h = ta.font.face.metrics().line_height;

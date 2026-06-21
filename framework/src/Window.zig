@@ -609,6 +609,7 @@ fn install(self: *Component) !void {
     win.focus_controller = .{
         .user_data = @ptrCast(win),
         .request_focus_for = focusControllerCallback,
+        .current_owner = focusControllerCurrentOwner,
     };
     try self.putProperty(@typeName(Component.FocusController), @ptrCast(&win.focus_controller), null);
 
@@ -634,6 +635,11 @@ fn install(self: *Component) !void {
 fn focusControllerCallback(user_data: *anyopaque, c: ?*Component) void {
     const win: *Window = @ptrCast(@alignCast(user_data));
     win.requestFocusFor(c);
+}
+
+fn focusControllerCurrentOwner(user_data: *anyopaque) ?*Component {
+    const win: *Window = @ptrCast(@alignCast(user_data));
+    return win.focus_owner;
 }
 
 fn uninstall(self: *Component) void {

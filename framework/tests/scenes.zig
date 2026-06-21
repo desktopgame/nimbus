@@ -68,6 +68,61 @@ fn growableLeaf(
     return p;
 }
 
+const SceneApp = struct {
+    app: nimbus.Application,
+
+    fn init(ctx: PaintContext) SceneApp {
+        var self: SceneApp = undefined;
+        self.app.allocator = ctx.allocator;
+        self.app.default_font = ctx.font;
+        self.app.theme = nimbus.Theme.default;
+        self.app.timers = .empty;
+        self.app.next_timer_id = 1;
+        self.app.clock_mode = .virtual;
+        self.app.virtual_now = 0;
+        return self;
+    }
+
+    fn deinit(self: *SceneApp) void {
+        self.app.timers.deinit(self.app.allocator);
+    }
+};
+
+const FocusStub = struct {
+    owner: ?*nimbus.Component = null,
+
+    fn request(_: *anyopaque, _: ?*nimbus.Component) void {}
+
+    fn current(user_data: *anyopaque) ?*nimbus.Component {
+        const self: *FocusStub = @ptrCast(@alignCast(user_data));
+        return self.owner;
+    }
+
+    fn controller(self: *FocusStub) nimbus.Component.FocusController {
+        return .{
+            .user_data = @ptrCast(self),
+            .request_focus_for = request,
+            .current_owner = current,
+        };
+    }
+};
+
+fn textArea(
+    ctx: PaintContext,
+    app: *nimbus.Application,
+    text: []const u8,
+) !*nimbus.TextArea {
+    const ta = try nimbus.TextArea.create(
+        ctx.allocator,
+        app,
+        .{ .face = ctx.font, .pixel_size = 14 },
+        nimbus.Theme.default.text,
+        text,
+    );
+    ta.background = nimbus.Theme.default.surface_input;
+    return ta;
+}
+
 /// Build a root Container the size of the render target, run a layout
 /// pass, paint, then free. All scenes go through this so they don't
 /// re-implement the boilerplate.
@@ -598,6 +653,106 @@ fn paintScrollPaneBars(ctx: PaintContext) anyerror!void {
     sp.asComponent().setBounds(.{ .x = 24, .y = 20, .width = 236, .height = 164 });
     sp.container.doLayout();
     sp.asComponent().paintAt(ctx.g);
+}
+
+pub const text_area_framed_in_scroll_pane = Scene{
+    .name = "text_area_framed_in_scroll_pane",
+    .width = 320,
+    .height = 180,
+    .paint = paintTextAreaFramedInScrollPane,
+};
+
+pub const text_area_framed_in_scroll_pane_focused = Scene{
+    .name = "text_area_framed_in_scroll_pane_focused",
+    .width = 320,
+    .height = 180,
+    .paint = paintTextAreaFramedInScrollPaneFocused,
+};
+
+pub const text_area_plain = Scene{
+    .name = "text_area_plain",
+    .width = 260,
+    .height = 120,
+    .paint = paintTextAreaPlain,
+};
+
+pub const text_area_in_border = Scene{
+    .name = "text_area_in_border",
+    .width = 260,
+    .height = 120,
+    .paint = paintTextAreaInBorder,
+};
+
+fn paintTextAreaFramedInScrollPane(ctx: PaintContext) anyerror!void {
+    try paintTextAreaScrollPane(ctx, false);
+}
+
+fn paintTextAreaFramedInScrollPaneFocused(ctx: PaintContext) anyerror!void {
+    try paintTextAreaScrollPane(ctx, true);
+}
+
+fn paintTextAreaScrollPane(ctx: PaintContext, focused: bool) anyerror!void {
+    var app = SceneApp.init(ctx);
+    defer app.deinit();
+
+    var root = try nimbus.Container.create(ctx.allocator);
+    defer root.component.vtable.destroy(&root.component, ctx.allocator);
+
+    var focus_stub = FocusStub{};
+    var focus_controller = focus_stub.controller();
+    try root.component.putProperty(@typeName(nimbus.Component.FocusController), @ptrCast(&focus_controller), null);
+
+    const area = try textArea(ctx, &app.app,
+        \\ScrollPane owns the outer frame.
+        \\TextArea content starts from padding, not border width.
+        \\A third line makes the viewport scrollable.
+    );
+    area.component.setMinSize(.{ .width = 420, .height = 140 });
+    if (focused) {
+        focus_stub.owner = &area.component;
+        area.has_focus = true;
+    }
+
+    const sp = try nimbus.ScrollPane.create(ctx.allocator, &area.component);
+    sp.setHorizontalPolicy(.always);
+    sp.setVerticalPolicy(.always);
+    sp.setScrollX(32);
+    sp.setScrollY(18);
+    try root.add(sp.asComponent());
+
+    sp.asComponent().setBounds(.{ .x = 24, .y = 18, .width = 250, .height = 118 });
+    sp.container.doLayout();
+    sp.asComponent().paintAt(ctx.g);
+}
+
+fn paintTextAreaPlain(ctx: PaintContext) anyerror!void {
+    var app = SceneApp.init(ctx);
+    defer app.deinit();
+
+    const area = try textArea(ctx, &app.app,
+        \\Plain TextArea.
+        \\No outer frame is drawn here.
+    );
+    defer area.component.vtable.destroy(&area.component, ctx.allocator);
+
+    area.component.setBounds(.{ .x = 24, .y = 22, .width = 210, .height = 70 });
+    area.component.paintAt(ctx.g);
+}
+
+fn paintTextAreaInBorder(ctx: PaintContext) anyerror!void {
+    var app = SceneApp.init(ctx);
+    defer app.deinit();
+
+    const area = try textArea(ctx, &app.app,
+        \\Border decorator.
+        \\Padding stays put.
+    );
+    const border = try nimbus.Border.create(ctx.allocator, &area.component, nimbus.Theme.default.border);
+    defer border.asComponent().vtable.destroy(border.asComponent(), ctx.allocator);
+
+    border.asComponent().setBounds(.{ .x = 24, .y = 22, .width = 210, .height = 70 });
+    border.asContainer().doLayout();
+    border.asComponent().paintAt(ctx.g);
 }
 
 var list_cell_font: ?awt.Font = null;
