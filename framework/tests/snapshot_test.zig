@@ -83,6 +83,18 @@ test "snapshot: metal_combobox_popup" {
     try runScene(scenes.metal_combobox_popup);
 }
 
+test "snapshot: metal_sliders" {
+    try runScene(scenes.metal_sliders);
+}
+
+test "snapshot: metal_scrollbars" {
+    try runScene(scenes.metal_scrollbars);
+}
+
+test "snapshot: metal_scroll_pane_bars" {
+    try runScene(scenes.metal_scroll_pane_bars);
+}
+
 test "snapshot: panel_paint_over_child" {
     try runScene(scenes.panel_paint_over_child);
 }

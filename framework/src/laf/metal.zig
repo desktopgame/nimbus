@@ -1,9 +1,12 @@
+const std = @import("std");
 const awt = @import("awt");
 const Button = @import("../Button.zig");
 const CheckBox = @import("../CheckBox.zig");
 const ComboBox = @import("../ComboBox.zig");
 const Component = @import("../Component.zig");
 const RadioButton = @import("../RadioButton.zig");
+const ScrollBar = @import("../ScrollBar.zig");
+const Slider = @import("../Slider.zig");
 const laf = @import("../laf.zig");
 
 const Color = awt.Graphics.Color;
@@ -25,6 +28,10 @@ const COMBO_PADDING_Y: f32 = 4;
 const COMBO_CHEVRON_W: f32 = 18;
 const COMBO_ITEM_PADDING_Y: f32 = 4;
 const BORDER_WIDTH: f32 = 1;
+const SLIDER_THUMB_RADIUS: f32 = 8;
+const SLIDER_TRACK_THICKNESS: f32 = 6;
+const SCROLLBAR_MIN_THUMB: f32 = 20;
+const SCROLLBAR_THUMB_INSET: f32 = 2;
 
 pub const MetalPalette = struct {
     body_enabled_top: Color,
@@ -50,6 +57,8 @@ pub const MetalPalette = struct {
     indicator_mark_disabled: Color,
     select_bg: Color,
     select_text: Color,
+    track_groove: Color,
+    scroll_track: Color,
 };
 
 pub var metal_palette = MetalPalette{
@@ -76,6 +85,8 @@ pub var metal_palette = MetalPalette{
     .indicator_mark_disabled = Color.bytes(153, 153, 153, 255),
     .select_bg = Color.bytes(99, 130, 191, 255),
     .select_text = Color.bytes(255, 255, 255, 255),
+    .track_groove = Color.bytes(198, 206, 216, 255),
+    .scroll_track = Color.bytes(224, 225, 229, 255),
 };
 
 pub const metal_button_look = Component.LookVTable{
@@ -108,6 +119,18 @@ pub const metal_combobox_popup_look = Component.LookVTable{
     .measureMinSize = measureComboBoxPopupMinSize,
 };
 
+pub const metal_slider_look = Component.LookVTable{
+    .paint = paintSlider,
+    .paintOver = paintOver,
+    .measureMinSize = measureSliderMinSize,
+};
+
+pub const metal_scrollbar_look = Component.LookVTable{
+    .paint = paintScrollBar,
+    .paintOver = paintOver,
+    .measureMinSize = measureScrollBarMinSize,
+};
+
 const metal_table = [_]laf.RemapEntry{
     .{
         .from = &Button.look_vtable,
@@ -128,6 +151,14 @@ const metal_table = [_]laf.RemapEntry{
     .{
         .from = &ComboBox.popup_look_vtable,
         .to = .{ .vtable = &metal_combobox_popup_look, .ctx = &metal_palette },
+    },
+    .{
+        .from = &Slider.look_vtable,
+        .to = .{ .vtable = &metal_slider_look, .ctx = &metal_palette },
+    },
+    .{
+        .from = &ScrollBar.look_vtable,
+        .to = .{ .vtable = &metal_scrollbar_look, .ctx = &metal_palette },
     },
 };
 
@@ -359,6 +390,107 @@ fn measureComboBoxPopupMinSize(_: *Component, _: *anyopaque) Component.Size {
     return .{ .width = 0, .height = 0 };
 }
 
+fn paintSlider(self: *Component, ctx: *anyopaque, g: *awt.Graphics) void {
+    const slider: *Slider = @fieldParentPtr("component", self);
+    const palette: *MetalPalette = @ptrCast(@alignCast(ctx));
+    const sz = self.size;
+    const enabled = true;
+
+    switch (slider.orientation) {
+        .horizontal => {
+            const y = sz.height / 2 - SLIDER_TRACK_THICKNESS / 2;
+            g.setColor(palette.track_groove);
+            g.fillRect(.{
+                .x = SLIDER_THUMB_RADIUS,
+                .y = y,
+                .width = sz.width - 2 * SLIDER_THUMB_RADIUS,
+                .height = SLIDER_TRACK_THICKNESS,
+            });
+            drawInsetBevel(g, SLIDER_THUMB_RADIUS, y, sz.width - 2 * SLIDER_THUMB_RADIUS, SLIDER_TRACK_THICKNESS, palette);
+        },
+        .vertical => {
+            const x = sz.width / 2 - SLIDER_TRACK_THICKNESS / 2;
+            g.setColor(palette.track_groove);
+            g.fillRect(.{
+                .x = x,
+                .y = SLIDER_THUMB_RADIUS,
+                .width = SLIDER_TRACK_THICKNESS,
+                .height = sz.height - 2 * SLIDER_THUMB_RADIUS,
+            });
+            drawInsetBevel(g, x, SLIDER_THUMB_RADIUS, SLIDER_TRACK_THICKNESS, sz.height - 2 * SLIDER_THUMB_RADIUS, palette);
+        },
+    }
+
+    const pos = sliderPos(slider);
+    const thumb = switch (slider.orientation) {
+        .horizontal => awt.Graphics.Rect{
+            .x = pos - SLIDER_THUMB_RADIUS,
+            .y = sz.height / 2 - SLIDER_THUMB_RADIUS,
+            .width = SLIDER_THUMB_RADIUS * 2,
+            .height = SLIDER_THUMB_RADIUS * 2,
+        },
+        .vertical => awt.Graphics.Rect{
+            .x = sz.width / 2 - SLIDER_THUMB_RADIUS,
+            .y = pos - SLIDER_THUMB_RADIUS,
+            .width = SLIDER_THUMB_RADIUS * 2,
+            .height = SLIDER_THUMB_RADIUS * 2,
+        },
+    };
+    paintSteelThumb(g, palette, thumb, enabled, false);
+
+    if (slider.focused) {
+        g.setColor(palette.focus_ring);
+        g.drawRect(.{ .x = 1, .y = 1, .width = sz.width - 2, .height = sz.height - 2 });
+    }
+}
+
+fn measureSliderMinSize(self: *Component, _: *anyopaque) Component.Size {
+    const slider: *Slider = @fieldParentPtr("component", self);
+    const long_min: f32 = SLIDER_THUMB_RADIUS * 4;
+    const cross_size: f32 = SLIDER_THUMB_RADIUS * 2 + 4;
+    return switch (slider.orientation) {
+        .horizontal => .{ .width = long_min, .height = cross_size },
+        .vertical => .{ .width = cross_size, .height = long_min },
+    };
+}
+
+fn paintScrollBar(self: *Component, ctx: *anyopaque, g: *awt.Graphics) void {
+    const sb: *ScrollBar = @fieldParentPtr("component", self);
+    const palette: *MetalPalette = @ptrCast(@alignCast(ctx));
+    const sz = self.size;
+    if (sz.width <= 0 or sz.height <= 0) return;
+
+    g.setColor(palette.scroll_track);
+    g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = sz.height });
+    drawRectBorder(g, 0, 0, sz.width, sz.height, palette.border_disabled);
+
+    const len = scrollBarThumbLen(sb);
+    const start = scrollBarThumbStart(sb, len);
+    const thumb = switch (sb.orientation) {
+        .horizontal => awt.Graphics.Rect{
+            .x = start,
+            .y = SCROLLBAR_THUMB_INSET,
+            .width = len,
+            .height = sz.height - SCROLLBAR_THUMB_INSET * 2,
+        },
+        .vertical => awt.Graphics.Rect{
+            .x = SCROLLBAR_THUMB_INSET,
+            .y = start,
+            .width = sz.width - SCROLLBAR_THUMB_INSET * 2,
+            .height = len,
+        },
+    };
+    paintSteelThumb(g, palette, thumb, true, sb.dragging or sb.rollover);
+}
+
+fn measureScrollBarMinSize(self: *Component, _: *anyopaque) Component.Size {
+    const sb: *ScrollBar = @fieldParentPtr("component", self);
+    return switch (sb.orientation) {
+        .horizontal => .{ .width = SCROLLBAR_MIN_THUMB * 2, .height = ScrollBar.THICKNESS },
+        .vertical => .{ .width = ScrollBar.THICKNESS, .height = SCROLLBAR_MIN_THUMB * 2 },
+    };
+}
+
 fn measureMinSize(self: *Component, _: *anyopaque) Component.Size {
     const button: *Button = @fieldParentPtr("component", self);
     const has_text = button.text.len > 0;
@@ -382,6 +514,63 @@ fn measureMinSize(self: *Component, _: *anyopaque) Component.Size {
         .width = text_m.width + PADDING_X * 2,
         .height = text_m.height + PADDING_Y * 2,
     };
+}
+
+fn paintSteelThumb(
+    g: *awt.Graphics,
+    palette: *const MetalPalette,
+    rect: awt.Graphics.Rect,
+    enabled: bool,
+    rollover: bool,
+) void {
+    if (rect.width <= 0 or rect.height <= 0) return;
+    drawRectBorder(g, rect.x, rect.y, rect.width, rect.height, if (enabled) palette.border else palette.border_disabled);
+    const body = bodyGradient(palette, enabled, rollover, false);
+    g.fillGradientRect(
+        .{ .x = rect.x + 2, .y = rect.y + 2, .width = rect.width - 4, .height = rect.height - 4 },
+        body.top,
+        body.bottom,
+    );
+    if (enabled) {
+        drawBevelAt(g, rect.x, rect.y, rect.width, rect.height, palette.bevel_light, palette.bevel_dark);
+    }
+}
+
+fn sliderPos(slider: *const Slider) f32 {
+    const sz = slider.component.size;
+    const range: f32 = @floatFromInt(slider.model.max - slider.model.min);
+    if (range <= 0) return SLIDER_THUMB_RADIUS;
+    const t: f32 = @as(f32, @floatFromInt(slider.model.value - slider.model.min)) / range;
+    return switch (slider.orientation) {
+        .horizontal => SLIDER_THUMB_RADIUS + t * (sz.width - 2 * SLIDER_THUMB_RADIUS),
+        .vertical => SLIDER_THUMB_RADIUS + t * (sz.height - 2 * SLIDER_THUMB_RADIUS),
+    };
+}
+
+fn scrollBarTrackLen(sb: *const ScrollBar) f32 {
+    return switch (sb.orientation) {
+        .horizontal => sb.component.size.width,
+        .vertical => sb.component.size.height,
+    };
+}
+
+fn scrollBarThumbLen(sb: *const ScrollBar) f32 {
+    const track = scrollBarTrackLen(sb);
+    if (track <= SCROLLBAR_MIN_THUMB) return track;
+    const range: f32 = @floatFromInt(sb.model.max - sb.model.min);
+    if (range <= 0) return track;
+    const ext: f32 = @floatFromInt(sb.model.extent);
+    const len = ext / range * track;
+    return std.math.clamp(len, SCROLLBAR_MIN_THUMB, track);
+}
+
+fn scrollBarThumbStart(sb: *const ScrollBar, len: f32) f32 {
+    const travel = scrollBarTrackLen(sb) - len;
+    if (travel <= 0) return 0;
+    const span: f32 = @floatFromInt((sb.model.max - sb.model.min) - sb.model.extent);
+    if (span <= 0) return 0;
+    const v: f32 = @floatFromInt(sb.model.value - sb.model.min);
+    return std.math.clamp(v / span, 0, 1) * travel;
 }
 
 fn bodyGradient(

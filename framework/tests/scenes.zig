@@ -430,6 +430,99 @@ fn paintMetalComboboxPopup(ctx: PaintContext) anyerror!void {
     combo.popup_root.paintAt(ctx.g);
 }
 
+pub const metal_sliders = Scene{
+    .name = "metal_sliders",
+    .width = 260,
+    .height = 170,
+    .paint = paintMetalSliders,
+};
+
+fn paintMetalSliders(ctx: PaintContext) anyerror!void {
+    var setup = try Setup.init(ctx);
+    defer setup.deinit();
+
+    const h_normal = try nimbus.Slider.create(ctx.allocator, .horizontal, 0, 45, 100);
+    const h_focus = try nimbus.Slider.create(ctx.allocator, .horizontal, 0, 75, 100);
+    h_focus.focused = true;
+    const v_normal = try nimbus.Slider.create(ctx.allocator, .vertical, 0, 35, 100);
+
+    try setup.container.add(&h_normal.component);
+    try setup.container.add(&h_focus.component);
+    try setup.container.add(&v_normal.component);
+    nimbus.laf.applyLook(&setup.container.component, nimbus.laf.metal.metalTable());
+
+    h_normal.component.setBounds(.{ .x = 24, .y = 24, .width = 168, .height = 28 });
+    h_focus.component.setBounds(.{ .x = 24, .y = 64, .width = 168, .height = 28 });
+    v_normal.component.setBounds(.{ .x = 210, .y = 24, .width = 28, .height = 112 });
+
+    setup.paint();
+}
+
+pub const metal_scrollbars = Scene{
+    .name = "metal_scrollbars",
+    .width = 240,
+    .height = 170,
+    .paint = paintMetalScrollBars,
+};
+
+fn paintMetalScrollBars(ctx: PaintContext) anyerror!void {
+    var setup = try Setup.init(ctx);
+    defer setup.deinit();
+
+    const h_normal = try nimbus.ScrollBar.create(ctx.allocator, .horizontal, 0, 28, 100);
+    h_normal.model.setExtent(30);
+    const h_hover = try nimbus.ScrollBar.create(ctx.allocator, .horizontal, 0, 55, 100);
+    h_hover.model.setExtent(25);
+    h_hover.rollover = true;
+    const v_normal = try nimbus.ScrollBar.create(ctx.allocator, .vertical, 0, 42, 100);
+    v_normal.model.setExtent(35);
+    const v_hover = try nimbus.ScrollBar.create(ctx.allocator, .vertical, 0, 62, 100);
+    v_hover.model.setExtent(22);
+    v_hover.rollover = true;
+
+    try setup.container.add(&h_normal.component);
+    try setup.container.add(&h_hover.component);
+    try setup.container.add(&v_normal.component);
+    try setup.container.add(&v_hover.component);
+    nimbus.laf.applyLook(&setup.container.component, nimbus.laf.metal.metalTable());
+
+    h_normal.component.setBounds(.{ .x = 24, .y = 24, .width = 146, .height = 14 });
+    h_hover.component.setBounds(.{ .x = 24, .y = 54, .width = 146, .height = 14 });
+    v_normal.component.setBounds(.{ .x = 188, .y = 24, .width = 14, .height = 112 });
+    v_hover.component.setBounds(.{ .x = 212, .y = 24, .width = 14, .height = 112 });
+
+    setup.paint();
+}
+
+pub const metal_scroll_pane_bars = Scene{
+    .name = "metal_scroll_pane_bars",
+    .width = 300,
+    .height = 220,
+    .paint = paintMetalScrollPaneBars,
+};
+
+fn paintMetalScrollPaneBars(ctx: PaintContext) anyerror!void {
+    const view = try nimbus.Panel.create(ctx.allocator);
+    view.setBackground(awt.Graphics.Color.rgb(0.78, 0.90, 0.78));
+    view.asComponent().setMinSize(.{ .width = 420, .height = 320 });
+
+    const font = nimbus.awt.Graphics.TextFont{ .face = ctx.font, .pixel_size = 14 };
+    const label = try nimbus.Label.create(ctx.allocator, "metal bars", font, awt.Graphics.Color.rgb(0.10, 0.16, 0.10));
+    label.component.setBounds(.{ .x = 18, .y = 16, .width = 140, .height = 24 });
+    try view.container.add(&label.component);
+
+    const sp = try nimbus.ScrollPane.create(ctx.allocator, view.asComponent());
+    defer sp.asComponent().vtable.destroy(sp.asComponent(), ctx.allocator);
+    sp.setHorizontalPolicy(.always);
+    sp.setVerticalPolicy(.always);
+    sp.setScrollX(48);
+    sp.setScrollY(36);
+    nimbus.laf.applyLook(sp.asComponent(), nimbus.laf.metal.metalTable());
+    sp.asComponent().setBounds(.{ .x = 24, .y = 20, .width = 236, .height = 164 });
+    sp.container.doLayout();
+    sp.asComponent().paintAt(ctx.g);
+}
+
 // Composite widget scenes ----------------------------------------------------
 
 pub const panel_paint_over_child = Scene{

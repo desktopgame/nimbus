@@ -491,6 +491,36 @@ test "Metal selection widgets measureMinSize without GPU device" {
     try std.testing.expect(!nimbus.Component.Size.eql(combo.component.min_size, metal_combo));
 }
 
+test "Metal range widgets measureMinSize without GPU device" {
+    const allocator = std.testing.allocator;
+
+    const slider_h = try nimbus.Slider.create(allocator, .horizontal, 0, 50, 100);
+    defer slider_h.component.vtable.destroy(&slider_h.component, allocator);
+    const slider_v = try nimbus.Slider.create(allocator, .vertical, 0, 50, 100);
+    defer slider_v.component.vtable.destroy(&slider_v.component, allocator);
+    const scrollbar_h = try nimbus.ScrollBar.create(allocator, .horizontal, 0, 25, 100);
+    defer scrollbar_h.component.vtable.destroy(&scrollbar_h.component, allocator);
+    const scrollbar_v = try nimbus.ScrollBar.create(allocator, .vertical, 0, 25, 100);
+    defer scrollbar_v.component.vtable.destroy(&scrollbar_v.component, allocator);
+
+    try expectSizeBitEqual(.{ .width = 32, .height = 20 }, nimbus.laf.metal.metal_slider_look.measureMinSize(
+        &slider_h.component,
+        &nimbus.laf.metal.metal_palette,
+    ));
+    try expectSizeBitEqual(.{ .width = 20, .height = 32 }, nimbus.laf.metal.metal_slider_look.measureMinSize(
+        &slider_v.component,
+        &nimbus.laf.metal.metal_palette,
+    ));
+    try expectSizeBitEqual(.{ .width = 40, .height = 14 }, nimbus.laf.metal.metal_scrollbar_look.measureMinSize(
+        &scrollbar_h.component,
+        &nimbus.laf.metal.metal_palette,
+    ));
+    try expectSizeBitEqual(.{ .width = 14, .height = 40 }, nimbus.laf.metal.metal_scrollbar_look.measureMinSize(
+        &scrollbar_v.component,
+        &nimbus.laf.metal.metal_palette,
+    ));
+}
+
 test "Metal table reaches ComboBox popup detached root" {
     const allocator = std.testing.allocator;
     var text_font = try initTestTextFont();
@@ -516,6 +546,33 @@ test "Metal table reaches ComboBox popup detached root" {
     try std.testing.expect(radio.component.ui.vtable == &nimbus.laf.metal.metal_radio_look);
     try std.testing.expect(combo.component.ui.vtable == &nimbus.laf.metal.metal_combobox_look);
     try std.testing.expect(combo.popup_root.ui.vtable == &nimbus.laf.metal.metal_combobox_popup_look);
+}
+
+test "Metal table reaches range widgets and ScrollPane bars" {
+    const allocator = std.testing.allocator;
+
+    const root = try nimbus.Container.create(allocator);
+    defer root.component.vtable.destroy(&root.component, allocator);
+    root.setLayout(nimbus.BoxLayout.vertical());
+
+    const slider = try nimbus.Slider.create(allocator, .horizontal, 0, 50, 100);
+    try root.add(&slider.component);
+    const scrollbar = try nimbus.ScrollBar.create(allocator, .vertical, 0, 20, 100);
+    try root.add(&scrollbar.component);
+
+    const view = try nimbus.Panel.create(allocator);
+    view.asComponent().setMinSize(.{ .width = 300, .height = 240 });
+    const sp = try nimbus.ScrollPane.create(allocator, view.asComponent());
+    sp.setHorizontalPolicy(.always);
+    sp.setVerticalPolicy(.always);
+    try root.add(sp.asComponent());
+
+    nimbus.laf.applyLook(&root.component, nimbus.laf.metal.metalTable());
+
+    try std.testing.expect(slider.component.ui.vtable == &nimbus.laf.metal.metal_slider_look);
+    try std.testing.expect(scrollbar.component.ui.vtable == &nimbus.laf.metal.metal_scrollbar_look);
+    try std.testing.expect(sp.hbar.component.ui.vtable == &nimbus.laf.metal.metal_scrollbar_look);
+    try std.testing.expect(sp.vbar.component.ui.vtable == &nimbus.laf.metal.metal_scrollbar_look);
 }
 
 test "paintAt dispatches Look paint, children, then paintOver" {
