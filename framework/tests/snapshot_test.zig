@@ -135,6 +135,17 @@ test "snapshot: text_area_in_border" {
     try runScene(scenes.text_area_in_border);
 }
 
+test "snapshot: metal_text_field" {
+    try runScene(scenes.metal_text_field);
+}
+
+test "snapshot: metal_text_field_focused" {
+    try runScene(scenes.metal_text_field_focused);
+}
+
+test "snapshot: metal_text_area" {
+    try runScene(scenes.metal_text_area);
+}
 test "snapshot: list_selection" {
     try runScene(scenes.list_selection);
 }

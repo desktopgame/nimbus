@@ -846,6 +846,84 @@ test "Metal TabbedPane tab geometry matches hit testing" {
     }
 }
 
+test "Metal text widgets measureMinSize without GPU device" {
+    const allocator = std.testing.allocator;
+    const app = try newApp();
+    defer app.deinit();
+    const text_font = awt.Graphics.TextFont{ .face = app.default_font, .pixel_size = 14 };
+
+    const flat = try nimbus.TextField.create(allocator, app, text_font, nimbus.Theme.default.text, "flat");
+    defer flat.component.vtable.destroy(&flat.component, allocator);
+    const metal = try nimbus.TextField.create(allocator, app, text_font, nimbus.Theme.default.text, "metal");
+    defer metal.component.vtable.destroy(&metal.component, allocator);
+
+    try expectSizeBitEqual(flat.component.min_size, nimbus.laf.metal.metal_textfield_look.measureMinSize(
+        &metal.component,
+        &nimbus.laf.metal.metal_palette,
+    ));
+    nimbus.laf.applyLook(&metal.component, nimbus.laf.metal.metalTable());
+    try expectSizeBitEqual(flat.component.min_size, metal.component.min_size);
+
+    try flat.setText("updated text");
+    try metal.setText("updated text");
+    try expectSizeBitEqual(flat.component.min_size, metal.component.min_size);
+
+    const area = try nimbus.TextArea.create(allocator, app, text_font, nimbus.Theme.default.text, "one\ntwo");
+    defer area.component.vtable.destroy(&area.component, allocator);
+    const area_min = area.component.min_size;
+    nimbus.laf.applyLook(&area.component, nimbus.laf.metal.metalTable());
+    try expectSizeBitEqual(area_min, nimbus.laf.metal.metal_textarea_look.measureMinSize(
+        &area.component,
+        &nimbus.laf.metal.metal_palette,
+    ));
+}
+
+test "Metal table reaches text widgets but not Label" {
+    const allocator = std.testing.allocator;
+    const app = try newApp();
+    defer app.deinit();
+    const text_font = awt.Graphics.TextFont{ .face = app.default_font, .pixel_size = 14 };
+
+    const root = try nimbus.Container.create(allocator);
+    defer root.component.vtable.destroy(&root.component, allocator);
+    root.setLayout(nimbus.BoxLayout.vertical());
+
+    const field = try nimbus.TextField.create(allocator, app, text_font, nimbus.Theme.default.text, "field");
+    try root.add(&field.component);
+    const area = try nimbus.TextArea.create(allocator, app, text_font, nimbus.Theme.default.text, "area");
+    try root.add(&area.component);
+    const label = try nimbus.Label.create(allocator, "label", text_font, nimbus.Theme.default.text);
+    try root.add(&label.component);
+
+    nimbus.laf.applyLook(&root.component, nimbus.laf.metal.metalTable());
+
+    try std.testing.expect(field.component.ui.vtable == &nimbus.laf.metal.metal_textfield_look);
+    try std.testing.expect(area.component.ui.vtable == &nimbus.laf.metal.metal_textarea_look);
+    try std.testing.expect(label.component.ui.vtable == &nimbus.Label.look_vtable);
+}
+
+test "TextArea reflow stays independent of Metal vtable" {
+    const allocator = std.testing.allocator;
+    const app = try newApp();
+    defer app.deinit();
+    const text_font = awt.Graphics.TextFont{ .face = app.default_font, .pixel_size = 14 };
+
+    const flat = try nimbus.TextArea.create(allocator, app, text_font, nimbus.Theme.default.text, "initial");
+    defer flat.component.vtable.destroy(&flat.component, allocator);
+    const metal = try nimbus.TextArea.create(allocator, app, text_font, nimbus.Theme.default.text, "initial");
+    defer metal.component.vtable.destroy(&metal.component, allocator);
+    nimbus.laf.applyLook(&metal.component, nimbus.laf.metal.metalTable());
+
+    flat.component.setBounds(.{ .x = 0, .y = 0, .width = 96, .height = 40 });
+    metal.component.setBounds(.{ .x = 0, .y = 0, .width = 96, .height = 40 });
+    try flat.setText("alpha beta gamma delta epsilon");
+    try metal.setText("alpha beta gamma delta epsilon");
+    try expectSizeBitEqual(flat.component.min_size, metal.component.min_size);
+
+    flat.setLineWrap(true);
+    metal.setLineWrap(true);
+    try expectSizeBitEqual(flat.component.min_size, metal.component.min_size);
+}
 test "Metal table reaches ComboBox popup detached root" {
     const allocator = std.testing.allocator;
     var text_font = try initTestTextFont();

@@ -123,6 +123,21 @@ fn textArea(
     return ta;
 }
 
+fn textField(
+    ctx: PaintContext,
+    app: *nimbus.Application,
+    text: []const u8,
+) !*nimbus.TextField {
+    const tf = try nimbus.TextField.create(
+        ctx.allocator,
+        app,
+        .{ .face = ctx.font, .pixel_size = 14 },
+        nimbus.Theme.default.text,
+        text,
+    );
+    tf.background = nimbus.Theme.default.surface_input;
+    return tf;
+}
 /// Build a root Container the size of the render target, run a layout
 /// pass, paint, then free. All scenes go through this so they don't
 /// re-implement the boilerplate.
@@ -910,6 +925,61 @@ const TextCell = struct {
     }
 };
 
+pub const metal_text_field = Scene{
+    .name = "metal_text_field",
+    .width = 280,
+    .height = 80,
+    .paint = paintMetalTextField,
+};
+
+pub const metal_text_field_focused = Scene{
+    .name = "metal_text_field_focused",
+    .width = 280,
+    .height = 80,
+    .paint = paintMetalTextFieldFocused,
+};
+
+pub const metal_text_area = Scene{
+    .name = "metal_text_area",
+    .width = 280,
+    .height = 130,
+    .paint = paintMetalTextArea,
+};
+
+fn paintMetalTextField(ctx: PaintContext) anyerror!void {
+    try paintMetalTextFieldWithFocus(ctx, false);
+}
+
+fn paintMetalTextFieldFocused(ctx: PaintContext) anyerror!void {
+    try paintMetalTextFieldWithFocus(ctx, true);
+}
+
+fn paintMetalTextFieldWithFocus(ctx: PaintContext, focused: bool) anyerror!void {
+    var app = SceneApp.init(ctx);
+    defer app.deinit();
+
+    const field = try textField(ctx, &app.app, "Metal field");
+    defer field.component.vtable.destroy(&field.component, ctx.allocator);
+    field.has_focus = focused;
+    field.component.setBounds(.{ .x = 24, .y = 24, .width = 190, .height = field.component.min_size.height });
+    nimbus.laf.applyLook(&field.component, nimbus.laf.metal.metalTable());
+    field.component.paintAt(ctx.g);
+}
+
+fn paintMetalTextArea(ctx: PaintContext) anyerror!void {
+    var app = SceneApp.init(ctx);
+    defer app.deinit();
+
+    const area = try textArea(ctx, &app.app,
+        \\Metal TextArea.
+        \\Well only; no frame.
+    );
+    defer area.component.vtable.destroy(&area.component, ctx.allocator);
+    area.has_focus = true;
+    area.component.setBounds(.{ .x = 24, .y = 20, .width = 210, .height = 78 });
+    nimbus.laf.applyLook(&area.component, nimbus.laf.metal.metalTable());
+    area.component.paintAt(ctx.g);
+}
 pub const list_selection = Scene{
     .name = "list_selection",
     .width = 260,

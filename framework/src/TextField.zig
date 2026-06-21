@@ -216,6 +216,10 @@ fn applyMetrics(self: *TextField) void {
 
 fn lookMeasureMinSize(self: *Component, _: *anyopaque) Component.Size {
     const tf: *TextField = @fieldParentPtr("component", self);
+    return measureMinSizeValue(tf);
+}
+
+pub fn measureMinSizeValue(tf: *TextField) Component.Size {
     // setPixelSize MUST come first  Eboth metrics() and glyphAdvance read
     // freetype state that is only valid for the most recently-set size.
     tf.font.face.setPixelSize(tf.font.pixel_size);
@@ -294,6 +298,12 @@ fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
     g.fillRect(.{ .x = 0, .y = sz.height - BORDER_WIDTH, .width = sz.width, .height = BORDER_WIDTH });
     g.fillRect(.{ .x = 0, .y = 0, .width = BORDER_WIDTH, .height = sz.height });
     g.fillRect(.{ .x = sz.width - BORDER_WIDTH, .y = 0, .width = BORDER_WIDTH, .height = sz.height });
+
+    tf.paintContent(self, g);
+}
+
+pub fn paintContent(tf: *TextField, self: *Component, g: *awt.Graphics) void {
+    const sz = self.size;
 
     // Keep scroll_x consistent with the caret now that the width is known
     // (layout runs before paint). This is the authoritative recompute;

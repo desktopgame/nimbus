@@ -556,6 +556,10 @@ fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
     g.setColor(ta.background);
     g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = sz.height });
 
+    ta.paintContent(self, g);
+}
+
+pub fn paintContent(ta: *TextArea, self: *Component, g: *awt.Graphics) void {
     ta.font.face.setPixelSize(ta.font.pixel_size);
     const line_h = ta.font.face.metrics().line_height;
     const sel_start = ta.selectionStart();

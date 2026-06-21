@@ -13,6 +13,8 @@ const Slider = @import("../Slider.zig");
 const SplitPane = @import("../SplitPane.zig");
 const Table = @import("../Table.zig");
 const TabbedPane = @import("../TabbedPane.zig");
+const TextArea = @import("../TextArea.zig");
+const TextField = @import("../TextField.zig");
 const laf = @import("../laf.zig");
 
 const Color = awt.Graphics.Color;
@@ -182,6 +184,18 @@ pub const metal_tabbedpane_look = Component.LookVTable{
     .measureMinSize = measureZeroMinSize,
 };
 
+pub const metal_textfield_look = Component.LookVTable{
+    .paint = paintTextField,
+    .paintOver = paintOver,
+    .measureMinSize = measureTextFieldMinSize,
+};
+
+pub const metal_textarea_look = Component.LookVTable{
+    .paint = paintTextArea,
+    .paintOver = paintOver,
+    .measureMinSize = measureOwnMinSize,
+};
+
 const metal_table = [_]laf.RemapEntry{
     .{
         .from = &Button.look_vtable,
@@ -238,6 +252,14 @@ const metal_table = [_]laf.RemapEntry{
     .{
         .from = &TabbedPane.look_vtable,
         .to = .{ .vtable = &metal_tabbedpane_look, .ctx = &metal_palette },
+    },
+    .{
+        .from = &TextField.look_vtable,
+        .to = .{ .vtable = &metal_textfield_look, .ctx = &metal_palette },
+    },
+    .{
+        .from = &TextArea.look_vtable,
+        .to = .{ .vtable = &metal_textarea_look, .ctx = &metal_palette },
     },
 };
 
@@ -298,6 +320,35 @@ fn paint(self: *Component, ctx: *anyopaque, g: *awt.Graphics) void {
 }
 
 fn paintOver(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
+
+fn paintTextField(self: *Component, ctx: *anyopaque, g: *awt.Graphics) void {
+    const tf: *TextField = @fieldParentPtr("component", self);
+    const palette: *MetalPalette = @ptrCast(@alignCast(ctx));
+    const sz = self.size;
+
+    g.setColor(palette.well_bg);
+    g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = sz.height });
+    drawRectBorder(g, 0, 0, sz.width, sz.height, if (tf.has_focus) palette.focus_ring else palette.border);
+    drawInsetBevel(g, 0, 0, sz.width, sz.height, palette);
+
+    tf.paintContent(self, g);
+}
+
+fn measureTextFieldMinSize(self: *Component, _: *anyopaque) Component.Size {
+    const tf: *TextField = @fieldParentPtr("component", self);
+    return TextField.measureMinSizeValue(tf);
+}
+
+fn paintTextArea(self: *Component, ctx: *anyopaque, g: *awt.Graphics) void {
+    const ta: *TextArea = @fieldParentPtr("component", self);
+    const palette: *MetalPalette = @ptrCast(@alignCast(ctx));
+    const sz = self.size;
+
+    g.setColor(palette.well_bg);
+    g.fillRect(.{ .x = 0, .y = 0, .width = sz.width, .height = sz.height });
+
+    ta.paintContent(self, g);
+}
 
 fn paintCheckBox(self: *Component, ctx: *anyopaque, g: *awt.Graphics) void {
     const cb: *CheckBox = @fieldParentPtr("component", self);
