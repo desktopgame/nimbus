@@ -63,16 +63,37 @@ test "textwrap never splits combining ZWJ or regional indicator clusters" {
     var f = try initTestFont();
     defer f.deinit();
 
-    const combining = "a" ++ "e\u{0301}" ++ "b";
-    try std.testing.expectEqual("a".len, nimbus.awt.textwrap.wrapSegment(f, combining, 0, combining.len, midWidth(f, combining, "a".len, "ae".len)));
+    const combining_cases = [_]struct { text: []const u8, partial: usize, full: usize }{
+        .{ .text = "a" ++ "e\u{0301}" ++ "b", .partial = "ae".len, .full = "ae\u{0301}".len },
+        .{ .text = "a" ++ "e\u{20DD}" ++ "b", .partial = "ae".len, .full = "ae\u{20DD}".len },
+        .{ .text = "a" ++ "\u{0915}\u{093E}" ++ "b", .partial = "a\u{0915}".len, .full = "a\u{0915}\u{093E}".len },
+        .{ .text = "a" ++ "\u{0915}\u{093F}" ++ "b", .partial = "a\u{0915}".len, .full = "a\u{0915}\u{093F}".len },
+    };
+    var covered_combining = false;
+    for (combining_cases) |case| {
+        if (widthOf(f, case.text, case.partial) < widthOf(f, case.text, case.full)) {
+            try std.testing.expectEqual("a".len, nimbus.awt.textwrap.wrapSegment(f, case.text, 0, case.text.len, midWidth(f, case.text, case.partial, case.full)));
+            covered_combining = true;
+            break;
+        }
+    }
+    try std.testing.expect(covered_combining);
 
     const family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}";
     const zwj = "a" ++ family ++ "b";
-    try std.testing.expectEqual("a".len + family.len, nimbus.awt.textwrap.wrapSegment(f, zwj, 0, zwj.len, midWidth(f, zwj, "a".len + family.len, zwj.len)));
+    try std.testing.expectEqual("a".len, nimbus.awt.textwrap.wrapSegment(f, zwj, 0, zwj.len, midWidth(f, zwj, "a".len + "\u{1F468}".len, "a".len + family.len)));
 
     const flag = "\u{1F1EF}\u{1F1F5}";
     const flags = "a" ++ flag ++ "b";
-    try std.testing.expectEqual("a".len + flag.len, nimbus.awt.textwrap.wrapSegment(f, flags, 0, flags.len, midWidth(f, flags, "a".len + flag.len, flags.len)));
+    try std.testing.expectEqual("a".len, nimbus.awt.textwrap.wrapSegment(f, flags, 0, flags.len, midWidth(f, flags, "a".len + "\u{1F1EF}".len, "a".len + flag.len)));
+}
+
+test "textwrap forced break still advances at least one cluster" {
+    var f = try initTestFont();
+    defer f.deinit();
+
+    const s = "\u{65E5}\u{672C}";
+    try std.testing.expectEqual("\u{65E5}".len, nimbus.awt.textwrap.wrapSegment(f, s, 0, s.len, 1.0));
 }
 
 test "textwrap oidashi avoids line-start closing punctuation" {
