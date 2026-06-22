@@ -19,4 +19,6 @@ freetype-*/subprojects
 zigimg-*/build.zig
 zigimg-*/build.zig.zon
 
+zg-*/zg/data/unicode/*.pdf
+
 **/.gitattributes
