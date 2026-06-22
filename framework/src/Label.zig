@@ -9,6 +9,11 @@ const Label = @This();
 
 const ICON_TEXT_GAP: f32 = 6;
 
+const VisualLine = struct {
+    start: usize,
+    end: usize,
+};
+
 component: Component,
 text: []const u8, // Label owns (allocator.dupe'd)
 font: awt.Graphics.TextFont,
@@ -190,33 +195,18 @@ fn sizeQueryMinHeightForWidth(self: *const Component, w: f32) f32 {
 }
 
 fn wrapTextSize(self: *const Label, wrap_w: f32) Component.Size {
-    self.font.face.setPixelSize(self.font.pixel_size);
+    var lines: std.ArrayList(VisualLine) = .empty;
+    defer lines.deinit(self.allocator);
+    self.computeVisualLines(self.allocator, wrap_w, &lines) catch return .{ .width = 0, .height = 0 };
+
     const line_h = self.font.face.metrics().line_height;
     var max_w: f32 = 0;
-    var lines: usize = 0;
-
-    var ls: usize = 0;
-    while (true) {
-        const le = findNewline(self.text, ls);
-        if (ls == le) {
-            lines += 1;
-        } else {
-            var seg = ls;
-            while (seg < le) {
-                const seg_end = self.nextWrappedSegment(seg, le, wrap_w);
-                lines += 1;
-                const w = self.font.face.advanceOfRange(self.text, seg, seg_end);
-                if (w > max_w) max_w = w;
-                if (seg_end >= le) break;
-                seg = seg_end;
-            }
-        }
-
-        if (le >= self.text.len) break;
-        ls = le + 1;
+    for (lines.items) |line| {
+        const w = self.font.face.advanceOfRange(self.text, line.start, line.end);
+        if (w > max_w) max_w = w;
     }
 
-    return .{ .width = max_w, .height = @as(f32, @floatFromInt(lines)) * line_h };
+    return .{ .width = max_w, .height = @as(f32, @floatFromInt(lines.items.len)) * line_h };
 }
 
 fn findNewline(text: []const u8, from: usize) usize {
@@ -231,24 +221,24 @@ fn nextWrappedSegment(self: *const Label, start: usize, end: usize, wrap_w: f32)
     return awt.textwrap.wrapSegment(self.font.face, self.text, start, end, wrap_w);
 }
 
-fn paintWrapped(self: *Label, g: *awt.Graphics, wrap_w: f32) void {
+fn computeVisualLines(
+    self: *const Label,
+    allocator: std.mem.Allocator,
+    wrap_w: f32,
+    out: *std.ArrayList(VisualLine),
+) !void {
     self.font.face.setPixelSize(self.font.pixel_size);
-    const line_h = self.font.face.metrics().line_height;
-    g.setFont(self.font);
-    g.setColor(self.color);
 
-    var y: f32 = 0;
     var ls: usize = 0;
     while (true) {
         const le = findNewline(self.text, ls);
         if (ls == le) {
-            y += line_h;
+            try out.append(allocator, .{ .start = ls, .end = le });
         } else {
             var seg = ls;
             while (seg < le) {
                 const seg_end = self.nextWrappedSegment(seg, le, wrap_w);
-                g.drawString(self.text[seg..seg_end], 0, y);
-                y += line_h;
+                try out.append(allocator, .{ .start = seg, .end = seg_end });
                 if (seg_end >= le) break;
                 seg = seg_end;
             }
@@ -256,6 +246,29 @@ fn paintWrapped(self: *Label, g: *awt.Graphics, wrap_w: f32) void {
 
         if (le >= self.text.len) break;
         ls = le + 1;
+    }
+}
+
+pub fn wrappedLineCountForTest(self: *const Label, allocator: std.mem.Allocator, wrap_w: f32) !usize {
+    var lines: std.ArrayList(VisualLine) = .empty;
+    defer lines.deinit(allocator);
+    try self.computeVisualLines(allocator, wrap_w, &lines);
+    return lines.items.len;
+}
+
+fn paintWrapped(self: *Label, g: *awt.Graphics, wrap_w: f32) void {
+    var lines: std.ArrayList(VisualLine) = .empty;
+    defer lines.deinit(self.allocator);
+    self.computeVisualLines(self.allocator, wrap_w, &lines) catch return;
+
+    const line_h = self.font.face.metrics().line_height;
+    g.setFont(self.font);
+    g.setColor(self.color);
+
+    for (lines.items, 0..) |line, i| {
+        if (line.start == line.end) continue;
+        const y = @as(f32, @floatFromInt(i)) * line_h;
+        g.drawString(self.text[line.start..line.end], 0, y);
     }
 }
 

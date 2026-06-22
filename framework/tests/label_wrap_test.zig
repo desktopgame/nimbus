@@ -77,6 +77,24 @@ test "Label line_wrap reports expected visual line count for known width" {
     try expectApprox(line_h * 3, h);
 }
 
+test "Label wrapped line computation ignores ambient font pixel-size pollution" {
+    var font = try initTestFont();
+    defer deinitTestFont(&font);
+
+    const text = "alpha beta beta";
+    const label = try nimbus.Label.create(std.testing.allocator, text, font, nimbus.Theme.default.text);
+    defer label.component.vtable.destroy(&label.component, std.testing.allocator);
+    label.setLineWrap(true);
+
+    const wrap_w = midWidth(font, text, "alpha ".len, "alpha b".len);
+    const expected = try label.wrappedLineCountForTest(std.testing.allocator, wrap_w);
+    try std.testing.expectEqual(@as(usize, 3), expected);
+
+    font.face.setPixelSize(font.pixel_size * 2);
+    const polluted = try label.wrappedLineCountForTest(std.testing.allocator, wrap_w);
+    try std.testing.expectEqual(expected, polluted);
+}
+
 test "Label no-wrap default keeps single-line measurement" {
     var font = try initTestFont();
     defer deinitTestFont(&font);
