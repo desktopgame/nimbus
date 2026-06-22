@@ -23,43 +23,71 @@ CLAUDE.md の方針が上書きする。
 ---
 
 ## #2 テキスト折り返し・省略
-- 状態: 棚上げ
+- 状態: 一部 unblock（折り返し Label が着手可能）
 - 優先度: 中
-- 影響範囲: Label / Button / TextArea、テキストレイアウト
-- 更新日: 2026-06-02
-- 依存: なし
+- 影響範囲: Label / TextArea、テキストレイアウト
+- 更新日: 2026-06-22
+- 依存: zg（Words / Graphemes・vendor/zg-v0.16.2・feat/zg-graphemes で配線済み）
 
 ### 何
 plan.md #2/#3/#4（文字単位 / 単語境界 / CJK 禁則の折り返し）・#5（省略 `Long fil...`）・#29（TextArea の
-word wrap）。Label/Button は v1 で一行のみ許容のため消費先が無く保留。省略と TextArea の word wrap は
-「確実にいずれ必要」。line break iterator が前提。
+word wrap）。省略と TextArea の word wrap は「確実にいずれ必要」。
+
+棚上げ理由が 2 つとも解消した。
+- 消費先が出現: メッセージ / 確認ダイアログの長文折り返し（ユーザー要望 2026-06-22）で、
+  Label に「一行のみ許容＝消費先なし」だった保留が解けた。折り返し Label が着手可能。
+- 前提だった line break iterator は zg で足りる: フル UAX#14 は不要で、
+  Words（単語境界）＋ Graphemes（クラスタ非分割）＋ 禁則の小テーブルで GUI 折り返しは賄える。
+
+影響範囲から Button を外した（ユーザー判断 2026-06-22＝ボタンに長文を入れるべきでない）。Label と TextArea に絞る。
+
+### 実装メモ
+測定は既存プリミティブを流用（`Font.glyphAdvance` / `Font.measureString` が per-codepoint advance を
+FreeType から積算。Noto Sans JP プロポーショナル・カーニング/シェイピング無し）。
+TextArea には既に折り返し機構（`reflowAt` / `wrapPoint` / `VisualLine` / `setLineWrap`）があるが、
+現状の `wrapPoint` は貪欲・コードポイント単位で単語の途中で割る（コメント "Greedy character wrap"）。
+これを共有ヘルパへ上げ、Words + Graphemes + 禁則で底上げすれば、TextArea の折り返しと新規の折り返し Label が同時に良くなる。
+DisplayWidth は使わない（プロポーショナルでは実 advance が唯一正。East-Asian-wide=2 列はモノスペース端末の話）。
 
 ---
 
 ## #3 書記素クラスタ単位の編集・カーソル移動
-- 状態: 棚上げ
+- 状態: 着手可能（unblock 済み）
 - 優先度: 中
 - 影響範囲: TextField / TextArea、テキストモデル
-- 更新日: 2026-06-02
-- 依存: なし
+- 更新日: 2026-06-22
+- 依存: zg（Graphemes・vendor/zg-v0.16.2・feat/zg-graphemes で配線済み）
 
 ### 何
 plan.md #11（Backspace/Delete）・#12（矢印移動）を codepoint 単位から grapheme cluster 単位へ。
 CLAUDE.md「書記素クラスタ」のとおり v1 は codepoint で、**バイト位置に直接依存しない実装**にしてあるので
-差し替え可能な前提。ziglyph メンテ停止等の事情は [[project-emoji-grapheme-deferred]] 参照。
+差し替え可能な前提。
+
+棚上げ理由（ziglyph メンテ停止・[[project-emoji-grapheme-deferred]]）が解消した。後継の zg
+（codeberg.org/atman/zg・Ziglyph 後継）を vendored し、feat/zg-graphemes で Graphemes を配線済み。
+「バイト位置に直接依存しない実装」という前提は維持。ユーザーが次に着手したい意向（2026-06-22）。
+
+### 実装メモ
+中央化済みの境界ヘルパ（TextField の `prev/nextCodepointBoundary`・TextArea の `prev/nextBoundary`）を
+`Graphemes.iterator` / `reverseIterator` へ差し替える（局所変更）。backspace/delete もクラスタ単位へ。
+ただし caret x のドリフト（結合マークが per-codepoint advance でフル幅算入されてズレる。`glyphXAtByte`）は
+境界差し替えだけでは直らず、クラスタ単位の advance 測定が別途要る。
 
 ---
 
 ## #4 単語境界・行頭行末のナビゲーション
-- 状態: 棚上げ
+- 状態: 一部 unblock（word break が供給可能に）
 - 優先度: 低
 - 影響範囲: TextField / TextArea
-- 更新日: 2026-06-02
-- 依存: なし
+- 更新日: 2026-06-22
+- 依存: zg（Words・vendor/zg-v0.16.2・feat/zg-graphemes で配線済み）
 
 ### 何
 plan.md #13（Home/End）・#14（Ctrl+矢印 word jump）・#18（ダブルクリックで単語選択）。#14/#18 は
-word break 判定（空白判定だけの簡易版でも可）が前提。Home/End は安価だが優先度低。
+word break 判定が前提で、ともに現状未実装（net-new）。Home/End は zg 非依存で安価だが優先度低。
+
+#14/#18 の word break は zg の Words（UAX#29 単語境界）で供給可能になった。
+空白判定だけの簡易版に頼らず本物の境界が使える。
 
 ---
 
