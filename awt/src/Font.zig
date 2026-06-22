@@ -89,6 +89,55 @@ pub fn glyphAdvance(self: Font, codepoint: u32) f32 {
     return c.nmGetGlyphAdvance(self.handle, codepoint);
 }
 
+/// Sum glyph advances for the UTF-8 byte range [start, end). This preserves
+/// the current per-codepoint measurement model while centralizing the seam for
+/// future shaping-backed measurement.
+pub fn advanceOfRange(self: Font, bytes: []const u8, start: usize, end: usize) f32 {
+    const a = @min(start, bytes.len);
+    const b = @min(@max(end, a), bytes.len);
+
+    var x: f32 = 0;
+    var i = a;
+    while (i < b) {
+        const byte_len = std.unicode.utf8ByteSequenceLength(bytes[i]) catch {
+            i += 1;
+            continue;
+        };
+        if (i + byte_len > b) break;
+        const cp = std.unicode.utf8Decode(bytes[i .. i + byte_len]) catch {
+            i += byte_len;
+            continue;
+        };
+        x += self.glyphAdvance(cp);
+        i += byte_len;
+    }
+    return x;
+}
+
+/// Return the byte offset selected by x using the existing half-advance split
+/// behavior. The returned offset is a UTF-8 codepoint boundary; callers that
+/// need grapheme-cluster carets should snap it separately.
+pub fn byteAtX(self: Font, bytes: []const u8, x: f32) usize {
+    var cur_x: f32 = 0;
+    var i: usize = 0;
+    while (i < bytes.len) {
+        const byte_len = std.unicode.utf8ByteSequenceLength(bytes[i]) catch {
+            i += 1;
+            continue;
+        };
+        if (i + byte_len > bytes.len) break;
+        const cp = std.unicode.utf8Decode(bytes[i .. i + byte_len]) catch {
+            i += byte_len;
+            continue;
+        };
+        const adv = self.glyphAdvance(cp);
+        if (x < cur_x + adv * 0.5) return i;
+        cur_x += adv;
+        i += byte_len;
+    }
+    return bytes.len;
+}
+
 pub fn hasGlyph(self: Font, codepoint: u32) bool {
     return c.nmFontHasGlyph(self.handle, codepoint);
 }

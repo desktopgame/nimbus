@@ -24,6 +24,7 @@ pub const Graphics = @import("Graphics.zig");
 pub const Event = @import("Event.zig");
 pub const EventQueue = @import("EventQueue.zig");
 pub const snapshot = @import("snapshot.zig");
+pub const grapheme = @import("grapheme.zig");
 
 /// Wake the UI thread blocked in `waitEvents`. Safe from any thread.
 pub fn postEmptyEvent() void {

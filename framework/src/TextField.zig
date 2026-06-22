@@ -1,6 +1,6 @@
 //! TextField widget. See `framework/doc/textfield.md`.
 //!
-//! Single-line, LTR, codepoint-granularity editing. State machine:
+//! Single-line, LTR, grapheme-cluster-granularity editing. State machine:
 //!   - selection = [min(caret,mark), max(caret,mark))
 //!   - char input replaces selection (or inserts at caret if empty)
 //!   - key input: arrows / Home / End / Backspace / Del / Ctrl+A/C/X/V
@@ -491,15 +491,11 @@ fn handleKey(tf: *TextField, ev: *Component.Event, k: awt.Event.KeyEvent) void {
 
     switch (k.code) {
         .arrow_left => {
-            const new_caret = prevCodepointBoundary(tf.text.items, tf.caret_byte);
-            tf.caret_byte = new_caret;
-            if (!shift) tf.mark_byte = tf.caret_byte;
+            tf.moveCaretLeft(shift);
             tf.afterEdit(ev, false);
         },
         .arrow_right => {
-            const new_caret = nextCodepointBoundary(tf.text.items, tf.caret_byte);
-            tf.caret_byte = new_caret;
-            if (!shift) tf.mark_byte = tf.caret_byte;
+            tf.moveCaretRight(shift);
             tf.afterEdit(ev, false);
         },
         .home => {
@@ -513,29 +509,11 @@ fn handleKey(tf: *TextField, ev: *Component.Event, k: awt.Event.KeyEvent) void {
             tf.afterEdit(ev, false);
         },
         .backspace => {
-            var changed = false;
-            if (tf.hasSelection()) {
-                tf.deleteSelection() catch {};
-                changed = true;
-            } else if (tf.caret_byte > 0) {
-                const prev = prevCodepointBoundary(tf.text.items, tf.caret_byte);
-                tf.text.replaceRange(tf.allocator, prev, tf.caret_byte - prev, &.{}) catch {};
-                tf.caret_byte = prev;
-                tf.mark_byte = prev;
-                changed = true;
-            }
+            const changed = tf.deleteBackwardGrapheme() catch false;
             tf.afterEdit(ev, changed);
         },
         .delete => {
-            var changed = false;
-            if (tf.hasSelection()) {
-                tf.deleteSelection() catch {};
-                changed = true;
-            } else if (tf.caret_byte < tf.text.items.len) {
-                const next = nextCodepointBoundary(tf.text.items, tf.caret_byte);
-                tf.text.replaceRange(tf.allocator, tf.caret_byte, next - tf.caret_byte, &.{}) catch {};
-                changed = true;
-            }
+            const changed = tf.deleteForwardGrapheme() catch false;
             tf.afterEdit(ev, changed);
         },
         .a => if (ctrl) {
@@ -669,6 +647,43 @@ fn deleteSelection(self: *TextField) !void {
     self.mark_byte = start;
 }
 
+fn moveCaretLeft(self: *TextField, extend_selection: bool) void {
+    self.caret_byte = awt.grapheme.prevGraphemeBoundary(self.text.items, self.caret_byte);
+    if (!extend_selection) self.mark_byte = self.caret_byte;
+}
+
+fn moveCaretRight(self: *TextField, extend_selection: bool) void {
+    self.caret_byte = awt.grapheme.nextGraphemeBoundary(self.text.items, self.caret_byte);
+    if (!extend_selection) self.mark_byte = self.caret_byte;
+}
+
+fn deleteBackwardGrapheme(self: *TextField) !bool {
+    if (self.hasSelection()) {
+        try self.deleteSelection();
+        return true;
+    }
+    if (self.caret_byte == 0) return false;
+
+    const prev = awt.grapheme.prevGraphemeBoundary(self.text.items, self.caret_byte);
+    try self.text.replaceRange(self.allocator, prev, self.caret_byte - prev, &.{});
+    self.caret_byte = prev;
+    self.mark_byte = prev;
+    return true;
+}
+
+fn deleteForwardGrapheme(self: *TextField) !bool {
+    if (self.hasSelection()) {
+        try self.deleteSelection();
+        return true;
+    }
+    if (self.caret_byte >= self.text.items.len) return false;
+
+    const next = awt.grapheme.nextGraphemeBoundary(self.text.items, self.caret_byte);
+    try self.text.replaceRange(self.allocator, self.caret_byte, next - self.caret_byte, &.{});
+    self.mark_byte = self.caret_byte;
+    return true;
+}
+
 fn copyToClipboard(self: *TextField) void {
     if (!self.hasSelection()) return;
     // Need a sentinel-terminated copy for the C clipboard API.
@@ -714,27 +729,9 @@ fn parentWindow(self: *TextField) ?*@import("Window.zig") {
 /// position `x_local - PADDING_X + scroll_x` in text-start coordinates.
 fn hitTestByteAt(self: TextField, x_local: f32) usize {
     self.font.face.setPixelSize(self.font.pixel_size);
-    // Iterate in 0-based text-start coordinates; shift the click target by
-    // the scroll offset so it lines up with the on-screen glyph positions.
     const target = x_local - PADDING_X + self.scroll_x;
-    var cur_x: f32 = 0;
-    var i: usize = 0;
-    while (i < self.text.items.len) {
-        const byte_len = std.unicode.utf8ByteSequenceLength(self.text.items[i]) catch {
-            i += 1;
-            continue;
-        };
-        if (i + byte_len > self.text.items.len) break;
-        const cp = std.unicode.utf8Decode(self.text.items[i .. i + byte_len]) catch {
-            i += byte_len;
-            continue;
-        };
-        const adv = self.font.face.glyphAdvance(cp);
-        if (target < cur_x + adv * 0.5) return i;
-        cur_x += adv;
-        i += byte_len;
-    }
-    return self.text.items.len;
+    const byte = self.font.face.byteAtX(self.text.items, target);
+    return self.snapByteToGraphemeBoundary(byte);
 }
 
 /// Sum of advance widths for the UTF-8 bytes in `s`. Used to measure
@@ -742,22 +739,7 @@ fn hitTestByteAt(self: TextField, x_local: f32) usize {
 /// `xAtByte` adds.
 fn measureUtf8(self: TextField, s: []const u8) f32 {
     self.font.face.setPixelSize(self.font.pixel_size);
-    var x: f32 = 0;
-    var i: usize = 0;
-    while (i < s.len) {
-        const byte_len = std.unicode.utf8ByteSequenceLength(s[i]) catch {
-            i += 1;
-            continue;
-        };
-        if (i + byte_len > s.len) break;
-        const cp = std.unicode.utf8Decode(s[i .. i + byte_len]) catch {
-            i += byte_len;
-            continue;
-        };
-        x += self.font.face.glyphAdvance(cp);
-        i += byte_len;
-    }
-    return x;
+    return self.font.face.advanceOfRange(s, 0, s.len);
 }
 
 /// Return the x pixel offset of the left edge of the glyph starting at
@@ -767,68 +749,17 @@ fn measureUtf8(self: TextField, s: []const u8) f32 {
 /// add `PADDING_X` and subtract `scroll_x` to get an on-screen position.
 fn glyphXAtByte(self: TextField, byte_pos: usize) f32 {
     self.font.face.setPixelSize(self.font.pixel_size);
-    var x: f32 = 0;
-    var i: usize = 0;
-    while (i < byte_pos and i < self.text.items.len) {
-        const byte_len = std.unicode.utf8ByteSequenceLength(self.text.items[i]) catch {
-            i += 1;
-            continue;
-        };
-        if (i + byte_len > self.text.items.len) break;
-        const cp = std.unicode.utf8Decode(self.text.items[i .. i + byte_len]) catch {
-            i += byte_len;
-            continue;
-        };
-        x += self.font.face.glyphAdvance(cp);
-        i += byte_len;
-    }
-    return x;
+    return self.font.face.advanceOfRange(self.text.items, 0, byte_pos);
 }
 
-// ── UTF-8 codepoint boundary helpers (free funcs for testability) ────────
-
-/// Returns the byte index of the start of the previous codepoint.
-/// `from == 0` returns 0 (already at start).
-fn prevCodepointBoundary(buf: []const u8, from: usize) usize {
-    if (from == 0) return 0;
-    var i: usize = from - 1;
-    // Continuation bytes are 10xxxxxx (0x80..0xBF). Skip them.
-    while (i > 0 and (buf[i] & 0xC0) == 0x80) i -= 1;
-    return i;
+fn snapByteToGraphemeBoundary(self: TextField, byte_pos: usize) usize {
+    const clamped = @min(byte_pos, self.text.items.len);
+    const prev = awt.grapheme.prevGraphemeBoundary(self.text.items, clamped);
+    if (awt.grapheme.nextGraphemeBoundary(self.text.items, prev) == clamped) return clamped;
+    return prev;
 }
 
-/// Returns the byte index of the start of the next codepoint, or
-/// `buf.len` when `from` is at or past the end.
-fn nextCodepointBoundary(buf: []const u8, from: usize) usize {
-    if (from >= buf.len) return buf.len;
-    const len = std.unicode.utf8ByteSequenceLength(buf[from]) catch return from + 1;
-    return @min(from + len, buf.len);
-}
-
-// ── tests ────────────────────────────────────────────────────────────────
-
-test "prev/next codepoint boundary  EASCII" {
-    const s = "abc";
-    try std.testing.expectEqual(@as(usize, 0), prevCodepointBoundary(s, 1));
-    try std.testing.expectEqual(@as(usize, 1), prevCodepointBoundary(s, 2));
-    try std.testing.expectEqual(@as(usize, 1), nextCodepointBoundary(s, 0));
-    try std.testing.expectEqual(@as(usize, 2), nextCodepointBoundary(s, 1));
-    try std.testing.expectEqual(@as(usize, 3), nextCodepointBoundary(s, 2));
-    try std.testing.expectEqual(@as(usize, 3), nextCodepointBoundary(s, 3));
-}
-
-test "prev/next codepoint boundary  Emulti-byte" {
-    // "ぁE = 0xE3 0x81 0x82 (3 bytes), "ab" = 0x61 0x62
-    const s = "あab";
-    try std.testing.expectEqual(@as(usize, 3), nextCodepointBoundary(s, 0));
-    try std.testing.expectEqual(@as(usize, 4), nextCodepointBoundary(s, 3));
-    try std.testing.expectEqual(@as(usize, 5), nextCodepointBoundary(s, 4));
-    try std.testing.expectEqual(@as(usize, 0), prevCodepointBoundary(s, 3));
-    try std.testing.expectEqual(@as(usize, 3), prevCodepointBoundary(s, 4));
-    try std.testing.expectEqual(@as(usize, 4), prevCodepointBoundary(s, 5));
-}
-
-test "selection range  Ecaret < mark and caret > mark" {
+test "selection range - caret < mark and caret > mark" {
     var tf: TextField = undefined;
     tf.caret_byte = 2;
     tf.mark_byte = 5;
@@ -844,4 +775,79 @@ test "selection range  Ecaret < mark and caret > mark" {
     tf.caret_byte = 4;
     tf.mark_byte = 4;
     try std.testing.expect(!tf.hasSelection());
+}
+
+test "caret movement uses grapheme cluster boundaries" {
+    const accent = "e\u{0301}";
+    const thumbs = "\u{1F44D}\u{1F3FB}";
+    const s = "a" ++ accent ++ thumbs ++ "b";
+
+    var text: std.ArrayList(u8) = .empty;
+    defer text.deinit(std.testing.allocator);
+    try text.appendSlice(std.testing.allocator, s);
+
+    var tf: TextField = undefined;
+    tf.text = text;
+    tf.caret_byte = 0;
+    tf.mark_byte = 0;
+
+    tf.moveCaretRight(false);
+    try std.testing.expectEqual(@as(usize, 1), tf.caret_byte);
+    try std.testing.expectEqual(tf.caret_byte, tf.mark_byte);
+
+    tf.moveCaretRight(false);
+    try std.testing.expectEqual(@as(usize, 1 + accent.len), tf.caret_byte);
+
+    tf.moveCaretRight(false);
+    try std.testing.expectEqual(@as(usize, 1 + accent.len + thumbs.len), tf.caret_byte);
+
+    tf.moveCaretLeft(false);
+    try std.testing.expectEqual(@as(usize, 1 + accent.len), tf.caret_byte);
+
+    tf.moveCaretLeft(true);
+    try std.testing.expectEqual(@as(usize, 1), tf.caret_byte);
+    try std.testing.expectEqual(@as(usize, 1 + accent.len), tf.mark_byte);
+}
+
+test "backspace and delete remove whole grapheme clusters" {
+    const family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}";
+    const s = "a" ++ family ++ "b";
+
+    var text: std.ArrayList(u8) = .empty;
+    defer text.deinit(std.testing.allocator);
+    try text.appendSlice(std.testing.allocator, s);
+
+    var tf: TextField = undefined;
+    tf.allocator = std.testing.allocator;
+    tf.text = text;
+    tf.caret_byte = 1 + family.len;
+    tf.mark_byte = tf.caret_byte;
+
+    try std.testing.expect(try tf.deleteBackwardGrapheme());
+    try std.testing.expectEqualStrings("ab", tf.text.items);
+    try std.testing.expectEqual(@as(usize, 1), tf.caret_byte);
+    try std.testing.expectEqual(tf.caret_byte, tf.mark_byte);
+
+    try std.testing.expect(try tf.deleteForwardGrapheme());
+    try std.testing.expectEqualStrings("a", tf.text.items);
+    try std.testing.expectEqual(@as(usize, 1), tf.caret_byte);
+}
+
+test "hit-test byte results snap back to grapheme cluster boundaries" {
+    const thumbs = "\u{1F44D}\u{1F3FB}";
+    const s = "a" ++ thumbs ++ "b";
+    const cluster_start = "a".len;
+    const inside_cluster = cluster_start + "\u{1F44D}".len;
+    const cluster_end = "a".len + thumbs.len;
+
+    var text: std.ArrayList(u8) = .empty;
+    defer text.deinit(std.testing.allocator);
+    try text.appendSlice(std.testing.allocator, s);
+
+    var tf: TextField = undefined;
+    tf.text = text;
+
+    try std.testing.expectEqual(cluster_start, tf.snapByteToGraphemeBoundary(inside_cluster));
+    try std.testing.expectEqual(cluster_end, tf.snapByteToGraphemeBoundary(cluster_end));
+    try std.testing.expectEqual(s.len, tf.snapByteToGraphemeBoundary(s.len));
 }
