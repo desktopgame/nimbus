@@ -32,6 +32,11 @@
     // Once all dependencies are fetched, `zig build` no longer requires
     // internet connectivity.
     .dependencies = .{
+        // zg: vendored Unicode library (grapheme clusters, etc.). A `path`
+        // dependency keeps nimbus fully offline/vendored — no url, no hash, no
+        // network fetch. zg's build.zig runs UCD codegen and exposes module(s)
+        // such as "Graphemes" that we consume.
+        .zg = .{ .path = "vendor/zg-v0.16.2/zg" },
         // See `zig fetch --save <url>` for a command-line interface for adding dependencies.
         //.example = .{
         //    // When updating this field to a new URL, be sure to delete the corresponding

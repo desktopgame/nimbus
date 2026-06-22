@@ -14,6 +14,10 @@ pub fn build(b: *std.Build) void {
     // ── third-party: zigimg (pure-Zig image decoder, module-only) ─
     const zigimg_mod = third_party.buildZigimg(b, target, optimize);
 
+    // ── third-party: zg (vendored Unicode library) ──────────────
+    const zg_dep = b.dependency("zg", .{ .target = target, .optimize = optimize });
+    const graphemes_mod = zg_dep.module("Graphemes");
+
     // ── awt-c: C shim (internal only, not installed) ─────────────
     const awt_c_mod = b.createModule(.{
         .target = target,
@@ -126,6 +130,7 @@ pub fn build(b: *std.Build) void {
         .imports = &.{
             .{ .name = "c", .module = c_bindings },
             .{ .name = "zigimg", .module = zigimg_mod },
+            .{ .name = "Graphemes", .module = graphemes_mod },
         },
     });
     awt_mod.linkLibrary(awt_c_lib);
@@ -318,6 +323,17 @@ pub fn build(b: *std.Build) void {
     });
     const app_filer_smoke_test = b.addTest(.{ .root_module = app_filer_smoke_test_mod });
     test_step.dependOn(&b.addRunArtifact(app_filer_smoke_test).step);
+
+    const grapheme_smoke_test_mod = b.createModule(.{
+        .root_source_file = b.path("framework/tests/grapheme_smoke_test.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "Graphemes", .module = graphemes_mod },
+        },
+    });
+    const grapheme_smoke_test = b.addTest(.{ .root_module = grapheme_smoke_test_mod });
+    test_step.dependOn(&b.addRunArtifact(grapheme_smoke_test).step);
 
     // ── snapshot tests (golden-image comparison) ─────────────────
     const snapshot_test_mod = b.createModule(.{
