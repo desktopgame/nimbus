@@ -19,6 +19,7 @@ nimbus は外部のオープンソースを vendoring してビルドする方�
 | zigimg | 画像デコーダ | MIT License | `{REPO_ROOT}/vendor/zigimg-zigimg_zig_0.16.0/LICENSE` |
 | Lucide Icons 1.16.0 | ビルトインアイコン (PNG 化済み) | ISC License + 一部 MIT License (Feather 由来) | `{REPO_ROOT}/framework/src/lucide/LICENSE.txt` |
 | Noto Sans JP Regular | デフォルトフォント | SIL Open Font License 1.1 (OFL) | `{REPO_ROOT}/framework/src/noto/OFL.txt` |
+| zg | Unicode テキスト処理（書記素クラスタ等） | MIT License（＋同梱 UCD データに Unicode License V3） | `{REPO_ROOT}/vendor/zg-v0.16.2/zg/LICENSE`（＋ `unicode_license/license.txt`） |
 
 ## ライセンスごとの要件
 
@@ -106,13 +107,35 @@ OFL の主な要件は以下の通り。
 従って、OFL 本文（`framework/src/noto/OFL.txt`）を利用者アプリの配布物に含めればよい。
 フォント名に手を加えて再配布するわけではない限り、Reserved Font Name の制約には引っかからない。
 
+### zg (MIT License + Unicode License V3)
+zg は Unicode テキスト処理（書記素クラスタ分割など）を行うライブラリで、nimbus が develop に配線済み。
+`Graphemes` などのモジュールは UCD（Unicode Character Database）由来の生成テーブルを `@embedFile` するため、
+それらのテーブルは利用者アプリのバイナリに**実行時に含まれる**。
+従って zg のコード自体のライセンスと、埋め込まれる UCD 由来データのライセンスの**両方**が同梱対象になる。
+
+zg のコードは MIT License（Copyright (c) 2021 Jose Colon Rodriguez / Copyright (c) 2025 Sam Atman and contributors）。
+MIT の要件は zigimg と同じく 1 つだけ。
+
+* 利用者アプリの配布物中に、著作権表示と MIT 本文を含める
+
+加えて、埋め込まれる UCD 由来テーブルは Unicode License V3（`vendor/zg-v0.16.2/zg/unicode_license/license.txt`）が掛かる。
+これは BSD ライクな寛容なライセンスで、データファイル・ソフトウェアを制限なく利用・改変・再配布できる。
+条件は「(a) この著作権・許諾通知を成果物のすべてのコピーに添える」か
+「(b) この著作権・許諾通知を付属ドキュメントに記載する」かのいずれかを満たすこと。
+つまり通知（ライセンス本文）の同梱で足りる。
+また、通知に含まれる著作権者の名前を、事前の書面許諾なく宣伝・推薦に使ってはならない。
+
+従って zg については、MIT 本文（`vendor/zg-v0.16.2/zg/LICENSE`）と
+Unicode License V3 本文（`vendor/zg-v0.16.2/zg/unicode_license/license.txt`）の両方を、
+利用者アプリの配布物に含めればよい。
+
 ---
 
 ## 利用者が実際にやるべきこと
 具体的には、利用者アプリの配布物（インストーラ / zip / dmg など）の中に、
 以下を満たすテキストファイル群またはドキュメントを含めればよい。
 
-1. `LICENSES/` のようなディレクトリを作り、上記5つのライセンスファイルをそのまま入れる
+1. `LICENSES/` のようなディレクトリを作り、上記の各ライセンスファイル（zg は MIT と Unicode License V3 の 2 本を含む）をそのまま入れる
 2. もしくはアプリ内の About 画面に各ライセンスを一覧表示する
 3. FreeType の FTL 由来クレジット文（前述の "Portions of this software ..." の一文）を、製品ドキュメントまたは About 画面のどこかに記載する
 
@@ -132,6 +155,8 @@ OFL の主な要件は以下の通り。
 | zigimg | `{REPO_ROOT}/vendor/zigimg-zigimg_zig_0.16.0/LICENSE` |
 | Lucide Icons | `{REPO_ROOT}/framework/src/lucide/LICENSE.txt` |
 | Noto Sans JP (OFL) | `{REPO_ROOT}/framework/src/noto/OFL.txt` |
+| zg (MIT 本文) | `{REPO_ROOT}/vendor/zg-v0.16.2/zg/LICENSE` |
+| zg (Unicode License V3 本文) | `{REPO_ROOT}/vendor/zg-v0.16.2/zg/unicode_license/license.txt` |
 
 ## スコープ外
 * ビルド時のみ使うツールのライセンス（`resvg` 等）— 利用者アプリのバイナリに含まれないため対象外
