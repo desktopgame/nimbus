@@ -3,9 +3,9 @@
 //! Multi-line, LTR editor over a `GapBuffer` (designed for longer text than
 //! TextField). Two modes: no-wrap (natural width = longest line, scrolls both
 //! axes inside a ScrollPane) and wrap (tracks the viewport width, reflows, only
-//! scrolls vertically). Codepoint-granularity editing; the boundary stepping is
-//! centralized in `prevBoundary` / `nextBoundary` so a future move to grapheme
-//! clusters is a one-place change. Attributed text is out of scope.
+//! scrolls vertically). Grapheme-cluster-granularity editing; boundary stepping
+//! is centralized in `prevBoundary` / `nextBoundary`. Attributed text is out of
+//! scope.
 //!
 //! TextArea does not scroll itself  Eit sizes to its content and relies on an
 //! enclosing ScrollPane for clipping/offset, asking it (via ScrollController)
@@ -402,22 +402,7 @@ fn rangeSlice(self: *TextArea, start: usize, end: usize) []const u8 {
 
 fn measureSlice(self: *TextArea, s: []const u8) f32 {
     self.font.face.setPixelSize(self.font.pixel_size);
-    var x: f32 = 0;
-    var i: usize = 0;
-    while (i < s.len) {
-        const bl = std.unicode.utf8ByteSequenceLength(s[i]) catch {
-            i += 1;
-            continue;
-        };
-        if (i + bl > s.len) break;
-        const cp = std.unicode.utf8Decode(s[i .. i + bl]) catch {
-            i += bl;
-            continue;
-        };
-        x += self.font.face.glyphAdvance(cp);
-        i += bl;
-    }
-    return x;
+    return self.font.face.advanceOfRange(s, 0, s.len);
 }
 
 /// Width of the logical range [start, end).
@@ -454,24 +439,8 @@ fn caretGeom(self: *TextArea) CaretGeom {
 fn byteAtXInLine(self: *TextArea, line: VisualLine, x_offset: f32) usize {
     const s = self.rangeSlice(line.start, line.end);
     self.font.face.setPixelSize(self.font.pixel_size);
-    var cur_x: f32 = 0;
-    var i: usize = 0;
-    while (i < s.len) {
-        const bl = std.unicode.utf8ByteSequenceLength(s[i]) catch {
-            i += 1;
-            continue;
-        };
-        if (i + bl > s.len) break;
-        const cp = std.unicode.utf8Decode(s[i .. i + bl]) catch {
-            i += bl;
-            continue;
-        };
-        const adv = self.font.face.glyphAdvance(cp);
-        if (x_offset < cur_x + adv * 0.5) return line.start + i;
-        cur_x += adv;
-        i += bl;
-    }
-    return line.end;
+    const raw = line.start + self.font.face.byteAtX(s, x_offset);
+    return self.snapByteToGraphemeBoundary(raw);
 }
 
 /// Map a view-local point to a caret byte position.
@@ -486,25 +455,33 @@ fn pointToCaret(self: *TextArea, x_local: f32, y_local: f32) usize {
     return self.byteAtXInLine(self.lines.items[li], x_local - PADDING_X);
 }
 
-// ── codepoint boundary stepping (the grapheme-cluster swap point) ──────────
+// ── grapheme boundary stepping ────────────────────────────────────────────
 //
-// To migrate to grapheme-cluster granularity later, replace the bodies of
-// these two functions (and `decodeAt`'s callers) with UAX #29 segmentation.
-// All caret motion / Backspace / Delete go through here, so editing logic above
-// does not hard-code byte stepping.
+// TextArea stores text in a GapBuffer, so all grapheme helpers receive a
+// contiguous copy from rangeSlice. v1 intentionally uses full left context for
+// correctness (regional-indicator parity, ZWJ sequences, etc.); bounded windows
+// are a future performance follow-up.
 
 fn prevBoundary(self: *TextArea, from: usize) usize {
-    if (from == 0) return 0;
-    var i = from - 1;
-    while (i > 0 and (self.text.byteAt(i) & 0xC0) == 0x80) i -= 1;
-    return i;
+    const clamped = @min(from, self.text.len());
+    const s = self.rangeSlice(0, clamped);
+    return awt.grapheme.prevGraphemeBoundary(s, clamped);
 }
 
 fn nextBoundary(self: *TextArea, from: usize) usize {
     const total = self.text.len();
-    if (from >= total) return total;
-    const n = std.unicode.utf8ByteSequenceLength(self.text.byteAt(from)) catch return @min(from + 1, total);
-    return @min(from + n, total);
+    const clamped = @min(from, total);
+    const s = self.rangeSlice(0, total);
+    return awt.grapheme.nextGraphemeBoundary(s, clamped);
+}
+
+fn snapByteToGraphemeBoundary(self: *TextArea, byte_pos: usize) usize {
+    const total = self.text.len();
+    const clamped = @min(byte_pos, total);
+    const s = self.rangeSlice(0, total);
+    const prev = awt.grapheme.prevGraphemeBoundary(s, clamped);
+    if (awt.grapheme.nextGraphemeBoundary(s, prev) == clamped) return clamped;
+    return prev;
 }
 
 // ── selection / edit helpers ─────────────────────────────────────────────
@@ -901,4 +878,114 @@ fn parentWindow(self: *TextArea) ?*Window {
         node = cur.parent;
     }
     return null;
+}
+
+// ── tests ────────────────────────────────────────────────────────────────
+
+fn initTestArea(initial_text: []const u8) !TextArea {
+    var ta: TextArea = undefined;
+    ta.text = try GapBuffer.initFromSlice(std.testing.allocator, initial_text);
+    ta.caret = ta.text.len();
+    ta.mark = ta.caret;
+    ta.scratch = .empty;
+    ta.lines = .empty;
+    ta.allocator = std.testing.allocator;
+    return ta;
+}
+
+fn deinitTestArea(ta: *TextArea) void {
+    ta.text.deinit();
+    ta.scratch.deinit(std.testing.allocator);
+    ta.lines.deinit(std.testing.allocator);
+}
+
+fn expectText(ta: *TextArea, expected: []const u8) !void {
+    const got = try std.testing.allocator.alloc(u8, ta.text.len());
+    defer std.testing.allocator.free(got);
+    ta.text.copyRange(got, 0, ta.text.len());
+    try std.testing.expectEqualStrings(expected, got);
+}
+
+test "TextArea grapheme boundaries drive movement and deletion" {
+    const cases = [_][]const u8{
+        "e\u{0301}",
+        "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}",
+        "\u{1F44D}\u{1F3FB}",
+        "\u{1F1EF}\u{1F1F5}",
+    };
+
+    for (cases) |cluster| {
+        const s = try std.mem.concat(std.testing.allocator, u8, &.{ "a", cluster, "b" });
+        defer std.testing.allocator.free(s);
+        const cluster_start = "a".len;
+        const cluster_end = "a".len + cluster.len;
+
+        var ta = try initTestArea(s);
+        defer deinitTestArea(&ta);
+
+        try std.testing.expectEqual(cluster_end, ta.nextBoundary(cluster_start));
+        try std.testing.expectEqual(cluster_start, ta.prevBoundary(cluster_end));
+
+        ta.caret = cluster_end;
+        const prev = ta.prevBoundary(ta.caret);
+        ta.text.delete(prev, ta.caret - prev);
+        ta.caret = prev;
+        ta.mark = prev;
+        try expectText(&ta, "ab");
+
+        var ta_delete = try initTestArea(s);
+        defer deinitTestArea(&ta_delete);
+        ta_delete.caret = cluster_start;
+        const next = ta_delete.nextBoundary(ta_delete.caret);
+        ta_delete.text.delete(ta_delete.caret, next - ta_delete.caret);
+        try expectText(&ta_delete, "ab");
+    }
+}
+
+test "TextArea odd regional-indicator sequence keeps full-context parity" {
+    const flag = "\u{1F1EF}\u{1F1F5}";
+    const third = "\u{1F1FA}";
+    const s = "a" ++ flag ++ third ++ "b";
+    const flag_start = "a".len;
+    const flag_end = "a".len + flag.len;
+    const third_end = "a".len + flag.len + third.len;
+
+    var ta = try initTestArea(s);
+    defer deinitTestArea(&ta);
+
+    try std.testing.expectEqual(flag_end, ta.nextBoundary(flag_start));
+    try std.testing.expectEqual(third_end, ta.nextBoundary(flag_end));
+    try std.testing.expectEqual(flag_end, ta.prevBoundary(third_end));
+    try std.testing.expectEqual(flag_start, ta.prevBoundary(flag_end));
+}
+
+test "TextArea grapheme boundaries survive gap straddling" {
+    const family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}";
+    const s = "a" ++ family ++ "b";
+    const cluster_start = "a".len;
+    const cluster_end = "a".len + family.len;
+    const inside_cluster = cluster_start + "\u{1F468}".len;
+
+    var ta = try initTestArea(s);
+    defer deinitTestArea(&ta);
+    ta.text.moveGap(inside_cluster);
+
+    try std.testing.expectEqual(cluster_start, ta.prevBoundary(cluster_end));
+    try std.testing.expectEqual(cluster_end, ta.nextBoundary(cluster_start));
+    try std.testing.expectEqual(cluster_start, ta.snapByteToGraphemeBoundary(inside_cluster));
+}
+
+test "TextArea hit-test byte results snap to grapheme boundaries" {
+    const thumbs = "\u{1F44D}\u{1F3FB}";
+    const s = "a" ++ thumbs ++ "b";
+    const cluster_start = "a".len;
+    const inside_cluster = cluster_start + "\u{1F44D}".len;
+    const cluster_end = "a".len + thumbs.len;
+
+    var ta = try initTestArea(s);
+    defer deinitTestArea(&ta);
+
+    try std.testing.expectEqual(cluster_start, ta.snapByteToGraphemeBoundary(inside_cluster));
+    try std.testing.expectEqual(cluster_end, ta.snapByteToGraphemeBoundary(cluster_end));
+    try std.testing.expectEqual(s.len, ta.snapByteToGraphemeBoundary(s.len));
 }
