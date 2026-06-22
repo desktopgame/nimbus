@@ -358,20 +358,12 @@ fn findNewline(self: *TextArea, from: usize, total: usize) usize {
     return total;
 }
 
-/// Greedy character wrap: largest end in (start, le] whose measured width fits
-/// `wrap_w`, but always at least one codepoint so progress is guaranteed.
+/// Shared grapheme-safe wrap: largest end in (start, le] whose measured width
+/// fits `wrap_w`, with break opportunities and kinsoku handled by awt.
 fn wrapPoint(self: *TextArea, start: usize, le: usize, wrap_w: f32) usize {
     self.font.face.setPixelSize(self.font.pixel_size);
-    var x: f32 = 0;
-    var i = start;
-    while (i < le) {
-        const d = self.decodeAt(i, le);
-        const adv = self.font.face.glyphAdvance(d.cp);
-        if (x + adv > wrap_w and i > start) return i;
-        x += adv;
-        i += d.len;
-    }
-    return le;
+    const slice = self.rangeSlice(start, le);
+    return start + awt.textwrap.wrapSegment(self.font.face, slice, 0, slice.len, wrap_w);
 }
 
 // ── byte ↁEpixel / codepoint helpers ─────────────────────────────────────
