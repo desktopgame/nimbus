@@ -218,3 +218,54 @@ LTR のみ宣言済みのため複雑スクリプトの mandatory shaping は当
 （優先度・案が未定のため暫定）対象スクリプト（初期は Latin + 日本語）でカーニングと基本合字が効き、
 レイアウト層がシェイピング結果（cluster→glyph 対応を含むグリフ列）を返す。
 スナップショットテストで合字・カーニングの差分が確認できる。
+
+---
+
+## #12 テキスト折り返しのリサイズ性能
+- 状態: 未着手
+- 優先度: 中
+- 影響範囲: `awt/src/textwrap.zig`・`awt/src/Font.zig`・`framework/src/Label.zig`（と TextArea の reflow）
+- 更新日: 2026-06-23
+- 依存: なし（#2 折り返しの上に乗る）
+
+### 何
+#2 折り返し（実装済み・feat/text-wrap）をユーザーが実機で試したところ、**折り返し有効な
+TextArea / 折り返し Label を含む窓のリサイズが目に見えて重い**と判明した（felt need、2026-06-23）。
+リサイズは幅変化 → reflow → 再描画を頻繁に起こすため、reflow 経路のコストがそのまま体感に出る。
+原因は実コードで特定済み。3 つのコストが重なっている。
+
+1. **`wrapSegment` が O(n^2)**: `awt/src/textwrap.zig` の `wrapSegment` は累積幅を
+   `face.advanceOfRange(text, s, cluster_end)` で**毎クラスタ反復ごとに行頭 `s` から測り直す**。
+   1 論理行あたりクラスタ数の 2 乗になり、長い行で顕著。
+2. **advance 測定が未キャッシュの FreeType**: `awt/src/Font.zig` の `advanceOfRange` は per-codepoint に
+   `font.face.glyphAdvance` を呼び、これが毎回 `FT_Load_Char` を叩く。GlyphAtlas は描画済みグリフの
+   advance をキャッシュするが、測定パス（`advanceOfRange`）はその素の未キャッシュ経路を使うため、
+   測定が FreeType 呼び出しで律速する。
+3. **Label が paint ごとに reflow**: `framework/src/Label.zig` の `computeVisualLines` は
+   paint（とレイアウト時の measure）のたびに全視覚行を再計算し ArrayList を確保する。TextArea は
+   `reflowAt` で幅 / テキスト変化時のみキャッシュするが、Label は毎回。リサイズ中は毎フレーム
+   上記 O(n^2) を回すことになる。
+
+### なぜ（保留理由）
+#2 は機能としては動く（折り返しは正しく行われる）が、実用上リサイズの体感が悪い。性能改善であって
+機能追加ではないため、まず機能を入れてから別項目として切り出す。ユーザーが実機リサイズで felt need として
+確認済みのため「確実にいずれ必要」寄り。
+
+### 候補アプローチ
+3 つは独立に効く。(a)+(c) でリサイズの主因は大きく落ちる見込み。(b) は測定全般に効く横断改善。
+- 案a: `wrapSegment` を増分幅へ。走査中に running width を保持し、各クラスタの advance を
+  `[pos, cluster_end]` だけ足す（行頭から測り直さない）。O(n^2) → O(n)。
+- 案b: per-face の glyph advance キャッシュ。同一 (face, pixel_size, codepoint) の advance をメモ化し、
+  測定パスの `FT_Load_Char` を削る。
+- 案c: Label の視覚行 reflow をキャッシュ。TextArea 式に幅 / テキスト変化時のみ `computeVisualLines` を
+  回し、paint では結果を再利用する。
+- 判断軸: リサイズ体感を最短で改善するなら (a)+(c) を先に。測定全般（#2 / #3 のクラスタ単位 advance とも
+  共有しうる）の底上げを取るなら (b) も。
+
+### 決めること
+- (a) / (b) / (c) のどれを入れるか・順序。リサイズ体感優先なら (a)+(c) から。
+- (b) のキャッシュの寿命とキー（face・pixel_size・codepoint）をどこに持たせるか。
+
+### 完了条件
+折り返し有効な TextArea / 折り返し Label を含む窓のリサイズが、長い行でも体感的に滑らかになる。
+（必要なら）測定・reflow 回数か所要時間で改善が確認できる。
