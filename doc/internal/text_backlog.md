@@ -9,16 +9,22 @@
 ---
 
 ## #1 IME 変換中の inline 表示（composition string）
-- 状態: 未着手
+- 状態: 一部実装済み（TextField は preedit 実装済み・TextArea 未対応）
 - 優先度: 高
-- 影響範囲: TextField / TextArea、awt-c の IME 連携（win32_ime.c / cocoa_ime.m）
-- 更新日: 2026-06-02
-- 依存: なし
+- 影響範囲: TextField / TextArea、awt-c の IME 連携（win32_ime.c / cocoa_ime.m / ime_stub.c）
+- 更新日: 2026-06-24
+- 依存: text#13（IME 共通機能の util 切り出し）
 
 ### 何
 未確定文字を TextField 内に下線付きで直接表示する（plan.md #32）。CLAUDE.md「文字コード」で
 **優先度高で取り組みたい**と明記（Swing も対応）。plan.md 段階では「初版ではやらない」だったが、
 CLAUDE.md の方針が上書きする。
+
+### 現状
+TextField は preedit を既に実装済み（preedit_text の保持・下線描画・pushCaretToIme による候補ウィンドウ
+追従）。完全な未着手ではなく、残作業は次の 2 つ。
+- (a) text#13 で IME plumbing を util（ImeSession 相当）へ切り出す。
+- (b) その util を TextArea へ展開し、TextArea でも変換中 inline 表示を出す。
 
 ---
 
@@ -91,15 +97,28 @@ word break 判定が前提で、ともに現状未実装（net-new）。Home/End
 
 ---
 
-## #5 Undo / Redo
+## #5 Undo / Redo（テキスト編集の undo ＝ framework UndoStack の最初の consumer）
 - 状態: 棚上げ
 - 優先度: 中
-- 影響範囲: TextField / TextArea、編集モデル
-- 更新日: 2026-06-02
-- 依存: なし
+- 影響範囲: TextField / TextArea、framework_backlog #5 編集コア（applyEdit）、framework の汎用 UndoStack
+- 更新日: 2026-06-24
+- 依存: framework_backlog #31（汎用 UndoStack プリミティブ）/ framework_backlog #5 編集コア（applyEdit チョークポイント）
 
 ### 何
-plan.md #21。実装は重め。利用者側でも実装可能だが、一般的なユースケースなので提供したい。
+plan.md #21。テキスト編集の undo/redo。プリミティブ本体（Command + UndoStack）は GUI 横断なので
+framework_backlog #31 に置き、本項目はそれを消費する text 層に reframe する。テキストの各 edit を
+ReplaceRange command（pos・旧バイト・新バイト・caret / 選択の before-after）として framework_backlog #5
+編集コアの applyEdit から UndoStack へ積む。
+
+### ここで決めること（policy 側）
+プリミティブ抽象（framework_backlog #31）ではなくテキスト UX の判断:
+- coalescing / グルーピングの policy（打鍵毎に 1 undo か・単語 / 連続入力をまとめるか・改行や貼り付けで
+  区切るか）。framework_backlog #31 は tryMerge / begin-end group の継ぎ目だけ用意し、policy は本項目で決める。
+- bounded の上限（件数か総バイトか）の実値。
+
+### なぜ
+実装は重めだが、一般的なユースケースなので提供したい。地ならしで framework_backlog #31（汎用スタック）と
+#5 編集コア（applyEdit チョークポイント）が入れば、本項目は command 化と policy 決めに絞れる。
 
 ---
 
@@ -272,3 +291,42 @@ correctness ＋ test-genuineness の独立パネルで、vacuous テスト 1 件
 
 ### 完了条件
 測定・reflow 所要時間で改善が確認できること。examples/wrap_perf がこれを満たし、回帰ベンチとして残置する。
+
+---
+
+## #13 IME 共通機能の util 切り出し（preedit plumbing のモジュール化）
+- 状態: 未着手
+- 優先度: 中（テキストエディター地ならしの一部。TextArea への IME 展開で実需化）
+- 影響範囲: TextField / TextArea、awt-c の IME 連携（win32_ime.c / cocoa_ime.m / ime_stub.c）、新規 util モジュール
+- 更新日: 2026-06-24
+- 依存: なし（framework_backlog #5 編集コアの applyEdit と接続。text#1 inline 表示と表裏）
+
+### 何
+TextField が既に実装している IME preedit（preedit_text / preedit_target 範囲 / pushCaretToIme /
+確定文字列取得 / 変換中はキャレット非表示）を、standalone なモジュール（名前は任せる。例 ImeSession /
+ImeManager）へ切り出し、TextArea も同じものを使う。バッファ非依存の標準 plumbing として完結させる。
+
+util に入る（バッファ非依存の plumbing）:
+- preedit 状態の保持（未確定文字列・変換対象範囲）。
+- awt-c の IME 連携（win32_ime.c / cocoa_ime.m / ime_stub.c）の橋渡し。
+- キャレット矩形を OS 候補ウィンドウへ push する経路。
+- onCommit 通知（確定文字列を widget / 編集コアへ渡す）。
+
+util に入らない（編集状態に触るので widget か framework_backlog #5 編集コア側に残す）:
+- (1) 確定 → キャレット位置へバッファ挿入（編集層 ＝ framework_backlog #5 編集コアの applyEdit が受ける）。
+- (2) preedit のインライン描画（widget の caret x と measure に依存する。下線・変換対象の強調）。
+
+### なぜ
+現状 preedit は TextField のみで、TextArea には無い。util として共通化すれば TextArea にも 1 回で行き渡り、
+片方だけ直すずれを防げる。Swing 的な Document コアが無くても単体で切り出せる（IME は編集コアと分離できる、
+が今回の結論）。地ならしの 3 ピースのうち最も独立性が高い。
+
+### 決めること
+- モジュール名と公開 API（preedit 設定 / クリア・onCommit コールバックの形・caret 矩形 push の入口）。
+- caret 矩形を誰が供給するか（widget が measure 結果を渡す形にして util をバッファ非依存に保つ）。
+- preedit のインライン描画を widget 側ヘルパに寄せるか、util が描画フックだけ持つか。
+
+### 完了条件
+TextField / TextArea が同一の IME util を使って変換中表示・確定・候補ウィンドウ追従を行う。
+preedit 状態の保持と awt-c 連携が util に集約され、確定挿入は framework_backlog #5 編集コア・インライン
+描画は widget 側に分離している。

@@ -263,14 +263,15 @@ narrative）に記載。C ABI への Theme 露出は capi バックログで別�
 - 優先度: 中（テキストエディターのドッグフーディング着手で「高」に昇格する）
 - 影響範囲: framework の `TextField.zig` / `TextArea.zig`、`textfield.md` / `textarea.md`
 - 更新日: 2026-06-24
-- 依存: なし（text#3 完了済み。旧「text#3 と同時実施」前提は失効 — 下記「なぜ（保留・現状）」「候補アプローチ」参照）
+- 依存: なし（text#3 完了済み。旧「text#3 と同時実施」前提は失効。関連: #31 汎用 UndoStack / text#13 IME util）
 
 ### 何
-TextField と TextArea が編集操作層（キャレット移動、選択範囲、クリップボード連携、IME preedit の保持、
-将来の undo/redo）をそれぞれ独立に実装している。境界歩行そのものは既に `awt/src/grapheme.zig`
-（prev/nextGraphemeBoundary）で両ウィジェット共有済みで、いま重複しているのはその上の編集操作層。
-片方で直したバグがもう片方に残る古典的リスクがあるため、共有可能な編集コアを抽出するかを検討する。
-Swing が Document モデルの共有で解いていた問題に相当する。
+TextField と TextArea が編集操作層（キャレット移動、選択範囲、クリップボード連携、編集操作、将来の
+undo/redo）をそれぞれ独立に実装している。境界歩行そのものは既に `awt/src/grapheme.zig`
+（prev/nextGraphemeBoundary）で両ウィジェット共有済みで、IME preedit の保持は text#13 の IME util へ
+分離する。いま #5 に残る重複はその上の編集操作層（キャレット移動・選択・クリップボード・編集操作・
+undo 連携）。片方で直したバグがもう片方に残る古典的リスクがあるため、共有可能な編集コアを抽出するかを
+検討する。Swing が Document モデルの共有で解いていた問題に相当する。
 
 ### なぜ（保留・現状）
 旧保留理由「text#3（書記素クラスタ移行）が codepoint 歩行を書き直すので、いま抽出してもすぐ上書き
@@ -290,17 +291,30 @@ TextField / TextArea と TextPane で別モデルを持ってよい — Swing �
 
 ### 候補アプローチ
 抽出は「既に書記素移行済みのコードを 1 つに畳む」作業になる。境界歩行は grapheme.zig 共有済みのため、
-編集操作層（キャレット・選択・クリップボード・IME preedit・undo/redo）を、描画／イベント処理を含まない
+編集操作層（キャレット・選択・クリップボード・編集操作・undo/redo）を、描画／イベント処理を含まない
 共有モジュール（例: `text_edit.zig`）へ切り出し、TextField / TextArea 双方をそこへ載せ替える。
-undo/redo はこの共有コアに実装する（エディターに必須で、編集コアに住む機能）。
+IME preedit の plumbing は text#13 の IME util へ分離するが、IME 確定 → 挿入の統合はコア側に残し、
+util の onCommit を受けて applyEdit する。undo/redo はこの共有コアに実装する（エディターに必須で、
+編集コアに住む機能）。
 （歴史: 起票時は text#3 と同時実施する案A／先に共通化する案B を比較していたが、text#3 完了で
 このタイミング論争は moot になった。）
 
+### applyEdit チョークポイントとバッファ構造
+- applyEdit チョークポイント: 全 edit を 1 経路に通す。各 edit を ReplaceRange command（pos・旧バイト・
+  新バイト・caret / 選択の before-after）として表現し、framework の汎用 UndoStack（#31）へ積む。抽出時に
+  TextArea の散在した insert / delete（現状 8 箇所）をこのチョークポイントへ畳む ＝ undo を 1 回で載せ
+  られる前提を作る。
+- バッファ構造は案A 確定: 単一フラットな GapBuffer ＋ バイトオフセットを共有コアが持ち、行は widget が
+  派生する（コアは行構造を持たない）。行ルックアップはコア内の継ぎ目にして（走査 now・行頭索引 later で
+  差し替え可能）、コア API をバッファ非依存に保てば piece table / rope への将来差し替えも 1 点で済む。
+
 ### 決めること
-plain buffer 前提で以下を着手時に決める。
-- コアが単一バッファを持ち行は widget が導出するか、コアが行構造を知るか。
-- IME preedit をコアに含めるか各ウィジェット側に残すか（preedit はコアに住む見込み）。
-- undo/redo の粒度（キーストローク毎か、単語／連続入力のまとめか）。
+バッファ構造（案A・単一 GapBuffer ＋ 行は widget 派生）は確定。残りを着手時に決める。
+- applyEdit / ReplaceRange command の正確な形（caret / 選択の before-after の持ち方）と、TextArea の散在
+  insert / delete をチョークポイントへ畳む移行手順。
+- 行ルックアップの継ぎ目の初版（走査でよいか・行頭索引をいつ入れるか）。
+- IME preedit plumbing は text#13 の IME util へ出し、確定挿入だけコアに残す。その継ぎ目の線引きを確定する。
+- undo/redo の粒度（coalescing policy）は text#5 で決める（#31 は tryMerge / group の継ぎ目だけ用意する）。
 styled / TextPane モデル（StyledDocument 相当）は #5 のスコープ外＝将来項目とする。
 
 ### 完了条件
@@ -1125,3 +1139,45 @@ FileChooser 下部ラベルの等幅化を `min_size` 直書きでやったら L
 ### 完了条件
 規約を doc 化し、`min_size` を触る既存箇所が `setMinSize` 経由かを監査。
 可能なら回帰テスト（`setMinSize` したノードが `applyLook` 後も `min_size` を保つ・直書きは上書きされる、を純ロジックで）。
+
+## #31 汎用 Undo/Redo スタック（Command プリミティブ）
+- 状態: 未着手
+- 優先度: 中（テキストエディター地ならしで text#5 の土台として実需化）
+- 影響範囲: framework 新規モジュール（Command インターフェイス + UndoStack）、root.zig export、最初の consumer は text 層
+- 更新日: 2026-06-24
+- 依存: なし（最初の利用者は text#5 テキスト編集 undo。#5 編集コアの applyEdit が Command を push する）
+
+### 何
+GUI 横断の汎用 Undo/Redo プリミティブを framework 側に置く（text 層でなく framework に置く理由 ＝
+ドロー / フォーム / テキストなど領域横断で使うため）。構成:
+- Command インターフェイス: redo / undo・任意の tryMerge（直前 Command との併合可否）・任意の表示名
+  （例 Undo Typing）。
+- UndoStack: Command のリスト + 現在 index・canUndo / canRedo・可否が変わったら発火する変更リスナー
+  （ツールバー / メニューの活性更新に使う）・bounded（上限を設け古いものを破棄）。
+- バッファ非依存。最初の consumer はテキストだが、ドロー / フォーム編集にもそのまま使える。
+
+### なぜ
+GUI は各所で Undo/Redo を欲しがる。汎用化のコストはテキスト特化版とほぼ同じ（command ＋ スタック ＋
+通知の 3 点）で、最初の利用者（テキスト編集）が実在するため YAGNI には反しない。地ならしで土台を先に
+固めれば text#5 はそれを消費するだけになる。
+
+### スコープ外（Swing UndoManager 由来の過剰・採らない）
+- Document から UndoableEditListener 経由で edit を集める間接層。nimbus はエディタが Command を直接 push する。
+- isSignificant（些末な edit をスキップする仕組み）。
+- UndoManager 自身が CompoundEdit でもあるという再帰構造。
+- Swing の 2 種のリスナーのうち「可否が変わった通知」は採用し、「edit が起きた通知（Document → manager の
+  配線）」は採らない。
+
+coalescing / グルーピング（連続入力を 1 undo 単位に・複合操作を 1 単位に）は tryMerge と begin-end group の
+継ぎ目だけ用意し、policy（何を 1 単位とみなすか）は後回しにする ＝ これはエディタ UX の判断であって command
+抽象の難しさではない（policy は text#5 で決める）。
+
+### 決めること
+- Command の最小 API（redo / undo / tryMerge / 表示名のシグネチャ）。
+- 可否変更リスナーの形（既存の typed_callbacks / ChangeListener に寄せるか）。
+- bounded のキー（件数か総バイトか）。
+- merge / group の継ぎ目の形（tryMerge を stack が叩くタイミング・begin/endGroup の API）。
+
+### 完了条件
+Command + UndoStack が framework から export され、bounded と可否変更リスナーが動く。
+text#5 がこのスタックを消費して undo/redo を実装できる（最初の consumer で実証）。doc + テスト。
