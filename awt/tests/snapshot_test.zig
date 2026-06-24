@@ -94,7 +94,7 @@ fn runScene(scene: scenes.Scene) !void {
     var device = awt.Device.init() catch return error.SkipZigTest;
     defer device.deinit();
 
-    var font = try awt.Font.init(scenes.default_font_bytes, 0);
+    var font = try awt.Font.init(std.testing.allocator, scenes.default_font_bytes, 0);
     defer font.deinit();
 
     const actual = try renderScene(allocator, device, font, scene);

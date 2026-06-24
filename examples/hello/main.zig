@@ -146,10 +146,10 @@ pub fn main() !void {
     const win_size = window.size();
     const fb_size = window.framebufferSize();
 
-    var font = try awt.Font.init(noto_sans_ttf, 0);
-    defer font.deinit();
-
     const gpa = std.heap.page_allocator;
+
+    var font = try awt.Font.init(gpa, noto_sans_ttf, 0);
+    defer font.deinit();
 
     var atlas = try awt.GlyphAtlas.init(gpa, device, 2048);
     defer atlas.deinit();

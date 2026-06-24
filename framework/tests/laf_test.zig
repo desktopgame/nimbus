@@ -101,7 +101,7 @@ fn initTestTextFont() !awt.Graphics.TextFont {
     try awt.init();
     errdefer awt.deinit();
     return .{
-        .face = try awt.Font.init(nimbus.noto.noto_sans_jp_regular, 0),
+        .face = try awt.Font.init(std.testing.allocator, nimbus.noto.noto_sans_jp_regular, 0),
         .pixel_size = 14,
     };
 }

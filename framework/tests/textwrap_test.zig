@@ -11,7 +11,7 @@ fn ensureAwt() !void {
 
 fn initTestFont() !nimbus.awt.Font {
     try ensureAwt();
-    var f = try nimbus.awt.Font.init(nimbus.noto.noto_sans_jp_regular, 0);
+    var f = try nimbus.awt.Font.init(std.testing.allocator, nimbus.noto.noto_sans_jp_regular, 0);
     f.setPixelSize(16);
     return f;
 }

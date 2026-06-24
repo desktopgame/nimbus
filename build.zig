@@ -301,6 +301,7 @@ pub fn build(b: *std.Build) void {
         "framework/tests/theme_test.zig",
         "framework/tests/laf_test.zig",
         "framework/tests/textwrap_test.zig",
+        "framework/tests/font_cache_test.zig",
         "framework/tests/label_wrap_test.zig",
     }) |path| {
         const m = b.createModule(.{

@@ -7,6 +7,50 @@ const c = @import("c");
 
 const Font = @This();
 
+const advance_cache_capacity = 16 * 1024;
+
+const AdvanceEntry = struct {
+    valid: bool = false,
+    pixel_size: i32 = 0,
+    codepoint: u32 = 0,
+    advance: f32 = 0,
+};
+
+const AdvanceCache = struct {
+    allocator: std.mem.Allocator,
+    pixel_size: i32 = 0,
+    entries: [advance_cache_capacity]AdvanceEntry = [_]AdvanceEntry{.{}} ** advance_cache_capacity,
+
+    fn init(allocator: std.mem.Allocator) AdvanceCache {
+        return .{ .allocator = allocator };
+    }
+
+    fn getOrLoad(self: *AdvanceCache, handle: *c.struct_nmFont, codepoint: u32) f32 {
+        const idx = cacheIndex(self.pixel_size, codepoint);
+        const entry = &self.entries[idx];
+        if (entry.valid and entry.pixel_size == self.pixel_size and entry.codepoint == codepoint) {
+            return entry.advance;
+        }
+
+        const advance = c.nmGetGlyphAdvance(handle, codepoint);
+        entry.* = .{
+            .valid = true,
+            .pixel_size = self.pixel_size,
+            .codepoint = codepoint,
+            .advance = advance,
+        };
+        return advance;
+    }
+};
+
+fn cacheIndex(pixel_size: i32, codepoint: u32) usize {
+    const size_bits: u32 = @bitCast(pixel_size);
+    var h = codepoint *% 16_777_619;
+    h ^= size_bits *% 2_166_136_261;
+    h ^= h >> 16;
+    return @as(usize, h) & (advance_cache_capacity - 1);
+}
+
 pub const GlyphMetrics = struct {
     bitmap_width: i32,
     bitmap_height: i32,
@@ -29,21 +73,30 @@ pub const TextSize = struct {
 };
 
 handle: *c.struct_nmFont,
+adv_cache: *AdvanceCache,
 
 /// `data` must outlive the font (freetype holds the pointer internally).
 /// `@embedFile` output is fine since it lives in `.rodata` for the program's life.
-pub fn init(data: []const u8, face_index: i32) !Font {
+pub fn init(allocator: std.mem.Allocator, data: []const u8, face_index: i32) !Font {
     const h = c.nmCreateFont(data.ptr, data.len, face_index) orelse return error.FontCreateFailed;
-    return .{ .handle = h };
+    errdefer c.nmDestroyFont(h);
+
+    const cache = try allocator.create(AdvanceCache);
+    cache.* = AdvanceCache.init(allocator);
+    return .{ .handle = h, .adv_cache = cache };
 }
 
 pub fn deinit(self: *Font) void {
+    const allocator = self.adv_cache.allocator;
+    allocator.destroy(self.adv_cache);
     c.nmDestroyFont(self.handle);
     self.handle = undefined;
+    self.adv_cache = undefined;
 }
 
 pub fn setPixelSize(self: Font, pixel_size: i32) void {
     c.nmSetFontPixelSize(self.handle, pixel_size);
+    self.adv_cache.pixel_size = pixel_size;
 }
 
 pub fn metrics(self: Font) FontMetrics {
@@ -86,7 +139,7 @@ pub fn rasterize(self: Font, codepoint: u32) !struct {
 }
 
 pub fn glyphAdvance(self: Font, codepoint: u32) f32 {
-    return c.nmGetGlyphAdvance(self.handle, codepoint);
+    return self.adv_cache.getOrLoad(self.handle, codepoint);
 }
 
 /// Sum glyph advances for the UTF-8 byte range [start, end). This preserves

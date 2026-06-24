@@ -178,7 +178,7 @@ pub fn init(allocator: std.mem.Allocator, io: std.Io) !*Application {
         .text_program = &app._text_program,
     };
 
-    app.default_font = try awt.Font.init(noto.noto_sans_jp_regular, 0);
+    app.default_font = try awt.Font.init(allocator, noto.noto_sans_jp_regular, 0);
     errdefer app.default_font.deinit();
 
     app.event_queue = try awt.EventQueue.init(allocator, io);

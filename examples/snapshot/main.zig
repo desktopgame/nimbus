@@ -33,7 +33,7 @@ pub fn main(init: std.process.Init) !void {
     var device = try awt.Device.init();
     defer device.deinit();
 
-    var font = try awt.Font.init(scenes.default_font_bytes, 0);
+    var font = try awt.Font.init(gpa, scenes.default_font_bytes, 0);
     defer font.deinit();
 
     var rt = try awt.RenderTarget.create(device, scene.width, scene.height);

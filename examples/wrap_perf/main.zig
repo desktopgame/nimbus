@@ -39,7 +39,7 @@ pub fn main(init: std.process.Init) !void {
     try awt.init();
     defer awt.deinit();
 
-    var font = try awt.Font.init(nimbus.noto.noto_sans_jp_regular, 0);
+    var font = try awt.Font.init(gpa, nimbus.noto.noto_sans_jp_regular, 0);
     defer font.deinit();
     font.setPixelSize(16);
 

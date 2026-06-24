@@ -12,7 +12,7 @@ fn ensureAwt() !void {
 fn initTestFont() !nimbus.awt.Graphics.TextFont {
     try ensureAwt();
     return .{
-        .face = try nimbus.awt.Font.init(nimbus.noto.noto_sans_jp_regular, 0),
+        .face = try nimbus.awt.Font.init(std.testing.allocator, nimbus.noto.noto_sans_jp_regular, 0),
         .pixel_size = 16,
     };
 }

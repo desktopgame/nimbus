@@ -38,6 +38,7 @@ pub fn wrapSegment(face: Font, text: []const u8, start: usize, end: usize, wrap_
     var last_fit: usize = forced;
     var last_break: ?usize = null;
     var pos = s;
+    var width: f32 = 0;
 
     while (pos < e) {
         const next = grapheme.nextGraphemeBoundary(text, pos);
@@ -45,7 +46,7 @@ pub fn wrapSegment(face: Font, text: []const u8, start: usize, end: usize, wrap_
         if (cluster_end <= pos) break;
 
         const cluster = decodeCluster(text, pos, cluster_end);
-        const width = face.advanceOfRange(text, s, cluster_end);
+        width += face.advanceOfRange(text, pos, cluster_end);
         if (width > wrap_w and pos > s) break;
 
         forced = cluster_end;
