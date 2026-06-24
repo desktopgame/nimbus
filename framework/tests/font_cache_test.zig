@@ -33,19 +33,17 @@ test "font advance cache is shared by value copies and keyed by pixel size" {
     try std.testing.expectEqual(small, copied.glyphAdvance('A'));
 }
 
-test "incremental cluster advances match from-start width" {
+test "wrapSegment measures incremental width from nonzero segment start" {
     var f = try initTestFont();
     defer f.deinit();
 
-    const s = "Nimbus wraps text \u{65E5}\u{672C}\u{8A9E} UI";
-    var pos: usize = 0;
-    var incremental: f32 = 0;
-    while (pos < s.len) {
-        const next = nimbus.awt.grapheme.nextGraphemeBoundary(s, pos);
-        const cluster_end = @min(next, s.len);
-        incremental += f.advanceOfRange(s, pos, cluster_end);
-        pos = cluster_end;
-    }
+    const prefix = "wide prefix wide prefix ";
+    const segment = "a e\u{0301} b";
+    const text = prefix ++ segment;
+    const start = prefix.len;
+    const expected = start + "a e\u{0301} ".len;
+    const too_far = text.len;
+    const wrap_w = (f.advanceOfRange(text, start, expected) + f.advanceOfRange(text, start, too_far)) / 2.0;
 
-    try std.testing.expectEqual(f.advanceOfRange(s, 0, s.len), incremental);
+    try std.testing.expectEqual(expected, nimbus.awt.textwrap.wrapSegment(f, text, start, text.len, wrap_w));
 }

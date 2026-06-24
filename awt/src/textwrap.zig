@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const Font = @import("Font.zig");
+const Graphemes = @import("Graphemes");
 const grapheme = @import("grapheme.zig");
 
 const MAX_OIDASHI = 2;
@@ -34,28 +35,26 @@ pub fn wrapSegment(face: Font, text: []const u8, start: usize, end: usize, wrap_
     const e = @min(@max(end, s), text.len);
     if (s >= e) return e;
 
-    var forced = firstClusterEnd(text, s, e);
-    var last_fit: usize = forced;
+    var forced: usize = s;
+    var last_fit: usize = s;
     var last_break: ?usize = null;
-    var pos = s;
     var width: f32 = 0;
+    var iter = Graphemes.iterator(text[s..e]);
 
-    while (pos < e) {
-        const next = grapheme.nextGraphemeBoundary(text, pos);
-        const cluster_end = @min(next, e);
-        if (cluster_end <= pos) break;
+    while (iter.next()) |gc| {
+        const cluster_start = s + gc.offset;
+        const cluster_end = @min(s + gc.offset + gc.len, e);
+        if (cluster_end <= cluster_start) continue;
 
-        const cluster = decodeCluster(text, pos, cluster_end);
-        width += face.advanceOfRange(text, pos, cluster_end);
-        if (width > wrap_w and pos > s) break;
+        const cluster = decodeCluster(text, cluster_start, cluster_end);
+        width += face.advanceOfRange(text, cluster_start, cluster_end);
+        if (width > wrap_w and cluster_start > s) break;
 
         forced = cluster_end;
         last_fit = cluster_end;
         if (isBreakOpportunity(text, cluster, cluster_end, e)) {
             last_break = cluster_end;
         }
-
-        pos = cluster_end;
     }
 
     if (last_fit >= e) return e;
@@ -72,9 +71,7 @@ fn isBreakOpportunity(text: []const u8, cur: Cluster, boundary: usize, end: usiz
     if (boundary >= end) return true;
     if (contains(&latin_break_after, cur.last)) return true;
     if (isCjk(cur.last)) return true;
-    const next = grapheme.nextGraphemeBoundary(text, boundary);
-    const after = decodeCluster(text, boundary, @min(next, end));
-    if (isCjk(after.first)) return true;
+    if (isCjk(decodeFirstCodepoint(text, boundary, end))) return true;
     return false;
 }
 
@@ -98,11 +95,16 @@ fn touchesKinsoku(text: []const u8, start: usize, end: usize, pos: usize) bool {
         if (contains(&line_end_prohibited, before.last)) return true;
     }
     if (pos < end) {
-        const next = grapheme.nextGraphemeBoundary(text, pos);
-        const after = decodeCluster(text, pos, @min(next, end));
-        if (contains(&line_start_prohibited, after.first)) return true;
+        if (contains(&line_start_prohibited, decodeFirstCodepoint(text, pos, end))) return true;
     }
     return false;
+}
+
+fn decodeFirstCodepoint(text: []const u8, start: usize, end: usize) u32 {
+    if (start >= end) return 0;
+    const len = std.unicode.utf8ByteSequenceLength(text[start]) catch return text[start];
+    if (start + len > end) return text[start];
+    return std.unicode.utf8Decode(text[start .. start + len]) catch text[start];
 }
 
 fn decodeCluster(text: []const u8, start: usize, end: usize) Cluster {
