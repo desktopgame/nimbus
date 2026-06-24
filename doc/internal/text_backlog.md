@@ -222,50 +222,53 @@ LTR のみ宣言済みのため複雑スクリプトの mandatory shaping は当
 ---
 
 ## #12 テキスト折り返しのリサイズ性能
-- 状態: 未着手
+- 状態: 完了（解決済み・実装は develop へマージ済み）
 - 優先度: 中
-- 影響範囲: `awt/src/textwrap.zig`・`awt/src/Font.zig`・`framework/src/Label.zig`（と TextArea の reflow）
-- 更新日: 2026-06-23
+- 影響範囲: `awt/src/textwrap.zig`・`awt/src/Font.zig`・`awt/src/grapheme.zig`（と examples/wrap_perf）
+- 更新日: 2026-06-24
 - 依存: なし（#2 折り返しの上に乗る）
 
 ### 何
-#2 折り返し（実装済み・feat/text-wrap）をユーザーが実機で試したところ、**折り返し有効な
-TextArea / 折り返し Label を含む窓のリサイズが目に見えて重い**と判明した（felt need、2026-06-23）。
-リサイズは幅変化 → reflow → 再描画を頻繁に起こすため、reflow 経路のコストがそのまま体感に出る。
-原因は実コードで特定済み。3 つのコストが重なっている。
+#2 折り返し（実装済み）をユーザーが実機で試したところ、折り返し有効な TextArea / 折り返し Label を
+含む窓のリサイズが目に見えて重いと判明した（felt need、2026-06-23）。リサイズは幅変化 → reflow →
+再描画を頻繁に起こすため、reflow 経路のコストがそのまま体感に出る。本項目で改善し、develop（b4afce8）
+へマージ済み。以下は事後記録（post-mortem）。
 
-1. **`wrapSegment` が O(n^2)**: `awt/src/textwrap.zig` の `wrapSegment` は累積幅を
-   `face.advanceOfRange(text, s, cluster_end)` で**毎クラスタ反復ごとに行頭 `s` から測り直す**。
-   1 論理行あたりクラスタ数の 2 乗になり、長い行で顕著。
-2. **advance 測定が未キャッシュの FreeType**: `awt/src/Font.zig` の `advanceOfRange` は per-codepoint に
-   `font.face.glyphAdvance` を呼び、これが毎回 `FT_Load_Char` を叩く。GlyphAtlas は描画済みグリフの
-   advance をキャッシュするが、測定パス（`advanceOfRange`）はその素の未キャッシュ経路を使うため、
-   測定が FreeType 呼び出しで律速する。
-3. **Label が paint ごとに reflow**: `framework/src/Label.zig` の `computeVisualLines` は
-   paint（とレイアウト時の measure）のたびに全視覚行を再計算し ArrayList を確保する。TextArea は
-   `reflowAt` で幅 / テキスト変化時のみキャッシュするが、Label は毎回。リサイズ中は毎フレーム
-   上記 O(n^2) を回すことになる。
+### 原因の訂正
+起票時の見立て（原因#1: `wrapSegment` が O(n^2) を主因）は、後述ベンチ（ReleaseFast）の
+プロファイルで**不正確だった**と判明した。実際の構成は次のとおり。
 
-### なぜ（保留理由）
-#2 は機能としては動く（折り返しは正しく行われる）が、実用上リサイズの体感が悪い。性能改善であって
-機能追加ではないため、まず機能を入れてから別項目として切り出す。ユーザーが実機リサイズで felt need として
-確認済みのため「確実にいずれ必要」寄り。
+- 段落長に対する reflow は既にリニアだった。`wrapSegment` の O(L^2) は L=1 視覚行のクラスタ数で、
+  L は wrap 幅により頭打ちになる。よって段落全体としては O(n) に落ち、主因ではなかった。
+- 真の支配項は起票時の原因#2 だった。`nmGetGlyphAdvance` が毎回 `FT_Load_Char` を叩く未キャッシュ
+  経路で、1 コールあたり約 2206〜2888ns を要していた。
+- 定数項を潰すと、起票時のリストに無かった第 4 の原因が露出した。`awt/src/grapheme.zig` の
+  `nextGraphemeBoundary` が毎回スライス先頭から走査する O(from) で、`wrapSegment` が走査中の絶対
+  位置で呼ぶため合計 O(n^2) になっていた。advance の大きな定数項に隠れて見えなかった。
 
-### 候補アプローチ
-3 つは独立に効く。(a)+(c) でリサイズの主因は大きく落ちる見込み。(b) は測定全般に効く横断改善。
-- 案a: `wrapSegment` を増分幅へ。走査中に running width を保持し、各クラスタの advance を
-  `[pos, cluster_end]` だけ足す（行頭から測り直さない）。O(n^2) → O(n)。
-- 案b: per-face の glyph advance キャッシュ。同一 (face, pixel_size, codepoint) の advance をメモ化し、
-  測定パスの `FT_Load_Char` を削る。
-- 案c: Label の視覚行 reflow をキャッシュ。TextArea 式に幅 / テキスト変化時のみ `computeVisualLines` を
-  回し、paint では結果を再利用する。
-- 判断軸: リサイズ体感を最短で改善するなら (a)+(c) を先に。測定全般（#2 / #3 のクラスタ単位 advance とも
-  共有しうる）の底上げを取るなら (b) も。
+### 実施した修正
+ベンチ先行でプロファイルしてから、測定の定数項・累積測定・前方走査を順に潰した。
 
-### 決めること
-- (a) / (b) / (c) のどれを入れるか・順序。リサイズ体感優先なら (a)+(c) から。
-- (b) のキャッシュの寿命とキー（face・pixel_size・codepoint）をどこに持たせるか。
+- ベンチ先行: examples/wrap_perf（CPU 専用・ウィンドウ / GPU 不使用）でプロファイル（コミット f7fe8f9）。
+- (b) Zig 側 advance キャッシュ: `awt/src/Font.zig` の `Font` に、値コピー間で共有する `AdvanceCache`
+  ポインタを持たせた（init で確保・deinit で解放）。キーは (pixel_size, codepoint) で、ambient pixel
+  size の混線を構造的に排除する。direct-mapped 16K・フルキー照合。awt-c（`nmGetGlyphAdvance` /
+  `nmFont`）は不変で薄いまま。advance 約 2206ns → 1.3ns（コミット b399d2d）。
+- (a) `wrapSegment` を増分幅へ: 行頭から測り直すのをやめ、running width に切り替えた（コミット b399d2d）。
+- (d) `wrapSegment` の per-cluster 前方走査を、s 起点の再開可能な `Graphemes.iterator` に置換した。
+  禁則 / break 判定の次クラスタ確認も、境界先頭 codepoint の局所読みにした。残差 O(n^2) → O(n)。
+  返す折り位置は不変で、既存の textwrap_test 7 本が回帰ガードになる（コミット b4afce8）。
+
+### 不採用: 案c（Label の per-paint reflow キャッシュ）
+起票時の候補 (c) は不採用。プロファイルで、リサイズ中は幅が毎フレーム変わるためキャッシュが効かないと
+判明し、(a)+(b)+(d) で per-paint reflow 自体が十分安く（サブ ms）なったため不要になった。静的再描画
+向けの micro-opt としてのみ将来余地がある。
+
+### 結果
+4096 クラスタの単一行で 174.56ms → 0.121ms（約 1440 倍）。スケーリングは O(n^2) の露出からリニア
+（直前比 約 2.0 倍）へ移った。典型 UI 文（数百クラスタ）はサブ ms。検証は 3-way 合議（pm backstop ＋
+correctness ＋ test-genuineness の独立パネルで、vacuous テスト 1 件と設計上の MINOR を捕捉して是正）と、
+ユーザー実機（examples/widget_textarea のリサイズ）での体感確認による。
 
 ### 完了条件
-折り返し有効な TextArea / 折り返し Label を含む窓のリサイズが、長い行でも体感的に滑らかになる。
-（必要なら）測定・reflow 回数か所要時間で改善が確認できる。
+測定・reflow 所要時間で改善が確認できること。examples/wrap_perf がこれを満たし、回帰ベンチとして残置する。
