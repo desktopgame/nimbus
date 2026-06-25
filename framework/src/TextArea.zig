@@ -214,10 +214,12 @@ pub fn redo(self: *TextArea) void {
 
 pub fn cut(self: *TextArea) void {
     self.copyToClipboard();
-    if (!self.hasSelection()) return;
-    self.core.breakCoalescing();
-    const changed = self.deleteSelection();
-    self.core.breakCoalescing();
+    const changed = if (self.hasSelection()) blk: {
+        self.core.breakCoalescing();
+        const deleted = self.deleteSelection();
+        self.core.breakCoalescing();
+        break :blk deleted;
+    } else false;
     self.afterReflow(null, changed);
 }
 
@@ -227,7 +229,7 @@ pub fn copy(self: *TextArea) void {
 
 pub fn paste(self: *TextArea) void {
     const changed = self.pasteFromClipboard() catch false;
-    if (changed) self.afterReflow(null, true);
+    self.afterReflow(null, changed);
 }
 
 pub fn selectAll(self: *TextArea) void {
@@ -239,6 +241,9 @@ pub fn selectAll(self: *TextArea) void {
     self.afterEdit(null, old_caret != self.core.caret or old_mark != self.core.mark);
 }
 
+/// 1-based logical line/column at the caret. `col` counts Unicode codepoints,
+/// not grapheme clusters or visual cells, so combining sequences can report a
+/// column wider than their rendered caret movement.
 pub fn caretLineColumn(self: *const TextArea) struct { line: usize, col: usize } {
     const caret = @min(self.core.caret, self.core.len());
     var line: usize = 1;
@@ -1006,6 +1011,72 @@ test "TextArea change listener fires for typing public undo cut and caret moveme
     try std.testing.expectEqual(@as(usize, 2), probe.count);
 }
 
+test "TextArea mouse caret and drag selection fire change listener" {
+    const app = try newHeadlessApp();
+    defer app.deinit();
+    const frame = try app.frameHeadless("ta", 360, 160);
+    frame.window.container.setLayout(null);
+
+    const area = try app.textArea("abc");
+    area.component.setBounds(.{ .x = 10, .y = 10, .width = 240, .height = 80 });
+    try frame.window.add(&area.component);
+
+    var probe = ChangeProbe{};
+    try area.addChangeListener(ChangeProbe, ChangeProbe.onChange, &probe);
+
+    var robot = @import("Robot.zig").init(app, &frame.window);
+    robot.pump();
+
+    robot.click(17, 20, .left);
+    robot.pump();
+    try std.testing.expectEqual(@as(usize, 1), probe.count);
+
+    robot.moveMouse(17, 20);
+    robot.mouseDown(.left);
+    robot.moveMouse(60, 20);
+    robot.mouseUp(.left);
+    robot.pump();
+    try std.testing.expectEqual(@as(usize, 2), probe.count);
+}
+
+test "TextArea no-op movement undo cut and paste do not fire change listener" {
+    const app = try newHeadlessApp();
+    defer app.deinit();
+    const frame = try app.frameHeadless("ta", 360, 160);
+    frame.window.container.setLayout(null);
+
+    const area = try app.textArea("");
+    area.component.setBounds(.{ .x = 10, .y = 10, .width = 240, .height = 80 });
+    try frame.window.add(&area.component);
+
+    var probe = ChangeProbe{};
+    try area.addChangeListener(ChangeProbe, ChangeProbe.onChange, &probe);
+
+    var robot = @import("Robot.zig").init(app, &frame.window);
+    robot.pump();
+    robot.click(17, 20, .left);
+    robot.pump();
+    try std.testing.expectEqual(@as(usize, 0), probe.count);
+
+    robot.keyDown(.arrow_left, .{});
+    robot.keyUp(.arrow_left, .{});
+    robot.pump();
+    try std.testing.expectEqual(@as(usize, 0), probe.count);
+
+    area.undo();
+    try std.testing.expectEqual(@as(usize, 0), probe.count);
+
+    area.caret_visible = false;
+    area.cut();
+    try std.testing.expect(area.caret_visible);
+    try std.testing.expectEqual(@as(usize, 0), probe.count);
+
+    area.caret_visible = false;
+    area.paste();
+    try std.testing.expect(area.caret_visible);
+    try std.testing.expectEqual(@as(usize, 0), probe.count);
+}
+
 test "TextArea public actions match keyboard control paths" {
     const app = try newHeadlessApp();
     defer app.deinit();
@@ -1059,6 +1130,12 @@ test "TextArea caretLineColumn and undo accessors expose core state" {
     ta.core.caret = 5;
     try std.testing.expectEqual(@as(usize, 3), ta.caretLineColumn().line);
     try std.testing.expectEqual(@as(usize, 1), ta.caretLineColumn().col);
+
+    var trailing = try initTestArea("x\n");
+    defer deinitTestArea(&trailing);
+    trailing.core.caret = trailing.core.len();
+    try std.testing.expectEqual(@as(usize, 2), trailing.caretLineColumn().line);
+    try std.testing.expectEqual(@as(usize, 1), trailing.caretLineColumn().col);
 
     ta.core.caret = 8;
     try std.testing.expectEqual(@as(usize, 3), ta.caretLineColumn().line);
