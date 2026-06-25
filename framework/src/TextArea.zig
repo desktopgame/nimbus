@@ -707,7 +707,11 @@ fn handleKey(ta: *TextArea, ev: *Component.Event, k: awt.Event.KeyEvent) void {
         },
         .x => if (ctrl) {
             ta.copyToClipboard();
-            if (ta.hasSelection()) _ = ta.deleteSelection();
+            if (ta.hasSelection()) {
+                ta.core.breakCoalescing();
+                _ = ta.deleteSelection();
+                ta.core.breakCoalescing();
+            }
             ta.afterReflow(ev);
         },
         .v => if (ctrl) {
@@ -776,7 +780,7 @@ fn pasteFromClipboard(self: *TextArea) !void {
     const w = self.parentWindow() orelse return;
     if (w.awt_window == null) return; // headless: no clipboard
     const got = w.awt_window.?.getClipboardString() orelse return;
-    _ = try self.core.replaceSelection(got);
+    _ = try self.core.paste(got);
 }
 
 fn imeCleared(self: *TextArea) void {

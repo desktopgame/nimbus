@@ -95,8 +95,15 @@ pub fn removeCanChangeListener(
 
 pub fn push(self: *UndoStack, cmd: Command) !void {
     errdefer cmd.deinit(self.allocator);
-    try self.list.ensureUnusedCapacity(self.allocator, 1);
+    try self.ensureUnusedCapacity(1);
+    self.pushAssumeCapacity(cmd);
+}
 
+pub fn ensureUnusedCapacity(self: *UndoStack, n: usize) !void {
+    try self.list.ensureUnusedCapacity(self.allocator, n);
+}
+
+pub fn pushAssumeCapacity(self: *UndoStack, cmd: Command) void {
     const before = self.canState();
 
     while (self.list.items.len > self.index) {
@@ -110,7 +117,7 @@ pub fn push(self: *UndoStack, cmd: Command) !void {
         return;
     }
 
-    try self.list.append(self.allocator, cmd);
+    self.list.appendAssumeCapacity(cmd);
     self.index += 1;
 
     while (self.list.items.len > self.limit) {

@@ -43,6 +43,14 @@ const Buffer = struct {
         try self.gap.replace(start, count, bytes);
     }
 
+    fn ensureReplaceCapacity(self: *Buffer, start: usize, count: usize, insert_len: usize) !void {
+        try self.gap.ensureReplaceCapacity(start, count, insert_len);
+    }
+
+    fn replaceAssumeCapacity(self: *Buffer, start: usize, count: usize, bytes: []const u8) void {
+        self.gap.replaceAssumeCapacity(start, count, bytes);
+    }
+
     fn textSlice(self: *Buffer) []const u8 {
         self.gap.moveGap(self.gap.len());
         return self.gap.buf[0..self.gap.len()];
@@ -197,16 +205,20 @@ pub fn applyEdit(self: *EditableText, pos: usize, del_len: usize, new_bytes: []c
     const start = @min(pos, self.len());
     const count = @min(del_len, self.len() - start);
     const normalized = try normalizeLineEndings(self.allocator, new_bytes);
-    errdefer self.allocator.free(normalized);
+    defer self.allocator.free(normalized);
 
     if (count == 0 and normalized.len == 0) {
-        self.allocator.free(normalized);
         return false;
     }
 
     const old = try self.allocator.alloc(u8, count);
     errdefer self.allocator.free(old);
     self.copyRange(old, start, start + count);
+
+    const new_capacity = commandByteCapacity(normalized);
+    const new_storage = try self.allocator.alloc(u8, new_capacity);
+    errdefer self.allocator.free(new_storage);
+    @memcpy(new_storage[0..normalized.len], normalized);
 
     const caret_before = self.caret;
     const mark_before = self.mark;
@@ -220,7 +232,8 @@ pub fn applyEdit(self: *EditableText, pos: usize, del_len: usize, new_bytes: []c
         .allocator = self.allocator,
         .pos = start,
         .old_bytes = old,
-        .new_bytes = normalized,
+        .new_bytes = new_storage[0..normalized.len],
+        .new_capacity = new_capacity,
         .caret_before = caret_before,
         .mark_before = mark_before,
         .caret_after = caret_after,
@@ -229,11 +242,14 @@ pub fn applyEdit(self: *EditableText, pos: usize, del_len: usize, new_bytes: []c
         .mergeable_insert = isSingleGrapheme(normalized),
     };
 
-    try self.buffer.replace(start, count, normalized);
+    try self.undo_stack.ensureUnusedCapacity(1);
+    try self.buffer.ensureReplaceCapacity(start, count, normalized.len);
+
+    self.buffer.replaceAssumeCapacity(start, count, normalized);
     self.caret = caret_after;
     self.mark = mark_after;
 
-    try self.undo_stack.push(.{ .vtable = &ReplaceRange.vtable, .ctx = cmd_ctx });
+    self.undo_stack.pushAssumeCapacity(.{ .vtable = &ReplaceRange.vtable, .ctx = cmd_ctx });
     return true;
 }
 
@@ -245,6 +261,23 @@ pub fn insert(self: *EditableText, bytes: []const u8) !bool {
 pub fn replaceSelection(self: *EditableText, bytes: []const u8) !bool {
     const sel = self.selection();
     return self.applyEdit(sel.start, sel.end - sel.start, bytes);
+}
+
+pub fn paste(self: *EditableText, bytes: []const u8) !bool {
+    self.breakCoalescing();
+    const changed = try self.replaceSelection(bytes);
+    self.breakCoalescing();
+    return changed;
+}
+
+pub fn cutSelection(self: *EditableText, allocator: std.mem.Allocator) !?[]u8 {
+    if (!self.hasSelection()) return null;
+    const out = try self.selectionSlice(allocator);
+    errdefer allocator.free(out);
+    self.breakCoalescing();
+    _ = try self.deleteSelection();
+    self.breakCoalescing();
+    return out;
 }
 
 pub fn deleteSelection(self: *EditableText) !bool {
@@ -337,6 +370,7 @@ const ReplaceRange = struct {
     pos: usize,
     old_bytes: []u8,
     new_bytes: []u8,
+    new_capacity: usize,
     caret_before: usize,
     mark_before: usize,
     caret_after: usize,
@@ -365,7 +399,7 @@ const ReplaceRange = struct {
     fn deinitCommand(ctx: *anyopaque, allocator: std.mem.Allocator) void {
         const self = from(ctx);
         self.allocator.free(self.old_bytes);
-        self.allocator.free(self.new_bytes);
+        self.allocator.free(self.new_bytes.ptr[0..self.new_capacity]);
         allocator.destroy(self);
     }
 
@@ -378,9 +412,16 @@ const ReplaceRange = struct {
         if (self.pos + self.new_bytes.len != other.pos) return false;
 
         const old_len = self.new_bytes.len;
-        const merged = self.allocator.realloc(self.new_bytes, old_len + other.new_bytes.len) catch return false;
-        self.new_bytes = merged;
-        @memcpy(self.new_bytes[old_len..], other.new_bytes);
+        const new_len = old_len + other.new_bytes.len;
+        if (new_len > self.new_capacity) {
+            const old_storage = self.new_bytes.ptr[0..self.new_capacity];
+            const new_capacity = commandByteCapacityForLen(new_len);
+            const merged = self.allocator.realloc(old_storage, new_capacity) catch return false;
+            self.new_bytes = merged[0..old_len];
+            self.new_capacity = merged.len;
+        }
+        @memcpy(self.new_bytes.ptr[old_len..new_len], other.new_bytes);
+        self.new_bytes = self.new_bytes.ptr[0..new_len];
         self.caret_after = other.caret_after;
         self.mark_after = other.mark_after;
         return true;
@@ -414,10 +455,28 @@ fn isSingleGrapheme(bytes: []const u8) bool {
     return awt.grapheme.nextGraphemeBoundary(bytes, 0) == bytes.len;
 }
 
+fn commandByteCapacity(bytes: []const u8) usize {
+    if (!isSingleGrapheme(bytes)) return bytes.len;
+    if (std.mem.indexOfScalar(u8, bytes, '\n') != null) return bytes.len;
+    return commandByteCapacityForLen(bytes.len);
+}
+
+fn commandByteCapacityForLen(used_len: usize) usize {
+    return used_len + 64;
+}
+
 const testing = std.testing;
 
 fn expectText(et: *EditableText, expected: []const u8) !void {
     try testing.expectEqualStrings(expected, et.textSlice());
+}
+
+fn expectState(et: *EditableText, expected: []const u8, caret: usize, mark: usize, can_undo: bool, can_redo: bool) !void {
+    try expectText(et, expected);
+    try testing.expectEqual(caret, et.caret);
+    try testing.expectEqual(mark, et.mark);
+    try testing.expectEqual(can_undo, et.canUndo());
+    try testing.expectEqual(can_redo, et.canRedo());
 }
 
 test "insert delete and selection replacement update text and caret" {
@@ -528,16 +587,22 @@ test "coalescing breaks on newline delete selection paste and caret jump" {
     try testing.expect(try et.undo());
     try expectText(&et, "");
 
-    try et.setText("ab");
+    try et.setText("");
+    try testing.expect(try et.insert("a"));
     et.setSelection(0, 1);
-    try testing.expect(try et.replaceSelection("x"));
-    try expectText(&et, "xb");
+    try testing.expect(try et.replaceSelection("b"));
+    try expectText(&et, "b");
     try testing.expect(try et.undo());
-    try expectText(&et, "ab");
+    try expectText(&et, "a");
+    try testing.expect(try et.undo());
+    try expectText(&et, "");
 
     try et.setText("");
-    try testing.expect(try et.insert("ab"));
+    try testing.expect(try et.insert("a"));
+    try testing.expect(try et.paste("b"));
     try expectText(&et, "ab");
+    try testing.expect(try et.undo());
+    try expectText(&et, "a");
     try testing.expect(try et.undo());
     try expectText(&et, "");
 
@@ -547,6 +612,63 @@ test "coalescing breaks on newline delete selection paste and caret jump" {
     try expectText(&et, "ba");
     try testing.expect(try et.undo());
     try expectText(&et, "a");
+}
+
+test "cut and paste undo restore text and split paste from typing" {
+    var et = try EditableText.initFromSlice(testing.allocator, "abc");
+    defer et.deinit();
+
+    et.setSelection(3, 1);
+    const cut = (try et.cutSelection(testing.allocator)) orelse return error.TestExpectedEqual;
+    defer testing.allocator.free(cut);
+    try testing.expectEqualStrings("bc", cut);
+    try expectText(&et, "a");
+
+    try testing.expect(try et.undo());
+    try expectText(&et, "abc");
+    try testing.expectEqual(@as(usize, 3), et.caret);
+    try testing.expectEqual(@as(usize, 1), et.mark);
+
+    try testing.expect(try et.redo());
+    try expectText(&et, "a");
+
+    et.setCaret(1);
+    try testing.expect(try et.paste(cut));
+    try expectText(&et, "abc");
+    try testing.expect(try et.undo());
+    try expectText(&et, "a");
+
+    try et.setText("");
+    try testing.expect(try et.insert("a"));
+    try testing.expect(try et.paste("b"));
+    try expectText(&et, "ab");
+    try testing.expect(try et.undo());
+    try expectText(&et, "a");
+    try testing.expect(try et.undo());
+    try expectText(&et, "");
+}
+
+test "delete noops and undo restore delete caret" {
+    var et = try EditableText.initFromSlice(testing.allocator, "ab");
+    defer et.deinit();
+
+    et.setCaret(1);
+    try testing.expect(try et.deleteBackward());
+    try expectState(&et, "b", 0, 0, true, false);
+    try testing.expect(try et.undo());
+    try expectState(&et, "ab", 1, 1, false, true);
+
+    try et.setText("ab");
+    et.setCaret(0);
+    try testing.expect(!(try et.deleteBackward()));
+    try expectState(&et, "ab", 0, 0, false, false);
+
+    et.setCaret(et.len());
+    try testing.expect(!(try et.deleteForward()));
+    try expectState(&et, "ab", 2, 2, false, false);
+
+    try testing.expect(!(try et.applyEdit(1, 0, "")));
+    try expectState(&et, "ab", 2, 2, false, false);
 }
 
 test "crlf normalization and setText reset undo history" {
@@ -561,4 +683,85 @@ test "crlf normalization and setText reset undo history" {
     try expectText(&et, "x\ny");
     try testing.expect(!et.canUndo());
     try testing.expect(!et.canRedo());
+}
+
+const OomEditCase = enum {
+    insert,
+    delete,
+    selection_replace,
+    merge,
+};
+
+fn checkApplyEditAllOrNothing(allocator: std.mem.Allocator, edit_case: OomEditCase) !void {
+    switch (edit_case) {
+        .insert => {
+            var et = try EditableText.initFromSlice(allocator, "ab");
+            defer et.deinit();
+            et.setCaret(1);
+            const result = et.insert("X");
+            if (result) |changed| {
+                try testing.expect(changed);
+                try expectState(&et, "aXb", 2, 2, true, false);
+            } else |err| switch (err) {
+                error.OutOfMemory => {
+                    try expectState(&et, "ab", 1, 1, false, false);
+                    return error.OutOfMemory;
+                },
+            }
+        },
+        .delete => {
+            var et = try EditableText.initFromSlice(allocator, "abc");
+            defer et.deinit();
+            et.setCaret(2);
+            const result = et.deleteBackward();
+            if (result) |changed| {
+                try testing.expect(changed);
+                try expectState(&et, "ac", 1, 1, true, false);
+            } else |err| switch (err) {
+                error.OutOfMemory => {
+                    try expectState(&et, "abc", 2, 2, false, false);
+                    return error.OutOfMemory;
+                },
+            }
+        },
+        .selection_replace => {
+            var et = try EditableText.initFromSlice(allocator, "abcd");
+            defer et.deinit();
+            et.setSelection(3, 1);
+            const result = et.replaceSelection("X");
+            if (result) |changed| {
+                try testing.expect(changed);
+                try expectState(&et, "aXd", 2, 2, true, false);
+            } else |err| switch (err) {
+                error.OutOfMemory => {
+                    try expectState(&et, "abcd", 3, 1, false, false);
+                    return error.OutOfMemory;
+                },
+            }
+        },
+        .merge => {
+            var et = EditableText.init(allocator);
+            defer et.deinit();
+            try testing.expect(try et.insert("a"));
+            const result = et.insert("b");
+            if (result) |changed| {
+                try testing.expect(changed);
+                try expectState(&et, "ab", 2, 2, true, false);
+                try testing.expect(try et.undo());
+                try expectState(&et, "", 0, 0, false, true);
+            } else |err| switch (err) {
+                error.OutOfMemory => {
+                    try expectState(&et, "a", 1, 1, true, false);
+                    return error.OutOfMemory;
+                },
+            }
+        },
+    }
+}
+
+test "applyEdit allocation failures leave text caret and undo unchanged" {
+    try testing.checkAllAllocationFailures(testing.allocator, checkApplyEditAllOrNothing, .{OomEditCase.insert});
+    try testing.checkAllAllocationFailures(testing.allocator, checkApplyEditAllOrNothing, .{OomEditCase.delete});
+    try testing.checkAllAllocationFailures(testing.allocator, checkApplyEditAllOrNothing, .{OomEditCase.selection_replace});
+    try testing.checkAllAllocationFailures(testing.allocator, checkApplyEditAllOrNothing, .{OomEditCase.merge});
 }

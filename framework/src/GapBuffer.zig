@@ -99,7 +99,7 @@ pub fn moveGap(self: *GapBuffer, pos: usize) void {
 
 /// Ensure the gap holds at least `need` bytes, growing the backing buffer if
 /// not. After growth the gap is preserved at its current logical position.
-fn ensureGap(self: *GapBuffer, need: usize) !void {
+pub fn ensureGap(self: *GapBuffer, need: usize) !void {
     const cur = self.gap_end - self.gap_start;
     if (cur >= need) return;
 
@@ -119,13 +119,19 @@ fn ensureGap(self: *GapBuffer, need: usize) !void {
     self.gap_end = new_cap - after;
 }
 
+fn insertAssumeCapacity(self: *GapBuffer, pos: usize, bytes: []const u8) void {
+    if (bytes.len == 0) return;
+    self.moveGap(pos);
+    std.debug.assert(self.gap_end - self.gap_start >= bytes.len);
+    @memcpy(self.buf[self.gap_start .. self.gap_start + bytes.len], bytes);
+    self.gap_start += bytes.len;
+}
+
 /// Insert `bytes` at logical `pos`.
 pub fn insert(self: *GapBuffer, pos: usize, bytes: []const u8) !void {
     if (bytes.len == 0) return;
     try self.ensureGap(bytes.len);
-    self.moveGap(pos);
-    @memcpy(self.buf[self.gap_start .. self.gap_start + bytes.len], bytes);
-    self.gap_start += bytes.len;
+    self.insertAssumeCapacity(pos, bytes);
 }
 
 /// Delete `count` bytes starting at logical `pos`. Clamps to available length.
@@ -139,8 +145,21 @@ pub fn delete(self: *GapBuffer, pos: usize, count: usize) void {
 /// Replace `[start, start+count)` with `bytes` in one step (caret math is
 /// simpler than separate delete+insert at call sites).
 pub fn replace(self: *GapBuffer, start: usize, count: usize, bytes: []const u8) !void {
+    try self.ensureReplaceCapacity(start, count, bytes.len);
+    self.replaceAssumeCapacity(start, count, bytes);
+}
+
+pub fn ensureReplaceCapacity(self: *GapBuffer, start: usize, count: usize, insert_len: usize) !void {
+    std.debug.assert(start <= self.len());
+    const n = @min(count, self.len() - start);
+    const cur_gap = self.gap_end - self.gap_start;
+    if (cur_gap + n >= insert_len) return;
+    try self.ensureGap(insert_len - n);
+}
+
+pub fn replaceAssumeCapacity(self: *GapBuffer, start: usize, count: usize, bytes: []const u8) void {
     self.delete(start, count);
-    try self.insert(start, bytes);
+    self.insertAssumeCapacity(start, bytes);
 }
 
 /// Drop all content (keeps the backing allocation for reuse).
