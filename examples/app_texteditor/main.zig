@@ -11,6 +11,89 @@ const ActionEvent = nimbus.ActionEvent;
 const ICON_SIZE = nimbus.Component.Size{ .width = 18, .height = 18 };
 
 const Handler = *const fn (*Editor) void;
+const DISCARD_RESULT: nimbus.Dialog.Result = @enumFromInt(3);
+
+pub const Eol = enum { lf, crlf };
+
+pub const FileIo = struct {
+    vtable: *const VTable,
+    user_data: *anyopaque,
+
+    pub const VTable = struct {
+        readAll: *const fn (user_data: *anyopaque, allocator: std.mem.Allocator, path: []const u8) anyerror![]u8,
+        writeAll: *const fn (user_data: *anyopaque, path: []const u8, bytes: []const u8) anyerror!void,
+    };
+
+    pub fn readAll(self: FileIo, allocator: std.mem.Allocator, path: []const u8) ![]u8 {
+        return self.vtable.readAll(self.user_data, allocator, path);
+    }
+
+    pub fn writeAll(self: FileIo, path: []const u8, bytes: []const u8) !void {
+        try self.vtable.writeAll(self.user_data, path, bytes);
+    }
+};
+
+pub const OsFileIoState = struct {
+    io: std.Io,
+};
+
+pub fn osFileIo(state: *OsFileIoState) FileIo {
+    return .{ .vtable = &os_file_io_vtable, .user_data = state };
+}
+
+const os_file_io_vtable = FileIo.VTable{
+    .readAll = osReadAll,
+    .writeAll = osWriteAll,
+};
+
+fn osReadAll(user_data: *anyopaque, allocator: std.mem.Allocator, path: []const u8) ![]u8 {
+    const state: *OsFileIoState = @ptrCast(@alignCast(user_data));
+    const dir_path = std.fs.path.dirname(path) orelse return error.InvalidPath;
+    const base = std.fs.path.basename(path);
+    var dir = try std.Io.Dir.openDirAbsolute(state.io, dir_path, .{});
+    defer dir.close(state.io);
+    return try dir.readFileAlloc(state.io, base, allocator, .unlimited);
+}
+
+fn osWriteAll(user_data: *anyopaque, path: []const u8, bytes: []const u8) !void {
+    const state: *OsFileIoState = @ptrCast(@alignCast(user_data));
+    const dir_path = std.fs.path.dirname(path) orelse return error.InvalidPath;
+    const base = std.fs.path.basename(path);
+    var dir = try std.Io.Dir.openDirAbsolute(state.io, dir_path, .{});
+    defer dir.close(state.io);
+    try dir.writeFile(state.io, .{ .sub_path = base, .data = bytes });
+}
+
+pub fn detectEol(bytes: []const u8) Eol {
+    if (std.mem.indexOf(u8, bytes, "\r\n") != null) return .crlf;
+    return .lf;
+}
+
+pub fn expandForEol(allocator: std.mem.Allocator, text: []const u8, eol: Eol) ![]u8 {
+    if (eol == .lf) return try allocator.dupe(u8, text);
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(allocator);
+    try out.ensureTotalCapacity(allocator, text.len + std.mem.count(u8, text, "\n"));
+    for (text) |b| {
+        if (b == '\n') {
+            out.appendAssumeCapacity('\r');
+            out.appendAssumeCapacity('\n');
+        } else {
+            out.appendAssumeCapacity(b);
+        }
+    }
+    return try out.toOwnedSlice(allocator);
+}
+
+pub fn isDirty(current: []const u8, baseline: []const u8) bool {
+    return !std.mem.eql(u8, current, baseline);
+}
+
+pub const BuildOptions = struct {
+    io: std.Io,
+    file_io: ?FileIo = null,
+    chooser_source: ?nimbus.FileChooserDirSource = null,
+};
 
 const Action = struct {
     editor: *Editor,
@@ -78,6 +161,15 @@ pub const Editor = struct {
     allocator: std.mem.Allocator,
     app: *nimbus.Application,
     frame: *nimbus.Frame,
+    file_io_state: OsFileIoState,
+    file_io: FileIo,
+    chooser: *nimbus.FileChooser = undefined,
+    unsaved_dialog: *nimbus.Dialog = undefined,
+    unsaved_message: *nimbus.Label = undefined,
+    path: ?[]u8 = null,
+    baseline: []u8 = &.{},
+    eol: Eol = .lf,
+    dirty: bool = false,
     toolbar: *nimbus.Panel = undefined,
     text_area: *nimbus.TextArea = undefined,
     scroll_pane: *nimbus.ScrollPane = undefined,
@@ -100,36 +192,216 @@ pub const Editor = struct {
     word_wrap_action: Action = undefined,
 
     pub fn deinitModel(self: *Editor, gpa: std.mem.Allocator) void {
+        if (self.path) |p| self.allocator.free(p);
+        self.allocator.free(self.baseline);
         gpa.destroy(self);
     }
 
-    pub fn deinitUi(_: *Editor) void {}
-
-    fn noop(_: *Editor) void {}
+    pub fn deinitUi(self: *Editor) void {
+        self.chooser.destroy();
+        self.unsaved_dialog.destroy();
+    }
 
     fn initActions(self: *Editor) void {
-        self.new_action = Action.init(self, "New", .file_plus, nimbus.KeyStroke.cmd(.n), noop);
-        self.open_action = Action.init(self, "Open", .folder_open, nimbus.KeyStroke.cmd(.o), noop);
-        self.save_action = Action.init(self, "Save", .save, nimbus.KeyStroke.cmd(.s), noop);
-        self.save_as_action = Action.init(self, "Save As", null, nimbus.KeyStroke.cmdShift(.s), noop);
-        self.exit_action = Action.init(self, "Exit", null, null, noop);
-        self.undo_action = Action.init(self, "Undo", .undo, nimbus.KeyStroke.cmd(.z), noop);
-        self.redo_action = Action.init(self, "Redo", .redo, nimbus.KeyStroke.cmd(.y), noop);
-        self.cut_action = Action.init(self, "Cut", null, nimbus.KeyStroke.cmd(.x), noop);
-        self.copy_action = Action.init(self, "Copy", null, nimbus.KeyStroke.cmd(.c), noop);
-        self.paste_action = Action.init(self, "Paste", null, nimbus.KeyStroke.cmd(.v), noop);
-        self.select_all_action = Action.init(self, "Select All", null, nimbus.KeyStroke.cmd(.a), noop);
-        self.word_wrap_action = Action.init(self, "Word Wrap", null, null, noop);
+        self.new_action = Action.init(self, "New", .file_plus, nimbus.KeyStroke.cmd(.n), onNew);
+        self.open_action = Action.init(self, "Open", .folder_open, nimbus.KeyStroke.cmd(.o), onOpen);
+        self.save_action = Action.init(self, "Save", .save, nimbus.KeyStroke.cmd(.s), onSave);
+        self.save_as_action = Action.init(self, "Save As", null, nimbus.KeyStroke.cmdShift(.s), onSaveAs);
+        self.exit_action = Action.init(self, "Exit", null, null, onExit);
+        self.undo_action = Action.init(self, "Undo", .undo, nimbus.KeyStroke.cmd(.z), onUndo);
+        self.redo_action = Action.init(self, "Redo", .redo, nimbus.KeyStroke.cmd(.y), onRedo);
+        self.cut_action = Action.init(self, "Cut", null, nimbus.KeyStroke.cmd(.x), onCut);
+        self.copy_action = Action.init(self, "Copy", null, nimbus.KeyStroke.cmd(.c), onCopy);
+        self.paste_action = Action.init(self, "Paste", null, nimbus.KeyStroke.cmd(.v), onPaste);
+        self.select_all_action = Action.init(self, "Select All", null, nimbus.KeyStroke.cmd(.a), onSelectAll);
+        self.word_wrap_action = Action.init(self, "Word Wrap", null, null, onWordWrap);
     }
+
+    fn setPath(self: *Editor, path: ?[]const u8) !void {
+        if (self.path) |old| self.allocator.free(old);
+        self.path = if (path) |p| try self.allocator.dupe(u8, p) else null;
+    }
+
+    fn replaceBaseline(self: *Editor, text: []const u8) !void {
+        const next = try self.allocator.dupe(u8, text);
+        self.allocator.free(self.baseline);
+        self.baseline = next;
+        self.recomputeDirty();
+    }
+
+    fn recomputeDirty(self: *Editor) void {
+        self.dirty = isDirty(self.text_area.getText(), self.baseline);
+        self.updateTitle();
+    }
+
+    fn updateTitle(self: *Editor) void {
+        const marker: []const u8 = if (self.dirty) "*" else "";
+        const name = if (self.path) |p| std.fs.path.basename(p) else "untitled";
+        var buf: [512]u8 = undefined;
+        const title = std.fmt.bufPrint(&buf, "{s}{s} - nimbus text editor", .{ marker, name }) catch return;
+        self.frame.window.setTitle(title) catch {};
+    }
+
+    fn resetDocument(self: *Editor) void {
+        self.text_area.setText("") catch return;
+        self.setPath(null) catch return;
+        self.eol = .lf;
+        self.replaceBaseline("") catch return;
+        self.dirty = false;
+        self.updateTitle();
+    }
+
+    fn openPath(self: *Editor, path: []const u8) bool {
+        const bytes = self.file_io.readAll(self.allocator, path) catch return false;
+        defer self.allocator.free(bytes);
+        const next_eol = detectEol(bytes);
+        self.text_area.setText(bytes) catch return false;
+        self.setPath(path) catch return false;
+        self.eol = next_eol;
+        self.replaceBaseline(self.text_area.getText()) catch return false;
+        self.dirty = false;
+        self.updateTitle();
+        return true;
+    }
+
+    fn saveToPath(self: *Editor, path: []const u8) bool {
+        const expanded = expandForEol(self.allocator, self.text_area.getText(), self.eol) catch return false;
+        defer self.allocator.free(expanded);
+        self.file_io.writeAll(path, expanded) catch return false;
+        self.setPath(path) catch return false;
+        self.replaceBaseline(self.text_area.getText()) catch return false;
+        self.dirty = false;
+        self.updateTitle();
+        return true;
+    }
+
+    fn saveCurrent(self: *Editor) bool {
+        if (self.path) |p| return self.saveToPath(p);
+        return self.saveAs();
+    }
+
+    fn saveAs(self: *Editor) bool {
+        if (self.chooser.showSaveDialog() != .ok) return false;
+        const selected = self.chooser.getSelectedPath() orelse return false;
+        return self.saveToPath(selected);
+    }
+
+    fn openFromChooser(self: *Editor) void {
+        if (!self.confirmDiscardIfDirty()) return;
+        if (self.chooser.showOpenDialog() != .ok) return;
+        const selected = self.chooser.getSelectedPath() orelse return;
+        _ = self.openPath(selected);
+    }
+
+    fn confirmDiscardIfDirty(self: *Editor) bool {
+        if (!self.dirty) return true;
+        const result = self.unsaved_dialog.showModal();
+        return self.continueAfterUnsavedResult(result);
+    }
+
+    fn continueAfterUnsavedResult(self: *Editor, result: nimbus.Dialog.Result) bool {
+        if (result == .ok) return self.saveCurrent();
+        if (result == DISCARD_RESULT) return true;
+        return false;
+    }
+
+    pub fn newDocumentForTest(self: *Editor) void {
+        self.resetDocument();
+    }
+
+    pub fn openPathForTest(self: *Editor, path: []const u8) bool {
+        return self.openPath(path);
+    }
+
+    pub fn saveToPathForTest(self: *Editor, path: []const u8) bool {
+        return self.saveToPath(path);
+    }
+
+    pub fn newDocumentWithUnsavedResultForTest(self: *Editor, result: nimbus.Dialog.Result) void {
+        if (self.dirty and !self.continueAfterUnsavedResult(result)) return;
+        self.resetDocument();
+    }
+
+    pub fn dirtyForTest(self: *const Editor) bool {
+        return self.dirty;
+    }
+
+    pub fn pathForTest(self: *const Editor) ?[]const u8 {
+        return self.path;
+    }
+
+    pub fn eolForTest(self: *const Editor) Eol {
+        return self.eol;
+    }
+
+    fn onTextChanged(self: *Editor, _: *const nimbus.ChangeEvent) void {
+        self.recomputeDirty();
+    }
+
+    fn onNew(self: *Editor) void {
+        if (!self.confirmDiscardIfDirty()) return;
+        self.resetDocument();
+    }
+
+    fn onOpen(self: *Editor) void {
+        self.openFromChooser();
+    }
+
+    fn onSave(self: *Editor) void {
+        _ = self.saveCurrent();
+    }
+
+    fn onSaveAs(self: *Editor) void {
+        _ = self.saveAs();
+    }
+
+    fn onExit(self: *Editor) void {
+        if (!self.confirmDiscardIfDirty()) return;
+        self.frame.window.dispose();
+    }
+
+    fn onUndo(self: *Editor) void {
+        self.text_area.undo();
+    }
+
+    fn onRedo(self: *Editor) void {
+        self.text_area.redo();
+    }
+
+    fn onCut(self: *Editor) void {
+        self.text_area.cut();
+    }
+
+    fn onCopy(self: *Editor) void {
+        self.text_area.copy();
+    }
+
+    fn onPaste(self: *Editor) void {
+        self.text_area.paste();
+    }
+
+    fn onSelectAll(self: *Editor) void {
+        self.text_area.selectAll();
+    }
+
+    fn onWordWrap(_: *Editor) void {}
 };
 
 pub fn build(app: *nimbus.Application, frame: *nimbus.Frame, gpa: std.mem.Allocator) !*Editor {
+    return buildWithOptions(app, frame, gpa, .{ .io = app.event_queue.io });
+}
+
+pub fn buildWithOptions(app: *nimbus.Application, frame: *nimbus.Frame, gpa: std.mem.Allocator, options: BuildOptions) !*Editor {
     const editor = try gpa.create(Editor);
     editor.* = .{
         .allocator = gpa,
         .app = app,
         .frame = frame,
+        .file_io_state = .{ .io = options.io },
+        .file_io = undefined,
     };
+    editor.file_io = options.file_io orelse osFileIo(&editor.file_io_state);
+    editor.baseline = try gpa.dupe(u8, "");
     editor.initActions();
 
     frame.window.container.setLayout(nimbus.BorderLayout.get());
@@ -155,6 +427,7 @@ pub fn build(app: *nimbus.Application, frame: *nimbus.Frame, gpa: std.mem.Alloca
 
     const text_area = try app.textArea("");
     editor.text_area = text_area;
+    try text_area.addChangeListener(Editor, Editor.onTextChanged, editor);
     const scroll_pane = try app.scrollPane(&text_area.component);
     editor.scroll_pane = scroll_pane;
     try nimbus.BorderLayout.add(&frame.window.container, .center, scroll_pane.asComponent());
@@ -178,7 +451,49 @@ pub fn build(app: *nimbus.Application, frame: *nimbus.Frame, gpa: std.mem.Alloca
     try status.asContainer().add(&editor.status_eol.component);
     try nimbus.BorderLayout.add(&frame.window.container, .south, status.asComponent());
 
+    editor.chooser = if (options.chooser_source) |source|
+        try nimbus.FileChooser.createWithSource(app, &frame.window, source)
+    else
+        try app.fileChooser(&frame.window);
+    editor.unsaved_dialog = try app.dialog(&frame.window, "Unsaved changes", 360, 150);
+    editor.unsaved_message = try app.label("Save changes before continuing?");
+    try buildUnsavedDialog(app, editor.unsaved_dialog, editor.unsaved_message);
+    editor.updateTitle();
+
     return editor;
+}
+
+fn buildUnsavedDialog(app: *nimbus.Application, dialog: *nimbus.Dialog, msg: *nimbus.Label) !void {
+    dialog.window.container.setLayout(try nimbus.PaddingLayout.create(app.allocator, nimbus.Insets.all(12)));
+    const body = try app.container();
+    body.setLayout(try nimbus.BoxLayout.verticalSpaced(app.allocator, 10));
+    msg.component.setAlignX(.center);
+    const row = try app.container();
+    row.setLayout(try nimbus.BoxLayout.horizontalSpaced(app.allocator, 8));
+    const save = try app.button("Save");
+    const discard = try app.button("Discard");
+    const cancel = try app.button("Cancel");
+    try save.getModel().addActionListener(nimbus.Dialog, onUnsavedSave, dialog);
+    try discard.getModel().addActionListener(nimbus.Dialog, onUnsavedDiscard, dialog);
+    try cancel.getModel().addActionListener(nimbus.Dialog, onUnsavedCancel, dialog);
+    try row.add(&save.component);
+    try row.add(&discard.component);
+    try row.add(&cancel.component);
+    try body.add(&msg.component);
+    try body.add(&row.component);
+    try dialog.window.add(&body.component);
+}
+
+fn onUnsavedSave(dialog: *nimbus.Dialog, _: *const ActionEvent) void {
+    dialog.close(.ok);
+}
+
+fn onUnsavedDiscard(dialog: *nimbus.Dialog, _: *const ActionEvent) void {
+    dialog.close(DISCARD_RESULT);
+}
+
+fn onUnsavedCancel(dialog: *nimbus.Dialog, _: *const ActionEvent) void {
+    dialog.close(.cancel);
 }
 
 fn buildMenus(app: *nimbus.Application, editor: *Editor, menu_bar: *nimbus.MenuBar) !void {
