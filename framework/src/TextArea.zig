@@ -18,6 +18,9 @@ const Application = @import("Application.zig");
 const EditableText = @import("EditableText.zig");
 const Window = @import("Window.zig");
 const ImeSession = @import("ImeSession.zig");
+const listener = @import("listener.zig");
+const ChangeListenerList = listener.ChangeListenerList;
+const ChangeEvent = listener.ChangeEvent;
 
 const TextArea = @This();
 
@@ -73,6 +76,9 @@ lines: std.ArrayList(VisualLine),
 scratch: std.ArrayList(u8),
 /// IME preedit (composition) session. Empty when not composing.
 ime: ImeSession,
+/// Fired whenever text, caret, or selection state changes. This is a single
+/// app-level observation point for status and command enablement.
+change_listeners: ChangeListenerList,
 allocator: std.mem.Allocator,
 
 pub const vtable = Component.VTable{
@@ -122,6 +128,7 @@ pub fn create(
         .lines = .empty,
         .scratch = .empty,
         .ime = ImeSession.init(allocator),
+        .change_listeners = ChangeListenerList.init(allocator),
         .allocator = allocator,
     };
     ta.ime.setOnCleared(ImeSession.ClearedHook.typed(TextArea, imeCleared, ta));
@@ -143,6 +150,7 @@ pub fn setText(self: *TextArea, new_text: []const u8) !void {
     try self.core.setText(new_text);
     self.refreshMinSize();
     self.component.markLayoutDirty();
+    self.fireChange();
     self.component.repaint();
 }
 
@@ -184,6 +192,79 @@ pub fn getBackground(self: TextArea) awt.Graphics.Color {
 pub fn setBackground(self: *TextArea, c: awt.Graphics.Color) void {
     self.background = c;
     self.component.repaint();
+}
+
+/// Listener fired whenever text, caret, or selection state changes. Multiple
+/// listeners are allowed.
+pub fn addChangeListener(self: *TextArea, comptime T: type, comptime f: fn (*T, *const ChangeEvent) void, user_data: *T) !void {
+    try self.change_listeners.addTyped(T, f, user_data);
+}
+
+pub fn removeChangeListener(self: *TextArea, comptime T: type, comptime f: fn (*T, *const ChangeEvent) void, user_data: *T) void {
+    self.change_listeners.removeTyped(T, f, user_data);
+}
+
+pub fn undo(self: *TextArea) void {
+    if (self.core.undo() catch false) self.afterReflow(null, true);
+}
+
+pub fn redo(self: *TextArea) void {
+    if (self.core.redo() catch false) self.afterReflow(null, true);
+}
+
+pub fn cut(self: *TextArea) void {
+    self.copyToClipboard();
+    if (!self.hasSelection()) return;
+    self.core.breakCoalescing();
+    const changed = self.deleteSelection();
+    self.core.breakCoalescing();
+    self.afterReflow(null, changed);
+}
+
+pub fn copy(self: *TextArea) void {
+    self.copyToClipboard();
+}
+
+pub fn paste(self: *TextArea) void {
+    const changed = self.pasteFromClipboard() catch false;
+    if (changed) self.afterReflow(null, true);
+}
+
+pub fn selectAll(self: *TextArea) void {
+    const old_caret = self.core.caret;
+    const old_mark = self.core.mark;
+    self.core.mark = 0;
+    self.core.caret = self.core.len();
+    self.core.breakCoalescing();
+    self.afterEdit(null, old_caret != self.core.caret or old_mark != self.core.mark);
+}
+
+pub fn caretLineColumn(self: *const TextArea) struct { line: usize, col: usize } {
+    const caret = @min(self.core.caret, self.core.len());
+    var line: usize = 1;
+    var i: usize = 0;
+    while (i < caret) : (i += 1) {
+        if (self.core.byteAt(i) == '\n') line += 1;
+    }
+    const line_start = self.core.lineStartAtByte(caret);
+    var col: usize = 1;
+    i = line_start;
+    while (i < caret) {
+        const b = self.core.byteAt(i);
+        const n = std.unicode.utf8ByteSequenceLength(b) catch 1;
+        if (i + n > caret) break;
+        i += n;
+        col += 1;
+    }
+    return .{ .line = line, .col = col };
+}
+
+pub fn canUndo(self: *const TextArea) bool {
+    return self.core.canUndo();
+}
+
+pub fn canRedo(self: *const TextArea) bool {
+    return self.core.canRedo();
 }
 
 // ── vtable impl ──────────────────────────────────────────────────────────
@@ -237,6 +318,7 @@ fn destroy(self: *Component, allocator: std.mem.Allocator) void {
     ta.lines.deinit(allocator);
     ta.scratch.deinit(allocator);
     ta.ime.deinit();
+    ta.change_listeners.deinit();
     allocator.destroy(ta);
 }
 
@@ -595,6 +677,8 @@ fn handleMouse(ta: *TextArea, ev: *Component.Event, m: awt.Event.MouseEvent) voi
         .press => {
             if (m.button == .left and inside) {
                 const pos = ta.pointToCaret(lx, ly);
+                const old_caret = ta.core.caret;
+                const old_mark = ta.core.mark;
                 ta.core.caret = pos;
                 ta.core.mark = pos;
                 ta.core.breakCoalescing();
@@ -605,6 +689,7 @@ fn handleMouse(ta: *TextArea, ev: *Component.Event, m: awt.Event.MouseEvent) voi
                 ta.ensureCaretVisible();
                 ta.component.repaint();
                 ta.pushCaretToIme();
+                if (old_caret != ta.core.caret or old_mark != ta.core.mark) ta.fireChange();
                 ev.consume();
             }
         },
@@ -625,6 +710,7 @@ fn handleMouse(ta: *TextArea, ev: *Component.Event, m: awt.Event.MouseEvent) voi
                     ta.caret_visible = true;
                     ta.ensureCaretVisible();
                     ta.component.repaint();
+                    ta.fireChange();
                 }
             }
         },
@@ -642,81 +728,88 @@ fn handleKey(ta: *TextArea, ev: *Component.Event, k: awt.Event.KeyEvent) void {
 
     switch (k.code) {
         .arrow_left => {
+            const old_caret = ta.core.caret;
+            const old_mark = ta.core.mark;
             ta.core.caret = ta.prevBoundary(ta.core.caret);
             if (!shift) ta.core.mark = ta.core.caret;
             ta.core.breakCoalescing();
-            ta.afterEdit(ev);
+            ta.afterEdit(ev, old_caret != ta.core.caret or old_mark != ta.core.mark);
         },
         .arrow_right => {
+            const old_caret = ta.core.caret;
+            const old_mark = ta.core.mark;
             ta.core.caret = ta.nextBoundary(ta.core.caret);
             if (!shift) ta.core.mark = ta.core.caret;
             ta.core.breakCoalescing();
-            ta.afterEdit(ev);
+            ta.afterEdit(ev, old_caret != ta.core.caret or old_mark != ta.core.mark);
         },
         .arrow_up => {
+            const old_caret = ta.core.caret;
+            const old_mark = ta.core.mark;
             ta.moveVertical(-1);
             if (!shift) ta.core.mark = ta.core.caret;
             ta.core.breakCoalescing();
-            ta.afterEdit(ev);
+            ta.afterEdit(ev, old_caret != ta.core.caret or old_mark != ta.core.mark);
         },
         .arrow_down => {
+            const old_caret = ta.core.caret;
+            const old_mark = ta.core.mark;
             ta.moveVertical(1);
             if (!shift) ta.core.mark = ta.core.caret;
             ta.core.breakCoalescing();
-            ta.afterEdit(ev);
+            ta.afterEdit(ev, old_caret != ta.core.caret or old_mark != ta.core.mark);
         },
         .home => {
+            const old_caret = ta.core.caret;
+            const old_mark = ta.core.mark;
             ta.core.caret = ta.lines.items[ta.caretLine(ta.core.caret)].start;
             if (!shift) ta.core.mark = ta.core.caret;
             ta.core.breakCoalescing();
-            ta.afterEdit(ev);
+            ta.afterEdit(ev, old_caret != ta.core.caret or old_mark != ta.core.mark);
         },
         .end => {
+            const old_caret = ta.core.caret;
+            const old_mark = ta.core.mark;
             ta.core.caret = ta.lines.items[ta.caretLine(ta.core.caret)].end;
             if (!shift) ta.core.mark = ta.core.caret;
             ta.core.breakCoalescing();
-            ta.afterEdit(ev);
+            ta.afterEdit(ev, old_caret != ta.core.caret or old_mark != ta.core.mark);
         },
         .z => if (ctrl) {
-            if (ta.core.undo() catch false) ta.afterReflow(ev) else ev.consume();
+            ta.undo();
+            ev.consume();
         },
         .y => if (ctrl) {
-            if (ta.core.redo() catch false) ta.afterReflow(ev) else ev.consume();
+            ta.redo();
+            ev.consume();
         },
         .backspace => {
-            _ = ta.core.deleteBackward() catch false;
-            ta.afterReflow(ev);
+            const changed = ta.core.deleteBackward() catch false;
+            ta.afterReflow(ev, changed);
         },
         .delete => {
-            _ = ta.core.deleteForward() catch false;
-            ta.afterReflow(ev);
+            const changed = ta.core.deleteForward() catch false;
+            ta.afterReflow(ev, changed);
         },
         .enter => {
-            _ = ta.core.insert("\n") catch false;
-            ta.afterReflow(ev);
+            const changed = ta.core.insert("\n") catch false;
+            ta.afterReflow(ev, changed);
         },
         .a => if (ctrl) {
-            ta.core.mark = 0;
-            ta.core.caret = ta.core.len();
-            ta.core.breakCoalescing();
-            ta.afterEdit(ev);
+            ta.selectAll();
+            ev.consume();
         },
         .c => if (ctrl) {
-            ta.copyToClipboard();
+            ta.copy();
             ev.consume();
         },
         .x => if (ctrl) {
-            ta.copyToClipboard();
-            if (ta.hasSelection()) {
-                ta.core.breakCoalescing();
-                _ = ta.deleteSelection();
-                ta.core.breakCoalescing();
-            }
-            ta.afterReflow(ev);
+            ta.cut();
+            ev.consume();
         },
         .v => if (ctrl) {
-            ta.pasteFromClipboard() catch {};
-            ta.afterReflow(ev);
+            ta.paste();
+            ev.consume();
         },
         else => {},
     }
@@ -725,24 +818,25 @@ fn handleKey(ta: *TextArea, ev: *Component.Event, k: awt.Event.KeyEvent) void {
 fn handleChar(ta: *TextArea, ev: *Component.Event, ch: awt.Event.CharEvent) void {
     var buf: [4]u8 = undefined;
     const n = std.unicode.utf8Encode(@intCast(ch.codepoint), &buf) catch return;
-    _ = ta.core.insert(buf[0..n]) catch return;
-    ta.afterReflow(ev);
+    const changed = ta.core.insert(buf[0..n]) catch return;
+    ta.afterReflow(ev, changed);
 }
 
 /// Edit that changed content ↁErebuild line model, then the common tail.
-fn afterReflow(ta: *TextArea, ev: *Component.Event) void {
+fn afterReflow(ta: *TextArea, ev: ?*Component.Event, changed: bool) void {
     ta.refreshMinSize();
     ta.component.markLayoutDirty();
-    ta.afterEdit(ev);
+    ta.afterEdit(ev, changed);
 }
 
 /// Caret-only change (navigation) ↁEno reflow, just refresh + scroll into view.
-fn afterEdit(ta: *TextArea, ev: *Component.Event) void {
+fn afterEdit(ta: *TextArea, ev: ?*Component.Event, changed: bool) void {
+    if (changed) ta.fireChange();
     ta.caret_visible = true;
     ta.ensureCaretVisible();
     ta.component.repaint();
     ta.pushCaretToIme();
-    ev.consume();
+    if (ev) |e| e.consume();
 }
 
 /// Move the caret one visual line up (`-1`) or down (`+1`), preserving the
@@ -776,15 +870,19 @@ fn copyToClipboard(self: *TextArea) void {
     if (self.parentWindow()) |w| if (w.awt_window) |*aw| aw.setClipboardString(tmp);
 }
 
-fn pasteFromClipboard(self: *TextArea) !void {
-    const w = self.parentWindow() orelse return;
-    if (w.awt_window == null) return; // headless: no clipboard
-    const got = w.awt_window.?.getClipboardString() orelse return;
-    _ = try self.core.paste(got);
+fn pasteFromClipboard(self: *TextArea) !bool {
+    const w = self.parentWindow() orelse return false;
+    if (w.awt_window == null) return false; // headless: no clipboard
+    const got = w.awt_window.?.getClipboardString() orelse return false;
+    return try self.core.paste(got);
 }
 
 fn imeCleared(self: *TextArea) void {
     self.core.breakCoalescing();
+}
+
+fn fireChange(self: *TextArea) void {
+    self.change_listeners.fire(&.{ .source = self });
 }
 
 /// Ask the enclosing ScrollPane (if any) to keep the caret visible.
@@ -829,6 +927,7 @@ fn initTestArea(initial_text: []const u8) !TextArea {
     ta.core = try EditableText.initFromSlice(std.testing.allocator, initial_text);
     ta.scratch = .empty;
     ta.lines = .empty;
+    ta.change_listeners = ChangeListenerList.init(std.testing.allocator);
     ta.allocator = std.testing.allocator;
     return ta;
 }
@@ -837,6 +936,7 @@ fn deinitTestArea(ta: *TextArea) void {
     ta.core.deinit();
     ta.scratch.deinit(std.testing.allocator);
     ta.lines.deinit(std.testing.allocator);
+    ta.change_listeners.deinit();
 }
 
 fn expectText(ta: *TextArea, expected: []const u8) !void {
@@ -844,6 +944,138 @@ fn expectText(ta: *TextArea, expected: []const u8) !void {
     defer std.testing.allocator.free(got);
     ta.core.copyRange(got, 0, ta.core.len());
     try std.testing.expectEqualStrings(expected, got);
+}
+
+fn newHeadlessApp() !*Application {
+    return Application.initHeadless(std.testing.allocator, std.testing.io) catch
+        return error.SkipZigTest;
+}
+
+const ChangeProbe = struct {
+    count: usize = 0,
+    last_source: ?*anyopaque = null,
+
+    fn onChange(self: *@This(), ev: *const ChangeEvent) void {
+        self.count += 1;
+        self.last_source = ev.source;
+    }
+};
+
+test "TextArea change listener fires for typing public undo cut and caret movement" {
+    const app = try newHeadlessApp();
+    defer app.deinit();
+    const frame = try app.frameHeadless("ta", 360, 160);
+    frame.window.container.setLayout(null);
+
+    const area = try app.textArea("");
+    area.component.setBounds(.{ .x = 10, .y = 10, .width = 240, .height = 80 });
+    try frame.window.add(&area.component);
+
+    var probe = ChangeProbe{};
+    try area.addChangeListener(ChangeProbe, ChangeProbe.onChange, &probe);
+
+    var robot = @import("Robot.zig").init(app, &frame.window);
+    var driver = @import("Driver.zig"){ .robot = &robot };
+    robot.pump();
+
+    try driver.clickOn(.{ .role = .text_area, .text = "" });
+    robot.typeText("abc");
+    robot.pump();
+    try std.testing.expectEqual(@as(usize, 3), probe.count);
+    try std.testing.expectEqual(@as(*anyopaque, @ptrCast(area)), probe.last_source.?);
+
+    robot.keyDown(.arrow_left, .{});
+    robot.keyUp(.arrow_left, .{});
+    robot.pump();
+    try std.testing.expectEqual(@as(usize, 4), probe.count);
+
+    area.undo();
+    try expectText(area, "");
+    try std.testing.expectEqual(@as(usize, 5), probe.count);
+
+    try area.setText("abc");
+    probe.count = 0;
+    area.selectAll();
+    area.cut();
+    try expectText(area, "");
+    try std.testing.expectEqual(@as(usize, 2), probe.count);
+
+    area.removeChangeListener(ChangeProbe, ChangeProbe.onChange, &probe);
+    area.undo();
+    try expectText(area, "abc");
+    try std.testing.expectEqual(@as(usize, 2), probe.count);
+}
+
+test "TextArea public actions match keyboard control paths" {
+    const app = try newHeadlessApp();
+    defer app.deinit();
+    const frame = try app.frameHeadless("ta", 420, 180);
+    frame.window.container.setLayout(null);
+
+    const from_api = try app.textArea("abc");
+    from_api.component.setBounds(.{ .x = 10, .y = 10, .width = 180, .height = 80 });
+    try frame.window.add(&from_api.component);
+    const from_keys = try app.textArea("abc");
+    from_keys.component.setBounds(.{ .x = 210, .y = 10, .width = 180, .height = 80 });
+    try frame.window.add(&from_keys.component);
+
+    from_api.selectAll();
+    from_api.cut();
+    from_api.undo();
+
+    var robot = @import("Robot.zig").init(app, &frame.window);
+    robot.pump();
+    robot.click(220, 20, .left);
+    robot.keyDown(.a, .{ .ctrl = true });
+    robot.keyUp(.a, .{ .ctrl = true });
+    robot.keyDown(.x, .{ .ctrl = true });
+    robot.keyUp(.x, .{ .ctrl = true });
+    robot.keyDown(.z, .{ .ctrl = true });
+    robot.keyUp(.z, .{ .ctrl = true });
+    robot.pump();
+
+    try std.testing.expectEqualStrings(from_api.getText(), from_keys.getText());
+    try std.testing.expectEqual(from_api.canUndo(), from_keys.canUndo());
+    try std.testing.expectEqual(from_api.canRedo(), from_keys.canRedo());
+    try std.testing.expectEqual(from_api.caretLineColumn(), from_keys.caretLineColumn());
+}
+
+test "TextArea caretLineColumn and undo accessors expose core state" {
+    var ta = try initTestArea("ab\nc\n\u{3042}\u{1F44D}z");
+    defer deinitTestArea(&ta);
+
+    ta.core.caret = 0;
+    try std.testing.expectEqual(@as(usize, 1), ta.caretLineColumn().line);
+    try std.testing.expectEqual(@as(usize, 1), ta.caretLineColumn().col);
+
+    ta.core.caret = 2;
+    try std.testing.expectEqual(@as(usize, 1), ta.caretLineColumn().line);
+    try std.testing.expectEqual(@as(usize, 3), ta.caretLineColumn().col);
+
+    ta.core.caret = 3;
+    try std.testing.expectEqual(@as(usize, 2), ta.caretLineColumn().line);
+    try std.testing.expectEqual(@as(usize, 1), ta.caretLineColumn().col);
+
+    ta.core.caret = 5;
+    try std.testing.expectEqual(@as(usize, 3), ta.caretLineColumn().line);
+    try std.testing.expectEqual(@as(usize, 1), ta.caretLineColumn().col);
+
+    ta.core.caret = 8;
+    try std.testing.expectEqual(@as(usize, 3), ta.caretLineColumn().line);
+    try std.testing.expectEqual(@as(usize, 2), ta.caretLineColumn().col);
+
+    ta.core.caret = 12;
+    try std.testing.expectEqual(@as(usize, 3), ta.caretLineColumn().line);
+    try std.testing.expectEqual(@as(usize, 3), ta.caretLineColumn().col);
+
+    try std.testing.expect(!ta.canUndo());
+    try std.testing.expect(!ta.canRedo());
+    try std.testing.expect(try ta.core.insert("!"));
+    try std.testing.expect(ta.canUndo());
+    try std.testing.expect(!ta.canRedo());
+    try std.testing.expect(try ta.core.undo());
+    try std.testing.expect(!ta.canUndo());
+    try std.testing.expect(ta.canRedo());
 }
 
 test "TextArea grapheme boundaries drive movement and deletion" {
