@@ -138,6 +138,7 @@ const Action = struct {
 
     fn bindToolButton(self: *Action, app: *nimbus.Application, toolbar: *nimbus.Panel) !void {
         const button = try app.button("");
+        try button.setA11yName(self.name);
         if (self.icon) |icon| button.setIcon(try app.icon(icon));
         button.setIconSize(ICON_SIZE);
         try button.getModel().addActionListener(Action, Action.onAction, self);

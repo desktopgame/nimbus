@@ -1,6 +1,7 @@
 //! app_texteditor smoke tests over the real app tree.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const nimbus = @import("nimbus");
 const app_texteditor = @import("app_texteditor");
 const awt = nimbus.awt;
@@ -129,6 +130,21 @@ fn absoluteRect(component: *const nimbus.Component) nimbus.Component.Rect {
     };
 }
 
+fn commandMods() awt.Event.Modifiers {
+    var mods = awt.Event.Modifiers{};
+    if (builtin.os.tag == .macos) {
+        mods.meta = true;
+    } else {
+        mods.ctrl = true;
+    }
+    return mods;
+}
+
+fn pressKey(robot: *nimbus.Robot, code: awt.Event.KeyCode, mods: awt.Event.Modifiers) void {
+    robot.keyDown(code, mods);
+    robot.keyUp(code, mods);
+}
+
 test "app_texteditor smoke: shell regions appear and File menu opens" {
     const gpa = std.testing.allocator;
     const app = try newApp();
@@ -153,6 +169,11 @@ test "app_texteditor smoke: shell regions appear and File menu opens" {
     try std.testing.expect(hasRoleText(tree, .label, "untitled"));
     try std.testing.expect(hasRoleText(tree, .label, "UTF-8"));
     try std.testing.expect(hasRoleText(tree, .label, "LF"));
+    try std.testing.expect(hasRoleText(tree, .button, "New"));
+    try std.testing.expect(hasRoleText(tree, .button, "Open"));
+    try std.testing.expect(hasRoleText(tree, .button, "Save"));
+    try std.testing.expect(hasRoleText(tree, .button, "Undo"));
+    try std.testing.expect(hasRoleText(tree, .button, "Redo"));
 
     try driver.clickOn(.{ .role = .menu, .text = "File" });
     robot.pump();
@@ -335,6 +356,108 @@ test "app_texteditor stage3: status wrap and dynamic action state update" {
     editor.text_area.selectAll();
     try std.testing.expect(editor.actionMenuEnabledForTest(.cut));
     try std.testing.expect(editor.actionMenuEnabledForTest(.copy));
+}
+
+test "app_texteditor stage4: eol edge cases and multibyte status" {
+    const gpa = std.testing.allocator;
+    var mem = MemoryFileIo.init(gpa);
+    defer mem.deinit();
+    try mem.put("/docs/empty.txt", "");
+    try mem.put("/docs/lf.txt", "one\ntwo");
+    try mem.put("/docs/noeol.txt", "tail");
+    try mem.put("/docs/crlf.txt", "a\r\nb");
+
+    const app = try newApp();
+    const frame = try app.frameHeadless("texteditor", 760, 520);
+    const editor = try app_texteditor.buildWithOptions(app, frame, gpa, .{ .io = std.testing.io, .file_io = mem.io() });
+    defer editor.deinitModel(gpa);
+    defer app.deinit();
+    defer editor.deinitUi();
+
+    try std.testing.expect(editor.openPathForTest("/docs/lf.txt"));
+    try std.testing.expectEqualStrings("LF", editor.status_eol.getText());
+    try std.testing.expectEqualStrings("lf.txt", editor.status_name.getText());
+    try std.testing.expect(!editor.dirtyForTest());
+
+    editor.newDocumentForTest();
+    try std.testing.expectEqualStrings("LF", editor.status_eol.getText());
+    try std.testing.expectEqualStrings("untitled", editor.status_name.getText());
+    try std.testing.expect(!editor.dirtyForTest());
+    try std.testing.expect(editor.pathForTest() == null);
+    try editor.text_area.setText("untitled body");
+    try std.testing.expect(editor.dirtyForTest());
+    try std.testing.expect(editor.saveToPathForTest("/docs/untitled.txt"));
+    try std.testing.expect(!editor.dirtyForTest());
+    try std.testing.expectEqualStrings("/docs/untitled.txt", editor.pathForTest() orelse return error.TestUnexpectedResult);
+    try std.testing.expectEqualStrings("untitled body", mem.get("/docs/untitled.txt") orelse return error.TestUnexpectedResult);
+
+    try std.testing.expect(editor.openPathForTest("/docs/empty.txt"));
+    try std.testing.expectEqualStrings("", editor.text_area.getText());
+    try std.testing.expectEqualStrings("LF", editor.status_eol.getText());
+    try std.testing.expect(!editor.dirtyForTest());
+    try std.testing.expect(editor.saveToPathForTest("/docs/empty_saved.txt"));
+    try std.testing.expectEqualStrings("", mem.get("/docs/empty_saved.txt") orelse return error.TestUnexpectedResult);
+
+    try std.testing.expect(editor.openPathForTest("/docs/noeol.txt"));
+    try std.testing.expectEqualStrings("tail", editor.text_area.getText());
+    try std.testing.expect(editor.saveToPathForTest("/docs/noeol_saved.txt"));
+    try std.testing.expectEqualStrings("tail", mem.get("/docs/noeol_saved.txt") orelse return error.TestUnexpectedResult);
+
+    try std.testing.expect(editor.openPathForTest("/docs/crlf.txt"));
+    try std.testing.expect(editor.saveToPathForTest("/docs/crlf_saved.txt"));
+    try std.testing.expectEqualStrings("a\r\nb", mem.get("/docs/crlf_saved.txt") orelse return error.TestUnexpectedResult);
+
+    try editor.text_area.setText("x\n\u{3042}\u{1F44D}z");
+    try std.testing.expectEqualStrings("Ln 2, Col 4", editor.status_line_col.getText());
+}
+
+test "app_texteditor stage4: accelerators route without duplicate edit actions" {
+    const gpa = std.testing.allocator;
+    var mem = MemoryFileIo.init(gpa);
+    defer mem.deinit();
+    try mem.put("/docs/shortcut.txt", "base");
+
+    const app = try newApp();
+    const frame = try app.frameHeadless("texteditor", 760, 520);
+    const editor = try app_texteditor.buildWithOptions(app, frame, gpa, .{ .io = std.testing.io, .file_io = mem.io() });
+    defer editor.deinitModel(gpa);
+    defer app.deinit();
+    defer editor.deinitUi();
+
+    var robot = nimbus.Robot.init(app, &frame.window);
+    robot.pump();
+
+    robot.click(200, 70, .left);
+    robot.typeText("a");
+    robot.pump();
+    pressKey(&robot, .arrow_left, .{});
+    pressKey(&robot, .arrow_right, .{});
+    robot.typeText("b");
+    robot.pump();
+    try std.testing.expectEqualStrings("ab", editor.text_area.getText());
+
+    const cmd = commandMods();
+    pressKey(&robot, .z, cmd);
+    robot.pump();
+    try std.testing.expectEqualStrings("a", editor.text_area.getText());
+    try std.testing.expect(editor.actionMenuEnabledForTest(.redo));
+    try std.testing.expectEqual(true, editor.actionButtonEnabledForTest(.redo).?);
+
+    pressKey(&robot, .y, cmd);
+    robot.pump();
+    try std.testing.expectEqualStrings("ab", editor.text_area.getText());
+    try std.testing.expect(!editor.actionMenuEnabledForTest(.redo));
+    try std.testing.expectEqual(false, editor.actionButtonEnabledForTest(.redo).?);
+
+    try std.testing.expect(editor.openPathForTest("/docs/shortcut.txt"));
+    robot.click(200, 70, .left);
+    robot.typeText("!");
+    robot.pump();
+    try std.testing.expect(editor.dirtyForTest());
+    pressKey(&robot, .s, cmd);
+    robot.pump();
+    try std.testing.expect(!editor.dirtyForTest());
+    try std.testing.expectEqualStrings("base!", mem.get("/docs/shortcut.txt") orelse return error.TestUnexpectedResult);
 }
 
 test "app_texteditor unsaved prompt: discard cancel and save branches" {
