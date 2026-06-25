@@ -127,6 +127,7 @@ pub fn undo(self: *UndoStack) !void {
     const before = self.canState();
 
     self.index -= 1;
+    errdefer self.index += 1;
     try self.list.items[self.index].undo();
 
     self.fireIfChanged(before);
@@ -136,6 +137,7 @@ pub fn redo(self: *UndoStack) !void {
     if (!self.canRedo()) return;
     const before = self.canState();
 
+    // Keep index unchanged if redo fails.
     try self.list.items[self.index].redo();
     self.index += 1;
 
@@ -242,6 +244,45 @@ fn makeTestCommand(
     return TestCommandCtx.make(testing.allocator, value, deinit_count, merged_count, merge);
 }
 
+const FailingUndoCommandCtx = struct {
+    deinit_count: *usize,
+
+    fn make(allocator: std.mem.Allocator, deinit_count: *usize) !Command {
+        const ctx = try allocator.create(FailingUndoCommandCtx);
+        ctx.* = .{ .deinit_count = deinit_count };
+        return .{ .vtable = &vtable, .ctx = ctx };
+    }
+
+    fn from(ctx: *anyopaque) *FailingUndoCommandCtx {
+        return @ptrCast(@alignCast(ctx));
+    }
+
+    fn redoCommand(ctx: *anyopaque) anyerror!void {
+        _ = ctx;
+    }
+
+    fn undoCommand(ctx: *anyopaque) anyerror!void {
+        _ = ctx;
+        return error.OutOfMemory;
+    }
+
+    fn deinitCommand(ctx: *anyopaque, allocator: std.mem.Allocator) void {
+        const self = from(ctx);
+        self.deinit_count.* += 1;
+        allocator.destroy(self);
+    }
+
+    const vtable = Command.VTable{
+        .redo = redoCommand,
+        .undo = undoCommand,
+        .deinit = deinitCommand,
+    };
+};
+
+fn makeFailingUndoCommand(deinit_count: *usize) !Command {
+    return FailingUndoCommandCtx.make(testing.allocator, deinit_count);
+}
+
 test "push undo redo order" {
     var stack = UndoStack.init(testing.allocator);
     defer stack.deinit();
@@ -263,6 +304,33 @@ test "push undo redo order" {
     try testing.expectEqual(@as(i32, 1), value);
     try stack.redo();
     try testing.expectEqual(@as(i32, 2), value);
+}
+
+test "undo error restores index and does not fire listener" {
+    var stack = UndoStack.init(testing.allocator);
+    defer stack.deinit();
+    var deinits: usize = 0;
+
+    const ListenerCtx = struct {
+        count: usize = 0,
+
+        fn cb(self: *@This(), event: *const listener.ChangeEvent) void {
+            _ = event;
+            self.count += 1;
+        }
+    };
+    var ctx = ListenerCtx{};
+    try stack.addCanChangeListener(ListenerCtx, ListenerCtx.cb, &ctx);
+
+    try stack.push(try makeFailingUndoCommand(&deinits));
+    try testing.expectEqual(@as(usize, 1), ctx.count);
+
+    const before_index = stack.index;
+    try testing.expectError(error.OutOfMemory, stack.undo());
+    try testing.expectEqual(before_index, stack.index);
+    try testing.expect(stack.canUndo());
+    try testing.expect(!stack.canRedo());
+    try testing.expectEqual(@as(usize, 1), ctx.count);
 }
 
 test "push truncates redo tail and drops tail commands once" {
