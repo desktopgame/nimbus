@@ -908,9 +908,10 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
             // not normally arrive here via the event queue. No-op as a safety net.
         },
         .composition => {
-            // IME preedit. v1 wiring: not yet routed to focus_owner (the
-            // TextField-side handler is the next milestone). Drop silently
-            // so awt-c can still fire the callback without breaking.
+            if (self.focus_owner) |fo| {
+                fo.vtable.processEvent(fo, ev);
+                return;
+            }
         },
     }
 }
@@ -1389,4 +1390,54 @@ fn onComposition(
     if (win.focus_owner) |fo| {
         fo.vtable.processEvent(fo, &ev);
     }
+}
+
+test "dispatchInput routes composition to focus owner" {
+    const Sink = struct {
+        component: Component,
+        seen: bool = false,
+        text: []const u8 = "",
+        target_start: usize = 0,
+        target_end: usize = 0,
+
+        fn install(_: *Component) !void {}
+        fn uninstall(_: *Component) void {}
+        fn destroy(_: *Component, _: std.mem.Allocator) void {}
+        fn processEvent(c: *Component, ev: *Component.Event) void {
+            const self: *@This() = @fieldParentPtr("component", c);
+            switch (ev.payload) {
+                .composition => |comp| {
+                    self.seen = true;
+                    self.text = comp.text;
+                    self.target_start = comp.target_start;
+                    self.target_end = comp.target_end;
+                },
+                else => {},
+            }
+        }
+
+        const vtable = Component.VTable{
+            .install = @This().install,
+            .uninstall = @This().uninstall,
+            .processEvent = @This().processEvent,
+            .destroy = @This().destroy,
+        };
+    };
+
+    var sink = Sink{ .component = Component.init(std.testing.allocator, &Sink.vtable) };
+    var win: Window = undefined;
+    win.input_blocked = false;
+    win.focus_owner = &sink.component;
+
+    var ev = awt.Event{ .payload = .{ .composition = .{
+        .text = "kana",
+        .target_start = 1,
+        .target_end = 3,
+    } } };
+    win.dispatchInput(&ev);
+
+    try std.testing.expect(sink.seen);
+    try std.testing.expectEqualStrings("kana", sink.text);
+    try std.testing.expectEqual(@as(usize, 1), sink.target_start);
+    try std.testing.expectEqual(@as(usize, 3), sink.target_end);
 }

@@ -9,7 +9,7 @@
 ---
 
 ## #1 IME 変換中の inline 表示（composition string）
-- 状態: 一部実装済み（TextField は preedit 実装済み・TextArea 未対応）
+- 状態: 実装済み（TextField / TextArea とも inline preedit 実装済み。残りは text#13 の de-dup）
 - 優先度: 高
 - 影響範囲: TextField / TextArea、awt-c の IME 連携（win32_ime.c / cocoa_ime.m / ime_stub.c）
 - 更新日: 2026-06-24
@@ -21,10 +21,9 @@
 CLAUDE.md の方針が上書きする。
 
 ### 現状
-TextField は preedit を既に実装済み（preedit_text の保持・下線描画・pushCaretToIme による候補ウィンドウ
-追従）。完全な未着手ではなく、残作業は次の 2 つ。
-- (a) text#13 で IME plumbing を util（ImeSession 相当）へ切り出す。
-- (b) その util を TextArea へ展開し、TextArea でも変換中 inline 表示を出す。
+TextField / TextArea はどちらも preedit を実装済み（preedit の保持・下線描画・候補ウィンドウ追従）。
+TextArea への inline 表示展開は既に満たされており、残作業は text#13 で IME plumbing を
+util（ImeSession 相当）へ切り出し、両 widget の重複を de-dup すること。
 
 ---
 
@@ -295,7 +294,7 @@ correctness ＋ test-genuineness の独立パネルで、vacuous テスト 1 件
 ---
 
 ## #13 IME 共通機能の util 切り出し（preedit plumbing のモジュール化）
-- 状態: 設計済み（[ime_util_design.md](ime_util_design.md)。実装は未着手）
+- 状態: 実装済み（案 A。確定文字列は CharEvent 経路のまま、ImeSession は preedit / clear / caret push を担当）
 - 優先度: 中（テキストエディター地ならしの一部。TextField / TextArea の preedit 重複解消で実需化）
 - 影響範囲: TextField / TextArea、awt-c の IME 連携（win32_ime.c / cocoa_ime.m / ime_stub.c）、新規 util モジュール
 - 更新日: 2026-06-25
@@ -312,29 +311,31 @@ correctness ＋ test-genuineness の独立パネルで、vacuous テスト 1 件
   composition-ended フックへ reframe・確定挿入は従来経路のまま）を推奨する。詳細は設計ドキュメント 4.4。
 
 ### 何
-TextField が既に実装している IME preedit（preedit_text / preedit_target 範囲 / pushCaretToIme /
-確定文字列取得 / 変換中はキャレット非表示）を、standalone なモジュール（名前は任せる。例 ImeSession /
-ImeManager）へ切り出し、TextArea も同じものを使う。バッファ非依存の標準 plumbing として完結させる。
+TextField / TextArea が重複して持っている IME preedit（preedit / target 範囲 / pushCaretToIme /
+変換中はキャレット非表示）を、standalone なモジュール（ImeSession）へ切り出し、両者が同じ util を使う。
+バッファ非依存の標準 plumbing として完結させる。
 
 util に入る（バッファ非依存の plumbing）:
 - preedit 状態の保持（未確定文字列・変換対象範囲）。
-- awt-c の IME 連携（win32_ime.c / cocoa_ime.m / ime_stub.c）の橋渡し。
+- dispatch 済み composition event の consume と cleared 検出（awt-c の callback 登録は Window 側に残す）。
 - キャレット矩形を OS 候補ウィンドウへ push する経路。
-- onCommit 通知（確定文字列を widget / 編集コアへ渡す）。
+- on_cleared 通知（payload なしの composition-ended フック）。
 
 util に入らない（編集状態に触るので widget か framework_backlog #5 編集コア側に残す）:
 - (1) 確定 → キャレット位置へバッファ挿入（編集層 ＝ framework_backlog #5 編集コアの applyEdit が受ける）。
 - (2) preedit のインライン描画（widget の caret x と measure に依存する。下線・変換対象の強調）。
 
 ### なぜ
-現状 preedit は TextField のみで、TextArea には無い。util として共通化すれば TextArea にも 1 回で行き渡り、
+現状 preedit は TextField / TextArea の双方にあるが、同形コードを重複保持している。util として共通化すれば、
 片方だけ直すずれを防げる。Swing 的な Document コアが無くても単体で切り出せる（IME は編集コアと分離できる、
 が今回の結論）。地ならしの 3 ピースのうち最も独立性が高い。
 
-### 決めること
-- モジュール名と公開 API（preedit 設定 / クリア・onCommit コールバックの形・caret 矩形 push の入口）。
-- caret 矩形を誰が供給するか（widget が measure 結果を渡す形にして util をバッファ非依存に保つ）。
-- preedit のインライン描画を widget 側ヘルパに寄せるか、util が描画フックだけ持つか。
+### 決定
+- モジュール名は `ImeSession`、配置は `framework/src/ImeSession.zig`。
+- 案 A を採用し、確定文字列は従来どおり CharEvent 経路で扱う。ImeSession は payload なしの
+  `on_cleared` のみ持つ。
+- caret 矩形の算出と preedit のインライン描画は widget 側に残し、ImeSession は算出済み矩形の
+  OS 候補ウィンドウへの forwarding だけを担当する。
 
 ### 完了条件
 TextField / TextArea が同一の IME util を使って変換中表示・確定・候補ウィンドウ追従を行う。

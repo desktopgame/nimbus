@@ -17,6 +17,7 @@ const Component = @import("Component.zig");
 const Application = @import("Application.zig");
 const GapBuffer = @import("GapBuffer.zig");
 const Window = @import("Window.zig");
+const ImeSession = @import("ImeSession.zig");
 
 const TextArea = @This();
 
@@ -72,10 +73,8 @@ lines: std.ArrayList(VisualLine),
 /// Reusable buffer for copying a (logical) byte range out of the gap buffer
 /// into contiguous memory for measuring / drawing.
 scratch: std.ArrayList(u8),
-/// IME preedit (composition). Empty when not composing.
-preedit_text: std.ArrayList(u8),
-preedit_target_start: usize,
-preedit_target_end: usize,
+/// IME preedit (composition) session. Empty when not composing.
+ime: ImeSession,
 allocator: std.mem.Allocator,
 
 pub const vtable = Component.VTable{
@@ -135,9 +134,7 @@ pub fn create(
         .line_wrap = false,
         .lines = .empty,
         .scratch = .empty,
-        .preedit_text = .empty,
-        .preedit_target_start = 0,
-        .preedit_target_end = 0,
+        .ime = ImeSession.init(allocator),
         .allocator = allocator,
     };
     ta.component.role = .text_area;
@@ -256,7 +253,7 @@ fn destroy(self: *Component, allocator: std.mem.Allocator) void {
     ta.text.deinit();
     ta.lines.deinit(allocator);
     ta.scratch.deinit(allocator);
-    ta.preedit_text.deinit(allocator);
+    ta.ime.deinit();
     allocator.destroy(ta);
 }
 
@@ -583,29 +580,29 @@ pub fn paintContent(ta: *TextArea, self: *Component, g: *awt.Graphics) void {
     }
 
     // IME preedit at the caret.
-    if (ta.has_focus and ta.preedit_text.items.len > 0) {
+    if (ta.has_focus and ta.ime.isComposing()) {
+        const preedit = ta.ime.preeditSlice();
+        const target = ta.ime.targetRange();
         const cg = ta.caretGeom();
         g.setFont(ta.font);
         g.setColor(ta.color);
-        g.drawString(ta.preedit_text.items, cg.x, cg.y);
+        g.drawString(preedit, cg.x, cg.y);
 
-        const pre_w = ta.measureSlice(ta.preedit_text.items);
+        const pre_w = ta.measureSlice(preedit);
         const underline_y = cg.y + cg.line_h - 1;
         g.setColor(self.theme.ime_preedit_underline);
         g.fillRect(.{ .x = cg.x, .y = underline_y, .width = pre_w, .height = 1 });
 
-        if (ta.preedit_target_end > ta.preedit_target_start and
-            ta.preedit_target_end <= ta.preedit_text.items.len)
-        {
-            const t0 = ta.measureSlice(ta.preedit_text.items[0..ta.preedit_target_start]);
-            const t1 = ta.measureSlice(ta.preedit_text.items[0..ta.preedit_target_end]);
+        if (target.end > target.start and target.end <= preedit.len) {
+            const t0 = ta.measureSlice(preedit[0..target.start]);
+            const t1 = ta.measureSlice(preedit[0..target.end]);
             g.setColor(self.theme.ime_preedit_target);
             g.fillRect(.{ .x = cg.x + t0, .y = underline_y - 1, .width = t1 - t0, .height = 2 });
         }
     }
 
     // Caret.
-    if (ta.has_focus and ta.caret_visible and ta.preedit_text.items.len == 0) {
+    if (ta.has_focus and ta.caret_visible and !ta.ime.isComposing()) {
         const cg = ta.caretGeom();
         g.setColor(ta.caret_color);
         g.fillRect(.{ .x = cg.x, .y = cg.y, .width = CARET_WIDTH, .height = cg.line_h });
@@ -628,10 +625,7 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
             if (f.gained) ta.pushCaretToIme();
         },
         .composition => |comp| {
-            ta.preedit_text.clearRetainingCapacity();
-            if (comp.text.len > 0) ta.preedit_text.appendSlice(ta.allocator, comp.text) catch {};
-            ta.preedit_target_start = comp.target_start;
-            ta.preedit_target_end = comp.target_end;
+            ta.ime.update(comp) catch {};
             ta.component.repaint();
         },
     }
@@ -685,7 +679,7 @@ fn handleMouse(ta: *TextArea, ev: *Component.Event, m: awt.Event.MouseEvent) voi
 fn handleKey(ta: *TextArea, ev: *Component.Event, k: awt.Event.KeyEvent) void {
     if (k.action != .press and k.action != .repeat) return;
     // During composition the OS IME owns the keyboard (see TextField rationale).
-    if (ta.preedit_text.items.len > 0) return;
+    if (ta.ime.isComposing()) return;
 
     const shift = k.modifiers.shift;
     const ctrl = k.modifiers.ctrl;
@@ -853,11 +847,11 @@ fn pushCaretToIme(self: *TextArea) void {
     const w = self.parentWindow() orelse return;
     const origin = self.component.absoluteOriginInWindow();
     const cg = self.caretGeom();
-    if (w.awt_window) |*aw| aw.setCompositionCursorPos(
-        @intFromFloat(origin.x + cg.x),
-        @intFromFloat(origin.y + cg.y),
-        @intFromFloat(cg.line_h),
-    );
+    self.ime.pushCaret(if (w.awt_window) |*aw| aw else null, .{
+        .x = origin.x + cg.x,
+        .y = origin.y + cg.y,
+        .height = cg.line_h,
+    });
 }
 
 fn parentWindow(self: *TextArea) ?*Window {
@@ -980,4 +974,22 @@ test "TextArea hit-test byte results snap to grapheme boundaries" {
     try std.testing.expectEqual(cluster_start, ta.snapByteToGraphemeBoundary(inside_cluster));
     try std.testing.expectEqual(cluster_end, ta.snapByteToGraphemeBoundary(cluster_end));
     try std.testing.expectEqual(s.len, ta.snapByteToGraphemeBoundary(s.len));
+}
+
+test "TextArea composition handler updates IME session" {
+    var ta: TextArea = undefined;
+    ta.component = Component.init(std.testing.allocator, &TextArea.vtable);
+    ta.ime = ImeSession.init(std.testing.allocator);
+    defer ta.ime.deinit();
+
+    var ev = awt.Event{ .payload = .{ .composition = .{
+        .text = "abc",
+        .target_start = 1,
+        .target_end = 2,
+    } } };
+    processEvent(&ta.component, &ev);
+
+    try std.testing.expect(ta.ime.isComposing());
+    try std.testing.expectEqualStrings("abc", ta.ime.preeditSlice());
+    try std.testing.expectEqual(ImeSession.TargetRange{ .start = 1, .end = 2 }, ta.ime.targetRange());
 }

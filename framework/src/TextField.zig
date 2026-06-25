@@ -16,6 +16,7 @@ const ChangeListenerList = listener.ChangeListenerList;
 const ActionListenerList = listener.ActionListenerList;
 const ChangeEvent = listener.ChangeEvent;
 const ActionEvent = listener.ActionEvent;
+const ImeSession = @import("ImeSession.zig");
 
 const TextField = @This();
 
@@ -62,12 +63,8 @@ dragging: bool,
 /// Recomputed by `ensureCaretVisible` whenever the caret moves (and as a
 /// safety net at paint time, since width is only known after layout).
 scroll_x: f32,
-/// IME preedit (composition) state. Empty when not composing. The bytes
-/// are an owned copy of what the IME most recently reported (the C-side
-/// pointer is only valid for one callback, so we copy on receipt).
-preedit_text: std.ArrayList(u8),
-preedit_target_start: usize,
-preedit_target_end: usize,
+/// IME preedit (composition) session. Empty when not composing.
+ime: ImeSession,
 /// Fired (and the key consumed) when Enter is pressed  E"submit this field".
 /// Used e.g. by a List cell editor to commit. See `textfield.md`.
 submit_listeners: ActionListenerList,
@@ -123,9 +120,7 @@ pub fn create(
         .has_focus = false,
         .dragging = false,
         .scroll_x = 0,
-        .preedit_text = .empty,
-        .preedit_target_start = 0,
-        .preedit_target_end = 0,
+        .ime = ImeSession.init(allocator),
         .submit_listeners = ActionListenerList.init(allocator),
         .cancel_listeners = ActionListenerList.init(allocator),
         .change_listeners = ChangeListenerList.init(allocator),
@@ -344,23 +339,23 @@ pub fn paintContent(tf: *TextField, self: *Component, g: *awt.Graphics) void {
     // position so it visually flows with surrounding text. Underlines
     // signal "this is provisional": a thin one under the whole preedit,
     // a thicker one under the target clause being converted.
-    if (tf.has_focus and tf.preedit_text.items.len > 0) {
+    if (tf.has_focus and tf.ime.isComposing()) {
+        const preedit = tf.ime.preeditSlice();
+        const target = tf.ime.targetRange();
         const caret_x = tf.glyphXAtByte(tf.caret_byte) - sx;
 
         cg.setFont(tf.font);
         cg.setColor(tf.color);
-        cg.drawString(tf.preedit_text.items, caret_x, PADDING_Y);
+        cg.drawString(preedit, caret_x, PADDING_Y);
 
-        const pre_w = tf.measureUtf8(tf.preedit_text.items);
+        const pre_w = tf.measureUtf8(preedit);
         const underline_y = sz.height - PADDING_Y;
         cg.setColor(self.theme.ime_preedit_underline);
         cg.fillRect(.{ .x = caret_x, .y = underline_y - 1, .width = pre_w, .height = 1 });
 
-        if (tf.preedit_target_end > tf.preedit_target_start and
-            tf.preedit_target_end <= tf.preedit_text.items.len)
-        {
-            const t0 = tf.measureUtf8(tf.preedit_text.items[0..tf.preedit_target_start]);
-            const t1 = tf.measureUtf8(tf.preedit_text.items[0..tf.preedit_target_end]);
+        if (target.end > target.start and target.end <= preedit.len) {
+            const t0 = tf.measureUtf8(preedit[0..target.start]);
+            const t1 = tf.measureUtf8(preedit[0..target.end]);
             cg.setColor(self.theme.ime_preedit_target);
             cg.fillRect(.{
                 .x = caret_x + t0,
@@ -374,7 +369,7 @@ pub fn paintContent(tf: *TextField, self: *Component, g: *awt.Graphics) void {
     // Caret. Hide while composing  Ethe OS IME / candidate window
     // owns the visual cursor inside the preedit, and drawing our own
     // would just be noise.
-    if (tf.has_focus and tf.caret_visible and tf.preedit_text.items.len == 0) {
+    if (tf.has_focus and tf.caret_visible and !tf.ime.isComposing()) {
         const cx = tf.glyphXAtByte(tf.caret_byte) - sx;
         cg.setColor(tf.caret_color);
         cg.fillRect(.{
@@ -404,12 +399,7 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
             if (f.gained) tf.pushCaretToIme();
         },
         .composition => |comp| {
-            tf.preedit_text.clearRetainingCapacity();
-            if (comp.text.len > 0) {
-                tf.preedit_text.appendSlice(tf.allocator, comp.text) catch {};
-            }
-            tf.preedit_target_start = comp.target_start;
-            tf.preedit_target_end = comp.target_end;
+            tf.ime.update(comp) catch {};
             tf.component.repaint();
         },
     }
@@ -419,7 +409,7 @@ fn destroy(self: *Component, allocator: std.mem.Allocator) void {
     const tf: *TextField = @fieldParentPtr("component", self);
     self.deinit();
     tf.text.deinit(allocator);
-    tf.preedit_text.deinit(allocator);
+    tf.ime.deinit();
     tf.submit_listeners.deinit();
     tf.cancel_listeners.deinit();
     tf.change_listeners.deinit();
@@ -484,7 +474,7 @@ fn handleKey(tf: *TextField, ev: *Component.Event, k: awt.Event.KeyEvent) void {
     // so if we react to them here too the buffer caret moves while the IME
     // is still composing  Epreedit ends up painted in the middle of already-
     // committed text. Bail out and let the composition flow drive everything.
-    if (tf.preedit_text.items.len > 0) return;
+    if (tf.ime.isComposing()) return;
 
     const shift = k.modifiers.shift;
     const ctrl = k.modifiers.ctrl;
@@ -585,11 +575,11 @@ fn pushCaretToIme(self: *TextField) void {
     const caret_y = origin.y + PADDING_Y;
     self.font.face.setPixelSize(self.font.pixel_size);
     const line_h = self.font.face.metrics().line_height;
-    if (w.awt_window) |*aw| aw.setCompositionCursorPos(
-        @intFromFloat(caret_x),
-        @intFromFloat(caret_y),
-        @intFromFloat(line_h),
-    );
+    self.ime.pushCaret(if (w.awt_window) |*aw| aw else null, .{
+        .x = caret_x,
+        .y = caret_y,
+        .height = line_h,
+    });
 }
 
 /// Adjust `scroll_x` so the caret stays inside the visible content area
@@ -850,4 +840,22 @@ test "hit-test byte results snap back to grapheme cluster boundaries" {
     try std.testing.expectEqual(cluster_start, tf.snapByteToGraphemeBoundary(inside_cluster));
     try std.testing.expectEqual(cluster_end, tf.snapByteToGraphemeBoundary(cluster_end));
     try std.testing.expectEqual(s.len, tf.snapByteToGraphemeBoundary(s.len));
+}
+
+test "TextField composition handler updates IME session" {
+    var tf: TextField = undefined;
+    tf.component = Component.init(std.testing.allocator, &TextField.vtable);
+    tf.ime = ImeSession.init(std.testing.allocator);
+    defer tf.ime.deinit();
+
+    var ev = awt.Event{ .payload = .{ .composition = .{
+        .text = "abc",
+        .target_start = 1,
+        .target_end = 2,
+    } } };
+    processEvent(&tf.component, &ev);
+
+    try std.testing.expect(tf.ime.isComposing());
+    try std.testing.expectEqualStrings("abc", tf.ime.preeditSlice());
+    try std.testing.expectEqual(ImeSession.TargetRange{ .start = 1, .end = 2 }, tf.ime.targetRange());
 }
