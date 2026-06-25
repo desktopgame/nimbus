@@ -272,6 +272,42 @@ test "headless driver: text field content can be found after typing" {
     try std.testing.expectEqual(&field.component, try driver.find(.{ .role = .text_field, .text = "hello" }));
 }
 
+test "headless driver: text area undo updates snapshot text" {
+    const gpa = std.testing.allocator;
+
+    awt.setLogCallback(Robot.QuietLog.cb, null);
+    const app = Application.initHeadless(gpa, std.testing.io) catch return error.SkipZigTest;
+    defer app.deinit();
+
+    const frame = try app.frameHeadless("t", 360, 160);
+    frame.window.container.setLayout(null);
+
+    const area = try app.textArea("");
+    area.component.setBounds(.{ .x = 10, .y = 10, .width = 240, .height = 80 });
+    try frame.window.add(&area.component);
+
+    var robot = Robot.init(app, &frame.window);
+    var driver = @This(){ .robot = &robot };
+    robot.pump();
+
+    try driver.clickOn(.{ .role = .text_area, .text = "" });
+    robot.typeText("abc");
+    robot.pump();
+    try std.testing.expectEqualStrings("abc", area.getText());
+
+    robot.keyDown(.z, .{ .ctrl = true });
+    robot.keyUp(.z, .{ .ctrl = true });
+    robot.pump();
+    try std.testing.expectEqualStrings("", area.getText());
+
+    const tree = try robot.snapshotTree(gpa);
+    defer Robot.freeTree(gpa, tree);
+    const node = findSnapshotRole(&tree, .text_area) orelse return error.NotFound;
+    try std.testing.expect(node.focused);
+    try std.testing.expectEqualStrings("", node.text orelse return error.NotFound);
+    try std.testing.expectEqual(&area.component, try driver.find(.{ .role = .text_area, .text = "" }));
+}
+
 fn createTestNode(allocator: std.mem.Allocator, role: Component.Role, name: ?[]const u8) !*Container {
     const node = try Container.create(allocator);
     node.component.role = role;
@@ -292,6 +328,14 @@ fn plainInstall(_: *Component) !void {}
 fn plainUninstall(_: *Component) void {}
 fn plainProcessEvent(_: *Component, _: *Component.Event) void {}
 fn plainDestroy(_: *Component, _: std.mem.Allocator) void {}
+
+fn findSnapshotRole(node: *const Robot.NodeSnapshot, role: Component.Role) ?*const Robot.NodeSnapshot {
+    if (node.role == role) return node;
+    for (node.children) |*child| {
+        if (findSnapshotRole(child, role)) |found| return found;
+    }
+    return null;
+}
 
 const PlainTreeNode = struct {
     component: Component,

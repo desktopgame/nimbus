@@ -1,7 +1,7 @@
 //! TextArea widget. See `framework/doc/textarea.md`.
 //!
-//! Multi-line, LTR editor over a `GapBuffer` (designed for longer text than
-//! TextField). Two modes: no-wrap (natural width = longest line, scrolls both
+//! Multi-line, LTR editor over `EditableText`. Two modes: no-wrap
+//! (natural width = longest line, scrolls both
 //! axes inside a ScrollPane) and wrap (tracks the viewport width, reflows, only
 //! scrolls vertically). Grapheme-cluster-granularity editing; boundary stepping
 //! is centralized in `prevBoundary` / `nextBoundary`. Attributed text is out of
@@ -15,7 +15,7 @@ const std = @import("std");
 const awt = @import("awt");
 const Component = @import("Component.zig");
 const Application = @import("Application.zig");
-const GapBuffer = @import("GapBuffer.zig");
+const EditableText = @import("EditableText.zig");
 const Window = @import("Window.zig");
 const ImeSession = @import("ImeSession.zig");
 
@@ -49,11 +49,9 @@ const VisualLine = struct {
 
 component: Component,
 app: *Application,
-text: GapBuffer,
+core: EditableText,
 /// Caret / selection anchor as logical byte offsets. caret == mark ↁEno
 /// selection. Byte offsets are internal; public API speaks in abstract terms.
-caret: usize,
-mark: usize,
 font: awt.Graphics.TextFont,
 color: awt.Graphics.Color,
 background: awt.Graphics.Color,
@@ -104,25 +102,14 @@ pub fn create(
     const ta = try allocator.create(TextArea);
     errdefer allocator.destroy(ta);
 
-    // Normalize line endings on the way in: CRLF / lone CR ↁELF. The line
-    // model keys on '\n', so a stray '\r' would otherwise survive in the buffer
-    // and render as a notdef box at every line end.
-    var tmp: std.ArrayList(u8) = .empty;
-    defer tmp.deinit(allocator);
-    try tmp.ensureTotalCapacity(allocator, initial_text.len);
-    for (initial_text) |b| {
-        if (b != '\r') tmp.appendAssumeCapacity(b);
-    }
-    var text = try GapBuffer.initFromSlice(allocator, tmp.items);
-    errdefer text.deinit();
-    const end = text.len();
+    // EditableText normalizes line endings so the line model only sees '\n'.
+    var core = try EditableText.initFromSlice(allocator, initial_text);
+    errdefer core.deinit();
 
     ta.* = .{
         .component = Component.init(allocator, &vtable),
         .app = app,
-        .text = text,
-        .caret = end,
-        .mark = end,
+        .core = core,
         .font = font,
         .color = color,
         .background = awt.Graphics.Color.rgb(1.0, 1.0, 1.0),
@@ -137,7 +124,9 @@ pub fn create(
         .ime = ImeSession.init(allocator),
         .allocator = allocator,
     };
+    ta.ime.setOnCleared(ImeSession.ClearedHook.typed(TextArea, imeCleared, ta));
     ta.component.role = .text_area;
+    ta.component.a11y = .{ .name = a11yName };
     ta.component.ui = .{ .vtable = &look_vtable, .ctx = &Component.default_look_context };
     ta.refreshMinSize();
     try TextArea.vtable.install(&ta.component);
@@ -147,17 +136,11 @@ pub fn create(
 // ── public API ───────────────────────────────────────────────────────────
 
 pub fn getText(self: *TextArea) []const u8 {
-    // Move the gap to the end so the live content is one contiguous run, then
-    // hand back a slice into it (valid until the next edit).
-    self.text.moveGap(self.text.len());
-    return self.text.buf[0..self.text.len()];
+    return self.core.textSlice();
 }
 
 pub fn setText(self: *TextArea, new_text: []const u8) !void {
-    self.text.clear();
-    _ = try self.insertStripCR(0, new_text);
-    self.caret = self.text.len();
-    self.mark = self.caret;
+    try self.core.setText(new_text);
     self.refreshMinSize();
     self.component.markLayoutDirty();
     self.component.repaint();
@@ -250,7 +233,7 @@ fn blinkTick(user_data: *anyopaque) void {
 fn destroy(self: *Component, allocator: std.mem.Allocator) void {
     const ta: *TextArea = @fieldParentPtr("component", self);
     self.deinit();
-    ta.text.deinit();
+    ta.core.deinit();
     ta.lines.deinit(allocator);
     ta.scratch.deinit(allocator);
     ta.ime.deinit();
@@ -285,7 +268,7 @@ fn wrapWidth(self: *TextArea) f32 {
 fn reflowAt(self: *TextArea, inner_w: f32) struct { min_w: f32, min_h: f32 } {
     self.font.face.setPixelSize(self.font.pixel_size);
     const line_h = self.font.face.metrics().line_height;
-    const total = self.text.len();
+    const total = self.core.len();
     const wrap_w = if (self.line_wrap) inner_w else std.math.inf(f32);
 
     self.lines.clearRetainingCapacity();
@@ -340,6 +323,11 @@ fn measureMinSizeFromLook(self: *TextArea) struct { min_w: f32, min_h: f32 } {
     return .{ .min_w = s.width, .min_h = s.height };
 }
 
+fn a11yName(c: *const Component) ?[]const u8 {
+    const ta: *const TextArea = @fieldParentPtr("component", c);
+    return @constCast(ta).core.textSlice();
+}
+
 fn lookMeasureMinSize(self: *Component, _: *anyopaque) Component.Size {
     const ta: *TextArea = @fieldParentPtr("component", self);
     const r = ta.reflowAt(ta.wrapWidth());
@@ -350,7 +338,7 @@ fn lookMeasureMinSize(self: *Component, _: *anyopaque) Component.Size {
 fn findNewline(self: *TextArea, from: usize, total: usize) usize {
     var i = from;
     while (i < total) : (i += 1) {
-        if (self.text.byteAt(i) == '\n') return i;
+        if (self.core.byteAt(i) == '\n') return i;
     }
     return total;
 }
@@ -370,12 +358,12 @@ const Decoded = struct { cp: u32, len: usize };
 /// Decode the codepoint at logical index `i` (bounded by `limit`). Falls back
 /// to a single raw byte on malformed input so we never stall.
 fn decodeAt(self: *TextArea, i: usize, limit: usize) Decoded {
-    const b0 = self.text.byteAt(i);
+    const b0 = self.core.byteAt(i);
     const n = std.unicode.utf8ByteSequenceLength(b0) catch return .{ .cp = b0, .len = 1 };
     if (i + n > limit) return .{ .cp = b0, .len = 1 };
     var buf: [4]u8 = undefined;
     var k: usize = 0;
-    while (k < n) : (k += 1) buf[k] = self.text.byteAt(i + k);
+    while (k < n) : (k += 1) buf[k] = self.core.byteAt(i + k);
     const cp = std.unicode.utf8Decode(buf[0..n]) catch return .{ .cp = b0, .len = 1 };
     return .{ .cp = cp, .len = n };
 }
@@ -385,7 +373,7 @@ fn decodeAt(self: *TextArea, i: usize, limit: usize) Decoded {
 fn rangeSlice(self: *TextArea, start: usize, end: usize) []const u8 {
     const n = end - start;
     self.scratch.resize(self.allocator, n) catch return &.{};
-    self.text.copyRange(self.scratch.items, start, end);
+    self.core.copyRange(self.scratch.items, start, end);
     return self.scratch.items[0..n];
 }
 
@@ -416,9 +404,9 @@ const CaretGeom = struct { x: f32, y: f32, line_h: f32 };
 fn caretGeom(self: *TextArea) CaretGeom {
     self.font.face.setPixelSize(self.font.pixel_size);
     const line_h = self.font.face.metrics().line_height;
-    const li = self.caretLine(self.caret);
+    const li = self.caretLine(self.core.caret);
     const ln = self.lines.items[li];
-    const x = PADDING_X + self.measureRange(ln.start, self.caret);
+    const x = PADDING_X + self.measureRange(ln.start, self.core.caret);
     const y = PADDING_Y + @as(f32, @floatFromInt(li)) * line_h;
     return .{ .x = x, .y = y, .line_h = line_h };
 }
@@ -446,71 +434,37 @@ fn pointToCaret(self: *TextArea, x_local: f32, y_local: f32) usize {
 
 // ── grapheme boundary stepping ────────────────────────────────────────────
 //
-// TextArea stores text in a GapBuffer, so all grapheme helpers receive a
-// contiguous copy from rangeSlice. v1 intentionally uses full left context for
-// correctness (regional-indicator parity, ZWJ sequences, etc.); bounded windows
-// are a future performance follow-up.
+// EditableText owns grapheme stepping; these wrappers keep old TextArea call
+// sites focused on widget geometry.
 
 fn prevBoundary(self: *TextArea, from: usize) usize {
-    const clamped = @min(from, self.text.len());
-    const s = self.rangeSlice(0, clamped);
-    return awt.grapheme.prevGraphemeBoundary(s, clamped);
+    return self.core.prevBoundary(from);
 }
 
 fn nextBoundary(self: *TextArea, from: usize) usize {
-    const total = self.text.len();
-    const clamped = @min(from, total);
-    const s = self.rangeSlice(0, total);
-    return awt.grapheme.nextGraphemeBoundary(s, clamped);
+    return self.core.nextBoundary(from);
 }
 
 fn snapByteToGraphemeBoundary(self: *TextArea, byte_pos: usize) usize {
-    const total = self.text.len();
-    const clamped = @min(byte_pos, total);
-    const s = self.rangeSlice(0, total);
-    const prev = awt.grapheme.prevGraphemeBoundary(s, clamped);
-    if (awt.grapheme.nextGraphemeBoundary(s, prev) == clamped) return clamped;
-    return prev;
+    return self.core.snapToBoundary(byte_pos);
 }
 
 // ── selection / edit helpers ─────────────────────────────────────────────
 
 fn hasSelection(self: TextArea) bool {
-    return self.caret != self.mark;
+    return self.core.hasSelection();
 }
 
 fn selectionStart(self: TextArea) usize {
-    return @min(self.caret, self.mark);
+    return self.core.selectionStart();
 }
 
 fn selectionEnd(self: TextArea) usize {
-    return @max(self.caret, self.mark);
+    return self.core.selectionEnd();
 }
 
-fn deleteSelection(self: *TextArea) void {
-    const start = self.selectionStart();
-    const end = self.selectionEnd();
-    if (end == start) return;
-    self.text.delete(start, end - start);
-    self.caret = start;
-    self.mark = start;
-}
-
-/// Insert `bytes` at logical `pos`, dropping '\r' so pasted CRLF / CR text
-/// becomes LF. Inserts the non-CR runs back-to-back without a temp allocation.
-/// Returns the number of bytes actually inserted (caret advance).
-fn insertStripCR(self: *TextArea, pos: usize, bytes: []const u8) !usize {
-    var inserted: usize = 0;
-    var i: usize = 0;
-    while (i < bytes.len) {
-        const run_end = std.mem.indexOfScalarPos(u8, bytes, i, '\r') orelse bytes.len;
-        if (run_end > i) {
-            try self.text.insert(pos + inserted, bytes[i..run_end]);
-            inserted += run_end - i;
-        }
-        i = if (run_end < bytes.len) run_end + 1 else run_end;
-    }
-    return inserted;
+fn deleteSelection(self: *TextArea) bool {
+    return self.core.deleteSelection() catch false;
 }
 
 // ── vtable: events ─────────────────────────────────────────────────────────
@@ -641,8 +595,9 @@ fn handleMouse(ta: *TextArea, ev: *Component.Event, m: awt.Event.MouseEvent) voi
         .press => {
             if (m.button == .left and inside) {
                 const pos = ta.pointToCaret(lx, ly);
-                ta.caret = pos;
-                ta.mark = pos;
+                ta.core.caret = pos;
+                ta.core.mark = pos;
+                ta.core.breakCoalescing();
                 ta.dragging = true;
                 ev.requestCapture(@ptrCast(&ta.component));
                 ta.component.requestFocus();
@@ -664,8 +619,9 @@ fn handleMouse(ta: *TextArea, ev: *Component.Event, m: awt.Event.MouseEvent) voi
             // `.move`, which must not move the caret.
             if (ta.dragging) {
                 const pos = ta.pointToCaret(lx, ly);
-                if (pos != ta.caret) {
-                    ta.caret = pos;
+                if (pos != ta.core.caret) {
+                    ta.core.caret = pos;
+                    ta.core.breakCoalescing();
                     ta.caret_visible = true;
                     ta.ensureCaretVisible();
                     ta.component.repaint();
@@ -686,65 +642,63 @@ fn handleKey(ta: *TextArea, ev: *Component.Event, k: awt.Event.KeyEvent) void {
 
     switch (k.code) {
         .arrow_left => {
-            ta.caret = ta.prevBoundary(ta.caret);
-            if (!shift) ta.mark = ta.caret;
+            ta.core.caret = ta.prevBoundary(ta.core.caret);
+            if (!shift) ta.core.mark = ta.core.caret;
+            ta.core.breakCoalescing();
             ta.afterEdit(ev);
         },
         .arrow_right => {
-            ta.caret = ta.nextBoundary(ta.caret);
-            if (!shift) ta.mark = ta.caret;
+            ta.core.caret = ta.nextBoundary(ta.core.caret);
+            if (!shift) ta.core.mark = ta.core.caret;
+            ta.core.breakCoalescing();
             ta.afterEdit(ev);
         },
         .arrow_up => {
             ta.moveVertical(-1);
-            if (!shift) ta.mark = ta.caret;
+            if (!shift) ta.core.mark = ta.core.caret;
+            ta.core.breakCoalescing();
             ta.afterEdit(ev);
         },
         .arrow_down => {
             ta.moveVertical(1);
-            if (!shift) ta.mark = ta.caret;
+            if (!shift) ta.core.mark = ta.core.caret;
+            ta.core.breakCoalescing();
             ta.afterEdit(ev);
         },
         .home => {
-            ta.caret = ta.lines.items[ta.caretLine(ta.caret)].start;
-            if (!shift) ta.mark = ta.caret;
+            ta.core.caret = ta.lines.items[ta.caretLine(ta.core.caret)].start;
+            if (!shift) ta.core.mark = ta.core.caret;
+            ta.core.breakCoalescing();
             ta.afterEdit(ev);
         },
         .end => {
-            ta.caret = ta.lines.items[ta.caretLine(ta.caret)].end;
-            if (!shift) ta.mark = ta.caret;
+            ta.core.caret = ta.lines.items[ta.caretLine(ta.core.caret)].end;
+            if (!shift) ta.core.mark = ta.core.caret;
+            ta.core.breakCoalescing();
             ta.afterEdit(ev);
         },
+        .z => if (ctrl) {
+            if (ta.core.undo() catch false) ta.afterReflow(ev) else ev.consume();
+        },
+        .y => if (ctrl) {
+            if (ta.core.redo() catch false) ta.afterReflow(ev) else ev.consume();
+        },
         .backspace => {
-            if (ta.hasSelection()) {
-                ta.deleteSelection();
-            } else if (ta.caret > 0) {
-                const prev = ta.prevBoundary(ta.caret);
-                ta.text.delete(prev, ta.caret - prev);
-                ta.caret = prev;
-                ta.mark = prev;
-            }
+            _ = ta.core.deleteBackward() catch false;
             ta.afterReflow(ev);
         },
         .delete => {
-            if (ta.hasSelection()) {
-                ta.deleteSelection();
-            } else if (ta.caret < ta.text.len()) {
-                const next = ta.nextBoundary(ta.caret);
-                ta.text.delete(ta.caret, next - ta.caret);
-            }
+            _ = ta.core.deleteForward() catch false;
             ta.afterReflow(ev);
         },
         .enter => {
-            if (ta.hasSelection()) ta.deleteSelection();
-            ta.text.insert(ta.caret, "\n") catch {};
-            ta.caret += 1;
-            ta.mark = ta.caret;
+            _ = ta.core.insert("\n") catch false;
             ta.afterReflow(ev);
         },
         .a => if (ctrl) {
-            ta.mark = 0;
-            ta.caret = ta.text.len();
+            ta.core.mark = 0;
+            ta.core.caret = ta.core.len();
+            ta.core.breakCoalescing();
             ta.afterEdit(ev);
         },
         .c => if (ctrl) {
@@ -753,7 +707,7 @@ fn handleKey(ta: *TextArea, ev: *Component.Event, k: awt.Event.KeyEvent) void {
         },
         .x => if (ctrl) {
             ta.copyToClipboard();
-            if (ta.hasSelection()) ta.deleteSelection();
+            if (ta.hasSelection()) _ = ta.deleteSelection();
             ta.afterReflow(ev);
         },
         .v => if (ctrl) {
@@ -765,12 +719,9 @@ fn handleKey(ta: *TextArea, ev: *Component.Event, k: awt.Event.KeyEvent) void {
 }
 
 fn handleChar(ta: *TextArea, ev: *Component.Event, ch: awt.Event.CharEvent) void {
-    if (ta.hasSelection()) ta.deleteSelection();
     var buf: [4]u8 = undefined;
     const n = std.unicode.utf8Encode(@intCast(ch.codepoint), &buf) catch return;
-    ta.text.insert(ta.caret, buf[0..n]) catch return;
-    ta.caret += n;
-    ta.mark = ta.caret;
+    _ = ta.core.insert(buf[0..n]) catch return;
     ta.afterReflow(ev);
 }
 
@@ -794,19 +745,19 @@ fn afterEdit(ta: *TextArea, ev: *Component.Event) void {
 /// horizontal offset as closely as the target line allows. At the top/bottom
 /// edge, jump to document start/end (common editor behavior).
 fn moveVertical(ta: *TextArea, dir: i32) void {
-    const li = ta.caretLine(ta.caret);
+    const li = ta.caretLine(ta.core.caret);
     const target: isize = @as(isize, @intCast(li)) + dir;
     if (target < 0) {
-        ta.caret = 0;
+        ta.core.caret = 0;
         return;
     }
     if (target >= @as(isize, @intCast(ta.lines.items.len))) {
-        ta.caret = ta.text.len();
+        ta.core.caret = ta.core.len();
         return;
     }
     const cur = ta.lines.items[li];
-    const x_offset = ta.measureRange(cur.start, ta.caret);
-    ta.caret = ta.byteAtXInLine(ta.lines.items[@intCast(target)], x_offset);
+    const x_offset = ta.measureRange(cur.start, ta.core.caret);
+    ta.core.caret = ta.byteAtXInLine(ta.lines.items[@intCast(target)], x_offset);
 }
 
 // ── clipboard / IME / scroll integration ───────────────────────────────────
@@ -817,7 +768,7 @@ fn copyToClipboard(self: *TextArea) void {
     const end = self.selectionEnd();
     const tmp = self.allocator.allocSentinel(u8, end - start, 0) catch return;
     defer self.allocator.free(tmp);
-    self.text.copyRange(tmp[0 .. end - start], start, end);
+    self.core.copyRange(tmp[0 .. end - start], start, end);
     if (self.parentWindow()) |w| if (w.awt_window) |*aw| aw.setClipboardString(tmp);
 }
 
@@ -825,10 +776,11 @@ fn pasteFromClipboard(self: *TextArea) !void {
     const w = self.parentWindow() orelse return;
     if (w.awt_window == null) return; // headless: no clipboard
     const got = w.awt_window.?.getClipboardString() orelse return;
-    if (self.hasSelection()) self.deleteSelection();
-    const n = try self.insertStripCR(self.caret, got);
-    self.caret += n;
-    self.mark = self.caret;
+    _ = try self.core.replaceSelection(got);
+}
+
+fn imeCleared(self: *TextArea) void {
+    self.core.breakCoalescing();
 }
 
 /// Ask the enclosing ScrollPane (if any) to keep the caret visible.
@@ -870,9 +822,7 @@ fn parentWindow(self: *TextArea) ?*Window {
 
 fn initTestArea(initial_text: []const u8) !TextArea {
     var ta: TextArea = undefined;
-    ta.text = try GapBuffer.initFromSlice(std.testing.allocator, initial_text);
-    ta.caret = ta.text.len();
-    ta.mark = ta.caret;
+    ta.core = try EditableText.initFromSlice(std.testing.allocator, initial_text);
     ta.scratch = .empty;
     ta.lines = .empty;
     ta.allocator = std.testing.allocator;
@@ -880,15 +830,15 @@ fn initTestArea(initial_text: []const u8) !TextArea {
 }
 
 fn deinitTestArea(ta: *TextArea) void {
-    ta.text.deinit();
+    ta.core.deinit();
     ta.scratch.deinit(std.testing.allocator);
     ta.lines.deinit(std.testing.allocator);
 }
 
 fn expectText(ta: *TextArea, expected: []const u8) !void {
-    const got = try std.testing.allocator.alloc(u8, ta.text.len());
+    const got = try std.testing.allocator.alloc(u8, ta.core.len());
     defer std.testing.allocator.free(got);
-    ta.text.copyRange(got, 0, ta.text.len());
+    ta.core.copyRange(got, 0, ta.core.len());
     try std.testing.expectEqualStrings(expected, got);
 }
 
@@ -912,18 +862,16 @@ test "TextArea grapheme boundaries drive movement and deletion" {
         try std.testing.expectEqual(cluster_end, ta.nextBoundary(cluster_start));
         try std.testing.expectEqual(cluster_start, ta.prevBoundary(cluster_end));
 
-        ta.caret = cluster_end;
-        const prev = ta.prevBoundary(ta.caret);
-        ta.text.delete(prev, ta.caret - prev);
-        ta.caret = prev;
-        ta.mark = prev;
+        ta.core.caret = cluster_end;
+        ta.core.mark = cluster_end;
+        try std.testing.expect(try ta.core.deleteBackward());
         try expectText(&ta, "ab");
 
         var ta_delete = try initTestArea(s);
         defer deinitTestArea(&ta_delete);
-        ta_delete.caret = cluster_start;
-        const next = ta_delete.nextBoundary(ta_delete.caret);
-        ta_delete.text.delete(ta_delete.caret, next - ta_delete.caret);
+        ta_delete.core.caret = cluster_start;
+        ta_delete.core.mark = cluster_start;
+        try std.testing.expect(try ta_delete.core.deleteForward());
         try expectText(&ta_delete, "ab");
     }
 }
@@ -954,7 +902,7 @@ test "TextArea grapheme boundaries survive gap straddling" {
 
     var ta = try initTestArea(s);
     defer deinitTestArea(&ta);
-    ta.text.moveGap(inside_cluster);
+    ta.core.buffer.gap.moveGap(inside_cluster);
 
     try std.testing.expectEqual(cluster_start, ta.prevBoundary(cluster_end));
     try std.testing.expectEqual(cluster_end, ta.nextBoundary(cluster_start));

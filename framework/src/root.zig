@@ -64,6 +64,7 @@ pub const FileChooserDirSource = @import("FileChooser.zig").DirSource;
 pub const GapBuffer = @import("GapBuffer.zig");
 pub const UndoStack = @import("UndoStack.zig");
 pub const Command = UndoStack.Command;
+pub const EditableText = @import("EditableText.zig");
 pub const Robot = @import("Robot.zig");
 pub const Driver = @import("Driver.zig");
 
