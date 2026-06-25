@@ -272,6 +272,67 @@ test "headless driver: text field content can be found after typing" {
     try std.testing.expectEqual(&field.component, try driver.find(.{ .role = .text_field, .text = "hello" }));
 }
 
+test "headless driver: text field edit core smoke" {
+    const gpa = std.testing.allocator;
+
+    awt.setLogCallback(Robot.QuietLog.cb, null);
+    const app = Application.initHeadless(gpa, std.testing.io) catch return error.SkipZigTest;
+    defer app.deinit();
+
+    const frame = try app.frameHeadless("t", 360, 120);
+    frame.window.container.setLayout(null);
+
+    const field = try app.textField("");
+    field.component.setBounds(.{ .x = 10, .y = 10, .width = 240, .height = 30 });
+    try frame.window.add(&field.component);
+
+    var robot = Robot.init(app, &frame.window);
+    var driver = @This(){ .robot = &robot };
+    robot.pump();
+
+    try driver.clickOn(.{ .role = .text_field, .text = "" });
+    robot.typeText("abc");
+    robot.pump();
+    try std.testing.expectEqualStrings("abc", field.getText());
+
+    robot.keyDown(.a, .{ .ctrl = true });
+    robot.keyUp(.a, .{ .ctrl = true });
+    robot.typeText("Z");
+    robot.pump();
+    try std.testing.expectEqualStrings("Z", field.getText());
+
+    robot.keyDown(.a, .{ .ctrl = true });
+    robot.keyUp(.a, .{ .ctrl = true });
+    robot.keyDown(.x, .{ .ctrl = true });
+    robot.keyUp(.x, .{ .ctrl = true });
+    robot.pump();
+    try std.testing.expectEqualStrings("", field.getText());
+
+    robot.keyDown(.z, .{ .ctrl = true });
+    robot.keyUp(.z, .{ .ctrl = true });
+    robot.pump();
+    try std.testing.expectEqualStrings("Z", field.getText());
+
+    robot.keyDown(.end, .{});
+    robot.keyUp(.end, .{});
+    robot.typeText("a\nb");
+    robot.pump();
+    try std.testing.expectEqualStrings("Zab", field.getText());
+
+    robot.composition("pre", 0, 3);
+    robot.pump();
+    robot.composition("", 0, 0);
+    robot.typeText("あ");
+    robot.pump();
+    try std.testing.expectEqualStrings("Zabあ", field.getText());
+
+    const tree = try robot.snapshotTree(gpa);
+    defer Robot.freeTree(gpa, tree);
+    const node = findSnapshotRole(&tree, .text_field) orelse return error.NotFound;
+    try std.testing.expect(node.focused);
+    try std.testing.expectEqualStrings("Zabあ", node.text orelse return error.NotFound);
+}
+
 test "headless driver: text area undo updates snapshot text" {
     const gpa = std.testing.allocator;
 

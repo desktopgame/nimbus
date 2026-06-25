@@ -17,6 +17,7 @@ const ActionListenerList = listener.ActionListenerList;
 const ChangeEvent = listener.ChangeEvent;
 const ActionEvent = listener.ActionEvent;
 const ImeSession = @import("ImeSession.zig");
+const EditableText = @import("EditableText.zig");
 
 const TextField = @This();
 
@@ -39,12 +40,7 @@ fn selectionColor(t: *const @import("theme.zig").Theme) awt.Graphics.Color {
 
 component: Component,
 app: *Application,
-/// UTF-8 internal buffer. caret_byte / mark_byte are byte offsets into
-/// this slice. Public APIs (setCaretAtCodepoint etc.) accept codepoint
-/// indices so the byte representation is not contract surface.
-text: std.ArrayList(u8),
-caret_byte: usize,
-mark_byte: usize,
+core: EditableText,
 font: awt.Graphics.TextFont,
 color: awt.Graphics.Color,
 background: awt.Graphics.Color,
@@ -101,16 +97,15 @@ pub fn create(
     const tf = try allocator.create(TextField);
     errdefer allocator.destroy(tf);
 
-    var text_buf: std.ArrayList(u8) = .empty;
-    errdefer text_buf.deinit(allocator);
-    try text_buf.appendSlice(allocator, initial_text);
+    const single_line = try singleLineCopy(allocator, initial_text);
+    defer allocator.free(single_line);
+    var core = try EditableText.initFromSlice(allocator, single_line);
+    errdefer core.deinit();
 
     tf.* = .{
         .component = Component.init(allocator, &vtable),
         .app = app,
-        .text = text_buf,
-        .caret_byte = text_buf.items.len,
-        .mark_byte = text_buf.items.len,
+        .core = core,
         .font = font,
         .color = color,
         .background = awt.Graphics.Color.rgb(1.0, 1.0, 1.0),
@@ -126,6 +121,7 @@ pub fn create(
         .change_listeners = ChangeListenerList.init(allocator),
         .allocator = allocator,
     };
+    tf.ime.setOnCleared(ImeSession.ClearedHook.typed(TextField, imeCleared, tf));
     tf.component.role = .text_field;
     tf.component.a11y = .{ .name = a11yName };
     tf.component.ui = .{ .vtable = &look_vtable, .ctx = &Component.default_look_context };
@@ -136,15 +132,14 @@ pub fn create(
 
 // ── public API ───────────────────────────────────────────────────────────
 
-pub fn getText(self: TextField) []const u8 {
-    return self.text.items;
+pub fn getText(self: *TextField) []const u8 {
+    return self.core.textSlice();
 }
 
 pub fn setText(self: *TextField, new_text: []const u8) !void {
-    self.text.clearRetainingCapacity();
-    try self.text.appendSlice(self.allocator, new_text);
-    self.caret_byte = self.text.items.len;
-    self.mark_byte = self.text.items.len;
+    const single_line = try singleLineCopy(self.allocator, new_text);
+    defer self.allocator.free(single_line);
+    try self.core.setText(single_line);
     self.applyMetrics();
     self.change_listeners.fire(&.{ .source = self });
     self.component.repaint();
@@ -230,7 +225,7 @@ pub fn measureMinSizeValue(tf: *TextField) Component.Size {
 
 fn a11yName(c: *const Component) ?[]const u8 {
     const tf: *const TextField = @fieldParentPtr("component", c);
-    return tf.text.items;
+    return @constCast(tf).getText();
 }
 
 // ── vtable impl ──────────────────────────────────────────────────────────
@@ -333,7 +328,7 @@ pub fn paintContent(tf: *TextField, self: *Component, g: *awt.Graphics) void {
     // Text. `drawString` takes the top-left of the bbox (graphics.md: top-of-bbox派).
     cg.setFont(tf.font);
     cg.setColor(tf.color);
-    cg.drawString(tf.text.items, -sx, PADDING_Y);
+    cg.drawString(tf.getText(), -sx, PADDING_Y);
 
     // IME preedit (composition string). Rendered inline at the caret
     // position so it visually flows with surrounding text. Underlines
@@ -342,7 +337,7 @@ pub fn paintContent(tf: *TextField, self: *Component, g: *awt.Graphics) void {
     if (tf.has_focus and tf.ime.isComposing()) {
         const preedit = tf.ime.preeditSlice();
         const target = tf.ime.targetRange();
-        const caret_x = tf.glyphXAtByte(tf.caret_byte) - sx;
+        const caret_x = tf.glyphXAtByte(tf.core.caret) - sx;
 
         cg.setFont(tf.font);
         cg.setColor(tf.color);
@@ -370,7 +365,7 @@ pub fn paintContent(tf: *TextField, self: *Component, g: *awt.Graphics) void {
     // owns the visual cursor inside the preedit, and drawing our own
     // would just be noise.
     if (tf.has_focus and tf.caret_visible and !tf.ime.isComposing()) {
-        const cx = tf.glyphXAtByte(tf.caret_byte) - sx;
+        const cx = tf.glyphXAtByte(tf.core.caret) - sx;
         cg.setColor(tf.caret_color);
         cg.fillRect(.{
             .x = cx,
@@ -408,7 +403,7 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
 fn destroy(self: *Component, allocator: std.mem.Allocator) void {
     const tf: *TextField = @fieldParentPtr("component", self);
     self.deinit();
-    tf.text.deinit(allocator);
+    tf.core.deinit();
     tf.ime.deinit();
     tf.submit_listeners.deinit();
     tf.cancel_listeners.deinit();
@@ -428,8 +423,9 @@ fn handleMouse(tf: *TextField, ev: *Component.Event, m: awt.Event.MouseEvent) vo
         .press => {
             if (m.button == .left and inside) {
                 const pos = tf.hitTestByteAt(lx);
-                tf.caret_byte = pos;
-                tf.mark_byte = pos;
+                tf.core.caret = pos;
+                tf.core.mark = pos;
+                tf.core.breakCoalescing();
                 tf.dragging = true;
                 ev.requestCapture(@ptrCast(&tf.component));
                 tf.component.requestFocus();
@@ -452,8 +448,9 @@ fn handleMouse(tf: *TextField, ev: *Component.Event, m: awt.Event.MouseEvent) vo
             // `dragging` keeps a passing cursor from moving the caret.
             if (tf.dragging) {
                 const pos = tf.hitTestByteAt(lx);
-                if (pos != tf.caret_byte) {
-                    tf.caret_byte = pos;
+                if (pos != tf.core.caret) {
+                    tf.core.caret = pos;
+                    tf.core.breakCoalescing();
                     tf.caret_visible = true;
                     tf.ensureCaretVisible();
                     tf.component.repaint();
@@ -489,14 +486,22 @@ fn handleKey(tf: *TextField, ev: *Component.Event, k: awt.Event.KeyEvent) void {
             tf.afterEdit(ev, false);
         },
         .home => {
-            tf.caret_byte = 0;
-            if (!shift) tf.mark_byte = tf.caret_byte;
+            tf.core.caret = 0;
+            if (!shift) tf.core.mark = tf.core.caret;
+            tf.core.breakCoalescing();
             tf.afterEdit(ev, false);
         },
         .end => {
-            tf.caret_byte = tf.text.items.len;
-            if (!shift) tf.mark_byte = tf.caret_byte;
+            tf.core.caret = tf.core.len();
+            if (!shift) tf.core.mark = tf.core.caret;
+            tf.core.breakCoalescing();
             tf.afterEdit(ev, false);
+        },
+        .z => if (ctrl) {
+            if (tf.core.undo() catch false) tf.afterEdit(ev, true) else ev.consume();
+        },
+        .y => if (ctrl) {
+            if (tf.core.redo() catch false) tf.afterEdit(ev, true) else ev.consume();
         },
         .backspace => {
             const changed = tf.deleteBackwardGrapheme() catch false;
@@ -508,8 +513,9 @@ fn handleKey(tf: *TextField, ev: *Component.Event, k: awt.Event.KeyEvent) void {
         },
         .a => if (ctrl) {
             // Select-all is a selection change, not a content change.
-            tf.mark_byte = 0;
-            tf.caret_byte = tf.text.items.len;
+            tf.core.mark = 0;
+            tf.core.caret = tf.core.len();
+            tf.core.breakCoalescing();
             tf.afterEdit(ev, false);
         },
         .c => if (ctrl) {
@@ -519,12 +525,16 @@ fn handleKey(tf: *TextField, ev: *Component.Event, k: awt.Event.KeyEvent) void {
         .x => if (ctrl) {
             tf.copyToClipboard();
             const had_sel = tf.hasSelection();
-            if (had_sel) tf.deleteSelection() catch {};
+            if (had_sel) {
+                tf.core.breakCoalescing();
+                tf.deleteSelection() catch {};
+                tf.core.breakCoalescing();
+            }
             tf.afterEdit(ev, had_sel);
         },
         .v => if (ctrl) {
-            tf.pasteFromClipboard() catch {};
-            tf.afterEdit(ev, true);
+            const changed = tf.pasteFromClipboard() catch false;
+            tf.afterEdit(ev, changed);
         },
         .enter => {
             // Single-line: Enter submits. Fire listeners and consume so the
@@ -541,15 +551,14 @@ fn handleKey(tf: *TextField, ev: *Component.Event, k: awt.Event.KeyEvent) void {
 }
 
 fn handleChar(tf: *TextField, ev: *Component.Event, ch: awt.Event.CharEvent) void {
-    if (tf.hasSelection()) {
-        tf.deleteSelection() catch return;
+    if (ch.codepoint == '\n' or ch.codepoint == '\r') {
+        ev.consume();
+        return;
     }
     var buf: [4]u8 = undefined;
     const n = std.unicode.utf8Encode(@intCast(ch.codepoint), &buf) catch return;
-    tf.text.insertSlice(tf.allocator, tf.caret_byte, buf[0..n]) catch return;
-    tf.caret_byte += n;
-    tf.mark_byte = tf.caret_byte;
-    tf.afterEdit(ev, true);
+    const changed = tf.core.insert(buf[0..n]) catch return;
+    tf.afterEdit(ev, changed);
 }
 
 /// Common tail for every key/char handler. `changed` is true only when the
@@ -571,7 +580,7 @@ fn afterEdit(tf: *TextField, ev: *Component.Event, changed: bool) void {
 fn pushCaretToIme(self: *TextField) void {
     const w = self.parentWindow() orelse return;
     const origin = self.component.absoluteOriginInWindow();
-    const caret_x = origin.x + PADDING_X + self.glyphXAtByte(self.caret_byte) - self.scroll_x;
+    const caret_x = origin.x + PADDING_X + self.glyphXAtByte(self.core.caret) - self.scroll_x;
     const caret_y = origin.y + PADDING_Y;
     self.font.face.setPixelSize(self.font.pixel_size);
     const line_h = self.font.face.metrics().line_height;
@@ -592,7 +601,7 @@ fn ensureCaretVisible(self: *TextField) void {
     const inner_w = self.component.size.width - PADDING_X * 2;
     if (inner_w <= 0) return;
 
-    const caret_x = self.glyphXAtByte(self.caret_byte);
+    const caret_x = self.glyphXAtByte(self.core.caret);
     // Reserve CARET_WIDTH at the right so the caret itself is not clipped
     // by the content rect's right edge.
     if (caret_x - self.scroll_x > inner_w - CARET_WIDTH) {
@@ -604,7 +613,7 @@ fn ensureCaretVisible(self: *TextField) void {
     // +CARET_WIDTH: the trailing caret sits just past the last glyph, so the
     // scrollable content effectively extends that far  Eotherwise a caret at
     // end-of-text would be clipped at the right boundary.
-    const end_x = self.glyphXAtByte(self.text.items.len);
+    const end_x = self.glyphXAtByte(self.getText().len);
     const max_scroll = @max(0, end_x + CARET_WIDTH - inner_w);
     if (self.scroll_x > max_scroll) self.scroll_x = max_scroll;
     if (self.scroll_x < 0) self.scroll_x = 0;
@@ -612,87 +621,80 @@ fn ensureCaretVisible(self: *TextField) void {
 
 // ── selection / edit helpers ─────────────────────────────────────────────
 
-fn hasSelection(self: TextField) bool {
-    return self.caret_byte != self.mark_byte;
+fn singleLineCopy(allocator: std.mem.Allocator, bytes: []const u8) ![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(allocator);
+    try out.ensureTotalCapacity(allocator, bytes.len);
+    for (bytes) |b| {
+        if (b != '\r' and b != '\n') out.appendAssumeCapacity(b);
+    }
+    return try out.toOwnedSlice(allocator);
 }
 
-fn selectionStartByte(self: TextField) usize {
-    return @min(self.caret_byte, self.mark_byte);
+fn hasSelection(self: *TextField) bool {
+    return self.core.hasSelection();
 }
 
-fn selectionEndByte(self: TextField) usize {
-    return @max(self.caret_byte, self.mark_byte);
+fn selectionStartByte(self: *TextField) usize {
+    return self.core.selectionStart();
 }
 
-fn selectionSlice(self: TextField) []const u8 {
-    return self.text.items[self.selectionStartByte()..self.selectionEndByte()];
+fn selectionEndByte(self: *TextField) usize {
+    return self.core.selectionEnd();
+}
+
+fn selectionSlice(self: *TextField) []const u8 {
+    return self.getText()[self.selectionStartByte()..self.selectionEndByte()];
 }
 
 fn deleteSelection(self: *TextField) !void {
-    const start = self.selectionStartByte();
-    const end = self.selectionEndByte();
-    if (end == start) return;
-    try self.text.replaceRange(self.allocator, start, end - start, &.{});
-    self.caret_byte = start;
-    self.mark_byte = start;
+    _ = try self.core.deleteSelection();
 }
 
 fn moveCaretLeft(self: *TextField, extend_selection: bool) void {
-    self.caret_byte = awt.grapheme.prevGraphemeBoundary(self.text.items, self.caret_byte);
-    if (!extend_selection) self.mark_byte = self.caret_byte;
+    self.core.caret = self.core.prevBoundary(self.core.caret);
+    if (!extend_selection) self.core.mark = self.core.caret;
+    self.core.breakCoalescing();
 }
 
 fn moveCaretRight(self: *TextField, extend_selection: bool) void {
-    self.caret_byte = awt.grapheme.nextGraphemeBoundary(self.text.items, self.caret_byte);
-    if (!extend_selection) self.mark_byte = self.caret_byte;
+    self.core.caret = self.core.nextBoundary(self.core.caret);
+    if (!extend_selection) self.core.mark = self.core.caret;
+    self.core.breakCoalescing();
 }
 
 fn deleteBackwardGrapheme(self: *TextField) !bool {
-    if (self.hasSelection()) {
-        try self.deleteSelection();
-        return true;
-    }
-    if (self.caret_byte == 0) return false;
-
-    const prev = awt.grapheme.prevGraphemeBoundary(self.text.items, self.caret_byte);
-    try self.text.replaceRange(self.allocator, prev, self.caret_byte - prev, &.{});
-    self.caret_byte = prev;
-    self.mark_byte = prev;
-    return true;
+    return self.core.deleteBackward();
 }
 
 fn deleteForwardGrapheme(self: *TextField) !bool {
-    if (self.hasSelection()) {
-        try self.deleteSelection();
-        return true;
-    }
-    if (self.caret_byte >= self.text.items.len) return false;
-
-    const next = awt.grapheme.nextGraphemeBoundary(self.text.items, self.caret_byte);
-    try self.text.replaceRange(self.allocator, self.caret_byte, next - self.caret_byte, &.{});
-    self.mark_byte = self.caret_byte;
-    return true;
+    return self.core.deleteForward();
 }
 
 fn copyToClipboard(self: *TextField) void {
     if (!self.hasSelection()) return;
-    // Need a sentinel-terminated copy for the C clipboard API.
     const slice = self.selectionSlice();
     const tmp = self.allocator.allocSentinel(u8, slice.len, 0) catch return;
     defer self.allocator.free(tmp);
     @memcpy(tmp[0..slice.len], slice);
-    // Reach the parent Window via parent chain to scope the clipboard call.
     if (self.parentWindow()) |w| if (w.awt_window) |*aw| aw.setClipboardString(tmp);
 }
 
-fn pasteFromClipboard(self: *TextField) !void {
-    const w = self.parentWindow() orelse return;
-    if (w.awt_window == null) return; // headless: no clipboard
-    const got = w.awt_window.?.getClipboardString() orelse return;
-    if (self.hasSelection()) try self.deleteSelection();
-    try self.text.insertSlice(self.allocator, self.caret_byte, got);
-    self.caret_byte += got.len;
-    self.mark_byte = self.caret_byte;
+fn pasteText(self: *TextField, bytes: []const u8) !bool {
+    const single_line = try singleLineCopy(self.allocator, bytes);
+    defer self.allocator.free(single_line);
+    return try self.core.paste(single_line);
+}
+
+fn pasteFromClipboard(self: *TextField) !bool {
+    const w = self.parentWindow() orelse return false;
+    if (w.awt_window == null) return false;
+    const got = w.awt_window.?.getClipboardString() orelse return false;
+    return try self.pasteText(got);
+}
+
+fn imeCleared(self: *TextField) void {
+    self.core.breakCoalescing();
 }
 
 fn parentWindow(self: *TextField) ?*@import("Window.zig") {
@@ -717,17 +719,17 @@ fn parentWindow(self: *TextField) ?*@import("Window.zig") {
 /// caret after it. Returns text.items.len if `x_local` is past every glyph.
 /// Accounts for the horizontal scroll offset: a click maps to the glyph
 /// position `x_local - PADDING_X + scroll_x` in text-start coordinates.
-fn hitTestByteAt(self: TextField, x_local: f32) usize {
+fn hitTestByteAt(self: *TextField, x_local: f32) usize {
     self.font.face.setPixelSize(self.font.pixel_size);
     const target = x_local - PADDING_X + self.scroll_x;
-    const byte = self.font.face.byteAtX(self.text.items, target);
+    const byte = self.font.face.byteAtX(self.getText(), target);
     return self.snapByteToGraphemeBoundary(byte);
 }
 
 /// Sum of advance widths for the UTF-8 bytes in `s`. Used to measure
 /// substrings (preedit, target clause) without the PADDING_X offset that
 /// `xAtByte` adds.
-fn measureUtf8(self: TextField, s: []const u8) f32 {
+fn measureUtf8(self: *TextField, s: []const u8) f32 {
     self.font.face.setPixelSize(self.font.pixel_size);
     return self.font.face.advanceOfRange(s, 0, s.len);
 }
@@ -737,33 +739,36 @@ fn measureUtf8(self: TextField, s: []const u8) f32 {
 /// PADDING_X or the scroll offset). `byte_pos == text.items.len` returns the
 /// position after the last glyph (where the trailing caret sits). Callers
 /// add `PADDING_X` and subtract `scroll_x` to get an on-screen position.
-fn glyphXAtByte(self: TextField, byte_pos: usize) f32 {
+fn glyphXAtByte(self: *TextField, byte_pos: usize) f32 {
     self.font.face.setPixelSize(self.font.pixel_size);
-    return self.font.face.advanceOfRange(self.text.items, 0, byte_pos);
+    return self.font.face.advanceOfRange(self.getText(), 0, byte_pos);
 }
 
-fn snapByteToGraphemeBoundary(self: TextField, byte_pos: usize) usize {
-    const clamped = @min(byte_pos, self.text.items.len);
-    const prev = awt.grapheme.prevGraphemeBoundary(self.text.items, clamped);
-    if (awt.grapheme.nextGraphemeBoundary(self.text.items, prev) == clamped) return clamped;
+fn snapByteToGraphemeBoundary(self: *TextField, byte_pos: usize) usize {
+    const clamped = @min(byte_pos, self.getText().len);
+    const prev = awt.grapheme.prevGraphemeBoundary(self.getText(), clamped);
+    if (awt.grapheme.nextGraphemeBoundary(self.getText(), prev) == clamped) return clamped;
     return prev;
 }
 
 test "selection range - caret < mark and caret > mark" {
     var tf: TextField = undefined;
-    tf.caret_byte = 2;
-    tf.mark_byte = 5;
+    tf.core = EditableText.init(std.testing.allocator);
+    defer tf.core.deinit();
+
+    tf.core.caret = 2;
+    tf.core.mark = 5;
     try std.testing.expectEqual(@as(usize, 2), tf.selectionStartByte());
     try std.testing.expectEqual(@as(usize, 5), tf.selectionEndByte());
     try std.testing.expect(tf.hasSelection());
 
-    tf.caret_byte = 7;
-    tf.mark_byte = 3;
+    tf.core.caret = 7;
+    tf.core.mark = 3;
     try std.testing.expectEqual(@as(usize, 3), tf.selectionStartByte());
     try std.testing.expectEqual(@as(usize, 7), tf.selectionEndByte());
 
-    tf.caret_byte = 4;
-    tf.mark_byte = 4;
+    tf.core.caret = 4;
+    tf.core.mark = 4;
     try std.testing.expect(!tf.hasSelection());
 }
 
@@ -772,55 +777,60 @@ test "caret movement uses grapheme cluster boundaries" {
     const thumbs = "\u{1F44D}\u{1F3FB}";
     const s = "a" ++ accent ++ thumbs ++ "b";
 
-    var text: std.ArrayList(u8) = .empty;
-    defer text.deinit(std.testing.allocator);
-    try text.appendSlice(std.testing.allocator, s);
-
     var tf: TextField = undefined;
-    tf.text = text;
-    tf.caret_byte = 0;
-    tf.mark_byte = 0;
+    tf.core = try EditableText.initFromSlice(std.testing.allocator, s);
+    defer tf.core.deinit();
+    tf.core.caret = 0;
+    tf.core.mark = 0;
 
     tf.moveCaretRight(false);
-    try std.testing.expectEqual(@as(usize, 1), tf.caret_byte);
-    try std.testing.expectEqual(tf.caret_byte, tf.mark_byte);
+    try std.testing.expectEqual(@as(usize, 1), tf.core.caret);
+    try std.testing.expectEqual(tf.core.caret, tf.core.mark);
 
     tf.moveCaretRight(false);
-    try std.testing.expectEqual(@as(usize, 1 + accent.len), tf.caret_byte);
+    try std.testing.expectEqual(@as(usize, 1 + accent.len), tf.core.caret);
 
     tf.moveCaretRight(false);
-    try std.testing.expectEqual(@as(usize, 1 + accent.len + thumbs.len), tf.caret_byte);
+    try std.testing.expectEqual(@as(usize, 1 + accent.len + thumbs.len), tf.core.caret);
 
     tf.moveCaretLeft(false);
-    try std.testing.expectEqual(@as(usize, 1 + accent.len), tf.caret_byte);
+    try std.testing.expectEqual(@as(usize, 1 + accent.len), tf.core.caret);
 
     tf.moveCaretLeft(true);
-    try std.testing.expectEqual(@as(usize, 1), tf.caret_byte);
-    try std.testing.expectEqual(@as(usize, 1 + accent.len), tf.mark_byte);
+    try std.testing.expectEqual(@as(usize, 1), tf.core.caret);
+    try std.testing.expectEqual(@as(usize, 1 + accent.len), tf.core.mark);
 }
 
 test "backspace and delete remove whole grapheme clusters" {
     const family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}";
     const s = "a" ++ family ++ "b";
 
-    var text: std.ArrayList(u8) = .empty;
-    defer text.deinit(std.testing.allocator);
-    try text.appendSlice(std.testing.allocator, s);
-
     var tf: TextField = undefined;
-    tf.allocator = std.testing.allocator;
-    tf.text = text;
-    tf.caret_byte = 1 + family.len;
-    tf.mark_byte = tf.caret_byte;
+    tf.core = try EditableText.initFromSlice(std.testing.allocator, s);
+    defer tf.core.deinit();
+    tf.core.caret = 1 + family.len;
+    tf.core.mark = tf.core.caret;
 
     try std.testing.expect(try tf.deleteBackwardGrapheme());
-    try std.testing.expectEqualStrings("ab", tf.text.items);
-    try std.testing.expectEqual(@as(usize, 1), tf.caret_byte);
-    try std.testing.expectEqual(tf.caret_byte, tf.mark_byte);
+    try std.testing.expectEqualStrings("ab", tf.getText());
+    try std.testing.expectEqual(@as(usize, 1), tf.core.caret);
+    try std.testing.expectEqual(tf.core.caret, tf.core.mark);
 
     try std.testing.expect(try tf.deleteForwardGrapheme());
-    try std.testing.expectEqualStrings("a", tf.text.items);
-    try std.testing.expectEqual(@as(usize, 1), tf.caret_byte);
+    try std.testing.expectEqualStrings("a", tf.getText());
+    try std.testing.expectEqual(@as(usize, 1), tf.core.caret);
+}
+
+test "paste filters line breaks and undo restores" {
+    var tf: TextField = undefined;
+    tf.allocator = std.testing.allocator;
+    tf.core = try EditableText.initFromSlice(std.testing.allocator, "a");
+    defer tf.core.deinit();
+
+    try std.testing.expect(try tf.pasteText("b\r\nc\nd"));
+    try std.testing.expectEqualStrings("abcd", tf.getText());
+    try std.testing.expect(try tf.core.undo());
+    try std.testing.expectEqualStrings("a", tf.getText());
 }
 
 test "hit-test byte results snap back to grapheme cluster boundaries" {
@@ -830,12 +840,9 @@ test "hit-test byte results snap back to grapheme cluster boundaries" {
     const inside_cluster = cluster_start + "\u{1F44D}".len;
     const cluster_end = "a".len + thumbs.len;
 
-    var text: std.ArrayList(u8) = .empty;
-    defer text.deinit(std.testing.allocator);
-    try text.appendSlice(std.testing.allocator, s);
-
     var tf: TextField = undefined;
-    tf.text = text;
+    tf.core = try EditableText.initFromSlice(std.testing.allocator, s);
+    defer tf.core.deinit();
 
     try std.testing.expectEqual(cluster_start, tf.snapByteToGraphemeBoundary(inside_cluster));
     try std.testing.expectEqual(cluster_end, tf.snapByteToGraphemeBoundary(cluster_end));
