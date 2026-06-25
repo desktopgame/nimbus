@@ -77,8 +77,9 @@ UI 破棄（`deinitUi`）でアプリ所有のウィジェット（Dialog / File
 ## 3. アクション層
 
 1 アクション = 1 ハンドラを、メニュー項目とツールバーボタンの両方から呼ぶ。
+これを束ねる小さな Action ヘルパーを例アプリ内に置く（後述）。
 ハンドラは `Editor` のメソッド（`fn(self: *Editor, _: *const ActionEvent) void` 形）で、
-`getModel().addActionListener(Editor, Editor.onSave, self)` で両方に登録する（`app_filer` と同形）。
+Action が生成 / バインドした `MenuItem` と `Button` の両方の activation から同じハンドラを呼ぶ（`app_filer` と同形）。
 
 | アクション | メニュー | ツールバー | アクセラレータ | 実体 |
 | --- | --- | --- | --- | --- |
@@ -94,6 +95,39 @@ UI 破棄（`deinitUi`）でアプリ所有のウィジェット（Dialog / File
 | Paste | Edit>Paste | なし | Ctrl+V | `TextArea` の paste（§11） |
 | Select All | Edit>Select All | なし | Ctrl+A | `TextArea` の selectAll（§11） |
 | Word Wrap | View>Word Wrap（CheckBox） | なし | （なし） | `textArea.setLineWrap(checked)`（§9） |
+
+### Action ヘルパー（例アプリ内・framework に Action widget は新設しない）
+
+ツールバー / ステータスバーと同じ方針で、framework に Action widget を新設せず、
+`app_texteditor` 内に小さな Action ヘルパーを置く（決定済み・§14）。
+
+データ構造（仮称 `Action`）:
+
+```
+Action（例アプリ内ヘルパー）:
+  handler: *const fn(*Editor) void   // 呼ぶ実体
+  enabled: bool                      // 現在の活性
+  name: []const u8                   // メニュー / a11y 名
+  icon: ?lucide.Icon = null          // ツールバー用（任意）
+  accel: ?keybinding.KeyStroke = null // アクセラレータ（任意）
+  item: ?*MenuItem = null            // 束ねたメニュー項目（任意）
+  button: ?*Button = null            // 束ねたツールバーボタン（任意）
+```
+
+- 各 Action は対応する `MenuItem` と `Button` を生成 or バインドし、両方の `ActionListener` から同じ
+  `handler` を呼ぶ。`accel` を持つ Action は対応する `MenuItem.setAccelerator(accel)` に適用する。
+- `Action.setEnabled(bool)` で、束ねた全ウィジェット（`item.getModel()` と `button.getModel()`）の
+  活性を一括更新する。1 回の `setEnabled` でメニュー項目とツールバーボタンが同時に追従する。
+- 動的に活性が変わる Action は次の 3 系統:
+  - Undo / Redo: `UndoStack` の可否（`textArea.canUndo()` / `canRedo()`）。
+  - Cut / Copy: 選択がある時だけ有効。
+  - Paste: クリップボードが非空の時だけ有効。
+  これらは `TextArea.addChangeListener`（§11）の単一通知点から、毎回 `canUndo`/`canRedo`・選択有無・
+  クリップボード状態を引き直し、各 `Action.setEnabled` を呼ぶ（§10）。
+- 常時有効な Action（New / Open / Save / Save As / Exit / Select All / Word Wrap）は `enabled` 固定で、
+  動的更新の対象外。
+- framework への昇格（汎用 Action / ActionMap 機構）は再利用が見えてから判断する（YAGNI。
+  ツールバー / ステータスバーを専用 widget にしないのと同じ判断）。
 
 ### アクセラレータの仕組みと二重発火
 
@@ -113,8 +147,8 @@ UI 破棄（`deinitUi`）でアプリ所有のウィジェット（Dialog / File
   よってメニューのアクセラレータは「フォーカスが本文にある間は本文側が勝つ」=二重発火しない。
   本文外（ツールバーボタンにフォーカス等）にいるときだけ Stage 4 が発火する。
   どちらの経路でも最終的に同じ編集コア操作に落ちるので挙動は一致する。
-- → 結論: File 系は必須で設定。Edit 系の `setAccelerator` は「メニューに和音を表示する/本文外でも効かせる」
-  ためのもので、設定しても破綻しない。設定するか否かは §14 の決めること。
+- → 決定（§14）: File 系・Edit 系とも `setAccelerator` を設定する。Edit 系の `setAccelerator` は
+  「メニューに和音を表示する / 本文外でも効かせる」ためのもので、二重発火しないことは上記の配送順で実測済み。
 
 ## 4. 文書 / ファイル束縛
 
@@ -125,7 +159,7 @@ Editor 文書状態（データ構造）:
   path: ?[]u8            // 現在ファイルの絶対パス。null = 無題（New 直後 / 未保存）
   dirty: bool            // 未保存変更あり
   eol: enum { lf, crlf } // 読込時に検出した元の改行コード（表示 & 保存方針に使用）
-  baseline: []u8         // 最後に保存/読込した時点の本文スナップショット（dirty 判定用・§5 推奨案）
+  baseline: []u8         // 最後に保存/読込した時点の本文スナップショット（dirty 判定用・§5 案B 決定済み）
 ```
 
 - `path` は `allocator.dupe` で所有し、付け替え時に旧値を free。無題は null。
@@ -137,16 +171,16 @@ Editor 文書状態（データ構造）:
 | 案 | 判定 | コスト | 正確さ |
 | --- | --- | --- | --- |
 | A: canUndo を dirty とみなす | `textArea.core.canUndo()` | O(1) | 不正確。保存後も undo 履歴が残れば dirty のまま。保存地点まで undo して内容が一致しても dirty を誤検出 |
-| B: 保存ベースラインとの内容比較（推奨） | `!mem.eql(getText(), baseline)` | 変更ごと O(n) | 正確。「編集→undo で保存内容に戻った」を clean と判定できる |
+| B: 保存ベースラインとの内容比較（決定） | `!mem.eql(getText(), baseline)` | 変更ごと O(n) | 正確。「編集→undo で保存内容に戻った」を clean と判定できる |
 | C: 保存時 undo 深さとの比較 | `undo_depth != saved_depth` | O(1) | ほぼ正確（線形履歴前提）。ただし `UndoStack` が深さ/連番を公開していない（新規アクセサが要る） |
 
-推奨は案 B（保存ベースライン比較）。
+決定（§14）: 案 B（保存ベースライン比較）。
 理由: 単一文書 v1 では正確さが最優先で、「保存→編集→undo で戻す」が clean になるのが自然。
 `UndoStack` への新規アクセサ追加が要らず、`EditableText` / `TextArea` の現 API だけで成立する。
 判定は §11 の変更通知の中で再計算し、結果が前回と変われば dirty 表示を更新する。
 
 コスト注記: 案 B は変更ごとに本文全体比較で O(n)。大きな文書では割に合わなくなるため、
-実需が出たら案 C（`UndoStack` に単調増加の編集連番アクセサを足して O(1) 化）へ移行する。
+O(1) 化（案 C・`UndoStack` に単調増加の編集連番アクセサを足す）は v2 の後追いとする（決定済み）。
 この移行は framework #5（編集コア）と相性が良い（連番はコア側に住む）。
 v1 はあえて案 B で素直に作り、最適化は後追いとする。
 
@@ -183,9 +217,9 @@ New / Open / Exit で `dirty` なら、保存 / 破棄 / キャンセルの 3 �
 - エンコーディング: 常に `UTF-8`（公開 API は UTF-8 固定。CLAUDE.md）。表示のみ。
 - 改行コード: `eol` を `LF` / `CRLF` で表示（§8）。表示のみ。
 
-caret は `TextArea` 内部状態なので、行:列を出すには caret の取り出し口が要る（§11 / §14）。
-純粋関数として `lineColumnOf(get_byte_fn, len, caret) -> {line, col}` を切り出し、
-GPU 非依存に単体テストできる形にする（§12）。
+caret は `TextArea` 内部状態なので、ステータスは `textArea.caretLineColumn()`（§11 で追加・決定済み）を呼んで
+行:列を得る。算出アルゴリズム自体は純粋関数 `lineColumnOf(get_byte_fn, len, caret) -> {line, col}` として
+切り出し、GPU 非依存に単体テストできる形にする（§12。`caretLineColumn` 実装はこれを内部利用）。
 
 ## 8. 改行コード検出と保存方針
 
@@ -195,14 +229,14 @@ GPU 非依存に単体テストできる形にする（§12）。
 - 検出: Open でファイルの生バイトを読んだ直後、`setText` に渡す前に走査する。
   - `"\r\n"` を含む → `crlf`。
   - 含まず `"\n"` を含む → `lf`。
-  - 改行なし → 既定（New と同じ。LF か プラットフォーム既定。§14 の決めること）。
+  - 改行なし → 既定（New と同じ。LF 固定・決定済み）。
   - 検出結果を `Editor.eol` に記録（バッファとは別に保持）。`detectEol(bytes) -> Eol` は純粋関数として単体テスト可能。
 - 表示: `eol` をステータスに出す。v1 では UI からの変更手段は持たない（表示のみ）。
-- 保存方針（v1 で決めること・§14）:
-  - 案 P（推奨）: 元の改行を維持。`crlf` の文書は保存時に LF→CRLF へ展開して書く。
+- 保存方針（§14 で決定）: 案 P（元の改行を維持）。
+  - `crlf` の文書は保存時に LF→CRLF へ展開して書く。`lf` はそのまま書く。
     「変換しない」（= 利用者の改行を勝手に書き換えない）の主旨に沿う。展開はバイト列の単純置換で安価。
-  - 案 Q: LF 固定。常に LF で書く。実装は最小だが、CRLF だった文書を黙って LF に変えてしまう。
-  - 新規（無題）文書の改行は §14 で決める既定に従う。
+  - 新規（無題）文書の既定改行は LF（決定済み）。
+  - 不採用の案 Q（常に LF 固定）は CRLF だった文書を黙って LF に変えてしまうため却下。
 
 ## 9. ワードラップ切替の配線
 
@@ -214,37 +248,42 @@ GPU 非依存に単体テストできる形にする（§12）。
 - `ScrollPane` のスクロールポリシーは既定（`as_needed`）のままでよい。
   wrap on では `TextArea` が横方向に伸びないので横スクロールバーは自然に消える。
 
-## 10. Undo / Redo 活性連動
+## 10. 動的活性連動（Action 経由・単一通知点）
 
-`UndoStack` は可否変更リスナーを公開している:
-`addCanChangeListener(T, fn(*T, *const ChangeEvent) void, *T)`（`canUndo` / `canRedo` の遷移で発火）。
+活性が状態で変わる Action（Undo / Redo / Cut / Copy / Paste）は、§3 の Action ヘルパーと
+§11 の `TextArea.addChangeListener` を組み合わせ、1 つの通知点から一括更新する。
 
-- 登録先は `TextArea` 内部の `EditableText.undo_stack`。これにアプリが到達する口が要る（§11 / §14）。
-- コールバックで `canUndo()` / `canRedo()` を引き、4 か所の活性を更新:
-  - Edit>Undo の `getModel().setEnabled(can_undo)` / Edit>Redo の `setEnabled(can_redo)`。
-  - ツールバー Undo ボタン `getModel().setEnabled(can_undo)` / Redo ボタン `setEnabled(can_redo)`。
-- `ButtonModel.setEnabled(bool)` / `isEnabled()` は確認済み。メニュー項目もツールバーボタンも `ButtonModel` 経由で同一に扱える。
-- 起動直後は両方 disabled（履歴空）。
+- 駆動点は `TextArea.addChangeListener`（テキスト + caret 変更の単一通知）。
+  個別の `UndoStack.addCanChangeListener` は使わず、変更通知のたびに状態を引き直す
+  （caret だけ動いた時も選択有無が変わるため、可否専用リスナーでは不足）。
+- コールバックで次を引き、対応する `Action.setEnabled` を呼ぶ:
+  - Undo / Redo: `textArea.canUndo()` / `textArea.canRedo()`。
+  - Cut / Copy: 選択がある時のみ有効（選択有無は `TextArea` のアクセサ / 通知から判定）。
+  - Paste: クリップボードが非空の時のみ有効。
+- `Action.setEnabled` が束ねた `MenuItem` と `Button` の `ButtonModel.setEnabled` を一括で叩く
+  （`ButtonModel.setEnabled(bool)` / `isEnabled()` は確認済み。メニュー項目もツールバーボタンも同一に扱える）。
+- 起動直後は Undo / Redo / Cut / Copy が disabled（履歴空・選択なし）、Paste はクリップボード状態次第。
+- ステータス（行:列 / dirty）の更新も同じ通知点に相乗りする（§7）。
 
-## 11. フレームワーク前提（TextArea への必要追加）
+## 11. フレームワーク前提（TextArea への追加・採用決定）
 
-ここが本アプリの最重要設計点。`TextArea` の現公開 API は
+本アプリの中核依存。`TextArea` の現公開 API は
 `getText` / `setText` / `getLineWrap` / `setLineWrap` / 色設定のみで、次が無い:
 
 1. 変更通知（テキスト変更・caret 移動を知る手段）が無い。
 2. メニュー / ツールバーから undo / redo / cut / copy / paste / selectAll を駆動する公開メソッドが無い
    （現状これらは `handleKey` 内の Ctrl+Z/Y/X/C/V/A としてのみ実装され、外から呼べない）。
-3. caret 位置 / undo_stack へのアクセサが無い（`core` フィールド自体は Zig の仕様上アプリから参照可能だが、内部直叩き）。
+3. caret 行:列 / undo 可否のアクセサが無い（`core` フィールドは Zig の仕様上参照可能だが内部直叩き）。
 
 なぜ通知が要るか: タイピングは `TextArea.handleChar` に直接入り、アプリは関与しない。
-内部 Ctrl+Z も同様。よって変更通知が無いと、ステータス（行:列）と dirty が
+内部 Ctrl+Z も同様。よって変更通知が無いと、ステータス（行:列）と dirty・動的活性（§10）が
 「タイピングや本文側 undo で更新されない」。ポーリングは毎フレーム描画を避ける方針（CLAUDE.md）に反する。
 単一の変更通知点があれば、入力経路（キーボード内蔵・メニュー・ツールバー）すべてを 1 か所で拾える。
 
-推奨（最小の framework 追加。シグネチャは作者が確定する前提のドラフト）:
+決定（§14・採用確定）。`TextArea` に次を追加する（ドラフト署名で確定。最終的な型詳細は実装時に整える）:
 
 ```
-// 変更通知: テキスト変更 + caret 変更の両方で発火（dirty / 行:列 / undo 活性の単一駆動点）
+// 変更通知: テキスト変更 + caret 変更の両方で発火（dirty / 行:列 / 動的活性の単一駆動点）
 pub fn addChangeListener(self: *TextArea, comptime T, comptime f: fn(*T, *const ChangeEvent) void, *T) !void
 
 // アクション公開: 内部の handleKey 経路と同じ実体を呼び、reflow / repaint / 通知まで行う
@@ -255,30 +294,23 @@ pub fn copy(self: *TextArea) void
 pub fn paste(self: *TextArea) void
 pub fn selectAll(self: *TextArea) void
 
-// 行:列 / undo 活性のための最小アクセサ（いずれか）
-pub fn caretByte(self: *const TextArea) usize          // 行:列はアプリが EditableText 経由で算出
-pub fn caretLineColumn(self: *const TextArea) struct { line: usize, col: usize } // 算出を内蔵
-pub fn canUndo(self: *const TextArea) bool             // undo 活性連動用
+// アクセサ: 行:列算出と動的活性連動のため
+pub fn caretLineColumn(self: *const TextArea) struct { line: usize, col: usize } // 行:列算出を内蔵
+pub fn canUndo(self: *const TextArea) bool
 pub fn canRedo(self: *const TextArea) bool
 ```
 
 - これらは内部実装の重複を増やさない: `handleKey` の各ケースを「公開メソッド → 通知」へ畳み直し、
-  キーボード経路もメニュー経路も同じメソッドを通す。framework #5（編集コア共通化・applyEdit チョークポイント）
-  と方向が一致しており、本アプリがその実需（「高」昇格）を生む。
-- undo 活性は §10 のとおり `EditableText.undo_stack.addCanChangeListener` でも拾えるが、
-  到達口（アクセサ）が要る。`addChangeListener` を入れるなら活性更新もそこに相乗りできる（caret/テキスト変更で都度 `canUndo/Redo` を引き直す）ので、可否専用リスナーは任意。
+  キーボード経路もメニュー経路も同じメソッドを通す（決定済みの実装方針）。
+  framework #5（編集コア共通化・applyEdit チョークポイント）と方向が一致しており、
+  本アプリがその実需（「高」昇格）を生む。
+- 活性更新は `addChangeListener` の通知点に相乗りする（caret / テキスト変更のたびに `canUndo` / `canRedo`・
+  選択有無を引き直す）ため、`UndoStack` の可否専用リスナーは使わない。
+- Cut / Copy の選択有無と Paste のクリップボード状態は、この通知点で更新時に読む。
+  選択有無は変更通知 / 小さなアクセサから判定する（同じ単一通知設計に沿う additive な細部で、
+  上記の採用決定を変えるものではない）。
 
-framework 追加を避けたい場合の代替（非推奨だが成立する）:
-
-- 変更通知の代替: `Component.VTable` のデコレーション（`component.vtable` を委譲付き差し替え。
-  `ScrollPane` / widget_listdnd で実証、memory: VTable decoration）で `TextArea.processEvent` を包み、
-  元処理後に `core` を読んでステータス / dirty を更新する。ステータスバー目的には過剰で壊れやすい。
-- アクション駆動の代替: メニュー / ツールバーから `textArea.core.undo()` 等を直接呼び、続けて再レイアウト誘発。
-  ただし `TextArea` の reflow / repaint / ensureCaretVisible は private なので、まともに反映できず破綻する。
-  → この代替は実質不可。アクション公開メソッドは事実上必須。
-
-結論: v1 は `TextArea` に「変更通知 + アクション公開メソッド + 最小アクセサ」を足す前提で設計する。
-これは地ならし（編集コア）の延長線上の薄い追加であり、本アプリの中核依存。
+この追加は地ならし（編集コア）の延長線上の薄いもので、`handleKey` の畳み直し以上の新規ロジックを持たない。
 
 ## 12. テスト方針
 
@@ -308,32 +340,35 @@ framework 追加を避けたい場合の代替（非推奨だが成立する）:
 各段の終わりに対応する Robot スモークを足し、段単位で緑にする。
 
 1. シェル + メニュー骨組み: Frame / MenuBar(File/Edit/View) / ツールバー Panel / ScrollPane+TextArea /
-   ステータス Panel を組み、空アクションを配線。`build.zig` の `addExample(b, "app_texteditor", ...)` と
-   `examples/readme.md` への項目追加、スモークの土台もここで。
+   ステータス Panel を組み、Action ヘルパー（§3）で空アクションを配線。`build.zig` の
+   `addExample(b, "app_texteditor", ...)` と `examples/readme.md` への項目追加、スモークの土台もここで。
    観測: ウィンドウが立ち上がり各領域が描画される / メニューが開く。
 2. ファイル I/O + dirty: New / Open / Save / Save As / Exit と未保存プロンプト、`path` / `eol` 検出、
-   §5 の dirty 判定。`TextArea` の変更通知（§11）をここで導入。
+   §5 の dirty 判定。`TextArea` の framework 追加（変更通知 + 公開アクション + アクセサ・§11）をここで導入。
    観測: 開く→編集→保存→開き直しの往復、dirty の立ち消え、プロンプトの 3 分岐。
-3. ステータス + wrap: 行:列 / 名前 / エンコーディング / 改行コード表示、Word Wrap トグル、
-   Undo/Redo 活性連動（§10）。
-   観測: caret 移動で行:列が追従 / wrap トグル / undo で活性が変化。
+3. ステータス + 動的活性 + wrap: 行:列 / 名前 / エンコーディング / 改行コード表示、Word Wrap トグル、
+   Action 経由の動的活性連動（Undo/Redo/Cut/Copy/Paste・§10）。
+   観測: caret 移動で行:列が追従 / wrap トグル / 編集・選択でメニュー & ツールバーの活性が連動。
 4. 仕上げ: Edit メニューのアクセラレータ整備（§3 で決めた範囲）、アイコン / ラベル文言、
    エッジケース（無題保存・空ファイル・巨大行）の確認。
 
-## 14. 決めること（作者判断）
+## 14. 決定済み（作者確定）
 
-1. TextArea への framework 追加（§11）の採否とシグネチャ確定:
-   変更通知 `addChangeListener` / アクション公開メソッド（undo/redo/cut/copy/paste/selectAll）/
-   最小アクセサ（caret か行:列か、canUndo/canRedo）。アクション公開は事実上必須、通知は強く推奨。
-2. dirty 検出方式（§5）: 推奨は案 B（ベースライン比較）。O(1) 化（案 C・`UndoStack` 連番アクセサ）を
-   v1 で先取りするか、後追いにするか。
-3. 保存時の改行方針（§8）: 案 P（元の改行を維持・推奨）か 案 Q（LF 固定）か。
-   無題（New）文書の既定改行（LF か プラットフォーム既定か）。
-4. アクセラレータ（§3）: File 系は設定で確定。Edit 系（Ctrl+Z/Y/X/C/V/A）に `setAccelerator` を付けるか
-   （付けても二重発火しないが、メニュー表示と本文外での発火のために付けるかの判断）。
-5. ファイル I/O の所在: アプリ内で `std.Io.Dir` を直接使う（`app_filer` 踏襲・推奨）か、
-   framework に保存/読込ヘルパを置くか。v1 はアプリ内で十分。
-6. 未保存プロンプトの 3 値を `Dialog.Result` 拡張値へ写像する形（§6）でよいか
-   （Save=ok / Cancel=cancel / Discard=拡張値）。
-7. コンテキストメニュー（貼り付け等）を v1 に入れるか。入れるなら framework #8 の 2 件目の実需として
-   機構選択（案 A: `Component.setComponentPopupMenu`）に絡む。v1 スコープ外でも可。
+すべて作者判断で確定済み。各節の本文はこの決定を反映済み。
+
+1. TextArea への framework 追加（§11）＝採用。ドラフト署名で確定:
+   `addChangeListener`（テキスト + caret 変更の単一通知点）/ 公開アクション
+   `undo` / `redo` / `cut` / `copy` / `paste` / `selectAll` / アクセサ `caretLineColumn()` と
+   `canUndo()` / `canRedo()`。実装は `handleKey` の各ケースを「公開メソッド → 通知」へ畳み直す形
+   （重複を増やさない）。
+2. dirty 検出（§5）＝案 B（保存ベースライン比較）。O(1) の案 C（`UndoStack` 連番アクセサ）は v2 後追い。
+3. 保存時改行（§8）＝案 P（元改行を維持。`crlf` は保存時に LF→CRLF 展開）。
+   新規（無題）文書の既定改行＝LF。
+4. アクセラレータ（§3）＝付ける。Edit 系（Ctrl+Z/Y/X/C/V/A）に `setAccelerator` を設定（二重発火しないと実測済み・
+   メニュー表示と本文外発火のため）。File 系（Ctrl+N/O/S・Ctrl+Shift+S）も設定。
+5. ファイル I/O 所在＝アプリ内で `std.Io.Dir` を直接使う（`app_filer` 踏襲）。framework ヘルパは置かない。
+6. 未保存プロンプト（§6）＝`Dialog.Result` 拡張値へ写像（Save=ok / Cancel=cancel / Discard=拡張値）。
+7. コンテキストメニュー（貼り付け等）＝v1 スコープ外。v2 で framework #8（コンテキストメニュー汎用化）の
+   2 件目の実需として扱う。
+8. Action は例アプリ内ヘルパー（§3）として実装。framework に Action widget は新設しない
+   （ツールバー / ステータスバーと同じ YAGNI 判断。昇格は再利用が見えてから）。
