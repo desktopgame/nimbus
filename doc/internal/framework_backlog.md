@@ -264,6 +264,7 @@ narrative）に記載。C ABI への Theme 露出は capi バックログで別�
 - 影響範囲: framework の `TextField.zig` / `TextArea.zig`、`textfield.md` / `textarea.md`
 - 更新日: 2026-06-24
 - 依存: なし（text#3 完了済み。旧「text#3 と同時実施」前提は失効。関連: #31 汎用 UndoStack / text#13 IME util）
+- 設計: [edit_core_design.md](edit_core_design.md)（#31 と共同設計・applyEdit / ReplaceRange / coalescing 継ぎ目）
 
 ### 何
 TextField と TextArea が編集操作層（キャレット移動、選択範囲、クリップボード連携、編集操作、将来の
@@ -1146,6 +1147,7 @@ FileChooser 下部ラベルの等幅化を `min_size` 直書きでやったら L
 - 影響範囲: framework 新規モジュール（Command インターフェイス + UndoStack）、root.zig export、最初の consumer は text 層
 - 更新日: 2026-06-24
 - 依存: なし（最初の利用者は text#5 テキスト編集 undo。#5 編集コアの applyEdit が Command を push する）
+- 設計: [edit_core_design.md](edit_core_design.md)（#5 と共同設計・Command / UndoStack / 可否変更リスナー / bounded）
 
 ### 何
 GUI 横断の汎用 Undo/Redo プリミティブを framework 側に置く（text 層でなく framework に置く理由 ＝
