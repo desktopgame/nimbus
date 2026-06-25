@@ -12,10 +12,13 @@
 それをどう叩くかを並べて、Command の最小 API・push のセマンティクス・coalescing の継ぎ目が実際に成立するかを
 確認する。
 
-実装は 2 コミットに分けられる形で書く（pm が段ごとに観測する）。
+実装は 3 コミットに分けられる形で書く（pm が段ごとに観測する）。
 
 - コミット 1: #31（`UndoStack` + `Command`）を単体テスト付きで先に固める。consumer なしで回る。
-- コミット 2: #5（編集コア）を実装し、#31 を消費する。最初の consumer で undo/redo を実証する。
+  → **実装完了済み**（commit 30647e5）。`framework/src/UndoStack.zig` + root.zig export + 単体テスト。
+- コミット 2: #5 のコア `EditableText` を新設し TextArea を載せ替える（既に GapBuffer ＝ 低リスクで
+  コアを実消費者として検証）。#31 を消費し最初の consumer で undo/redo を実証する。
+- コミット 3: TextField を載せ替える（`ArrayList(u8)` → GapBuffer 移行を伴う ＝ リスク高なので分離レビュー）。
 
 関連: [ime_util_design.md](ime_util_design.md)（text#13・完成済み `ImeSession`）と接続するが、IME util は #5 の
 コアに従属しない leaf utility。本コアは util の `on_cleared` を受ける側（5.7）。
@@ -90,7 +93,7 @@ GapBuffer の API（logical byte offset 契約）:
 ```
             framework#31                         framework#5
    ┌──────────────────────────┐      ┌────────────────────────────────┐
-   │ Command (interface)      │◀─────│ EditCore                       │
+   │ Command (interface)      │◀─────│ EditableText                   │
    │ UndoStack                │push  │  ├ GapBuffer (text)            │
    │  ├ list + index          │      │  ├ caret / mark (byte offset)  │
    │  ├ canUndo/canRedo        │      │  ├ applyEdit chokepoint       │
@@ -172,8 +175,8 @@ pub const UndoStack = struct {
 - **`clear()`**: 全 Command を `deinit` して空に（`index = 0`）。setText / ファイル読み込みで使う候補（5.4・6）。
 - **`deinit()`**: `clear()` 相当 + `list` / `change_listeners` 解放。
 
-undo / redo の失敗（`anyerror`）の扱いは 6 の決めること。素朴には「OOM は呼び出し側へ伝播、index は操作前に
-戻す」だが、undo 中の OOM は稀でリカバリも難しいため初版は伝播のみ（policy は決めること）。
+undo / redo の失敗（`anyerror`）は**初版は伝播のみで確定**（6.1）。OOM は呼び出し側へ伝播し index は操作前に
+戻す。undo 中の OOM は稀でリカバリも難しいため、握り潰しや巻き戻しはしない。
 
 ### 4.3 可否変更リスナー（listener.zig へ乗せる）
 ボタン / メニューの活性更新に使う「canUndo / canRedo が変わったら発火」を、既存の `ListenerList` に寄せる
@@ -192,14 +195,14 @@ pub fn removeCanChangeListener(self: *UndoStack, ...) void
 ### 4.4 bounded eviction
 上限は初版「件数」（`limit: usize`）。総バイト数キーは ReplaceRange のペイロードサイズを stack が知る必要があり
 （command が不透明な以上、サイズ取得 API を VTable に足す＝表面積増）、テキスト以外の consumer では意味が
-曖昧。よって件数を推奨し、総バイト案は決めること（6）に残す。古いものから捨てる（front eviction）。
+曖昧。よって件数で確定（総バイト案は採らない・6.1）。古いものから捨てる（front eviction）。
 
 ### 4.5 merge / group の継ぎ目
 - **tryMerge**: stack は push のステップ 2 で「直前 Command の `tryMerge(new)`」を 1 回だけ叩く。何を 1 単位と
   みなすか（policy）は Command 実装（テキストなら ReplaceRange・5.9）に住む。stack はタイミングだけ提供。
 - **group（begin/end）**: 複合操作を 1 undo 単位にまとめる begin/endGroup は、初版では**入れない**。tryMerge で
   打鍵まとめは賄え、明示グループの実需（検索置換の一括など）はまだ無い。継ぎ目だけ将来に開けておき
-  （CompoundEdit 再帰は採らない・4.6）、入れるかは決めること（6）。
+  （CompoundEdit 再帰は採らない・4.6）。初版は tryMerge の継ぎ目のみで確定（6.1）。
 
 ### 4.6 スコープ外（Swing UndoManager 由来の過剰・採らない）
 - Document から UndoableEditListener 経由で edit を集める間接層。nimbus はエディタが Command を直接 push する。
@@ -223,18 +226,32 @@ pub fn removeCanChangeListener(self: *UndoStack, ...) void
 ## 5. framework#5 編集コア（#31 を消費）
 
 ### 5.1 モジュールと所有
-- 名前（推奨）: `EditCore`（`framework/src/EditCore.zig`、`const EditCore = @This();`）。別案
-  `TextDocument` / `PlainDocument` / `text_edit`（backlog の例示名）。決めること（6）。
-- 所有: TextField / TextArea が `core: EditCore` を 1 つ値で持ち、driver になる。コアは GapBuffer・caret・mark・
-  UndoStack を所有し、描画・イベント・行モデル（VisualLine）は持たない。
+- 名前（確定）: `EditableText`（`framework/src/EditableText.zig`、`const EditableText = @This();`）。
+  層分けの意図: GapBuffer = モデル（バイト列）／`EditableText` = その上の「編集可能なテキスト状態」
+  （buffer ＋ caret ＋ 選択 ＋ undo 配線）。型名に `core` を使うと層の意味を運ばないため避けた
+  （widget はこれを `core` フィールドで所有する ＝ 型は `EditableText`・アクセサ名は `core`）。
+- 将来の兄弟: TextPane は別コントローラになる可能性が濃厚（作者見立て）。その場合 styled 版は
+  `EditableStyledText` として `EditableText` と対の兄弟に立つ。いまは作らないが、名前と層をそれと
+  対になれる形にしてある（styled 編集の一般化可否は 5.2 のとおり text#7 v2+ の領分）。
+- 所有: TextField / TextArea が `core: EditableText` を 1 つ値で持ち、driver になる。コアは buffer 継ぎ目
+  （5.2）・caret・mark・UndoStack を所有し、描画・イベント・行モデル（VisualLine）は持たない。
 - 依存方向: コアは `std` / `awt`（`grapheme`）/ #31 `UndoStack` に依存してよい。`Component` / `Window` /
   各 widget には依存しない（leaf。clipboard / IME / 描画の Window 接点は widget 側に残す・5.6 / 5.7）。
 
-### 5.2 バッファ（案A 確定・GapBuffer 再利用）
-コアは `text: GapBuffer` を所有（2.4 の既存型）。TextField は現在 `ArrayList(u8)` だが、コア採用で GapBuffer に
-寄せる（フラット案A で両 widget 共通）。行は widget が派生する（コアは行構造を持たない）。改行正規化
-（CRLF / CR → LF）は TextArea の `insertStripCR` 相当をコアの挿入経路に取り込むか widget 前処理に残すかを
-決める（6・TextField は単一行なので無関係）。
+### 5.2 バッファ（案A 確定・buffer 継ぎ目越しに GapBuffer を所有）
+コアは案A（単一フラット GapBuffer ＋ バイトオフセット・2.4 の既存型）を採るが、GapBuffer を直接ベタ書きで
+密結合させず、**最小の buffer 継ぎ目越しに所有する**（行ルックアップ継ぎ目・5.8 と同じ方針）。継ぎ目に出すのは
+applyEdit が要る最小限（`replace(pos, del_len, ins)` 相当 ＋ `copyRange` ＋ `len` ＋ boundary 用の range 取得）だけ。
+狙いは、将来 TextPane（styled モデル）が同じ編集状態配線を再利用する道を塞がないこと。
+
+ただし styled 編集は applyEdit に追加複雑性を持ち込む（挿入で後続のスタイル run のオフセットがずれる、
+ReplaceRange が文字だけでなく属性も復元する必要がある等）。これを buffer 継ぎ目で一般化するか、styled は
+専用コントローラ（5.1 の `EditableStyledText`）に分けるかは **text#7（v2+）の領分で、いまは決めない**。本ピースの
+継ぎ目は plain の applyEdit が必要とする最小面だけを固定し、styled を予断しない。
+
+行は widget が派生する（コアは行構造を持たない）。改行正規化（CRLF / lone CR → LF）は **EditableText の挿入経路に
+集約して確定**（TextArea の現 `insertStripCR` 相当をコアが担う。TextField は単一行だが同じ経路を通る）。TextField は
+現在 `ArrayList(u8)` だが、コア採用で GapBuffer 継ぎ目に寄せる（案A 共通化・移行は 5.10 のコミット 3）。
 
 ### 5.3 caret / 選択モデル
 コアが caret / mark（logical byte offset）を一元保持する。
@@ -261,7 +278,7 @@ mark: usize,  // selection anchor; caret == mark ⇒ no selection
 /// with `ins`, updates caret/mark, builds a ReplaceRange command capturing the
 /// before/after state, and pushes it onto the undo stack. Every edit op (5.5),
 /// clipboard paste/cut (5.6), and IME-committed char (5.7) funnels here.
-pub fn applyEdit(self: *EditCore, pos: usize, del_len: usize, ins: []const u8) !void
+pub fn applyEdit(self: *EditableText, pos: usize, del_len: usize, ins: []const u8) !void
 ```
 
 applyEdit の手順:
@@ -283,7 +300,7 @@ const ReplaceRange = struct {
     caret_before: usize, mark_before: usize,
     caret_after: usize,  mark_after: usize,
     buffer: *GapBuffer,  // the core's buffer (undo/redo mutate it)
-    core: *EditCore,     // to restore caret/mark on undo/redo
+    core: *EditableText,     // to restore caret/mark on undo/redo
 };
 ```
 
@@ -312,8 +329,8 @@ caret / 選択の before-after をペイロードに持つことで、undo 後�
 
 - copy: 読み取りのみ。widget が `core.selectionSlice()` を取り、Window へ set。コアは関与しない。
 - cut: widget が `core.selectionSlice()` を Window へ set してから `core.deleteSelection()`（= applyEdit）。
-- paste: widget が Window から文字列を取り、`core.replaceSelection(text)`（= applyEdit）。CRLF 正規化の所在は
-  5.2 の決めことに従う。
+- paste: widget が Window から文字列を取り、`core.replaceSelection(text)`（= applyEdit）。CRLF 正規化は
+  コアの挿入経路（5.2 確定）が担うので、貼り付け文字列も自動で LF に揃う。
 
 つまり cut / paste の**バッファ変更は applyEdit 経由**（undo に乗る）で、OS クリップボード I/O だけ widget に残る。
 
@@ -323,7 +340,7 @@ caret / 選択の before-after をペイロードに持つことで、undo 後�
 - `ImeSession.on_cleared`（composition ended・payload なし）の使い道はコア側では**coalescing の境界**:
   composition が終わった時点を undo group の区切りにできる（変換 1 回ぶんの確定文字をまとめて／個別に undo する
   かは coalescing policy・5.9）。継ぎ目は「on_cleared でコアの coalescing をフラッシュ（次の打鍵と merge させない）」
-  という 1 フック。具体ポリシーは決めること（6）。
+  という 1 フック。具体ポリシーは 5.9・6.2 で確定（閾値の最終調整のみ実装時）。
 - preedit のインライン描画と caret 矩形算出は widget に残る（ime_util_design 5 章の境界線どおり）。コアは
   preedit を知らない（未確定文字はバッファに入らない）。
 
@@ -331,8 +348,8 @@ caret / 選択の before-after をペイロードに持つことで、undo 後�
 コアは論理行（'\n' 区切り）のルックアップを**差し替え可能な内部継ぎ目**として持つ:
 
 ```zig
-fn lineStartAtByte(self: *EditCore, byte: usize) usize // 行頭の byte offset
-fn byteAtLine(self: *EditCore, line: usize) usize       // n 行目の先頭 byte
+fn lineStartAtByte(self: *EditableText, byte: usize) usize // 行頭の byte offset
+fn byteAtLine(self: *EditableText, line: usize) usize       // n 行目の先頭 byte
 ```
 
 - 初版は走査（`findNewline` 相当の O(n) スキャン）。後で行頭索引（line-start index）に差し替えても呼び出し側
@@ -343,21 +360,22 @@ fn byteAtLine(self: *EditCore, line: usize) usize       // n 行目の先頭 byt
 
 ### 5.9 undo coalescing ポリシー（#31 の tryMerge に乗る）
 継ぎ目は #31 の `Command.tryMerge`（4.5）。ReplaceRange.tryMerge が「直前の編集に次の編集を畳めるか」を判定する。
-作者支持は**時間 / アイドルベース**。素描（具体値は決めること）:
+方針は**時間 / アイドルベースで確定**（既定アイドル ~500ms。値は実装時に調整可）:
 
 - merge する: 連続した純挿入（両方 del_len == 0）で、隣接（`prev.pos + prev.new_bytes.len == next.pos`）、
-  かつ前回編集から一定アイドル時間内、かつ改行を跨がない。
+  かつ前回編集から既定アイドル時間（~500ms）内、かつ改行を跨がない。
 - 区切る（merge しない）: 改行挿入 / 貼り付け / caret ジャンプ（マウスクリックや不連続なカーソル移動）/
   アイドル時間超過 / IME 確定境界（on_cleared・5.7）。
 - 時刻ソース: アイドル判定には「前回編集からの経過」が要る。Application はタイマを持つので、最終編集時刻を
-  コアが保持し applyEdit で更新する形になる（時刻の取り方＝決めること）。
+  コアが保持し applyEdit で更新する。
 
-policy は #5 で決める UX 判断であり、#31 は tryMerge の継ぎ目だけ用意する（4.5）。
+確定したのは継ぎ目（tryMerge・#31 は提供のみ）と上記ポリシーの骨子。残るのはアイドル閾値の最終値など
+実装時の詰めだけ（6 の残す未決）。
 
 ### 5.10 TextField / TextArea の消費（リファクタ素描）
 両 widget で共通:
 
-- フィールド `text` / `caret(_byte)` / `mark(_byte)` を `core: EditCore` に置換。`getText` はコアの buffer を返す。
+- フィールド `text` / `caret(_byte)` / `mark(_byte)` を `core: EditableText` に置換。`getText` はコアの buffer を返す。
 - 編集ハンドラ（handleChar / backspace / delete / cut / paste / 選択置換）は `core.*`（= applyEdit）呼び出しに縮約。
   各サイトの caret 更新・`change` 発火は applyEdit に集約され、widget は `afterEdit` / `afterReflow`
   （repaint / reflow / scroll / IME caret push）だけ残す。
@@ -370,8 +388,12 @@ widget 固有で残るもの:
 - TextArea: `VisualLine` モデル・wrap・`reflowAt`・上下移動・ScrollPane 連携・改行正規化。
 - 両者: 描画（preedit 下線・選択ハイライト・caret）・IME caret 矩形算出・clipboard の Window 接点（5.6）。
 
-移行を本ピースに含めるか別ピースに割るかは決めること（6）。#5 の完了条件は両 widget がコアを使うことなので、
-最終的には含むが、コミット 2 をさらに「コア新設」と「widget 載せ替え」に割る選択肢がある。
+移行は **2 コミットに割って確定**:
+
+- コミット 2: `EditableText` 新設 ＋ **TextArea 載せ替え**。TextArea は既に GapBuffer なので buffer 移行が無く
+  低リスクで、コアを実消費者として検証できる（applyEdit への 8 箇所畳み込み・undo を実地で確認）。
+- コミット 3: **TextField 載せ替え**。`ArrayList(u8)` → GapBuffer 継ぎ目の移行を伴い、編集経路と buffer 型の
+  両方が変わるためリスクが高い。分離して単独レビューにかける。
 
 ### 5.11 テスト方針（純ロジック・Robot 駆動・Application / GPU 非依存）
 GapBuffer / listener と同じく、コアは Application も GPU も無しで単体テストできる。
@@ -388,38 +410,51 @@ examples（widget_textfield / widget_textarea）の挙動は不変であるこ�
 
 ---
 
-## 6. 決めること（作者判断）
+## 6. 決定事項と残す未決
 
-### #31
-- Command の最小 API: `redo` / `undo` / `deinit` / 任意 `tryMerge` / 任意 `displayName` のシグネチャ（4.1）で
-  確定してよいか。undo / redo の失敗（`anyerror`）の扱い（伝播のみ / 握り潰し / index ロールバック）。
-- 可否変更リスナーを `ChangeListenerList` 再利用（source = stack・4.3）で固定するか、専用 event 型にするか。
-- bounded のキー: 件数（推奨・4.4）か総バイトか。既定 limit 値。
-- group（begin/endGroup）を初版に入れるか、tryMerge だけにして group は将来に開けるだけにするか（4.5）。
+下記は当初「決めること」として並べた論点のうち、作者と詰めて**確定**したもの（と、残った未決）。
 
-### #5
-- モジュール名 / 配置: `EditCore`（`framework/src/EditCore.zig`）か、`TextDocument` / `PlainDocument` /
-  `text_edit` か（5.1）。
-- undo coalescing の具体ポリシー: アイドル時間の閾値、区切りに含める操作、時刻の取り方（5.9）。
-- 行ルックアップの初版: 走査でよいか・行頭索引をいつ入れるか（5.8）。
-- TextField / TextArea 移行を本ピース（コミット 2）に含めるか、コア新設と widget 載せ替えで別ピースに割るか（5.10）。
-- clipboard の扱い: cut / paste のバッファ変更を applyEdit 経由（undo 有り）にする方針（5.6）で確定か。copy が
-  read-only でコア非関与なのは確定でよいか。
-- setText の扱い: applyEdit 経由で undo に乗せるか、buffer リセット + UndoStack `clear()`（プログラム的読み込みは
-  undo 境界をリセット）にするか。
-- CRLF 正規化の所在: コアの挿入経路に取り込むか、widget 前処理（TextArea の現 `insertStripCR`）に残すか（5.2）。
-- TextField の `ArrayList(u8)` → GapBuffer 移行（案A 共通化）を本ピースで行うことの確認（5.2）。
+### 6.1 決定済み（#31）
+#31 は既に実装完了（commit 30647e5）。確定事項:
+
+- Command の最小 API: `redo` / `undo` / `deinit` / 任意 `tryMerge` / 任意 `displayName`（4.1）で**確定**。
+- 可否変更リスナーは `ChangeListenerList` 再利用（source = stack・4.3）で**確定**（専用 event 型は作らない）。
+- bounded のキーは**件数で確定**（4.4・総バイト案は採らない）。
+- group（begin/endGroup）は**初版に入れず、tryMerge の継ぎ目のみで確定**（4.5）。
+- undo / redo の失敗（`anyerror`）は**初版は伝播のみで確定**（握り潰し / index ロールバックはしない）。
+
+### 6.2 決定済み（#5）
+- モジュール名は **`EditableText` で確定**（`framework/src/EditableText.zig`・5.1）。
+- clipboard は **cut / paste をバッファ変更ごと applyEdit 経由（undo 有り）、copy は read-only でコア非関与**で
+  確定（5.6）。
+- setText は **buffer リセット ＋ `UndoStack.clear()` で確定**（プログラム的読み込みは undo 境界をリセットする・
+  applyEdit には乗せない）。
+- CRLF 正規化は **EditableText の挿入経路に集約で確定**（5.2・widget 前処理には残さない）。
+- 行ルックアップの初版は **走査で確定**（行頭索引は後の差し替え・5.8）。
+- TextField の `ArrayList(u8)` → GapBuffer 移行（案A 共通化）は**行う**で確定（コミット 3・5.2 / 5.10）。
+- 移行スコープは **コミット 2 = EditableText 新設 + TextArea 載せ替え / コミット 3 = TextField 載せ替え**で確定
+  （5.10）。
+- undo coalescing は **時間 / アイドルベースで方針確定**（既定 ~500ms・改行 / 貼り付け / caret ジャンプで区切る・
+  調整可・5.9）。
+
+### 6.3 残す未決
+- undo coalescing のアイドル閾値の最終値、区切り条件の細部は**実装時に実機で調整**（骨子は 5.9 で確定済み）。
 
 ---
 
 ## 7. 完了条件
 
-### #31（コミット 1）
+### コミット 1（#31・実装完了済み）
 `Command` + `UndoStack` が framework から export され、bounded eviction と可否変更リスナーが動く。consumer
-不要の単体テスト（4.7）が緑。`doc` は本設計（必要なら spec を別途）。
+不要の単体テスト（4.7）が緑。→ commit 30647e5 で達成済み。
 
-### #5（コミット 2）
-caret・選択・クリップボード・編集操作・undo/redo のロジックが単一モジュール（`EditCore` 等）に存在し、
-TextField / TextArea 双方がそれを使う。全 edit が applyEdit チョークポイントを通り ReplaceRange を #31 の
-UndoStack へ積む。編集系の単体テストが共有コアに対して書かれ（5.11）、既存 snapshot テスト・examples
-（widget_textfield / widget_textarea）の挙動が変わらない。
+### コミット 2（#5 コア新設 + TextArea 載せ替え）
+`EditableText`（caret・選択・クリップボード・編集操作・undo/redo のロジック）が単一モジュールとして存在し、
+**TextArea がそれを使う**。TextArea の散在編集（2.2 の 8 箇所）が applyEdit チョークポイントへ畳まれ、各 edit が
+ReplaceRange を #31 の UndoStack へ積む。編集系の単体テストが `EditableText` に対して書かれ（5.11）、
+既存 snapshot テスト・example（widget_textarea）の挙動が変わらない。undo/redo が TextArea で実地に動く。
+
+### コミット 3（#5 TextField 載せ替え）
+**TextField が同じ `EditableText` を使う**（`ArrayList(u8)` → GapBuffer 継ぎ目への移行を伴う）。TextField の
+編集（2.1）も applyEdit 経由になり、両 widget が単一コアを共有する（#5 本来の完了条件 ＝ 片方で直したバグが
+もう片方に残らない）。既存 snapshot テスト・example（widget_textfield）の挙動が変わらない。
