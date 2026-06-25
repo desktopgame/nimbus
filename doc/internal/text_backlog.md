@@ -295,11 +295,21 @@ correctness ＋ test-genuineness の独立パネルで、vacuous テスト 1 件
 ---
 
 ## #13 IME 共通機能の util 切り出し（preedit plumbing のモジュール化）
-- 状態: 未着手
-- 優先度: 中（テキストエディター地ならしの一部。TextArea への IME 展開で実需化）
+- 状態: 設計済み（[ime_util_design.md](ime_util_design.md)。実装は未着手）
+- 優先度: 中（テキストエディター地ならしの一部。TextField / TextArea の preedit 重複解消で実需化）
 - 影響範囲: TextField / TextArea、awt-c の IME 連携（win32_ime.c / cocoa_ime.m / ime_stub.c）、新規 util モジュール
-- 更新日: 2026-06-24
+- 更新日: 2026-06-25
 - 依存: なし（framework_backlog #5 編集コアの applyEdit と接続。text#1 inline 表示と表裏）
+
+### 設計
+設計ドキュメント [ime_util_design.md](ime_util_design.md) を参照（モジュール `ImeSession` の配置・API 表面・
+境界線・テスト方針）。設計時の実測で、起票時の前提に次の訂正が出た。
+- TextArea は「未対応」ではなく**既に完全な preedit を実装済み**（`ec78383` 以来）。よって #13 は未対応への
+  展開ではなく TextField / TextArea の preedit **重複の de-dup**。下記「何」の (b) も「展開」ではなく
+  「同じ util への載せ替え」が実態（inline 表示自体は既存）。
+- 確定文字列は composition チャネルを通らず CharEvent 経由で届く（win32_ime.c のコメント明記）。よって
+  「onCommit が確定文字列を渡す」は現行トランスポートと食い違い、設計は案 A（文字列を運ばない
+  composition-ended フックへ reframe・確定挿入は従来経路のまま）を推奨する。詳細は設計ドキュメント 4.4。
 
 ### 何
 TextField が既に実装している IME preedit（preedit_text / preedit_target 範囲 / pushCaretToIme /
