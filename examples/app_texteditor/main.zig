@@ -15,6 +15,8 @@ const DISCARD_RESULT: nimbus.Dialog.Result = @enumFromInt(3);
 
 pub const Eol = enum { lf, crlf };
 
+pub const ActionId = enum { undo, redo, cut, copy, paste };
+
 pub const FileIo = struct {
     vtable: *const VTable,
     user_data: *anyopaque,
@@ -226,12 +228,14 @@ pub const Editor = struct {
         const next = try self.allocator.dupe(u8, text);
         self.allocator.free(self.baseline);
         self.baseline = next;
-        self.recomputeDirty();
+        self.syncEditorState();
     }
 
-    fn recomputeDirty(self: *Editor) void {
+    fn syncEditorState(self: *Editor) void {
         self.dirty = isDirty(self.text_area.getText(), self.baseline);
         self.updateTitle();
+        self.updateStatus();
+        self.updateActionEnabled();
     }
 
     fn updateTitle(self: *Editor) void {
@@ -242,13 +246,37 @@ pub const Editor = struct {
         self.frame.window.setTitle(title) catch {};
     }
 
+    fn updateStatus(self: *Editor) void {
+        const pos = self.text_area.caretLineColumn();
+        var line_buf: [64]u8 = undefined;
+        const line_text = std.fmt.bufPrint(&line_buf, "Ln {d}, Col {d}", .{ pos.line, pos.col }) catch return;
+        self.status_line_col.setText(line_text) catch {};
+        self.status_name.setText(self.displayName()) catch {};
+        self.status_encoding.setText("UTF-8") catch {};
+        self.status_eol.setText(eolDisplay(self.eol)) catch {};
+    }
+
+    fn updateActionEnabled(self: *Editor) void {
+        self.undo_action.setEnabled(self.text_area.canUndo());
+        self.redo_action.setEnabled(self.text_area.canRedo());
+        self.cut_action.setEnabled(self.text_area.hasSelection());
+        self.copy_action.setEnabled(self.text_area.hasSelection());
+        // v1 intentionally leaves Paste enabled: TextArea has no public
+        // clipboard-state accessor, and empty clipboard paste is a no-op.
+        self.paste_action.setEnabled(true);
+    }
+
+    fn displayName(self: *const Editor) []const u8 {
+        return if (self.path) |p| std.fs.path.basename(p) else "untitled";
+    }
+
     fn resetDocument(self: *Editor) void {
         self.text_area.setText("") catch return;
         self.setPath(null) catch return;
         self.eol = .lf;
         self.replaceBaseline("") catch return;
         self.dirty = false;
-        self.updateTitle();
+        self.syncEditorState();
     }
 
     fn openPath(self: *Editor, path: []const u8) bool {
@@ -260,7 +288,7 @@ pub const Editor = struct {
         self.eol = next_eol;
         self.replaceBaseline(self.text_area.getText()) catch return false;
         self.dirty = false;
-        self.updateTitle();
+        self.syncEditorState();
         return true;
     }
 
@@ -271,7 +299,7 @@ pub const Editor = struct {
         self.setPath(path) catch return false;
         self.replaceBaseline(self.text_area.getText()) catch return false;
         self.dirty = false;
-        self.updateTitle();
+        self.syncEditorState();
         return true;
     }
 
@@ -334,8 +362,34 @@ pub const Editor = struct {
         return self.eol;
     }
 
+    pub fn actionMenuEnabledForTest(self: *const Editor, id: ActionId) bool {
+        const action = self.actionForTest(id);
+        if (action.item) |item| return item.getModel().isEnabled();
+        return false;
+    }
+
+    pub fn actionButtonEnabledForTest(self: *const Editor, id: ActionId) ?bool {
+        const action = self.actionForTest(id);
+        if (action.button) |button| return button.getModel().isEnabled();
+        return null;
+    }
+
+    pub fn wordWrapCheckedForTest(self: *const Editor) bool {
+        return self.word_wrap_action.check_item.?.isChecked();
+    }
+
+    fn actionForTest(self: *const Editor, id: ActionId) *const Action {
+        return switch (id) {
+            .undo => &self.undo_action,
+            .redo => &self.redo_action,
+            .cut => &self.cut_action,
+            .copy => &self.copy_action,
+            .paste => &self.paste_action,
+        };
+    }
+
     fn onTextChanged(self: *Editor, _: *const nimbus.ChangeEvent) void {
-        self.recomputeDirty();
+        self.syncEditorState();
     }
 
     fn onNew(self: *Editor) void {
@@ -384,8 +438,18 @@ pub const Editor = struct {
         self.text_area.selectAll();
     }
 
-    fn onWordWrap(_: *Editor) void {}
+    fn onWordWrap(self: *Editor) void {
+        const item = self.word_wrap_action.check_item orelse return;
+        self.text_area.setLineWrap(item.isChecked());
+    }
 };
+
+fn eolDisplay(eol: Eol) []const u8 {
+    return switch (eol) {
+        .lf => "LF",
+        .crlf => "CRLF",
+    };
+}
 
 pub fn build(app: *nimbus.Application, frame: *nimbus.Frame, gpa: std.mem.Allocator) !*Editor {
     return buildWithOptions(app, frame, gpa, .{ .io = app.event_queue.io });
@@ -458,7 +522,7 @@ pub fn buildWithOptions(app: *nimbus.Application, frame: *nimbus.Frame, gpa: std
     editor.unsaved_dialog = try app.dialog(&frame.window, "Unsaved changes", 360, 150);
     editor.unsaved_message = try app.label("Save changes before continuing?");
     try buildUnsavedDialog(app, editor.unsaved_dialog, editor.unsaved_message);
-    editor.updateTitle();
+    editor.syncEditorState();
 
     return editor;
 }

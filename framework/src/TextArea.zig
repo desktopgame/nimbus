@@ -272,6 +272,10 @@ pub fn canRedo(self: *const TextArea) bool {
     return self.core.canRedo();
 }
 
+pub fn hasSelection(self: TextArea) bool {
+    return self.core.hasSelection();
+}
+
 // ── vtable impl ──────────────────────────────────────────────────────────
 
 fn install(self: *Component) !void {
@@ -537,10 +541,6 @@ fn snapByteToGraphemeBoundary(self: *TextArea, byte_pos: usize) usize {
 }
 
 // ── selection / edit helpers ─────────────────────────────────────────────
-
-fn hasSelection(self: TextArea) bool {
-    return self.core.hasSelection();
-}
 
 fn selectionStart(self: TextArea) usize {
     return self.core.selectionStart();
@@ -1153,6 +1153,18 @@ test "TextArea caretLineColumn and undo accessors expose core state" {
     try std.testing.expect(try ta.core.undo());
     try std.testing.expect(!ta.canUndo());
     try std.testing.expect(ta.canRedo());
+}
+
+test "TextArea hasSelection exposes core selection state" {
+    var ta = try initTestArea("abc");
+    defer deinitTestArea(&ta);
+
+    try std.testing.expect(!ta.hasSelection());
+    ta.core.mark = 0;
+    ta.core.caret = 2;
+    try std.testing.expect(ta.hasSelection());
+    ta.core.mark = ta.core.caret;
+    try std.testing.expect(!ta.hasSelection());
 }
 
 test "TextArea grapheme boundaries drive movement and deletion" {

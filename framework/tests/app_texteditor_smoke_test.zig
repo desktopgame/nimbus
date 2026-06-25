@@ -282,6 +282,61 @@ test "app_texteditor edit menu: cut and undo use TextArea public actions" {
     try std.testing.expectEqualStrings("abc", editor.text_area.getText());
 }
 
+test "app_texteditor stage3: status wrap and dynamic action state update" {
+    const gpa = std.testing.allocator;
+    var mem = MemoryFileIo.init(gpa);
+    defer mem.deinit();
+    try mem.put("/docs/crlf.txt", "one\r\ntwo");
+
+    const app = try newApp();
+    const frame = try app.frameHeadless("texteditor", 760, 520);
+    const editor = try app_texteditor.buildWithOptions(app, frame, gpa, .{ .io = std.testing.io, .file_io = mem.io() });
+    defer editor.deinitModel(gpa);
+    defer app.deinit();
+    defer editor.deinitUi();
+
+    var robot = nimbus.Robot.init(app, &frame.window);
+    var driver = nimbus.Driver{ .robot = &robot };
+    robot.pump();
+
+    try std.testing.expect(!editor.actionMenuEnabledForTest(.undo));
+    try std.testing.expectEqual(false, editor.actionButtonEnabledForTest(.undo).?);
+    try std.testing.expect(!editor.actionMenuEnabledForTest(.cut));
+    try std.testing.expect(!editor.actionMenuEnabledForTest(.copy));
+    try std.testing.expect(editor.actionMenuEnabledForTest(.paste));
+
+    try std.testing.expect(editor.openPathForTest("/docs/crlf.txt"));
+    try std.testing.expectEqualStrings("crlf.txt", editor.status_name.getText());
+    try std.testing.expectEqualStrings("CRLF", editor.status_eol.getText());
+    try std.testing.expectEqualStrings("UTF-8", editor.status_encoding.getText());
+    try std.testing.expectEqualStrings("Ln 2, Col 4", editor.status_line_col.getText());
+
+    robot.click(20, 50, .left);
+    robot.pump();
+    try std.testing.expectEqualStrings("Ln 1, Col 1", editor.status_line_col.getText());
+
+    try std.testing.expect(!editor.text_area.getLineWrap());
+    try std.testing.expect(!editor.wordWrapCheckedForTest());
+    try driver.clickOn(.{ .role = .menu, .text = "View" });
+    robot.pump();
+    try driver.clickOn(.{ .role = .checkbox_menu_item, .text = "Word Wrap" });
+    robot.pump();
+    try std.testing.expect(editor.text_area.getLineWrap());
+    try std.testing.expect(editor.wordWrapCheckedForTest());
+
+    robot.click(200, 70, .left);
+    robot.typeText("abc");
+    robot.pump();
+    try std.testing.expect(editor.actionMenuEnabledForTest(.undo));
+    try std.testing.expectEqual(true, editor.actionButtonEnabledForTest(.undo).?);
+    try std.testing.expect(!editor.actionMenuEnabledForTest(.cut));
+    try std.testing.expect(!editor.actionMenuEnabledForTest(.copy));
+
+    editor.text_area.selectAll();
+    try std.testing.expect(editor.actionMenuEnabledForTest(.cut));
+    try std.testing.expect(editor.actionMenuEnabledForTest(.copy));
+}
+
 test "app_texteditor unsaved prompt: discard cancel and save branches" {
     const gpa = std.testing.allocator;
     var mem = MemoryFileIo.init(gpa);
