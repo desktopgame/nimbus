@@ -228,9 +228,18 @@ pub fn build(b: *std.Build) void {
 
     // ── dogfooding apps (app_*) — real applications built on nimbus ──────
     addExample(b, "app_filer", framework_mod, null, target, optimize);
+    addExample(b, "app_texteditor", framework_mod, null, target, optimize);
 
     const app_filer_test_mod = b.createModule(.{
         .root_source_file = b.path("examples/app_filer/main.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "nimbus", .module = framework_mod },
+        },
+    });
+    const app_texteditor_test_mod = b.createModule(.{
+        .root_source_file = b.path("examples/app_texteditor/main.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
@@ -327,6 +336,18 @@ pub fn build(b: *std.Build) void {
     });
     const app_filer_smoke_test = b.addTest(.{ .root_module = app_filer_smoke_test_mod });
     test_step.dependOn(&b.addRunArtifact(app_filer_smoke_test).step);
+
+    const app_texteditor_smoke_test_mod = b.createModule(.{
+        .root_source_file = b.path("framework/tests/app_texteditor_smoke_test.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "nimbus", .module = framework_mod },
+            .{ .name = "app_texteditor", .module = app_texteditor_test_mod },
+        },
+    });
+    const app_texteditor_smoke_test = b.addTest(.{ .root_module = app_texteditor_smoke_test_mod });
+    test_step.dependOn(&b.addRunArtifact(app_texteditor_smoke_test).step);
 
     const grapheme_smoke_test_mod = b.createModule(.{
         .root_source_file = b.path("framework/tests/grapheme_smoke_test.zig"),

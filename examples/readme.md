@@ -74,6 +74,10 @@ frameworkのキーボード操作を一通り試すフォーム。Tab / Shift+Ta
 F2 リネームは両ビューでインプレース（詳細ビューは Table の Name 列が CellEdit を持つ。framework#14）。DnD 移動もリスト / 詳細の両ビューで動く。
 SplitPane、Table（複数カラム / ヘッダーソート / 列幅ドラッグ）、共有モデルによる List⇄Table 両ビュー、CardLayout 風のカスタム LayoutManager、List の行アクティベーション / コンテキストメニュー、CellEditor の手動トリガ、`EventQueue.invokeLater`、Label のアイコン、ペイン跨ぎ DnD の検証シーンを兼ねる。
 
+## app_texteditor
+ドッグフーディングの実用アプリ第2号: テキストエディター。段1では Frame の MenuBar、上部ツールバー、中央の ScrollPane + TextArea、下部ステータスバーを組んだシェルを提供する。
+File / Edit / View メニューと New / Open / Save / Undo / Redo のアイコンツールバーは、例アプリ内の小さな Action ヘルパー経由で同じ空ハンドラへ配線される。ファイル I/O、dirty、Word Wrap の実トグル、ステータス実値、編集アクションの動的活性は後段で実装する。
+
 ## cnimbus_editor
 nimbus の C ABI（`include/nimbus.h` + `libnimbus`）だけを使い、**C 言語**でエディタ風の画面を組むサンプル（Zig を一切使わない）。メニューバー（File / Edit）、上部のツールバー（north）、スクロールペインに入れたテキストエリア（center）を BorderLayout で配置する。将来の Python / JS バインディングが C ABI をどう叩くかの実証も兼ねる。
 
