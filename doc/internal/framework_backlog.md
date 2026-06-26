@@ -1183,3 +1183,42 @@ coalescing / グルーピング（連続入力を 1 undo 単位に・複合操�
 ### 完了条件
 Command + UndoStack が framework から export され、bounded と可否変更リスナーが動く。
 text#5 がこのスタックを消費して undo/redo を実装できる（最初の consumer で実証）。doc + テスト。
+
+## #32 カーソル形状の機構（per-component cursor ＋ hit-test ＋ glfwSetCursor 配線）
+- 状態: 未着手
+- 優先度: 中
+- 影響範囲: framework（Component の cursor プロパティ、Window の mouse-move hit-test）、awt（Window へのカーソル設定 API）、awt-c（glfwSetCursor / glfwCreateStandardCursor の薄いラッパー）
+- 更新日: 2026-06-27
+- 依存: なし
+
+### 何
+マウスがどのコンポーネント上にあるかでウィンドウのカーソル形状を切り替える機構を入れる。現状 framework に
+カーソル形状の機構そのものが無い（`glfwSetCursor` 系が awt / awt-c に出ていない）。構成:
+- per-component の cursor プロパティ（例: `Component.cursor`。既定 = arrow、I-beam / リサイズ等を指定可能）。
+- mouse-move のたびにポインタ下のコンポーネントを hit-test し、その cursor をウィンドウへ設定する。
+- awt に「ウィンドウのカーソル形状を設定する」API を足し、awt-c で glfw の標準カーソル
+  （`glfwCreateStandardCursor`）＋ `glfwSetCursor` を薄くラップする（glfw 型は .c からのみ include し、
+  Zig 向けヘッダーには露出しない既存方針を踏襲）。
+
+### なぜ（保留理由）
+テキストエディタ v1 の実機確認で表面化したギャップだが、エディタ回帰そのものではない既存の欠落。
+awt / awt-c まで縦に配線が要る大きめ feature で、フォーカス / 無効描画の修正（ブランチ feat/focus-disabled・
+[focus_disabled_design.md](focus_disabled_design.md)）とはスコープが別。実需はテキストエリア上の I-beam と
+SplitPane 分割線上のリサイズカーソルが初期需要。
+
+### 候補アプローチ
+- カーソルの種類は glfw の標準カーソル（arrow / ibeam / crosshair / hand / hresize / vresize）から必要分だけ
+  enum で公開する想定。カスタムビットマップカーソルは初版スコープ外（実需が出たら別項目）。
+- hit-test は既存の mouse-move 配送経路（`Window.dispatchInput`）に相乗りできるか、専用の walk が要るかを
+  実装時に見る。
+
+### 決めること
+- cursor プロパティの持ち方（Component の素のフィールドか、SplitPane のように能力構造体側か）。
+- カーソル種別の公開 enum と、初版で含める種類（最低 arrow / ibeam / hresize / vresize）。
+- 標準カーソルオブジェクトの寿命（ウィンドウ単位でキャッシュするか、awt 側でシングルトン的に持つか
+  ＝ CLAUDE.md「グローバルを選ばない」と整合する形）。
+- mouse-move hit-test を既存配送に相乗りさせるか専用経路にするか。
+
+### 完了条件
+テキストエリア上で I-beam、SplitPane 分割線上でリサイズカーソルになる。doc（component / awt の該当 spec）＋
+テスト（hit-test → cursor 種別決定は GPU 非依存の純ロジックで、実際のカーソル切替は実機確認）。
