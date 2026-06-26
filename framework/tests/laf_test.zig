@@ -16,6 +16,20 @@ fn newApp() !*nimbus.Application {
         return error.SkipZigTest;
 }
 
+test "button icon tint fades only disabled icons" {
+    try std.testing.expectEqual(awt.Graphics.Color.rgba(1, 1, 1, 1), nimbus.Button.iconTint(true));
+    try std.testing.expectEqual(@as(f32, 1), nimbus.Button.iconTint(false).r);
+    try std.testing.expectEqual(@as(f32, 1), nimbus.Button.iconTint(false).g);
+    try std.testing.expectEqual(@as(f32, 1), nimbus.Button.iconTint(false).b);
+    try std.testing.expect(nimbus.Button.iconTint(false).a < 1);
+
+    try std.testing.expectEqual(awt.Graphics.Color.rgba(1, 1, 1, 1), nimbus.laf.metal.buttonIconTint(true));
+    try std.testing.expectEqual(@as(f32, 1), nimbus.laf.metal.buttonIconTint(false).r);
+    try std.testing.expectEqual(@as(f32, 1), nimbus.laf.metal.buttonIconTint(false).g);
+    try std.testing.expectEqual(@as(f32, 1), nimbus.laf.metal.buttonIconTint(false).b);
+    try std.testing.expect(nimbus.laf.metal.buttonIconTint(false).a < 1);
+}
+
 test "widgets use default Look" {
     const app = try newApp();
     defer app.deinit();

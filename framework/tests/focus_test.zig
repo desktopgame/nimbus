@@ -37,6 +37,93 @@ fn newApp() !*nimbus.Application {
         return error.SkipZigTest;
 }
 
+fn sendFocus(component: *nimbus.Component, gained: bool) void {
+    var ev = awt.Event{ .payload = .{ .focus = .{ .gained = gained } } };
+    component.vtable.processEvent(component, &ev);
+}
+
+test "disabled focusable widgets still process focus lost" {
+    var button_model = nimbus.ButtonModel.init(std.testing.allocator);
+    defer button_model.deinit();
+    var button = nimbus.Button{
+        .component = nimbus.Component.init(std.testing.allocator, &nimbus.Button.vtable),
+        .model = &button_model,
+        .owns_model = false,
+        .text = "Button",
+        .a11y_name = null,
+        .font = undefined,
+        .color = undefined,
+        .icon = null,
+        .icon_size = null,
+        .focused = false,
+        .mnemonic_index = null,
+        .allocator = std.testing.allocator,
+    };
+    sendFocus(&button.component, true);
+    try std.testing.expect(button.focused);
+    button.getModel().setEnabled(false);
+    sendFocus(&button.component, false);
+    try std.testing.expect(!button.focused);
+
+    var checkbox_model = nimbus.ToggleButtonModel.init(std.testing.allocator);
+    defer checkbox_model.deinit();
+    var checkbox = nimbus.CheckBox{
+        .component = nimbus.Component.init(std.testing.allocator, &nimbus.CheckBox.vtable),
+        .model = &checkbox_model,
+        .owns_model = false,
+        .text = "Check",
+        .font = undefined,
+        .color = undefined,
+        .focused = false,
+        .allocator = std.testing.allocator,
+    };
+    sendFocus(&checkbox.component, true);
+    try std.testing.expect(checkbox.focused);
+    checkbox.getModel().button.setEnabled(false);
+    sendFocus(&checkbox.component, false);
+    try std.testing.expect(!checkbox.focused);
+
+    var radio_model = nimbus.ToggleButtonModel.init(std.testing.allocator);
+    defer radio_model.deinit();
+    var radio = nimbus.RadioButton{
+        .component = nimbus.Component.init(std.testing.allocator, &nimbus.RadioButton.vtable),
+        .model = &radio_model,
+        .owns_model = false,
+        .text = "Radio",
+        .font = undefined,
+        .color = undefined,
+        .focused = false,
+        .allocator = std.testing.allocator,
+    };
+    sendFocus(&radio.component, true);
+    try std.testing.expect(radio.focused);
+    radio.getModel().button.setEnabled(false);
+    sendFocus(&radio.component, false);
+    try std.testing.expect(!radio.focused);
+
+    var combo = nimbus.ComboBox{
+        .component = nimbus.Component.init(std.testing.allocator, &nimbus.ComboBox.vtable),
+        .popup_root = undefined,
+        .items = .empty,
+        .selected_index = 0,
+        .hovered_index = null,
+        .open = false,
+        .window = null,
+        .has_focus = false,
+        .enabled = true,
+        .font = undefined,
+        .color = undefined,
+        .change_listeners = nimbus.ChangeListenerList.init(std.testing.allocator),
+        .allocator = std.testing.allocator,
+    };
+    defer combo.change_listeners.deinit();
+    sendFocus(&combo.component, true);
+    try std.testing.expect(combo.has_focus);
+    combo.setEnabled(false);
+    sendFocus(&combo.component, false);
+    try std.testing.expect(!combo.has_focus);
+}
+
 test "tab traversal: initial focus, order, wrap, shift+tab" {
     const app = try newApp();
     defer app.deinit();

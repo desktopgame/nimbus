@@ -447,6 +447,11 @@ pub fn drawImageScaled(self: *Graphics, image: Image, x: f32, y: f32, w: f32, h:
     self.imageQuad(image, .{ .x = x, .y = y, .width = w, .height = h }, 0, 0, 1, 1, Color.rgba(1, 1, 1, 1));
 }
 
+/// Like `drawImageScaled`, but modulates the image by `tint`.
+pub fn drawImageScaledTinted(self: *Graphics, image: Image, x: f32, y: f32, w: f32, h: f32, tint: Color) void {
+    self.imageQuad(image, .{ .x = x, .y = y, .width = w, .height = h }, 0, 0, 1, 1, tint);
+}
+
 fn imageQuad(self: *Graphics, image: Image, dst: Rect, @"u0": f32, v0: f32, @"u1": f32, v1: f32, tint: Color) void {
     if (self.clipIsEmpty()) return;
     if (dst.width <= 0 or dst.height <= 0) return;

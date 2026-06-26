@@ -348,10 +348,10 @@ fn drawChevron(g: *awt.Graphics, x: f32, y: f32, w: f32, h: f32, color: awt.Grap
 
 fn processEvent(self: *Component, ev: *Component.Event) void {
     const cb: *ComboBox = @fieldParentPtr("component", self);
-    if (!cb.enabled) return;
 
     switch (ev.payload) {
         .mouse => |m| {
+            if (!cb.enabled) return;
             const origin = self.absoluteOriginInWindow();
             const lx = m.x - origin.x;
             const ly = m.y - origin.y;
@@ -372,6 +372,7 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
             }
         },
         .key => |k| {
+            if (!cb.enabled) return;
             if (k.action != .press and k.action != .repeat) return;
             switch (k.code) {
                 .arrow_down => {

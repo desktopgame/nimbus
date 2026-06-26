@@ -239,10 +239,10 @@ fn lookPaintOver(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
 fn processEvent(self: *Component, ev: *Component.Event) void {
     const rb: *RadioButton = @fieldParentPtr("component", self);
     const btn = &rb.model.button;
-    if (!btn.enabled) return;
 
     switch (ev.payload) {
         .mouse => |m| {
+            if (!btn.enabled) return;
             const origin = self.absoluteOriginInWindow();
             const lx = m.x - origin.x;
             const ly = m.y - origin.y;
@@ -280,6 +280,7 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
             }
         },
         .key => |k| {
+            if (!btn.enabled) return;
             if (k.action == .press and k.code == .space) {
                 rb.doClick();
                 ev.consume();

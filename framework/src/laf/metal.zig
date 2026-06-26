@@ -43,6 +43,7 @@ const SCROLLBAR_THUMB_INSET: f32 = 2;
 const COLLECTION_BUFFER_ROWS: usize = 2;
 const TABLE_HEADER_HEIGHT: f32 = 26;
 const TABLE_HEADER_PAD: f32 = 6;
+const disabled_icon_alpha: f32 = 0.38;
 
 pub const MetalPalette = struct {
     body_enabled_top: Color,
@@ -99,6 +100,10 @@ pub var metal_palette = MetalPalette{
     .track_groove = Color.bytes(198, 206, 216, 255),
     .scroll_track = Color.bytes(224, 225, 229, 255),
 };
+
+pub fn buttonIconTint(enabled: bool) Color {
+    return Color.rgba(1, 1, 1, if (enabled) 1 else disabled_icon_alpha);
+}
 
 pub const metal_button_look = Component.LookVTable{
     .paint = paint,
@@ -1231,7 +1236,7 @@ fn paintContent(
     if (has_icon) {
         const iy = (component.size.height - icon_sz.height) / 2;
         if (button.icon) |img| {
-            g.drawImageScaled(img, x, iy, icon_sz.width, icon_sz.height);
+            g.drawImageScaledTinted(img, x, iy, icon_sz.width, icon_sz.height, buttonIconTint(enabled));
         }
         x += icon_sz.width;
         if (has_text) x += ICON_TEXT_GAP;

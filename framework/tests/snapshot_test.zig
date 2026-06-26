@@ -63,6 +63,10 @@ test "snapshot: toggle_combobox_closed" {
     try runScene(scenes.toggle_combobox_closed);
 }
 
+test "snapshot: button_disabled_icons" {
+    try runScene(scenes.button_disabled_icons);
+}
+
 test "snapshot: metal_buttons" {
     try runScene(scenes.metal_buttons);
 }
@@ -197,6 +201,12 @@ fn renderScene(
     font: awt.Font,
     scene: scenes.Scene,
 ) ![]u8 {
+    var scene_images: std.ArrayList(awt.Image) = .empty;
+    defer {
+        for (scene_images.items) |*image| image.deinit();
+        scene_images.deinit(allocator);
+    }
+
     var rt = try awt.RenderTarget.create(device, scene.width, scene.height);
     defer rt.deinit();
 
@@ -248,6 +258,8 @@ fn renderScene(
         try scene.paint(.{
             .g = &g,
             .allocator = allocator,
+            .device = device,
+            .images = &scene_images,
             .font = font,
             .width = scene.width,
             .height = scene.height,

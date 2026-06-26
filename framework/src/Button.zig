@@ -18,6 +18,7 @@ const PADDING_Y: f32 = 4;
 const CORNER_RADIUS: f32 = 6;
 const ICON_TEXT_GAP: f32 = 6;
 const FLAT_PADDING: f32 = 4;
+const disabled_icon_alpha: f32 = 0.38;
 
 component: Component,
 model: *ButtonModel,
@@ -48,6 +49,10 @@ pub const look_vtable = Component.LookVTable{
     .paintOver = lookPaintOver,
     .measureMinSize = lookMeasureMinSize,
 };
+
+pub fn iconTint(enabled: bool) awt.Graphics.Color {
+    return awt.Graphics.Color.rgba(1, 1, 1, if (enabled) 1 else disabled_icon_alpha);
+}
 
 pub fn create(
     allocator: std.mem.Allocator,
@@ -319,7 +324,7 @@ fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
     if (has_icon) {
         const iy = (sz.height - icon_sz.height) / 2;
         if (button.icon) |img| {
-            g.drawImageScaled(img, x, iy, icon_sz.width, icon_sz.height);
+            g.drawImageScaledTinted(img, x, iy, icon_sz.width, icon_sz.height, iconTint(button.model.enabled));
         }
         x += icon_sz.width;
         if (has_text) x += ICON_TEXT_GAP;
@@ -350,10 +355,10 @@ fn lookPaintOver(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
 
 fn processEvent(self: *Component, ev: *Component.Event) void {
     const button: *Button = @fieldParentPtr("component", self);
-    if (!button.model.enabled) return;
 
     switch (ev.payload) {
         .mouse => |m| {
+            if (!button.model.enabled) return;
             const origin = self.absoluteOriginInWindow();
             const lx = m.x - origin.x;
             const ly = m.y - origin.y;
@@ -389,6 +394,7 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
             }
         },
         .key => |k| {
+            if (!button.model.enabled) return;
             // Space / Enter activate the focused button (raw `.key` only ever
             // arrives here while this button is the focus owner). Press only  E            // auto-repeat firing a button is not a thing on any platform.
             if (k.action == .press and (k.code == .space or k.code == .enter)) {

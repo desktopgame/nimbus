@@ -269,10 +269,10 @@ fn drawCheck(g: *awt.Graphics, box_x: f32, box_y: f32, box_size: f32, color: awt
 fn processEvent(self: *Component, ev: *Component.Event) void {
     const cb: *CheckBox = @fieldParentPtr("component", self);
     const btn = &cb.model.button;
-    if (!btn.enabled) return;
 
     switch (ev.payload) {
         .mouse => |m| {
+            if (!btn.enabled) return;
             const origin = self.absoluteOriginInWindow();
             const lx = m.x - origin.x;
             const ly = m.y - origin.y;
@@ -307,6 +307,7 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
             }
         },
         .key => |k| {
+            if (!btn.enabled) return;
             // Space toggles when focused (Swing JCheckBox / Win32 / GTK all do this).
             if (k.action == .press and k.code == .space) {
                 cb.doClick();

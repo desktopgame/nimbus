@@ -18,6 +18,8 @@ pub const default_font_bytes = nimbus.noto.noto_sans_jp_regular;
 pub const PaintContext = struct {
     g: *awt.Graphics,
     allocator: std.mem.Allocator,
+    device: awt.Device,
+    images: *std.ArrayList(awt.Image),
     font: awt.Font,
     width: i32,
     height: i32,
@@ -137,6 +139,13 @@ fn textField(
     );
     tf.background = nimbus.Theme.default.surface_input;
     return tf;
+}
+
+fn loadIcon(ctx: PaintContext, id: nimbus.lucide.Icon) !awt.Image {
+    var image = try awt.Image.fromMemory(ctx.allocator, ctx.device, id.bytes());
+    errdefer image.deinit();
+    try ctx.images.append(ctx.allocator, image);
+    return ctx.images.items[ctx.images.items.len - 1];
 }
 /// Build a root Container the size of the render target, run a layout
 /// pass, paint, then free. All scenes go through this so they don't
@@ -356,9 +365,49 @@ fn paintToggleComboboxClosed(ctx: PaintContext) anyerror!void {
     setup.paint();
 }
 
+pub const button_disabled_icons = Scene{
+    .name = "button_disabled_icons",
+    .width = 360,
+    .height = 110,
+    .paint = paintButtonDisabledIcons,
+};
+
+fn paintButtonDisabledIcons(ctx: PaintContext) anyerror!void {
+    var setup = try Setup.init(ctx);
+    defer setup.deinit();
+
+    const font = nimbus.awt.Graphics.TextFont{ .face = ctx.font, .pixel_size = 14 };
+    const text = awt.Graphics.Color.rgb(0.08, 0.10, 0.12);
+    const icon = try loadIcon(ctx, .undo);
+
+    const enabled_icon = try nimbus.Button.create(ctx.allocator, "", font, text);
+    enabled_icon.setIcon(icon);
+    enabled_icon.setIconSize(.{ .width = 20, .height = 20 });
+
+    const disabled_icon = try nimbus.Button.create(ctx.allocator, "", font, text);
+    disabled_icon.setIcon(icon);
+    disabled_icon.setIconSize(.{ .width = 20, .height = 20 });
+    disabled_icon.getModel().setEnabled(false);
+
+    const disabled_icon_text = try nimbus.Button.create(ctx.allocator, "Undo", font, text);
+    disabled_icon_text.setIcon(icon);
+    disabled_icon_text.setIconSize(.{ .width = 20, .height = 20 });
+    disabled_icon_text.getModel().setEnabled(false);
+
+    try setup.container.add(&enabled_icon.component);
+    try setup.container.add(&disabled_icon.component);
+    try setup.container.add(&disabled_icon_text.component);
+
+    enabled_icon.component.setBounds(.{ .x = 24, .y = 32, .width = 42, .height = 34 });
+    disabled_icon.component.setBounds(.{ .x = 82, .y = 32, .width = 42, .height = 34 });
+    disabled_icon_text.component.setBounds(.{ .x = 140, .y = 32, .width = 112, .height = 34 });
+
+    setup.paint();
+}
+
 pub const metal_buttons = Scene{
     .name = "metal_buttons",
-    .width = 300,
+    .width = 380,
     .height = 150,
     .paint = paintMetalButtons,
 };
@@ -369,6 +418,7 @@ fn paintMetalButtons(ctx: PaintContext) anyerror!void {
 
     const font = nimbus.awt.Graphics.TextFont{ .face = ctx.font, .pixel_size = 14 };
     const text = awt.Graphics.Color.rgb(0.08, 0.10, 0.12);
+    const icon = try loadIcon(ctx, .undo);
 
     const normal = try nimbus.Button.create(ctx.allocator, "Normal", font, text);
     const pressed = try nimbus.Button.create(ctx.allocator, "Pressed", font, text);
@@ -376,15 +426,27 @@ fn paintMetalButtons(ctx: PaintContext) anyerror!void {
     pressed.getModel().setPressed(true);
     const disabled = try nimbus.Button.create(ctx.allocator, "Disabled", font, text);
     disabled.getModel().setEnabled(false);
+    const disabled_icon = try nimbus.Button.create(ctx.allocator, "", font, text);
+    disabled_icon.setIcon(icon);
+    disabled_icon.setIconSize(.{ .width = 20, .height = 20 });
+    disabled_icon.getModel().setEnabled(false);
+    const disabled_icon_text = try nimbus.Button.create(ctx.allocator, "Undo", font, text);
+    disabled_icon_text.setIcon(icon);
+    disabled_icon_text.setIconSize(.{ .width = 20, .height = 20 });
+    disabled_icon_text.getModel().setEnabled(false);
 
     try setup.container.add(&normal.component);
     try setup.container.add(&pressed.component);
     try setup.container.add(&disabled.component);
+    try setup.container.add(&disabled_icon.component);
+    try setup.container.add(&disabled_icon_text.component);
     nimbus.laf.applyLook(&setup.container.component, nimbus.laf.metal.buttonTable());
 
     normal.component.setBounds(.{ .x = 24, .y = 18, .width = 132, .height = 36 });
     pressed.component.setBounds(.{ .x = 24, .y = 58, .width = 132, .height = 36 });
     disabled.component.setBounds(.{ .x = 24, .y = 98, .width = 132, .height = 36 });
+    disabled_icon.component.setBounds(.{ .x = 190, .y = 38, .width = 42, .height = 36 });
+    disabled_icon_text.component.setBounds(.{ .x = 248, .y = 38, .width = 112, .height = 36 });
 
     setup.paint();
 }
