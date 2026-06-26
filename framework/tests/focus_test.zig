@@ -42,6 +42,11 @@ fn sendFocus(component: *nimbus.Component, gained: bool) void {
     component.vtable.processEvent(component, &ev);
 }
 
+fn sendMouse(component: *nimbus.Component, action: awt.Event.MouseAction, x: f32, y: f32) void {
+    var ev = awt.Event{ .payload = .{ .mouse = .{ .x = x, .y = y, .button = .left, .action = action } } };
+    component.vtable.processEvent(component, &ev);
+}
+
 test "disabled focusable widgets still process focus lost" {
     var button_model = nimbus.ButtonModel.init(std.testing.allocator);
     defer button_model.deinit();
@@ -122,6 +127,57 @@ test "disabled focusable widgets still process focus lost" {
     combo.setEnabled(false);
     sendFocus(&combo.component, false);
     try std.testing.expect(!combo.has_focus);
+}
+
+test "disabled button ignores mouse press release activation" {
+    var enabled_model = nimbus.ButtonModel.init(std.testing.allocator);
+    defer enabled_model.deinit();
+    var enabled_button = nimbus.Button{
+        .component = nimbus.Component.init(std.testing.allocator, &nimbus.Button.vtable),
+        .model = &enabled_model,
+        .owns_model = false,
+        .text = "Enabled",
+        .a11y_name = null,
+        .font = undefined,
+        .color = undefined,
+        .icon = null,
+        .icon_size = null,
+        .focused = false,
+        .mnemonic_index = null,
+        .allocator = std.testing.allocator,
+    };
+    enabled_button.component.setBounds(.{ .x = 0, .y = 0, .width = 80, .height = 30 });
+
+    var enabled_counter = Counter{};
+    try enabled_model.addActionListener(Counter, Counter.onAction, &enabled_counter);
+    sendMouse(&enabled_button.component, .press, 10, 10);
+    sendMouse(&enabled_button.component, .release, 10, 10);
+    try std.testing.expectEqual(@as(u32, 1), enabled_counter.count);
+
+    var disabled_model = nimbus.ButtonModel.init(std.testing.allocator);
+    defer disabled_model.deinit();
+    disabled_model.setEnabled(false);
+    var disabled_button = nimbus.Button{
+        .component = nimbus.Component.init(std.testing.allocator, &nimbus.Button.vtable),
+        .model = &disabled_model,
+        .owns_model = false,
+        .text = "Disabled",
+        .a11y_name = null,
+        .font = undefined,
+        .color = undefined,
+        .icon = null,
+        .icon_size = null,
+        .focused = false,
+        .mnemonic_index = null,
+        .allocator = std.testing.allocator,
+    };
+    disabled_button.component.setBounds(.{ .x = 0, .y = 0, .width = 80, .height = 30 });
+
+    var disabled_counter = Counter{};
+    try disabled_model.addActionListener(Counter, Counter.onAction, &disabled_counter);
+    sendMouse(&disabled_button.component, .press, 10, 10);
+    sendMouse(&disabled_button.component, .release, 10, 10);
+    try std.testing.expectEqual(@as(u32, 0), disabled_counter.count);
 }
 
 test "tab traversal: initial focus, order, wrap, shift+tab" {
