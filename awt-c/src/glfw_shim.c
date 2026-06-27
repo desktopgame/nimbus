@@ -172,6 +172,7 @@ nmWindow* nmCreateWindowEx(const char* title, int width, int height, int flags) 
     glfwWindowHint(GLFW_DECORATED, (flags & nmWindowFlagBorderless) ? GLFW_FALSE : GLFW_TRUE);
     glfwWindowHint(GLFW_FOCUS_ON_SHOW, (flags & nmWindowFlagNoActivate) ? GLFW_FALSE : GLFW_TRUE);
     glfwWindowHint(GLFW_FLOATING, (flags & nmWindowFlagFloating) ? GLFW_TRUE : GLFW_FALSE);
+    glfwWindowHint(GLFW_VISIBLE, flags ? GLFW_FALSE : GLFW_TRUE);
     GLFWwindow* w = glfwCreateWindow(width, height, title, NULL, NULL);
     if (!w) return NULL;
 
@@ -186,6 +187,15 @@ nmWindow* nmCreateWindowEx(const char* title, int width, int height, int flags) 
             ex_style |= WS_EX_NOACTIVATE;
         }
         SetWindowLongPtr(hwnd, GWL_EXSTYLE, ex_style);
+        SetWindowPos(
+            hwnd,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED
+        );
     }
 #endif
 

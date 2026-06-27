@@ -16,6 +16,9 @@ const awt = @import("awt");
 const Component = @import("Component.zig");
 const Container = @import("Container.zig");
 const Window = @import("Window.zig");
+const Application = @import("Application.zig");
+const BorderLayout = @import("BorderLayout.zig");
+const PopupWindow = @import("PopupWindow.zig");
 const listener = @import("listener.zig");
 const ChangeListenerList = listener.ChangeListenerList;
 const ChangeEvent = listener.ChangeEvent;
@@ -43,6 +46,7 @@ selected_index: usize,
 hovered_index: ?usize,
 open: bool,
 window: ?*Window,
+popup_window: ?*PopupWindow,
 has_focus: bool,
 enabled: bool,
 font: awt.Graphics.TextFont,
@@ -104,6 +108,7 @@ pub fn create(
         .hovered_index = null,
         .open = false,
         .window = null,
+        .popup_window = null,
         .has_focus = false,
         .enabled = true,
         .font = font,
@@ -114,6 +119,7 @@ pub fn create(
     cb.component.role = .combobox;
     cb.component.detached_look_roots = .{ .count = detachedLookRootCount, .at = detachedLookRootAt };
     cb.component.ui = .{ .vtable = &look_vtable, .ctx = &Component.default_look_context };
+    cb.popup_root.setFocusable(true);
     cb.popup_root.ui = .{ .vtable = &popup_look_vtable, .ctx = &Component.default_look_context };
     cb.applyMetrics();
     try ComboBox.vtable.install(&cb.component);
@@ -227,35 +233,64 @@ fn itemHeight(self: ComboBox) f32 {
 // ── show / hide ──────────────────────────────────────────────────────────
 
 fn show(self: *ComboBox, w: *Window) !void {
+    if (self.open) return;
+    const popup = try self.ensurePopupWindow(w);
     const origin = self.component.absoluteOriginInWindow();
     const item_h = self.itemHeight();
     const popup_w = self.component.size.width;
     const popup_h = item_h * @as(f32, @floatFromInt(self.items.items.len));
     self.popup_root.position = .{
-        .x = origin.x,
-        .y = origin.y + self.component.size.height,
+        .x = 0,
+        .y = 0,
     };
     self.popup_root.size = .{ .width = popup_w, .height = popup_h };
     self.hovered_index = self.selected_index;
-    self.open = true;
     self.window = w;
-    try w.overlays.add(&self.popup_root, @ptrCast(self), onOverlayDismiss);
+    try popup.showAtLocal(
+        .{ .x = origin.x, .y = origin.y, .width = self.component.size.width, .height = self.component.size.height },
+        .{ .width = @intFromFloat(@ceil(popup_w)), .height = @intFromFloat(@ceil(popup_h)) },
+    );
+    self.open = true;
     self.component.repaint();
 }
 
 fn hide(self: *ComboBox) void {
     if (!self.open) return;
-    if (self.window) |w| w.overlays.remove(@ptrCast(self));
+    if (self.popup_window) |popup| {
+        popup.dismiss();
+    } else {
+        self.finishDismiss();
+    }
+}
+
+fn onPopupDismiss(user_data: *anyopaque) void {
+    const self: *ComboBox = @ptrCast(@alignCast(user_data));
+    self.finishDismiss();
+}
+
+fn finishDismiss(self: *ComboBox) void {
     self.open = false;
     self.hovered_index = null;
     self.component.repaint();
 }
 
-fn onOverlayDismiss(user_data: *anyopaque) void {
-    const self: *ComboBox = @ptrCast(@alignCast(user_data));
-    self.open = false;
-    self.hovered_index = null;
-    self.component.repaint();
+fn ensurePopupWindow(self: *ComboBox, owner: *Window) !*PopupWindow {
+    if (self.popup_window) |popup| return popup;
+    const app: *Application = @ptrCast(@alignCast(owner.app));
+    const popup = try app.popupWindow(owner, "ComboBox", 1, 1);
+    errdefer popup.destroy();
+    popup.onDismiss(@ptrCast(self), onPopupDismiss);
+    try BorderLayout.add(&popup.window.container, .center, &self.popup_root);
+    self.popup_window = popup;
+    return popup;
+}
+
+fn destroyPopupWindow(self: *ComboBox) void {
+    const popup = self.popup_window orelse return;
+    if (self.open) popup.dismiss();
+    popup.window.container.remove(&self.popup_root);
+    popup.destroy();
+    self.popup_window = null;
 }
 
 // ── vtable: closed field ─────────────────────────────────────────────────
@@ -281,6 +316,7 @@ fn uninstall(self: *Component) void {
     // Focus goes to null when its owner is torn down (keybinding.md).
     if (cb.has_focus) self.releaseFocus();
     if (cb.open) cb.hide();
+    cb.destroyPopupWindow();
 }
 
 fn focusEligible(c: *const Component) bool {
@@ -424,6 +460,7 @@ fn destroy(self: *Component, allocator: std.mem.Allocator) void {
     // Container), so nothing else tears it down. `addOverlay` lazily
     // allocates its property map (DirtyNotify / FocusController) the first
     // time the popup opens; deinit here to free that map.
+    cb.destroyPopupWindow();
     cb.popup_root.deinit();
     for (cb.items.items) |s| allocator.free(s);
     cb.items.deinit(allocator);
@@ -484,12 +521,7 @@ fn popupProcessEvent(self: *Component, ev: *Component.Event) void {
             const lx = m.x - origin.x;
             const ly = m.y - origin.y;
             const item_h = cb.itemHeight();
-            const inside_x = lx >= 0 and lx < self.size.width;
-            const idx_f: f32 = ly / item_h;
-            const idx: ?usize = if (inside_x and ly >= 0 and idx_f < @as(f32, @floatFromInt(cb.items.items.len)))
-                @intFromFloat(idx_f)
-            else
-                null;
+            const idx = popupIndexAt(cb.items.items.len, item_h, self.size.width, lx, ly);
 
             switch (m.action) {
                 .move => {
@@ -501,7 +533,7 @@ fn popupProcessEvent(self: *Component, ev: *Component.Event) void {
                 .press => {
                     if (idx) |i| {
                         cb.setSelectedIndex(i);
-                        cb.hide();
+                        if (cb.popup_window) |popup| popup.dismissFromSelection() else cb.hide();
                         ev.consume();
                     }
                 },
@@ -512,21 +544,21 @@ fn popupProcessEvent(self: *Component, ev: *Component.Event) void {
             if (k.action != .press) return;
             switch (k.code) {
                 .escape => {
-                    cb.hide();
+                    if (cb.popup_window) |popup| popup.dismissFromEscape() else cb.hide();
                     ev.consume();
                 },
                 .arrow_down => {
-                    const cur = cb.hovered_index orelse cb.selected_index;
-                    if (cur + 1 < cb.items.items.len) {
-                        cb.hovered_index = cur + 1;
+                    const next = moveHoverIndex(cb.items.items.len, cb.hovered_index, cb.selected_index, 1);
+                    if (next != cb.hovered_index) {
+                        cb.hovered_index = next;
                         cb.popup_root.repaint();
                     }
                     ev.consume();
                 },
                 .arrow_up => {
-                    const cur = cb.hovered_index orelse cb.selected_index;
-                    if (cur > 0) {
-                        cb.hovered_index = cur - 1;
+                    const next = moveHoverIndex(cb.items.items.len, cb.hovered_index, cb.selected_index, -1);
+                    if (next != cb.hovered_index) {
+                        cb.hovered_index = next;
                         cb.popup_root.repaint();
                     }
                     ev.consume();
@@ -534,7 +566,7 @@ fn popupProcessEvent(self: *Component, ev: *Component.Event) void {
                 .enter, .space => {
                     if (cb.hovered_index) |i| {
                         cb.setSelectedIndex(i);
-                        cb.hide();
+                        if (cb.popup_window) |popup| popup.dismissFromSelection() else cb.hide();
                         ev.consume();
                     }
                 },
@@ -546,6 +578,23 @@ fn popupProcessEvent(self: *Component, ev: *Component.Event) void {
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────
+
+fn popupIndexAt(item_count: usize, item_h: f32, width: f32, x: f32, y: f32) ?usize {
+    if (item_count == 0 or item_h <= 0) return null;
+    if (x < 0 or x >= width or y < 0) return null;
+    const idx_f: f32 = y / item_h;
+    if (idx_f >= @as(f32, @floatFromInt(item_count))) return null;
+    return @intFromFloat(idx_f);
+}
+
+fn moveHoverIndex(item_count: usize, hovered: ?usize, selected: usize, delta: i32) ?usize {
+    if (item_count == 0) return null;
+    const last = item_count - 1;
+    const base = @min(hovered orelse selected, last);
+    if (delta > 0) return @min(base + 1, last);
+    if (delta < 0) return if (base == 0) 0 else base - 1;
+    return base;
+}
 
 fn parentWindow(c: *Component) ?*Window {
     var node: ?*Component = c;
@@ -567,4 +616,65 @@ fn detachedLookRootAt(c: *const Component, index: usize) *Component {
     std.debug.assert(index == 0);
     const cb: *const ComboBox = @fieldParentPtr("component", c);
     return @constCast(&cb.popup_root);
+}
+
+test "popupIndexAt hit-tests items without a window backend" {
+    try std.testing.expectEqual(@as(?usize, 0), popupIndexAt(3, 20, 100, 5, 0));
+    try std.testing.expectEqual(@as(?usize, 1), popupIndexAt(3, 20, 100, 99, 39));
+    try std.testing.expectEqual(@as(?usize, null), popupIndexAt(3, 20, 100, 100, 10));
+    try std.testing.expectEqual(@as(?usize, null), popupIndexAt(3, 20, 100, 10, 60));
+}
+
+test "moveHoverIndex clamps arrow navigation without a window backend" {
+    try std.testing.expectEqual(@as(?usize, 2), moveHoverIndex(4, null, 1, 1));
+    try std.testing.expectEqual(@as(?usize, 3), moveHoverIndex(4, 3, 1, 1));
+    try std.testing.expectEqual(@as(?usize, 1), moveHoverIndex(4, 2, 1, -1));
+    try std.testing.expectEqual(@as(?usize, 0), moveHoverIndex(4, 0, 1, -1));
+    try std.testing.expectEqual(@as(?usize, null), moveHoverIndex(0, null, 0, 1));
+}
+
+test "setSelectedIndex commits selection and fires change listeners" {
+    const Ctx = struct {
+        count: usize = 0,
+        source: ?*ComboBox = null,
+
+        fn changed(self: *@This(), ev: *const ChangeEvent) void {
+            self.count += 1;
+            self.source = @ptrCast(@alignCast(ev.source));
+        }
+    };
+
+    var cb = ComboBox{
+        .component = Component.init(std.testing.allocator, &ComboBox.vtable),
+        .popup_root = Component.init(std.testing.allocator, &popup_vtable),
+        .items = .empty,
+        .selected_index = 0,
+        .hovered_index = null,
+        .open = false,
+        .window = null,
+        .popup_window = null,
+        .has_focus = false,
+        .enabled = true,
+        .font = undefined,
+        .color = undefined,
+        .change_listeners = ChangeListenerList.init(std.testing.allocator),
+        .allocator = std.testing.allocator,
+    };
+    defer cb.change_listeners.deinit();
+    defer cb.component.deinit();
+    defer cb.popup_root.deinit();
+    try cb.items.append(std.testing.allocator, "a");
+    try cb.items.append(std.testing.allocator, "b");
+    defer cb.items.deinit(std.testing.allocator);
+
+    var ctx = Ctx{};
+    try cb.addChangeListener(Ctx, Ctx.changed, &ctx);
+
+    cb.setSelectedIndex(1);
+    try std.testing.expectEqual(@as(usize, 1), cb.getSelectedIndex());
+    try std.testing.expectEqual(@as(usize, 1), ctx.count);
+    try std.testing.expect(ctx.source == &cb);
+
+    cb.setSelectedIndex(1);
+    try std.testing.expectEqual(@as(usize, 1), ctx.count);
 }

@@ -25,6 +25,8 @@ app: *Application,
 owner: *Window,
 shown: bool,
 allocator: std.mem.Allocator,
+dismiss_ctx: ?*anyopaque,
+dismiss_cb: ?*const fn (*anyopaque) void,
 
 pub fn init(
     app: *Application,
@@ -57,6 +59,8 @@ pub fn init(
         .owner = owner,
         .shown = false,
         .allocator = app.allocator,
+        .dismiss_ctx = null,
+        .dismiss_cb = null,
     };
 }
 
@@ -75,33 +79,35 @@ pub fn showAtLocal(self: *PopupWindow, anchor: LocalRect, popup_size: awt.Window
     if (self.owner.awt_window == null) return error.OwnerHasNoOsWindow;
     const owner_pos = self.owner.getPos();
     const scale = self.owner.awt_window.?.contentScale();
-    const anchor_screen = ownerLocalRectToScreen(owner_pos, anchor, scale);
     const work = self.owner.awt_window.?.monitorWorkarea();
-    try self.showAtScreen(anchor_screen, popup_size, work);
+    try self.showAtScreen(ownerLocalPopupRect(owner_pos, anchor, popup_size, scale, work), popup_size);
 }
 
 pub fn showAtScreen(
     self: *PopupWindow,
-    anchor_screen: awt.Window.Rect,
-    popup_size: awt.Window.Size,
-    work_area: awt.Window.Rect,
+    rect: awt.Window.Rect,
+    popup_size_logical: awt.Window.Size,
 ) !void {
     if (self.shown) return;
     self.bindEscape();
     self.window.onFocusLost(@ptrCast(self), focusLost);
     self.window.awt_window.?.setShouldClose(false);
 
-    const rect = decidePopupRect(anchor_screen, popup_size, work_area);
     self.window.setPos(rect.x, rect.y);
-    self.window.setSize(rect.width, rect.height);
+    self.window.setSize(popup_size_logical.width, popup_size_logical.height);
     self.window.awt_window.?.setPos(rect.x, rect.y);
-    self.window.awt_window.?.setSize(rect.width, rect.height);
+    self.window.awt_window.?.setSize(popup_size_logical.width, popup_size_logical.height);
 
     try self.app.registerUnownedWindowNoReap(&self.window, @ptrCast(self));
     self.shown = true;
     self.window.awt_window.?.setVisible(true);
     self.window.awt_window.?.focus();
     self.window.repaint();
+}
+
+pub fn onDismiss(self: *PopupWindow, ctx: *anyopaque, cb: *const fn (*anyopaque) void) void {
+    self.dismiss_ctx = ctx;
+    self.dismiss_cb = cb;
 }
 
 pub fn dismissFromSelection(self: *PopupWindow) void {
@@ -121,6 +127,7 @@ pub fn dismiss(self: *PopupWindow) void {
     self.window.awt_window.?.setVisible(false);
     self.app.unregisterWindow(&self.window);
     self.shown = false;
+    if (self.dismiss_cb) |cb| cb(self.dismiss_ctx.?);
     awt.postEmptyEvent();
 }
 
@@ -152,6 +159,28 @@ pub fn ownerLocalRectToScreen(owner_pos: awt.Window.Point, local: LocalRect, sca
         .width = @max(0, roundToI32(local.width * s)),
         .height = @max(0, roundToI32(local.height * s)),
     };
+}
+
+pub fn scaleSizeToScreen(size: awt.Window.Size, scale: f32) awt.Window.Size {
+    const s = if (scale > 0) scale else 1.0;
+    return .{
+        .width = @max(0, roundToI32(@as(f32, @floatFromInt(size.width)) * s)),
+        .height = @max(0, roundToI32(@as(f32, @floatFromInt(size.height)) * s)),
+    };
+}
+
+pub fn ownerLocalPopupRect(
+    owner_pos: awt.Window.Point,
+    local_anchor: LocalRect,
+    popup_size: awt.Window.Size,
+    scale: f32,
+    work_area: awt.Window.Rect,
+) awt.Window.Rect {
+    return decidePopupRect(
+        ownerLocalRectToScreen(owner_pos, local_anchor, scale),
+        scaleSizeToScreen(popup_size, scale),
+        work_area,
+    );
 }
 
 pub fn decidePopupRect(
@@ -238,6 +267,32 @@ test "ownerLocalRectToScreen applies owner position and content scale" {
             .{ .x = -120, .y = 200 },
             .{ .x = 20, .y = 23.5, .width = 100, .height = 30 },
             1.5,
+        ),
+    );
+}
+
+test "ownerLocalPopupRect scales popup size before flip decision" {
+    try std.testing.expectEqual(
+        awt.Window.Rect{ .x = 0, .y = 80, .width = 200, .height = 240 },
+        ownerLocalPopupRect(
+            .{ .x = 0, .y = 0 },
+            .{ .x = 0, .y = 160, .width = 100, .height = 40 },
+            .{ .width = 100, .height = 120 },
+            2.0,
+            .{ .x = 0, .y = 0, .width = 800, .height = 500 },
+        ),
+    );
+}
+
+test "ownerLocalPopupRect scales popup size before clamp decision" {
+    try std.testing.expectEqual(
+        awt.Window.Rect{ .x = 15, .y = 120, .width = 180, .height = 360 },
+        ownerLocalPopupRect(
+            .{ .x = 0, .y = 0 },
+            .{ .x = 10, .y = 250, .width = 120, .height = 30 },
+            .{ .width = 120, .height = 240 },
+            1.5,
+            .{ .x = 0, .y = 120, .width = 640, .height = 360 },
         ),
     );
 }
