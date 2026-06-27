@@ -1254,3 +1254,40 @@ SplitPane 分割線上のリサイズカーソルが初期需要。
 
 ### 完了条件
 `formatAccelerator` の逆変換が round-trip でき（`parse(format(s)) == s` を主要キーで満たす）、単体テストが緑。
+
+## #34 PopupWindow のプール化（OS 子窓の共有・取得/返却で回す）
+- 状態: 未着手（評価済み・後回し）
+- 優先度: 低
+- 影響範囲: framework の `ComboBox.zig` / `Menu.zig`（PopupWindow の生成・保持・再利用）、awt-c の `dx12_internal.h`（`NM_RTV_HEAP_SIZE` / `NM_DSV_HEAP_SIZE`）、awt の swapchain 寿命
+- 更新日: 2026-06-27
+- 依存: なし
+
+### 背景
+ComboBox / Menu は popup ごとに装飾なしの OS 子窓（PopupWindow）を遅延生成して保持し、hide / show で再利用する
+（`ComboBox.zig` の `ensurePopupWindow` / `destroyPopupWindow`、`Menu.zig` も同型。サブメニューは別 `Menu` が各自 1 枚持つ）。
+累積保持＝一度でも開いた distinct な popup の数になる。一方で同時可視は高々 メニューチェーン深さ ＋ tooltip ＝ 2〜4 枚にとどまる。
+ユーザーが「少数しか同時に出ないのにプールできないか」と提起した。
+
+### 評価結論（後回しでよい理由）
+descriptor heap が律速。`NM_RTV_HEAP_SIZE` / `NM_DSV_HEAP_SIZE` は各 64 の別 heap（`dx12_internal.h:35-36`）で、
+1 swapchain ＝ 2 RTV ＋ 2 DSV を消費する（`dx12_swapchain.c`）→ 天井は 約 32 窓（offscreen RT ぶん減る。以前の「~16」は RTV / DSV を合算した誤り）。
+典型アプリは一桁〜十数枚で余裕がある。仮に枯渇しても `Swapchain.init` が error → popup の open が error で失敗する graceful な機能不全（ハードクラッシュではない）。
+顕在化するのは 25 個超の distinct な combo / menu を各々開く密画面のみ。
+
+### 当たった時の第一手（最安）
+`NM_RTV_HEAP_SIZE` / `NM_DSV_HEAP_SIZE` を 64 → 256 へ引き上げる（天井 32 → 128。awt-c の `#define` 2 本・リスク極小）。
+これがプール化・開閉ごと破棄を費用対効果で圧倒する。
+
+### プール化の実装コスト（大・着手時の留意）
+着手するなら以下の churn を伴う。
+1. 中身（popup_root ＝ メニュー項目 / コンボリスト）を借りた窓へ毎回 re-parent する churn。`Menu` の `item.parent` 管理と detached_look_roots 依存に毎回触れる。
+2. ComboBox は focus 取得・メニューは no-activate を生成時の ex-style で決めているため、共有するには実行時トグル（脆い）か activate / no-activate の別プールが要る。
+3. チェーン深さぶん同時貸し出しが起きる ＝ プール最小サイズ＝最大同時数。
+4. 「取得 1 ＝ 返却 1」という新しい不変条件（二重返却・借用中 teardown という新しいバグクラス）。
+
+### 代替
+開閉ごとの生成破棄も累積ゼロにできるが、毎回 swapchain 生成 ＋ `nm_device_wait_idle` の GPU フラッシュ（`dx12_swapchain.c:170`）でジャンクが出る ＝ 頻繁に開くメニューに不利。
+
+### 着手判断
+back buffer の GPU メモリがアイドル占有で実問題化する、または天井接近の兆候が出てから着手する。
+まず heap 定数を引き上げ、それでも GPU メモリが問題なら プール化（頻繁な再オープン向き）か 開閉ごと破棄（稀な再オープン向き）を選ぶ。
