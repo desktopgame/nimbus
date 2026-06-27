@@ -568,8 +568,9 @@ fn showSubmenuPopup(self: *Menu, w: *Window, parent: *Menu) !void {
         .width = @intFromFloat(@ceil(popup_w)),
         .height = @intFromFloat(@ceil(popup_h)),
     };
+    const screen_popup_size = scaleSizeToScreen(popup_size, scale);
     const work = w.awt_window.?.monitorWorkarea();
-    try popup.showAtScreen(decideSubmenuPopupRect(anchor, popup_size, work), popup_size);
+    try popup.showAtScreen(decideSubmenuPopupRect(anchor, screen_popup_size, work), popup_size);
     self.open = true;
 }
 
@@ -614,6 +615,14 @@ fn clampStart(preferred: i32, size: i32, area_start: i32, area_size: i32) i32 {
     if (size >= area_size) return area_start;
     const max_start = area_start + area_size - size;
     return @min(@max(preferred, area_start), max_start);
+}
+
+fn scaleSizeToScreen(size: awt.Window.Size, scale: f32) awt.Window.Size {
+    const s = if (scale > 0) scale else 1.0;
+    return .{
+        .width = @max(0, roundToI32(@as(f32, @floatFromInt(size.width)) * s)),
+        .height = @max(0, roundToI32(@as(f32, @floatFromInt(size.height)) * s)),
+    };
 }
 
 fn roundToI32(v: f32) i32 {
@@ -1010,6 +1019,26 @@ test "submenu popup rect opens right flips left then clamps" {
             .{ .x = 80, .y = 260, .width = 50, .height = 24 },
             .{ .width = 180, .height = 120 },
             .{ .x = 20, .y = 10, .width = 180, .height = 290 },
+        ),
+    );
+}
+
+test "submenu popup rect uses screen-scaled size for edge decisions" {
+    const logical_size = awt.Window.Size{ .width = 120, .height = 80 };
+    try std.testing.expectEqual(
+        awt.Window.Rect{ .x = 290, .y = 100, .width = 180, .height = 120 },
+        decideSubmenuPopupRect(
+            .{ .x = 470, .y = 100, .width = 45, .height = 24 },
+            scaleSizeToScreen(logical_size, 1.5),
+            .{ .x = 0, .y = 0, .width = 600, .height = 400 },
+        ),
+    );
+    try std.testing.expectEqual(
+        awt.Window.Rect{ .x = 20, .y = 140, .width = 360, .height = 160 },
+        decideSubmenuPopupRect(
+            .{ .x = 120, .y = 260, .width = 60, .height = 30 },
+            scaleSizeToScreen(.{ .width = 180, .height = 80 }, 2.0),
+            .{ .x = 20, .y = 10, .width = 360, .height = 290 },
         ),
     );
 }

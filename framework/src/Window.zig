@@ -757,7 +757,7 @@ pub fn isMenuSessionKey(k: awt.Event.KeyEvent) bool {
 
 fn isPlainPrintableSessionKey(k: awt.Event.KeyEvent) bool {
     if (k.action != .press and k.action != .repeat) return false;
-    if (k.modifiers.shift or k.modifiers.ctrl or k.modifiers.alt or k.modifiers.meta) return false;
+    if (k.modifiers.ctrl or k.modifiers.alt or k.modifiers.meta) return false;
     if (keybinding.letterOf(k.code) != null) return true;
     return switch (k.code) {
         .space,
@@ -1896,6 +1896,11 @@ test "dispatchInput swallows char and composition while menu session is active" 
     var key_ev = awt.Event{ .payload = .{ .key = .{ .code = .x, .action = .press, .modifiers = .{} } } };
     win.dispatchInput(&key_ev);
     try std.testing.expect(key_ev.isConsumed());
+    try std.testing.expectEqual(@as(usize, 0), sink.keys);
+
+    var shifted_key_ev = awt.Event{ .payload = .{ .key = .{ .code = .x, .action = .press, .modifiers = .{ .shift = true } } } };
+    win.dispatchInput(&shifted_key_ev);
+    try std.testing.expect(shifted_key_ev.isConsumed());
     try std.testing.expectEqual(@as(usize, 0), sink.keys);
 
     var char_ev = awt.Event{ .payload = .{ .char = .{ .codepoint = 'x' } } };
