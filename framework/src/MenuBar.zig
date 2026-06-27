@@ -81,6 +81,16 @@ pub fn at(self: MenuBar, index: usize) ?*Menu {
     return self.menus.items[index];
 }
 
+pub fn hoverSwitchTarget(open_menu: ?*Menu, hovered: ?*Menu) ?*Menu {
+    const cur = open_menu orelse return null;
+    const new = hovered orelse return null;
+    return if (cur != new) new else null;
+}
+
+pub fn clearOpenMenu(self: *MenuBar, dismissed: *Menu) void {
+    if (self.open_menu == dismissed) self.open_menu = null;
+}
+
 fn relayout(self: *MenuBar) void {
     // Place each menu side by side starting at x=0, y=0.
     const max_h = self.component.size.height;
@@ -149,6 +159,20 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
             switch (m.action) {
                 .press => {
                     if (hovered) |menu| {
+                        if (MenuBar.hoverSwitchTarget(bar.open_menu, menu)) |new| {
+                            if (bar.open_menu) |cur| cur.hide();
+                            if (bar.window) |w| {
+                                const origin = new.component.absoluteOriginInWindow();
+                                new.show(w, .{
+                                    .x = origin.x,
+                                    .y = origin.y + new.component.size.height,
+                                }) catch |err|
+                                    log.warn("menu", "show (bar press-switch) failed: {s}", .{@errorName(err)});
+                                bar.open_menu = if (new.open) new else null;
+                            }
+                            ev.consume();
+                            return;
+                        }
                         menu.component.vtable.processEvent(&menu.component, ev);
                         if (ev.isConsumed()) {
                             // Track which is open (we only ever have one open at a time).
@@ -166,20 +190,16 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
                         }
                     }
                     // If a menu is open and user hovered a different one, switch.
-                    if (bar.open_menu) |cur| {
-                        if (hovered) |new| {
-                            if (cur != new) {
-                                cur.hide();
-                                if (bar.window) |w| {
-                                    const origin = new.component.absoluteOriginInWindow();
-                                    new.show(w, .{
-                                        .x = origin.x,
-                                        .y = origin.y + new.component.size.height,
-                                    }) catch |err|
-                                        log.warn("menu", "show (bar hover-switch) failed: {s}", .{@errorName(err)});
-                                    bar.open_menu = new;
-                                }
-                            }
+                    if (MenuBar.hoverSwitchTarget(bar.open_menu, hovered)) |new| {
+                        if (bar.open_menu) |cur| cur.hide();
+                        if (bar.window) |w| {
+                            const origin = new.component.absoluteOriginInWindow();
+                            new.show(w, .{
+                                .x = origin.x,
+                                .y = origin.y + new.component.size.height,
+                            }) catch |err|
+                                log.warn("menu", "show (bar hover-switch) failed: {s}", .{@errorName(err)});
+                            bar.open_menu = if (new.open) new else null;
                         }
                     }
                 },
@@ -196,4 +216,27 @@ fn destroy(self: *Component, allocator: std.mem.Allocator) void {
     for (bar.menus.items) |menu| menu.component.vtable.destroy(&menu.component, allocator);
     bar.menus.deinit(allocator);
     allocator.destroy(bar);
+}
+
+test "menu bar hover switch only while another top menu is open" {
+    var first: Menu = undefined;
+    var second: Menu = undefined;
+
+    try std.testing.expectEqual(@as(?*Menu, null), MenuBar.hoverSwitchTarget(null, &second));
+    try std.testing.expectEqual(@as(?*Menu, null), MenuBar.hoverSwitchTarget(&first, null));
+    try std.testing.expectEqual(@as(?*Menu, null), MenuBar.hoverSwitchTarget(&first, &first));
+    try std.testing.expectEqual(@as(?*Menu, &second), MenuBar.hoverSwitchTarget(&first, &second));
+}
+
+test "menu bar dismiss clears only matching open menu" {
+    var first: Menu = undefined;
+    var second: Menu = undefined;
+    var bar: MenuBar = undefined;
+
+    bar.open_menu = &first;
+    bar.clearOpenMenu(&second);
+    try std.testing.expectEqual(@as(?*Menu, &first), bar.open_menu);
+
+    bar.clearOpenMenu(&first);
+    try std.testing.expectEqual(@as(?*Menu, null), bar.open_menu);
 }

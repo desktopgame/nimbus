@@ -27,6 +27,11 @@ shown: bool,
 allocator: std.mem.Allocator,
 dismiss_ctx: ?*anyopaque,
 dismiss_cb: ?*const fn (*anyopaque) void,
+focus_on_show: bool,
+
+pub const Options = struct {
+    no_activate: bool = false,
+};
 
 pub fn init(
     app: *Application,
@@ -36,6 +41,19 @@ pub fn init(
     h: u32,
     device: *awt.Device,
     context: *awt.Graphics.Context,
+) !PopupWindow {
+    return initWithOptions(app, owner, title, w, h, device, context, .{});
+}
+
+pub fn initWithOptions(
+    app: *Application,
+    owner: *Window,
+    title: []const u8,
+    w: u32,
+    h: u32,
+    device: *awt.Device,
+    context: *awt.Graphics.Context,
+    options: Options,
 ) !PopupWindow {
     var window = try Window.initWithFlags(
         app.allocator,
@@ -50,6 +68,7 @@ pub fn init(
             .borderless = true,
             .floating = true,
             .no_taskbar = true,
+            .no_activate = options.no_activate,
         },
     );
     window.awt_window.?.setVisible(false);
@@ -61,6 +80,7 @@ pub fn init(
         .allocator = app.allocator,
         .dismiss_ctx = null,
         .dismiss_cb = null,
+        .focus_on_show = !options.no_activate,
     };
 }
 
@@ -101,7 +121,7 @@ pub fn showAtScreen(
     try self.app.registerUnownedWindowNoReap(&self.window, @ptrCast(self));
     self.shown = true;
     self.window.awt_window.?.setVisible(true);
-    self.window.awt_window.?.focus();
+    if (self.focus_on_show) self.window.awt_window.?.focus();
     self.window.repaint();
 }
 

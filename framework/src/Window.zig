@@ -50,6 +50,8 @@ event_queue: *awt.EventQueue,
 /// `&MenuBar.component` set via Frame.setMenuBar). Not owned by Window  E/// Frame manages lifetime. When non-null, the container is laid out
 /// below it (container.position.y = menu_bar.size.height).
 menu_bar: ?*Component,
+/// Top-level no-activate menu popup whose keys still arrive at this owner.
+active_menu_session: ?*Menu,
 /// Floating overlays (popups / drag ghost / tooltips). See `OverlayManager`.
 overlays: OverlayManager,
 /// Dirty-notify pointer used by overlays/menu_bar that share Window's
@@ -182,6 +184,7 @@ pub fn initWithFlags(
         .app = app_ptr,
         .event_queue = event_queue,
         .menu_bar = null,
+        .active_menu_session = null,
         .overlays = OverlayManager.init(allocator),
         .title = title_dup,
         .background = awt.Graphics.Color.rgb(0.94, 0.94, 0.94),
@@ -255,6 +258,7 @@ pub fn initHeadless(
         .app = app_ptr,
         .event_queue = event_queue,
         .menu_bar = null,
+        .active_menu_session = null,
         .overlays = OverlayManager.init(allocator),
         .title = title_dup,
         .background = awt.Graphics.Color.rgb(0.94, 0.94, 0.94),
@@ -689,6 +693,50 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
     Container.vtable.processEvent(&cont.component, ev);
 }
 
+pub fn beginMenuSession(self: *Window, menu: *Menu) void {
+    self.active_menu_session = menu;
+    self.onFocusLost(@ptrCast(self), menuSessionFocusLost);
+    if (self.menu_bar) |bar_c| {
+        if (bar_c.vtable == &MenuBar.vtable) {
+            const bar: *MenuBar = @fieldParentPtr("component", bar_c);
+            bar.open_menu = menu;
+        }
+    }
+}
+
+pub fn endMenuSession(self: *Window, menu: *Menu) void {
+    if (self.active_menu_session == menu) self.active_menu_session = null;
+    if (self.menu_bar) |bar_c| {
+        if (bar_c.vtable == &MenuBar.vtable) {
+            const bar: *MenuBar = @fieldParentPtr("component", bar_c);
+            bar.clearOpenMenu(menu);
+        }
+    }
+    if (self.focus_loss_ctx == @as(*anyopaque, @ptrCast(self))) {
+        self.focus_loss_ctx = null;
+        self.focus_loss_cb = null;
+    }
+}
+
+fn dismissMenuSession(self: *Window) void {
+    if (self.active_menu_session) |menu| menu.hide();
+}
+
+fn menuSessionFocusLost(ctx: *anyopaque) void {
+    const self: *Window = @ptrCast(@alignCast(ctx));
+    self.dismissMenuSession();
+}
+
+pub fn isMenuSessionKey(k: awt.Event.KeyEvent) bool {
+    if (k.action != .press and k.action != .repeat) return false;
+    return k.code == .arrow_down or
+        k.code == .arrow_up or
+        k.code == .arrow_left or
+        k.code == .arrow_right or
+        k.code == .enter or
+        (k.code == .escape and k.action == .press);
+}
+
 /// Dispatch an input event to this window's component tree, honoring
 /// mouse capture, overlays (popups), and the optional menu bar. Order:
 ///   1. mouse_capture (drag continuation)
@@ -785,6 +833,14 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
                 return;
             }
 
+            if (self.active_menu_session != null and m.action == .press) {
+                const over_bar = if (self.menu_bar) |bar| bar.containsWindowPoint(m.x, m.y) else false;
+                if (!over_bar) {
+                    self.dismissMenuSession();
+                    return;
+                }
+            }
+
             // 3. menu_bar (above container if no overlay handled the event).
             if (self.menu_bar) |bar| {
                 const over_bar = bar.containsWindowPoint(m.x, m.y);
@@ -847,6 +903,19 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
             // click  Edismiss everything (cancel), then move focus on; an
             // accelerator chord closes the popup and performs the action
             // (the user's intent is the action, not the menu).
+            if (self.active_menu_session) |menu| {
+                if (isMenuSessionKey(k)) {
+                    if (k.code == .escape and k.action == .press) {
+                        self.dismissMenuSession();
+                    } else {
+                        var menu_ev = Component.Event{ .payload = .{ .key = k } };
+                        menu.processSessionKey(&menu_ev);
+                    }
+                    ev.consume();
+                    return;
+                }
+            }
+
             if (self.overlays.topModalIndex()) |ti| {
                 const top = self.overlays.entries.items[ti];
                 top.component.vtable.processEvent(top.component, ev);
@@ -1505,6 +1574,7 @@ test "dispatchInput routes composition to focus owner" {
     var sink = Sink{ .component = Component.init(std.testing.allocator, &Sink.vtable) };
     var win: Window = undefined;
     win.input_blocked = false;
+    win.active_menu_session = null;
     win.focus_owner = &sink.component;
 
     var ev = awt.Event{ .payload = .{ .composition = .{
@@ -1618,6 +1688,7 @@ test "cursor shape resolves from dispatch hover capture dedup and modal overlays
     win.container = root;
     win.awt_window = null;
     win.menu_bar = null;
+    win.active_menu_session = null;
     win.overlays = OverlayManager.init(a);
     defer win.overlays.deinit();
     win.mouse_capture = null;
@@ -1676,4 +1747,21 @@ test "cursor shape resolves from dispatch hover capture dedup and modal overlays
     var move_overlay = awt.Event{ .payload = .{ .mouse = .{ .x = 5, .y = 5, .action = .move } } };
     win.dispatchInput(&move_overlay);
     try std.testing.expectEqual(awt.Window.CursorShape.arrow, win.current_cursor);
+}
+
+test "menu session key filter routes arrows enter and escape only" {
+    const Mods = awt.Event.Modifiers;
+    const none = Mods{};
+
+    try std.testing.expect(isMenuSessionKey(.{ .code = .arrow_down, .action = .press, .modifiers = none }));
+    try std.testing.expect(isMenuSessionKey(.{ .code = .arrow_up, .action = .repeat, .modifiers = none }));
+    try std.testing.expect(isMenuSessionKey(.{ .code = .arrow_left, .action = .press, .modifiers = none }));
+    try std.testing.expect(isMenuSessionKey(.{ .code = .arrow_right, .action = .repeat, .modifiers = none }));
+    try std.testing.expect(isMenuSessionKey(.{ .code = .enter, .action = .press, .modifiers = none }));
+    try std.testing.expect(isMenuSessionKey(.{ .code = .escape, .action = .press, .modifiers = none }));
+
+    try std.testing.expect(!isMenuSessionKey(.{ .code = .escape, .action = .repeat, .modifiers = none }));
+    try std.testing.expect(!isMenuSessionKey(.{ .code = .tab, .action = .press, .modifiers = none }));
+    try std.testing.expect(!isMenuSessionKey(.{ .code = .a, .action = .press, .modifiers = none }));
+    try std.testing.expect(!isMenuSessionKey(.{ .code = .enter, .action = .release, .modifiers = none }));
 }

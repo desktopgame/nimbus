@@ -8,9 +8,12 @@ const listener = @import("listener.zig");
 const ChangeEvent = listener.ChangeEvent;
 const ActionEvent = listener.ActionEvent;
 const Container = @import("Container.zig");
+const BorderLayout = @import("BorderLayout.zig");
 const ButtonModel = @import("ButtonModel.zig");
 const MenuItem = @import("MenuItem.zig");
 const Window = @import("Window.zig");
+const Application = @import("Application.zig");
+const PopupWindow = @import("PopupWindow.zig");
 const keybinding = @import("keybinding.zig");
 const log = @import("log.zig");
 const menu_paint = @import("menu_paint.zig");
@@ -40,6 +43,7 @@ mode: Mode,
 open: bool,
 open_child: ?*Menu,
 window: ?*Window,
+popup_window: ?*PopupWindow,
 /// Byte index into `text` of the mnemonic character (underline paint),
 /// or null. Matching uses `component.mnemonic` (Window's mnemonic scan).
 mnemonic_index: ?usize,
@@ -102,6 +106,7 @@ pub fn create(
         .open = false,
         .open_child = null,
         .window = null,
+        .popup_window = null,
         .mnemonic_index = null,
         .allocator = allocator,
     };
@@ -252,14 +257,20 @@ pub fn show(self: *Menu, w: *Window, anchor: Component.Point) !void {
     popup_w = @max(popup_w, 80);
     popup_h += 2; // border
 
-    // Clamp to window (v1: simple reposition).
-    const win_size = w.getSize();
-    const win_w: f32 = @floatFromInt(win_size.width);
-    const win_h: f32 = @floatFromInt(win_size.height);
+    const use_popup_window = self.mode == .bar and w.awt_window != null;
     var x = anchor.x;
     var y = anchor.y;
-    if (x + popup_w > win_w) x = @max(0, win_w - popup_w);
-    if (y + popup_h > win_h) y = @max(0, win_h - popup_h);
+    if (!use_popup_window) {
+        // Clamp legacy in-window overlays (submenus and headless tests remain slice C work).
+        const win_size = w.getSize();
+        const win_w: f32 = @floatFromInt(win_size.width);
+        const win_h: f32 = @floatFromInt(win_size.height);
+        if (x + popup_w > win_w) x = @max(0, win_w - popup_w);
+        if (y + popup_h > win_h) y = @max(0, win_h - popup_h);
+    } else {
+        x = 0;
+        y = 0;
+    }
 
     self.popup_root.position = .{ .x = x, .y = y };
     self.popup_root.size = .{ .width = popup_w, .height = popup_h };
@@ -277,8 +288,18 @@ pub fn show(self: *Menu, w: *Window, anchor: Component.Point) !void {
         cur_y += item.min_size.height;
     }
 
-    try w.overlays.add(&self.popup_root, @ptrCast(self), onOverlayDismiss);
-    self.open = true;
+    if (use_popup_window) {
+        const popup = try self.ensurePopupWindow(w);
+        try popup.showAtLocal(
+            .{ .x = anchor.x, .y = anchor.y, .width = 0, .height = 0 },
+            .{ .width = @intFromFloat(@ceil(popup_w)), .height = @intFromFloat(@ceil(popup_h)) },
+        );
+        self.open = true;
+        w.beginMenuSession(self);
+    } else {
+        try w.overlays.add(&self.popup_root, @ptrCast(self), onOverlayDismiss);
+        self.open = true;
+    }
 }
 
 pub fn hide(self: *Menu) void {
@@ -287,25 +308,68 @@ pub fn hide(self: *Menu) void {
         child.hide();
         self.open_child = null;
     }
-    if (self.window) |w| w.overlays.remove(@ptrCast(self));
-    self.open = false;
-    // Clear child parents so they don't dangle.
-    for (self.items.items) |item| item.parent = null;
+    if (self.popup_window) |popup| {
+        popup.dismiss();
+    } else {
+        if (self.window) |w| w.overlays.remove(@ptrCast(self));
+        self.finishDismiss();
+    }
 }
 
 fn onOverlayDismiss(user_data: *anyopaque) void {
     const self: *Menu = @ptrCast(@alignCast(user_data));
     // Don't call overlays.remove (dismissAll already popped us).
+    self.finishDismiss();
+}
+
+fn onPopupDismiss(user_data: *anyopaque) void {
+    const self: *Menu = @ptrCast(@alignCast(user_data));
+    self.finishDismiss();
+}
+
+fn finishDismiss(self: *Menu) void {
     if (self.open_child) |child| {
         child.hide();
         self.open_child = null;
     }
     self.open = false;
+    if (self.window) |w| w.endMenuSession(self);
     for (self.items.items) |item| item.parent = null;
 }
 
 fn onItemAction(self: *Menu, _: *const ActionEvent) void {
+    if (self.popup_window) |popup| {
+        if (popup.isShown()) {
+            popup.dismissFromSelection();
+            return;
+        }
+    }
     if (self.window) |w| w.overlays.dismissAll();
+}
+
+fn ensurePopupWindow(self: *Menu, owner: *Window) !*PopupWindow {
+    if (self.popup_window) |popup| return popup;
+    const app: *Application = @ptrCast(@alignCast(owner.app));
+    const popup = try app.popupWindowWithOptions(owner, "Menu", 1, 1, .{ .no_activate = true });
+    errdefer popup.destroy();
+    popup.onDismiss(@ptrCast(self), onPopupDismiss);
+    try BorderLayout.add(&popup.window.container, .center, &self.popup_root);
+    self.popup_window = popup;
+    return popup;
+}
+
+fn destroyPopupWindow(self: *Menu) void {
+    const popup = self.popup_window orelse return;
+    if (self.open) popup.dismiss();
+    popup.window.container.remove(&self.popup_root);
+    popup.destroy();
+    self.popup_window = null;
+}
+
+pub fn processSessionKey(self: *Menu, ev: *Component.Event) void {
+    var target = self;
+    while (target.open_child) |child| target = child;
+    target.popup_root.vtable.processEvent(&target.popup_root, ev);
 }
 
 fn modelOf(c: *Component) ?*ButtonModel {
@@ -530,6 +594,7 @@ fn processEvent(self: *Component, ev: *Component.Event) void {
 fn destroy(self: *Component, allocator: std.mem.Allocator) void {
     const menu: *Menu = @fieldParentPtr("component", self);
     if (menu.open) menu.hide();
+    menu.destroyPopupWindow();
     self.deinit();
     menu.popup_root.deinit();
     for (menu.items.items) |item| item.vtable.destroy(item, allocator);

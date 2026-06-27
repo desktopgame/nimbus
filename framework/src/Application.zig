@@ -658,9 +658,13 @@ pub fn dialog(self: *Application, owner: *Window, title: []const u8, w: u32, h: 
 }
 
 pub fn popupWindow(self: *Application, owner: *Window, title: []const u8, w: u32, h: u32) !*PopupWindow {
+    return self.popupWindowWithOptions(owner, title, w, h, .{});
+}
+
+pub fn popupWindowWithOptions(self: *Application, owner: *Window, title: []const u8, w: u32, h: u32, options: PopupWindow.Options) !*PopupWindow {
     const p = try self.allocator.create(PopupWindow);
     errdefer self.allocator.destroy(p);
-    p.* = try PopupWindow.init(self, owner, title, w, h, &self.device, &self.context);
+    p.* = try PopupWindow.initWithOptions(self, owner, title, w, h, &self.device, &self.context, options);
     errdefer p.deinit();
 
     try Window.vtable.install(&p.window.container.component);
