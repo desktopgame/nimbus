@@ -6,6 +6,8 @@
 
 #include "internal.h"
 
+typedef struct GLFWcursor GLFWcursor;
+
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -47,6 +49,7 @@ typedef struct nmWindowCallbacks {
      * tail-called for every message we do not handle. */
     WNDPROC                 prev_wndproc;
 #endif
+    GLFWcursor*             cursors[4];
 } nmWindowCallbacks;
 
 /* Native handle accessors (implemented in glfw_shim.c). */

@@ -75,6 +75,13 @@ typedef enum nmModifiers {
 /* Mirrors GLFW_KEY_* values. */
 typedef int nmKeyCode;
 
+typedef enum nmCursorShape {
+    nmCursorShapeArrow,
+    nmCursorShapeIBeam,
+    nmCursorShapeHResize,
+    nmCursorShapeVResize,
+} nmCursorShape;
+
 typedef void (*nmMouseButtonCallback)(nmWindow* window, nmMouseButton button, nmKeyAction action, int modifiers, void* user_data);
 typedef void (*nmCursorPosCallback)(nmWindow* window, double x, double y, void* user_data);
 typedef void (*nmScrollCallback)(nmWindow* window, double dx, double dy, void* user_data);
@@ -167,6 +174,8 @@ void nmRequestWindowAttention(nmWindow* self);
 /* Toggle always-on-top. Used to keep a modal dialog above its owner since
  * GLFW provides no OS-level window modality. */
 void nmSetWindowFloating(nmWindow* self, bool floating);
+
+void nmSetWindowCursor(nmWindow* self, nmCursorShape shape);
 
 /* Window position in logical screen units (points), top-left corner relative
  * to the virtual screen. Used e.g. to center a dialog over its owner. */

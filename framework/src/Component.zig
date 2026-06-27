@@ -143,6 +143,14 @@ pub const FocusQuery = struct {
     isEligible: *const fn (self: *const Component) bool,
 };
 
+pub const CursorShape = awt.Window.CursorShape;
+
+/// Opt-in position-dependent cursor shape. Coordinates are window-local; a
+/// widget that needs local coordinates derives them with `absoluteOriginInWindow`.
+pub const CursorQuery = struct {
+    at: *const fn (self: *const Component, x: f32, y: f32) ?CursorShape,
+};
+
 pub const VTable = struct {
     /// One-time setup after the component is placed in its container (or for
     /// the root, immediately after construction). May fail if it allocates
@@ -239,6 +247,8 @@ container: ?*Container,
 focusable: bool,
 /// Opt-in dynamic focus eligibility. See `FocusQuery`.
 focus_query: ?FocusQuery,
+/// Opt-in position-dependent cursor shape. See `CursorQuery`.
+cursor_query: ?CursorQuery,
 /// Lazily-created keystroke bindings (`bindKey`); null until first bind.
 /// Owned by this component, freed in `deinit`.
 key_bindings: ?*keybinding.KeyBindings,
@@ -280,6 +290,7 @@ pub fn init(allocator: std.mem.Allocator, vtable: *const VTable) Component {
         .container = null,
         .focusable = false,
         .focus_query = null,
+        .cursor_query = null,
         .key_bindings = null,
         .mnemonic = null,
         .theme = &Theme.default,

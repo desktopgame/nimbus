@@ -67,6 +67,7 @@ win_pos: awt.Window.Point,
 win_size: awt.Window.Size,
 cursor_x: f32,
 cursor_y: f32,
+current_cursor: awt.Window.CursorShape,
 paint_dirty: bool,
 layout_dirty: bool,
 /// True for headless windows (no `awt_window`/`swapchain`; renders offscreen,
@@ -174,6 +175,7 @@ pub fn init(
         .win_size = init_size,
         .cursor_x = 0,
         .cursor_y = 0,
+        .current_cursor = .arrow,
         .paint_dirty = true,
         .layout_dirty = true,
         .headless = false,
@@ -244,6 +246,7 @@ pub fn initHeadless(
         .win_size = .{ .width = iw, .height = ih },
         .cursor_x = 0,
         .cursor_y = 0,
+        .current_cursor = .arrow,
         .paint_dirty = true,
         .layout_dirty = true,
         .headless = true,
@@ -714,6 +717,7 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
             if (m.action == .move and self.mouse_capture != null) {
                 const cap = self.mouse_capture.?;
                 cap.vtable.processEvent(cap, ev);
+                self.updateCursorFromHover();
                 return;
             }
 
@@ -774,6 +778,7 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
             // 4. Container.
             const focus_before = self.focus_owner;
             self.container.component.vtable.processEvent(&self.container.component, ev);
+            if (m.action == .move) self.updateCursorFromHover();
             if (m.action == .press) {
                 if (ev.capture_target) |t| {
                     self.mouse_capture = @ptrCast(@alignCast(t));
@@ -964,6 +969,34 @@ fn findFocusableInSubtree(c: *Component, x: f32, y: f32) ?*Component {
     // Eligibility, not just the static flag: clicking a disabled widget must
     // not move focus onto it.
     return if (c.isFocusEligible()) c else null;
+}
+pub fn resolveCursorFromHover(root: *Component, capture: ?*Component, x: f32, y: f32) awt.Window.CursorShape {
+    if (capture) |cap| {
+        if (cap.cursor_query) |q| {
+            if (q.at(cap, x, y)) |shape| return shape;
+        }
+        return .arrow;
+    }
+
+    var node: *Component = root;
+    while (node.container) |cont| {
+        node = cont.last_hovered orelse break;
+    }
+
+    var cur: ?*Component = node;
+    while (cur) |comp| : (cur = comp.parent) {
+        if (comp.cursor_query) |q| {
+            if (q.at(comp, x, y)) |shape| return shape;
+        }
+    }
+    return .arrow;
+}
+
+fn updateCursorFromHover(self: *Window) void {
+    const shape = resolveCursorFromHover(&self.container.component, self.mouse_capture, self.cursor_x, self.cursor_y);
+    if (shape == self.current_cursor) return;
+    if (self.awt_window) |aw| aw.setCursor(shape);
+    self.current_cursor = shape;
 }
 
 // ── keystroke scan stages (accelerator / mnemonic) ──────────────────────
@@ -1440,4 +1473,98 @@ test "dispatchInput routes composition to focus owner" {
     try std.testing.expectEqualStrings("kana", sink.text);
     try std.testing.expectEqual(@as(usize, 1), sink.target_start);
     try std.testing.expectEqual(@as(usize, 3), sink.target_end);
+}
+
+test "cursor shape resolves from deepest hover split pane divider capture and dedups" {
+    const CursorLeaf = struct {
+        component: Component,
+
+        fn create(allocator: std.mem.Allocator) !*@This() {
+            const self = try allocator.create(@This());
+            self.* = .{ .component = Component.init(allocator, &@This().vtable) };
+            self.component.role = .text_area;
+            self.component.cursor_query = .{ .at = cursorAt };
+            self.component.setMinSize(.{ .width = 80, .height = 0 });
+            return self;
+        }
+
+        fn cursorAt(_: *const Component, _: f32, _: f32) ?Component.CursorShape {
+            return .ibeam;
+        }
+
+        fn install(_: *Component) !void {}
+        fn uninstall(_: *Component) void {}
+        fn processEvent(_: *Component, _: *Component.Event) void {}
+        fn destroy(c: *Component, allocator: std.mem.Allocator) void {
+            c.deinit();
+            const self: *@This() = @fieldParentPtr("component", c);
+            allocator.destroy(self);
+        }
+
+        const vtable = Component.VTable{
+            .install = @This().install,
+            .uninstall = @This().uninstall,
+            .processEvent = @This().processEvent,
+            .destroy = @This().destroy,
+        };
+    };
+
+    const a = std.testing.allocator;
+    var root = Container.init(a);
+    root.component.container = &root;
+    defer root.children.deinit(a);
+
+    const text = try CursorLeaf.create(a);
+    errdefer text.component.vtable.destroy(&text.component, a);
+    const plain = try @import("Panel.zig").create(a);
+    errdefer plain.container.component.vtable.destroy(&plain.container.component, a);
+    const sp = try @import("SplitPane.zig").create(a, .horizontal, &text.component, &plain.container.component);
+    defer sp.asComponent().vtable.destroy(sp.asComponent(), a);
+
+    try root.add(sp.asComponent());
+    root.component.setBounds(.{ .x = 0, .y = 0, .width = 400, .height = 100 });
+    sp.container.setBounds(.{ .x = 0, .y = 0, .width = 400, .height = 100 });
+    sp.container.doLayout();
+
+    var win: Window = undefined;
+    win.container = root;
+    win.awt_window = null;
+    win.mouse_capture = null;
+    win.current_cursor = .arrow;
+
+    var move_text = awt.Event{ .payload = .{ .mouse = .{ .x = 10, .y = 50, .action = .move } } };
+    root.component.vtable.processEvent(&root.component, &move_text);
+    win.cursor_x = 10;
+    win.cursor_y = 50;
+    win.updateCursorFromHover();
+    try std.testing.expectEqual(awt.Window.CursorShape.ibeam, win.current_cursor);
+
+    win.updateCursorFromHover();
+    try std.testing.expectEqual(awt.Window.CursorShape.ibeam, win.current_cursor);
+
+    var move_divider = awt.Event{ .payload = .{ .mouse = .{ .x = 82, .y = 50, .action = .move } } };
+    root.component.vtable.processEvent(&root.component, &move_divider);
+    win.cursor_x = 82;
+    win.cursor_y = 50;
+    win.updateCursorFromHover();
+    try std.testing.expectEqual(awt.Window.CursorShape.hresize, win.current_cursor);
+
+    var move_plain = awt.Event{ .payload = .{ .mouse = .{ .x = 100, .y = 50, .action = .move } } };
+    root.component.vtable.processEvent(&root.component, &move_plain);
+    win.cursor_x = 100;
+    win.cursor_y = 50;
+    win.updateCursorFromHover();
+    try std.testing.expectEqual(awt.Window.CursorShape.arrow, win.current_cursor);
+
+    var press = awt.Event{ .payload = .{ .mouse = .{ .x = 82, .y = 50, .action = .press, .button = .left } } };
+    sp.asComponent().vtable.processEvent(sp.asComponent(), &press);
+    try std.testing.expect(press.capture_target != null);
+    win.mouse_capture = @ptrCast(@alignCast(press.capture_target.?));
+
+    var drag_move = awt.Event{ .payload = .{ .mouse = .{ .x = 200, .y = 50, .action = .move } } };
+    win.mouse_capture.?.vtable.processEvent(win.mouse_capture.?, &drag_move);
+    win.cursor_x = 200;
+    win.cursor_y = 50;
+    win.updateCursorFromHover();
+    try std.testing.expectEqual(awt.Window.CursorShape.hresize, win.current_cursor);
 }

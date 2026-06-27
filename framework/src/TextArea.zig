@@ -98,6 +98,10 @@ const size_query = Component.SizeQuery{
     .minHeightForWidth = sizeQueryMinHeightForWidth,
 };
 
+const cursor_query = Component.CursorQuery{
+    .at = ibeamCursor,
+};
+
 pub fn create(
     allocator: std.mem.Allocator,
     app: *Application,
@@ -134,6 +138,7 @@ pub fn create(
     ta.ime.setOnCleared(ImeSession.ClearedHook.typed(TextArea, imeCleared, ta));
     ta.component.role = .text_area;
     ta.component.a11y = .{ .name = a11yName };
+    ta.component.cursor_query = cursor_query;
     ta.component.ui = .{ .vtable = &look_vtable, .ctx = &Component.default_look_context };
     ta.refreshMinSize();
     try TextArea.vtable.install(&ta.component);
@@ -312,6 +317,10 @@ fn sizeQueryMinHeightForWidth(self: *const Component, w: f32) f32 {
     const inner_w = @max(0, w - PADDING_X * 2);
     const r = ta.reflowAt(inner_w);
     return r.min_h;
+}
+
+fn ibeamCursor(_: *const Component, _: f32, _: f32) ?Component.CursorShape {
+    return .ibeam;
 }
 
 fn blinkTick(user_data: *anyopaque) void {

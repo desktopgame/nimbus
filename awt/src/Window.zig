@@ -125,6 +125,18 @@ pub fn setFloating(self: Window, floating: bool) void {
     c.nmSetWindowFloating(self.handle, floating);
 }
 
+pub const CursorShape = enum { arrow, ibeam, hresize, vresize };
+
+pub fn setCursor(self: Window, shape: CursorShape) void {
+    const c_shape: c.nmCursorShape = switch (shape) {
+        .arrow => c.nmCursorShapeArrow,
+        .ibeam => c.nmCursorShapeIBeam,
+        .hresize => c.nmCursorShapeHResize,
+        .vresize => c.nmCursorShapeVResize,
+    };
+    c.nmSetWindowCursor(self.handle, c_shape);
+}
+
 /// Logical window size in points — what was requested at `init`. On HiDPI
 /// displays this is smaller than `framebufferSize`; user-facing drawing
 /// coordinates should be in these units. Derived from framebuffer / scale

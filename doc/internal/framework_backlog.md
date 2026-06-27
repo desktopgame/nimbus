@@ -1185,7 +1185,7 @@ Command + UndoStack が framework から export され、bounded と可否変更
 text#5 がこのスタックを消費して undo/redo を実装できる（最初の consumer で実証）。doc + テスト。
 
 ## #32 カーソル形状の機構（per-component cursor ＋ hit-test ＋ glfwSetCursor 配線）
-- 状態: 未着手
+- 状態: 着手済み（feat/cursor-shape・cursor_shape.md 参照）
 - 優先度: 中
 - 影響範囲: framework（Component の cursor プロパティ、Window の mouse-move hit-test）、awt（Window へのカーソル設定 API）、awt-c（glfwSetCursor / glfwCreateStandardCursor の薄いラッパー）
 - 更新日: 2026-06-27

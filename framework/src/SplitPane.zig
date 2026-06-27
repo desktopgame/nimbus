@@ -104,6 +104,7 @@ pub fn create(
     sp.container.component.vtable = &vtable;
     sp.container.component.ui = .{ .vtable = &look_vtable, .ctx = &Component.default_look_context };
     sp.container.component.role = .split_pane;
+    sp.container.component.cursor_query = .{ .at = dividerCursor };
     sp.container.component.container = &sp.container;
     sp.container.layout = &sp.layout.base;
 
@@ -181,6 +182,20 @@ fn dividerStart(self: *const SplitPane) f32 {
 fn overDivider(self: *const SplitPane, main: f32) bool {
     const start = self.dividerStart();
     return main >= start and main < start + self.divider_size;
+}
+
+fn dividerCursor(self: *const Component, x: f32, y: f32) ?Component.CursorShape {
+    const sp = fromComponent(@constCast(self));
+    const origin = self.absoluteOriginInWindow();
+    const main: f32 = switch (sp.orientation) {
+        .horizontal => x - origin.x,
+        .vertical => y - origin.y,
+    };
+    if (sp.drag == null and !sp.overDivider(main)) return null;
+    return switch (sp.orientation) {
+        .horizontal => .hresize,
+        .vertical => .vresize,
+    };
 }
 
 /// Clamp a divider location to [first's min, avail - second's min]. When the

@@ -183,6 +183,11 @@ void nmDestroyWindow(nmWindow* self) {
     if (!self) return;
     GLFWwindow* gw = (GLFWwindow*)self;
     nmWindowCallbacks* cb = (nmWindowCallbacks*)glfwGetWindowUserPointer(gw);
+    if (cb) {
+        for (int i = 0; i < 4; i++) {
+            if (cb->cursors[i]) glfwDestroyCursor(cb->cursors[i]);
+        }
+    }
     glfwSetWindowUserPointer(gw, NULL);
     glfwDestroyWindow(gw);
     free(cb);
@@ -238,6 +243,39 @@ void nmRequestWindowAttention(nmWindow* self) {
 
 void nmSetWindowFloating(nmWindow* self, bool floating) {
     glfwSetWindowAttrib((GLFWwindow*)self, GLFW_FLOATING, floating ? GLFW_TRUE : GLFW_FALSE);
+}
+
+void nmSetWindowCursor(nmWindow* self, nmCursorShape shape) {
+    if (!self) return;
+    GLFWwindow* gw = (GLFWwindow*)self;
+    if (shape == nmCursorShapeArrow) {
+        glfwSetCursor(gw, NULL);
+        return;
+    }
+
+    nmWindowCallbacks* cb = (nmWindowCallbacks*)glfwGetWindowUserPointer(gw);
+    if (!cb) return;
+    if (shape < nmCursorShapeArrow || shape > nmCursorShapeVResize) return;
+
+    if (!cb->cursors[shape]) {
+        int glfw_shape = GLFW_ARROW_CURSOR;
+        switch (shape) {
+            case nmCursorShapeIBeam:
+                glfw_shape = GLFW_IBEAM_CURSOR;
+                break;
+            case nmCursorShapeHResize:
+                glfw_shape = GLFW_HRESIZE_CURSOR;
+                break;
+            case nmCursorShapeVResize:
+                glfw_shape = GLFW_VRESIZE_CURSOR;
+                break;
+            case nmCursorShapeArrow:
+            default:
+                break;
+        }
+        cb->cursors[shape] = glfwCreateStandardCursor(glfw_shape);
+    }
+    glfwSetCursor(gw, cb->cursors[shape]);
 }
 
 void nmGetWindowPos(nmWindow* self, int* x, int* y) {

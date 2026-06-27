@@ -87,6 +87,10 @@ pub const look_vtable = Component.LookVTable{
     .measureMinSize = lookMeasureMinSize,
 };
 
+const cursor_query = Component.CursorQuery{
+    .at = ibeamCursor,
+};
+
 pub fn create(
     allocator: std.mem.Allocator,
     app: *Application,
@@ -124,6 +128,7 @@ pub fn create(
     tf.ime.setOnCleared(ImeSession.ClearedHook.typed(TextField, imeCleared, tf));
     tf.component.role = .text_field;
     tf.component.a11y = .{ .name = a11yName };
+    tf.component.cursor_query = cursor_query;
     tf.component.ui = .{ .vtable = &look_vtable, .ctx = &Component.default_look_context };
     tf.applyMetrics();
     try TextField.vtable.install(&tf.component);
@@ -229,6 +234,10 @@ fn a11yName(c: *const Component) ?[]const u8 {
 }
 
 // ── vtable impl ──────────────────────────────────────────────────────────
+
+fn ibeamCursor(_: *const Component, _: f32, _: f32) ?Component.CursorShape {
+    return .ibeam;
+}
 
 fn install(self: *Component) !void {
     self.setFocusable(true);
