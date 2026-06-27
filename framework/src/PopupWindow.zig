@@ -124,9 +124,9 @@ pub fn dismissFromEscape(self: *PopupWindow) void {
 
 pub fn dismiss(self: *PopupWindow) void {
     if (!self.shown) return;
+    self.shown = false;
     self.window.awt_window.?.setVisible(false);
     self.app.unregisterWindow(&self.window);
-    self.shown = false;
     if (self.dismiss_cb) |cb| cb(self.dismiss_ctx.?);
     awt.postEmptyEvent();
 }
