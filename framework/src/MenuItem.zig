@@ -11,9 +11,10 @@ const menu_paint = @import("menu_paint.zig");
 const MenuItem = @This();
 
 pub const ICON_SLOT_WIDTH: f32 = 24;
-pub const ACCEL_SLOT_WIDTH: f32 = 0; // v1: not rendered
 pub const PADDING_X: f32 = 8;
 pub const PADDING_Y: f32 = 6;
+const ACCEL_GAP: f32 = 32;
+const ACCEL_BUF_LEN: usize = 32;
 
 component: Component,
 text: []const u8,
@@ -113,9 +114,24 @@ fn lookMeasureMinSize(self: *Component, _: *anyopaque) Component.Size {
     const item: *MenuItem = @fieldParentPtr("component", self);
     const m = item.font.measureString(item.text);
     return .{
-        .width = ICON_SLOT_WIDTH + m.width + ACCEL_SLOT_WIDTH + PADDING_X * 2,
+        .width = measureRowWidth(m.width, acceleratorTermWidth(item.font, item.accelerator)),
         .height = m.height + PADDING_Y * 2,
     };
+}
+
+fn acceleratorTermWidth(font: awt.Graphics.TextFont, stroke: ?keybinding.KeyStroke) f32 {
+    var buf: [ACCEL_BUF_LEN]u8 = undefined;
+    const label = keybinding.formatAccelerator(stroke, &buf);
+    if (label.len == 0) return 0;
+    return acceleratorTermWidthFromLabelWidth(font.measureString(label).width);
+}
+
+fn acceleratorTermWidthFromLabelWidth(label_width: f32) f32 {
+    return if (label_width == 0) 0 else ACCEL_GAP + label_width;
+}
+
+fn measureRowWidth(label_width: f32, accelerator_term_width: f32) f32 {
+    return ICON_SLOT_WIDTH + label_width + accelerator_term_width + PADDING_X * 2;
 }
 
 pub fn getText(self: MenuItem) []const u8 {
@@ -155,6 +171,8 @@ pub fn doClick(self: *MenuItem) void {
 /// so call order vs. menu attachment does not matter.
 pub fn setAccelerator(self: *MenuItem, stroke: ?keybinding.KeyStroke) void {
     self.accelerator = stroke;
+    self.applyMetrics();
+    self.component.repaint();
 }
 
 /// Menu-local mnemonic: while the parent menu is open, the plain letter
@@ -232,6 +250,13 @@ fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
     g.drawString(item.text, tx, ty);
 
     menu_paint.drawMnemonicUnderline(g, item.font, item.text, item.mnemonic_index, tx, ty, m.height);
+
+    var accel_buf: [ACCEL_BUF_LEN]u8 = undefined;
+    const accel = keybinding.formatAccelerator(item.accelerator, &accel_buf);
+    if (accel.len != 0) {
+        const accel_w = item.font.measureString(accel).width;
+        g.drawString(accel, sz.width - PADDING_X - accel_w, ty);
+    }
 }
 
 fn lookPaintOver(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
@@ -289,4 +314,14 @@ fn destroy(self: *Component, allocator: std.mem.Allocator) void {
         allocator.destroy(item.model);
     }
     allocator.destroy(item);
+}
+
+test "menu item accelerator width contributes to measured row width" {
+    const label_width: f32 = 48;
+    const no_accel = measureRowWidth(label_width, acceleratorTermWidthFromLabelWidth(0));
+    const with_accel = measureRowWidth(label_width, acceleratorTermWidthFromLabelWidth(72));
+
+    try std.testing.expectEqual(ICON_SLOT_WIDTH + label_width + PADDING_X * 2, no_accel);
+    try std.testing.expectEqual(no_accel + ACCEL_GAP + 72, with_accel);
+    try std.testing.expect(with_accel > no_accel);
 }

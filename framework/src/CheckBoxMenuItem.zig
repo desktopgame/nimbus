@@ -99,7 +99,7 @@ fn lookMeasureMinSize(self: *Component, _: *anyopaque) Component.Size {
     const item: *CheckBoxMenuItem = @fieldParentPtr("component", self);
     const m = item.font.measureString(item.text);
     return .{
-        .width = MenuItem.ICON_SLOT_WIDTH + m.width + MenuItem.ACCEL_SLOT_WIDTH + MenuItem.PADDING_X * 2,
+        .width = MenuItem.ICON_SLOT_WIDTH + m.width + MenuItem.PADDING_X * 2,
         .height = m.height + MenuItem.PADDING_Y * 2,
     };
 }

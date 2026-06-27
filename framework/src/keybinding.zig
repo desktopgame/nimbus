@@ -91,6 +91,106 @@ pub fn letterOf(code: awt.Event.KeyCode) ?u8 {
     return null;
 }
 
+/// Human-readable key label for Windows-style accelerator display.
+pub fn keyLabel(code: awt.Event.KeyCode) ?[]const u8 {
+    return switch (code) {
+        .a => "A",
+        .b => "B",
+        .c => "C",
+        .d => "D",
+        .e => "E",
+        .f => "F",
+        .g => "G",
+        .h => "H",
+        .i => "I",
+        .j => "J",
+        .k => "K",
+        .l => "L",
+        .m => "M",
+        .n => "N",
+        .o => "O",
+        .p => "P",
+        .q => "Q",
+        .r => "R",
+        .s => "S",
+        .t => "T",
+        .u => "U",
+        .v => "V",
+        .w => "W",
+        .x => "X",
+        .y => "Y",
+        .z => "Z",
+        .digit_0 => "0",
+        .digit_1 => "1",
+        .digit_2 => "2",
+        .digit_3 => "3",
+        .digit_4 => "4",
+        .digit_5 => "5",
+        .digit_6 => "6",
+        .digit_7 => "7",
+        .digit_8 => "8",
+        .digit_9 => "9",
+        .f1 => "F1",
+        .f2 => "F2",
+        .f3 => "F3",
+        .f4 => "F4",
+        .f5 => "F5",
+        .f6 => "F6",
+        .f7 => "F7",
+        .f8 => "F8",
+        .f9 => "F9",
+        .f10 => "F10",
+        .f11 => "F11",
+        .f12 => "F12",
+        .enter => "Enter",
+        .tab => "Tab",
+        .delete => "Delete",
+        .insert => "Insert",
+        .backspace => "Backspace",
+        .escape => "Esc",
+        .space => "Space",
+        .arrow_left => "Left",
+        .arrow_right => "Right",
+        .arrow_up => "Up",
+        .arrow_down => "Down",
+        .home => "Home",
+        .end => "End",
+        .page_up => "PageUp",
+        .page_down => "PageDown",
+        else => null,
+    };
+}
+
+/// Format `stroke` as a Windows-style accelerator label into `buf`.
+/// Modifier order is fixed Ctrl -> Shift -> Alt. `command` intentionally
+/// renders as "Ctrl" on every platform; macOS Cmd glyph display is deferred.
+/// Null or unsupported keys render as the empty string.
+pub fn formatAccelerator(stroke: ?KeyStroke, buf: []u8) []const u8 {
+    const s = stroke orelse return "";
+    const key = keyLabel(s.code) orelse return "";
+
+    var len: usize = 0;
+    if (s.mods.command and !appendPart(buf, &len, "Ctrl")) return "";
+    if (s.mods.shift) {
+        if (len != 0 and !appendPart(buf, &len, "+")) return "";
+        if (!appendPart(buf, &len, "Shift")) return "";
+    }
+    if (s.mods.alt) {
+        if (len != 0 and !appendPart(buf, &len, "+")) return "";
+        if (!appendPart(buf, &len, "Alt")) return "";
+    }
+    if (len != 0 and !appendPart(buf, &len, "+")) return "";
+    if (!appendPart(buf, &len, key)) return "";
+    return buf[0..len];
+}
+
+fn appendPart(buf: []u8, len: *usize, part: []const u8) bool {
+    if (len.* + part.len > buf.len) return false;
+    @memcpy(buf[len.* .. len.* + part.len], part);
+    len.* += part.len;
+    return true;
+}
+
 /// Mutable stroke -> handler map (opt-in per Component). ArrayList rather
 /// than a HashMap: a component carries a handful of bindings, linear scan
 /// wins, and `KeyStroke` needs no hash implementation.
@@ -194,4 +294,15 @@ test "bind / lookup / unbind / rebind" {
 
     kb.unbind(KeyStroke.cmd(.s));
     try std.testing.expect(kb.lookup(.s, native_command) == null);
+}
+
+test "formatAccelerator renders Windows-style labels without allocation" {
+    var buf: [32]u8 = undefined;
+
+    try std.testing.expectEqualStrings("Ctrl+O", formatAccelerator(KeyStroke.cmd(.o), &buf));
+    try std.testing.expectEqualStrings("Ctrl+Shift+S", formatAccelerator(KeyStroke.cmdShift(.s), &buf));
+    try std.testing.expectEqualStrings("F5", formatAccelerator(KeyStroke.of(.f5), &buf));
+    try std.testing.expectEqualStrings("Alt+F4", formatAccelerator(KeyStroke.alt(.f4), &buf));
+    try std.testing.expectEqualStrings("", formatAccelerator(null, &buf));
+    try std.testing.expectEqualStrings("", formatAccelerator(KeyStroke.of(.unknown), &buf));
 }

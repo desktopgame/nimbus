@@ -170,6 +170,10 @@ test "snapshot: popup_menu_open" {
     try runScene(scenes.popup_menu_open);
 }
 
+test "snapshot: popup_menu_accelerators_open" {
+    try runScene(scenes.popup_menu_accelerators_open);
+}
+
 test "snapshot: tabbed_pane" {
     try runScene(scenes.tabbed_pane);
 }

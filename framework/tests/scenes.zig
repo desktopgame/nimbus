@@ -1171,6 +1171,50 @@ fn paintPopupMenuOpen(ctx: PaintContext) anyerror!void {
     popup.popup_root.paintAt(ctx.g);
 }
 
+pub const popup_menu_accelerators_open = Scene{
+    .name = "popup_menu_accelerators_open",
+    .width = 260,
+    .height = 130,
+    .paint = paintPopupMenuAcceleratorsOpen,
+};
+
+fn paintPopupMenuAcceleratorsOpen(ctx: PaintContext) anyerror!void {
+    const font = nimbus.awt.Graphics.TextFont{ .face = ctx.font, .pixel_size = 14 };
+    const color = awt.Graphics.Color.rgb(0.08, 0.10, 0.12);
+    const popup = try nimbus.PopupMenu.create(ctx.allocator);
+    defer popup.destroy();
+
+    const open = try nimbus.MenuItem.create(ctx.allocator, "Open", font, color);
+    open.setAccelerator(nimbus.KeyStroke.cmd(.o));
+    try popup.add(&open.component);
+
+    const save_as = try nimbus.MenuItem.create(ctx.allocator, "Save As", font, color);
+    save_as.setMnemonicAt('A', 5);
+    save_as.setAccelerator(nimbus.KeyStroke.cmdShift(.s));
+    try popup.add(&save_as.component);
+
+    const close = try nimbus.MenuItem.create(ctx.allocator, "Close", font, color);
+    try popup.add(&close.component);
+
+    var popup_w: f32 = 0;
+    var popup_h: f32 = 2;
+    for (popup.items.items) |item| {
+        popup_w = @max(popup_w, item.min_size.width);
+        popup_h += item.min_size.height;
+    }
+    popup_w = @max(popup_w, 80);
+
+    popup.popup_root.position = .{ .x = 24, .y = 22 };
+    popup.popup_root.size = .{ .width = popup_w, .height = popup_h };
+    var cur_y: f32 = 1;
+    for (popup.items.items) |item| {
+        item.parent = &popup.popup_root;
+        item.setBounds(.{ .x = 0, .y = cur_y, .width = popup_w, .height = item.min_size.height });
+        cur_y += item.min_size.height;
+    }
+    popup.popup_root.paintAt(ctx.g);
+}
+
 // ── TabbedPane scene ───────────────────────────────────────────────────────
 
 /// TabbedPane with three tabs and the middle tab selected. The colored pages
