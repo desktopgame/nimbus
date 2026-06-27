@@ -717,7 +717,7 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
             if (m.action == .move and self.mouse_capture != null) {
                 const cap = self.mouse_capture.?;
                 cap.vtable.processEvent(cap, ev);
-                self.updateCursorFromHover();
+                _ = self.updateCursorFromHover();
                 return;
             }
 
@@ -750,10 +750,12 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
                     }
                     // Hover/scroll outside overlay is also swallowed while
                     // popup is open (typical menu modal feel).
+                    if (m.action == .move) _ = self.updateCursorTo(.arrow);
                     return;
                 }
                 // If consumed, we're done. Otherwise still don't bubble below
                 // overlays  Eoverlays are modal.
+                if (m.action == .move) _ = self.updateCursorTo(.arrow);
                 return;
             }
 
@@ -778,7 +780,7 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
             // 4. Container.
             const focus_before = self.focus_owner;
             self.container.component.vtable.processEvent(&self.container.component, ev);
-            if (m.action == .move) self.updateCursorFromHover();
+            if (m.action == .move) _ = self.updateCursorFromHover();
             if (m.action == .press) {
                 if (ev.capture_target) |t| {
                     self.mouse_capture = @ptrCast(@alignCast(t));
@@ -992,11 +994,16 @@ pub fn resolveCursorFromHover(root: *Component, capture: ?*Component, x: f32, y:
     return .arrow;
 }
 
-fn updateCursorFromHover(self: *Window) void {
+fn updateCursorFromHover(self: *Window) bool {
     const shape = resolveCursorFromHover(&self.container.component, self.mouse_capture, self.cursor_x, self.cursor_y);
-    if (shape == self.current_cursor) return;
+    return self.updateCursorTo(shape);
+}
+
+fn updateCursorTo(self: *Window, shape: awt.Window.CursorShape) bool {
+    if (shape == self.current_cursor) return false;
     if (self.awt_window) |aw| aw.setCursor(shape);
     self.current_cursor = shape;
+    return true;
 }
 
 // ── keystroke scan stages (accelerator / mnemonic) ──────────────────────
@@ -1475,7 +1482,7 @@ test "dispatchInput routes composition to focus owner" {
     try std.testing.expectEqual(@as(usize, 3), sink.target_end);
 }
 
-test "cursor shape resolves from deepest hover split pane divider capture and dedups" {
+test "cursor shape resolves from dispatch hover capture dedup and modal overlays" {
     const CursorLeaf = struct {
         component: Component,
 
@@ -1509,16 +1516,59 @@ test "cursor shape resolves from deepest hover split pane divider capture and de
         };
     };
 
+    const CaptureCursor = struct {
+        component: Component,
+
+        fn cursorAt(_: *const Component, _: f32, _: f32) ?Component.CursorShape {
+            return .hresize;
+        }
+
+        fn install(_: *Component) !void {}
+        fn uninstall(_: *Component) void {}
+        fn processEvent(_: *Component, _: *Component.Event) void {}
+        fn destroy(_: *Component, _: std.mem.Allocator) void {}
+
+        const vtable = Component.VTable{
+            .install = @This().install,
+            .uninstall = @This().uninstall,
+            .processEvent = @This().processEvent,
+            .destroy = @This().destroy,
+        };
+    };
+
+    const Overlay = struct {
+        component: Component,
+
+        fn init(allocator: std.mem.Allocator) @This() {
+            return .{ .component = Component.init(allocator, &@This().vtable) };
+        }
+
+        fn install(_: *Component) !void {}
+        fn uninstall(_: *Component) void {}
+        fn processEvent(_: *Component, _: *Component.Event) void {}
+        fn destroy(_: *Component, _: std.mem.Allocator) void {}
+        fn dismiss(_: *anyopaque) void {}
+
+        const vtable = Component.VTable{
+            .install = @This().install,
+            .uninstall = @This().uninstall,
+            .processEvent = @This().processEvent,
+            .destroy = @This().destroy,
+        };
+    };
+
     const a = std.testing.allocator;
     var root = Container.init(a);
     root.component.container = &root;
     defer root.children.deinit(a);
 
     const text = try CursorLeaf.create(a);
-    errdefer text.component.vtable.destroy(&text.component, a);
+    var children_owned = false;
+    errdefer if (!children_owned) text.component.vtable.destroy(&text.component, a);
     const plain = try @import("Panel.zig").create(a);
-    errdefer plain.container.component.vtable.destroy(&plain.container.component, a);
+    errdefer if (!children_owned) plain.container.component.vtable.destroy(&plain.container.component, a);
     const sp = try @import("SplitPane.zig").create(a, .horizontal, &text.component, &plain.container.component);
+    children_owned = true;
     defer sp.asComponent().vtable.destroy(sp.asComponent(), a);
 
     try root.add(sp.asComponent());
@@ -1529,42 +1579,63 @@ test "cursor shape resolves from deepest hover split pane divider capture and de
     var win: Window = undefined;
     win.container = root;
     win.awt_window = null;
+    win.menu_bar = null;
+    win.overlays = OverlayManager.init(a);
+    defer win.overlays.deinit();
     win.mouse_capture = null;
+    win.focus_owner = null;
     win.current_cursor = .arrow;
+    win.input_blocked = false;
+    win.dragging = false;
+    win.drag_armed = null;
 
-    var move_text = awt.Event{ .payload = .{ .mouse = .{ .x = 10, .y = 50, .action = .move } } };
-    root.component.vtable.processEvent(&root.component, &move_text);
     win.cursor_x = 10;
     win.cursor_y = 50;
-    win.updateCursorFromHover();
+    var move_text = awt.Event{ .payload = .{ .mouse = .{ .x = 10, .y = 50, .action = .move } } };
+    win.dispatchInput(&move_text);
     try std.testing.expectEqual(awt.Window.CursorShape.ibeam, win.current_cursor);
 
-    win.updateCursorFromHover();
-    try std.testing.expectEqual(awt.Window.CursorShape.ibeam, win.current_cursor);
+    try std.testing.expect(!win.updateCursorFromHover());
 
-    var move_divider = awt.Event{ .payload = .{ .mouse = .{ .x = 82, .y = 50, .action = .move } } };
-    root.component.vtable.processEvent(&root.component, &move_divider);
     win.cursor_x = 82;
     win.cursor_y = 50;
-    win.updateCursorFromHover();
+    var move_divider = awt.Event{ .payload = .{ .mouse = .{ .x = 82, .y = 50, .action = .move } } };
+    root.component.vtable.processEvent(&root.component, &move_divider);
+    try std.testing.expect(win.updateCursorFromHover());
     try std.testing.expectEqual(awt.Window.CursorShape.hresize, win.current_cursor);
+    try std.testing.expect(!win.updateCursorFromHover());
 
-    var move_plain = awt.Event{ .payload = .{ .mouse = .{ .x = 100, .y = 50, .action = .move } } };
-    root.component.vtable.processEvent(&root.component, &move_plain);
     win.cursor_x = 100;
     win.cursor_y = 50;
-    win.updateCursorFromHover();
+    var move_plain = awt.Event{ .payload = .{ .mouse = .{ .x = 100, .y = 50, .action = .move } } };
+    root.component.vtable.processEvent(&root.component, &move_plain);
+    try std.testing.expect(win.updateCursorFromHover());
     try std.testing.expectEqual(awt.Window.CursorShape.arrow, win.current_cursor);
 
-    var press = awt.Event{ .payload = .{ .mouse = .{ .x = 82, .y = 50, .action = .press, .button = .left } } };
-    sp.asComponent().vtable.processEvent(sp.asComponent(), &press);
-    try std.testing.expect(press.capture_target != null);
-    win.mouse_capture = @ptrCast(@alignCast(press.capture_target.?));
-
-    var drag_move = awt.Event{ .payload = .{ .mouse = .{ .x = 200, .y = 50, .action = .move } } };
-    win.mouse_capture.?.vtable.processEvent(win.mouse_capture.?, &drag_move);
-    win.cursor_x = 200;
-    win.cursor_y = 50;
-    win.updateCursorFromHover();
+    var capture = CaptureCursor{ .component = Component.init(a, &CaptureCursor.vtable) };
+    capture.component.cursor_query = .{ .at = CaptureCursor.cursorAt };
+    defer capture.component.deinit();
+    win.cursor_x = 1000;
+    win.cursor_y = -20;
+    win.mouse_capture = &capture.component;
+    try std.testing.expect(win.updateCursorFromHover());
     try std.testing.expectEqual(awt.Window.CursorShape.hresize, win.current_cursor);
+    win.mouse_capture = null;
+    try std.testing.expect(win.updateCursorFromHover());
+    try std.testing.expectEqual(awt.Window.CursorShape.arrow, win.current_cursor);
+
+    var overlay = Overlay.init(a);
+    defer overlay.component.deinit();
+    overlay.component.setBounds(.{ .x = 0, .y = 0, .width = 40, .height = 40 });
+    try win.overlays.entries.append(a, .{
+        .component = &overlay.component,
+        .owner = @ptrCast(&overlay.component),
+        .on_dismiss = Overlay.dismiss,
+    });
+    win.current_cursor = .ibeam;
+    win.cursor_x = 5;
+    win.cursor_y = 5;
+    var move_overlay = awt.Event{ .payload = .{ .mouse = .{ .x = 5, .y = 5, .action = .move } } };
+    win.dispatchInput(&move_overlay);
+    try std.testing.expectEqual(awt.Window.CursorShape.arrow, win.current_cursor);
 }
