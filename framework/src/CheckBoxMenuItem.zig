@@ -152,13 +152,24 @@ pub fn setMnemonicAt(self: *CheckBoxMenuItem, ch: u8, index: usize) void {
 }
 
 test "menu item mnemonics support explicit and automatic underline indexes" {
-    const Application = @import("Application.zig");
-    const app = Application.initHeadless(std.testing.allocator, std.testing.io) catch
-        return error.SkipZigTest;
-    defer app.deinit();
+    const a = std.testing.allocator;
 
-    const item = try app.menuItem("Save As");
-    defer item.component.vtable.destroy(&item.component, std.testing.allocator);
+    var item_model = @import("ButtonModel.zig").init(a);
+    defer item_model.deinit();
+    var item = MenuItem{
+        .component = Component.init(a, &MenuItem.vtable),
+        .text = "Save As",
+        .icon = null,
+        .font = undefined,
+        .color = undefined,
+        .model = &item_model,
+        .owns_model = false,
+        .accelerator = null,
+        .mnemonic_index = null,
+        .allocator = a,
+    };
+    defer item.component.deinit();
+
     item.setMnemonicAt('A', 5);
     try std.testing.expectEqual('a', item.component.mnemonic.?);
     try std.testing.expectEqual(@as(usize, 5), item.mnemonic_index.?);
@@ -166,8 +177,20 @@ test "menu item mnemonics support explicit and automatic underline indexes" {
     try std.testing.expectEqual('a', item.component.mnemonic.?);
     try std.testing.expectEqual(@as(usize, 1), item.mnemonic_index.?);
 
-    const check = try app.checkBoxMenuItem("Wrap Word");
-    defer check.component.vtable.destroy(&check.component, std.testing.allocator);
+    var check_model = ToggleButtonModel.init(a);
+    defer check_model.deinit();
+    var check = CheckBoxMenuItem{
+        .component = Component.init(a, &CheckBoxMenuItem.vtable),
+        .text = "Wrap Word",
+        .font = undefined,
+        .color = undefined,
+        .model = &check_model,
+        .owns_model = false,
+        .mnemonic_index = null,
+        .allocator = a,
+    };
+    defer check.component.deinit();
+
     check.setMnemonic('w');
     try std.testing.expectEqual('w', check.component.mnemonic.?);
     try std.testing.expectEqual(@as(usize, 0), check.mnemonic_index.?);
