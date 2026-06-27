@@ -563,27 +563,42 @@ fn onUnsavedCancel(dialog: *nimbus.Dialog, _: *const ActionEvent) void {
 
 fn buildMenus(app: *nimbus.Application, editor: *Editor, menu_bar: *nimbus.MenuBar) !void {
     const file = try app.menu("File");
+    file.setMnemonic('F');
     try editor.new_action.bindMenuItem(app, file);
+    editor.new_action.item.?.setMnemonic('N');
     try editor.open_action.bindMenuItem(app, file);
+    editor.open_action.item.?.setMnemonic('O');
     try editor.save_action.bindMenuItem(app, file);
+    editor.save_action.item.?.setMnemonic('S');
     try editor.save_as_action.bindMenuItem(app, file);
+    editor.save_as_action.item.?.setMnemonic('A');
     try file.addSeparator();
     try editor.exit_action.bindMenuItem(app, file);
+    editor.exit_action.item.?.setMnemonic('X');
     try menu_bar.add(file);
 
     const edit = try app.menu("Edit");
+    edit.setMnemonic('E');
     try editor.undo_action.bindMenuItem(app, edit);
+    editor.undo_action.item.?.setMnemonic('U');
     try editor.redo_action.bindMenuItem(app, edit);
+    editor.redo_action.item.?.setMnemonic('R');
     try edit.addSeparator();
     try editor.cut_action.bindMenuItem(app, edit);
+    editor.cut_action.item.?.setMnemonic('t');
     try editor.copy_action.bindMenuItem(app, edit);
+    editor.copy_action.item.?.setMnemonic('C');
     try editor.paste_action.bindMenuItem(app, edit);
+    editor.paste_action.item.?.setMnemonic('P');
     try edit.addSeparator();
     try editor.select_all_action.bindMenuItem(app, edit);
+    editor.select_all_action.item.?.setMnemonic('A');
     try menu_bar.add(edit);
 
     const view = try app.menu("View");
+    view.setMnemonic('V');
     try editor.word_wrap_action.bindCheckBoxMenuItem(app, view);
+    editor.word_wrap_action.check_item.?.component.mnemonic = 'w';
     try menu_bar.add(view);
 }
 

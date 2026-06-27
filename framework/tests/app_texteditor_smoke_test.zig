@@ -145,6 +145,16 @@ fn pressKey(robot: *nimbus.Robot, code: awt.Event.KeyCode, mods: awt.Event.Modif
     robot.keyUp(code, mods);
 }
 
+fn expectMenuMnemonic(menu: *nimbus.Menu, mnemonic: u8, index: usize) !void {
+    try std.testing.expectEqual(mnemonic, menu.component.mnemonic.?);
+    try std.testing.expectEqual(index, menu.mnemonic_index.?);
+}
+
+fn expectItemMnemonic(item: *nimbus.MenuItem, mnemonic: u8, index: usize) !void {
+    try std.testing.expectEqual(mnemonic, item.component.mnemonic.?);
+    try std.testing.expectEqual(index, item.mnemonic_index.?);
+}
+
 test "app_texteditor smoke: shell regions appear and File menu opens" {
     const gpa = std.testing.allocator;
     const app = try newApp();
@@ -185,6 +195,48 @@ test "app_texteditor smoke: shell regions appear and File menu opens" {
     try std.testing.expect(hasRoleText(menu_tree, .menu_item, "Save"));
     try std.testing.expect(hasRoleText(menu_tree, .menu_item, "Save As"));
     try std.testing.expect(hasRoleText(menu_tree, .menu_item, "Exit"));
+}
+
+test "app_texteditor mnemonics: menu bar and items are wired" {
+    const gpa = std.testing.allocator;
+    const app = try newApp();
+    const frame = try app.frameHeadless("texteditor", 760, 520);
+    const editor = try app_texteditor.build(app, frame, gpa);
+    defer editor.deinitModel(gpa);
+    defer app.deinit();
+    defer editor.deinitUi();
+
+    const menu_bar = frame.getMenuBar().?;
+    const file = menu_bar.at(0).?;
+    const edit = menu_bar.at(1).?;
+    const view = menu_bar.at(2).?;
+
+    try expectMenuMnemonic(file, 'f', 0);
+    try expectMenuMnemonic(edit, 'e', 0);
+    try expectMenuMnemonic(view, 'v', 0);
+
+    try expectItemMnemonic(editor.new_action.item.?, 'n', 0);
+    try expectItemMnemonic(editor.open_action.item.?, 'o', 0);
+    try expectItemMnemonic(editor.save_action.item.?, 's', 0);
+    try expectItemMnemonic(editor.save_as_action.item.?, 'a', 1);
+    try expectItemMnemonic(editor.exit_action.item.?, 'x', 1);
+
+    try expectItemMnemonic(editor.undo_action.item.?, 'u', 0);
+    try expectItemMnemonic(editor.redo_action.item.?, 'r', 0);
+    try expectItemMnemonic(editor.cut_action.item.?, 't', 2);
+    try expectItemMnemonic(editor.copy_action.item.?, 'c', 0);
+    try expectItemMnemonic(editor.paste_action.item.?, 'p', 0);
+    try expectItemMnemonic(editor.select_all_action.item.?, 'a', 7);
+
+    try std.testing.expectEqual('w', editor.word_wrap_action.check_item.?.component.mnemonic.?);
+
+    var robot = nimbus.Robot.init(app, &frame.window);
+    robot.pump();
+    robot.keyDown(.f, .{ .alt = true });
+    robot.pump();
+
+    try std.testing.expect(file.open);
+    try std.testing.expect(editor.new_action.item.?.getModel().isRollover());
 }
 
 test "app_texteditor smoke: View menu exposes Word Wrap checkbox" {
