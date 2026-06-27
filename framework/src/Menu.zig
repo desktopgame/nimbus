@@ -43,6 +43,7 @@ owns_model: bool,
 mode: Mode,
 open: bool,
 open_child: ?*Menu,
+parent_menu: ?*Menu,
 window: ?*Window,
 popup_window: ?*PopupWindow,
 /// Byte index into `text` of the mnemonic character (underline paint),
@@ -106,6 +107,7 @@ pub fn create(
         .mode = .item,
         .open = false,
         .open_child = null,
+        .parent_menu = null,
         .window = null,
         .popup_window = null,
         .mnemonic_index = null,
@@ -334,6 +336,10 @@ fn finishDismiss(self: *Menu) void {
         self.open_child = null;
     }
     self.open = false;
+    if (self.parent_menu) |parent| {
+        if (parent.open_child == self) parent.open_child = null;
+        self.parent_menu = null;
+    }
     if (self.window) |w| w.endMenuSession(self);
     for (self.items.items) |item| item.parent = null;
 }
@@ -369,7 +375,10 @@ fn destroyPopupWindow(self: *Menu) void {
 
 pub fn deepestOpen(self: *Menu) *Menu {
     var target = self;
-    while (target.open_child) |child| target = child;
+    while (target.open_child) |child| {
+        if (!child.open) break;
+        target = child;
+    }
     return target;
 }
 
@@ -494,14 +503,22 @@ fn openSubmenu(self: *Menu, sub: *Menu) void {
     if (w.awt_window == null or self.popup_window == null) {
         const ox = self.popup_root.position.x + self.popup_root.size.width;
         const oy = self.popup_root.position.y + sub.component.position.y;
-        sub.show(w, .{ .x = ox, .y = oy }) catch |err|
+        sub.parent_menu = self;
+        sub.show(w, .{ .x = ox, .y = oy }) catch |err| {
+            sub.parent_menu = null;
             log.warn("menu", "show (submenu) failed: {s}", .{@errorName(err)});
+            return;
+        };
         self.open_child = sub;
         return;
     }
 
-    sub.showSubmenuPopup(w, self) catch |err|
+    sub.parent_menu = self;
+    sub.showSubmenuPopup(w, self) catch |err| {
+        sub.parent_menu = null;
         log.warn("menu", "show (submenu popup) failed: {s}", .{@errorName(err)});
+        return;
+    };
     if (sub.open) self.open_child = sub;
 }
 
@@ -536,12 +553,17 @@ fn showSubmenuPopup(self: *Menu, w: *Window, parent: *Menu) !void {
     const popup = try self.ensurePopupWindow(w);
     const parent_popup = parent.popup_window orelse return error.ParentPopupMissing;
     const parent_pos = parent_popup.window.getPos();
-    const anchor = awt.Window.Rect{
-        .x = parent_pos.x + roundToI32(parent.popup_root.position.x + self.component.position.x),
-        .y = parent_pos.y + roundToI32(parent.popup_root.position.y + self.component.position.y),
-        .width = @max(0, roundToI32(self.component.size.width)),
-        .height = @max(0, roundToI32(self.component.size.height)),
-    };
+    const scale = parent_popup.window.awt_window.?.contentScale();
+    const anchor = submenuAnchorRect(
+        parent_pos,
+        .{
+            .x = parent.popup_root.position.x + self.component.position.x,
+            .y = parent.popup_root.position.y + self.component.position.y,
+            .width = self.component.size.width,
+            .height = self.component.size.height,
+        },
+        scale,
+    );
     const popup_size = awt.Window.Size{
         .width = @intFromFloat(@ceil(popup_w)),
         .height = @intFromFloat(@ceil(popup_h)),
@@ -549,6 +571,16 @@ fn showSubmenuPopup(self: *Menu, w: *Window, parent: *Menu) !void {
     const work = w.awt_window.?.monitorWorkarea();
     try popup.showAtScreen(decideSubmenuPopupRect(anchor, popup_size, work), popup_size);
     self.open = true;
+}
+
+fn submenuAnchorRect(parent_pos: awt.Window.Point, local: Component.Rect, scale: f32) awt.Window.Rect {
+    const s = if (scale > 0) scale else 1.0;
+    return .{
+        .x = parent_pos.x + roundToI32(local.x * s),
+        .y = parent_pos.y + roundToI32(local.y * s),
+        .width = @max(0, roundToI32(local.width * s)),
+        .height = @max(0, roundToI32(local.height * s)),
+    };
 }
 
 fn decideSubmenuPopupRect(anchor: awt.Window.Rect, popup_size: awt.Window.Size, work_area: awt.Window.Rect) awt.Window.Rect {
@@ -905,6 +937,54 @@ fn activateItem(menu: *Menu, item: *Component) void {
         menu.openSubmenu(sub);
         if (sub.open) sub.highlightFirst();
     }
+}
+
+test "deepestOpen stops before closed stale child" {
+    var parent: Menu = undefined;
+    var child: Menu = undefined;
+    parent.open = true;
+    parent.open_child = &child;
+    child.open = false;
+    child.open_child = null;
+    try std.testing.expectEqual(&parent, parent.deepestOpen());
+}
+
+test "arrow left closes submenu and clears parent open child" {
+    const a = std.testing.allocator;
+    var parent: Menu = undefined;
+    var child: Menu = undefined;
+    parent.open = true;
+    parent.open_child = &child;
+    parent.parent_menu = null;
+    parent.items = .empty;
+    child.open = true;
+    child.open_child = null;
+    child.parent_menu = &parent;
+    child.window = null;
+    child.popup_window = null;
+    child.items = .empty;
+    child.mode = .item;
+    child.popup_root = Component.init(a, &popup_vtable);
+    defer child.popup_root.deinit();
+
+    var ev = Component.Event{ .payload = .{ .key = .{ .code = .arrow_left, .action = .press, .modifiers = .{} } } };
+    child.popup_root.vtable.processEvent(&child.popup_root, &ev);
+
+    try std.testing.expect(ev.isConsumed());
+    try std.testing.expect(!child.open);
+    try std.testing.expectEqual(@as(?*Menu, null), parent.open_child);
+    try std.testing.expectEqual(&parent, parent.deepestOpen());
+}
+
+test "submenu anchor rect applies content scale" {
+    try std.testing.expectEqual(
+        awt.Window.Rect{ .x = 130, .y = 215, .width = 150, .height = 36 },
+        submenuAnchorRect(
+            .{ .x = 100, .y = 200 },
+            .{ .x = 20, .y = 10, .width = 100, .height = 24 },
+            1.5,
+        ),
+    );
 }
 
 test "submenu popup rect opens right flips left then clamps" {

@@ -755,6 +755,28 @@ pub fn isMenuSessionKey(k: awt.Event.KeyEvent) bool {
         (k.code == .escape and k.action == .press);
 }
 
+fn isPlainPrintableSessionKey(k: awt.Event.KeyEvent) bool {
+    if (k.action != .press and k.action != .repeat) return false;
+    if (k.modifiers.shift or k.modifiers.ctrl or k.modifiers.alt or k.modifiers.meta) return false;
+    if (keybinding.letterOf(k.code) != null) return true;
+    return switch (k.code) {
+        .space,
+        .apostrophe,
+        .comma,
+        .minus,
+        .period,
+        .slash,
+        .semicolon,
+        .equal,
+        .left_bracket,
+        .backslash,
+        .right_bracket,
+        .grave_accent,
+        => true,
+        else => false,
+    };
+}
+
 /// Dispatch an input event to this window's component tree, honoring
 /// mouse capture, overlays (popups), and the optional menu bar. Order:
 ///   1. mouse_capture (drag continuation)
@@ -939,6 +961,10 @@ pub fn dispatchInput(self: *Window, ev: *awt.Event) void {
                         ev.consume();
                         return;
                     }
+                }
+                if (isPlainPrintableSessionKey(k)) {
+                    ev.consume();
+                    return;
                 }
             }
 
@@ -1806,11 +1832,13 @@ test "menu session dismiss closes chain and clears menu bar open menu" {
 
     root.open = true;
     root.open_child = &child;
+    root.parent_menu = null;
     root.window = &win;
     root.popup_window = null;
     root.items = .empty;
     child.open = true;
     child.open_child = null;
+    child.parent_menu = &root;
     child.window = &win;
     child.popup_window = null;
     child.items = .empty;
@@ -1828,6 +1856,7 @@ test "dispatchInput swallows char and composition while menu session is active" 
         component: Component,
         chars: usize = 0,
         compositions: usize = 0,
+        keys: usize = 0,
 
         fn install(_: *Component) !void {}
         fn uninstall(_: *Component) void {}
@@ -1837,6 +1866,7 @@ test "dispatchInput swallows char and composition while menu session is active" 
             switch (ev.payload) {
                 .char => self.chars += 1,
                 .composition => self.compositions += 1,
+                .key => self.keys += 1,
                 else => {},
             }
         }
@@ -1862,6 +1892,11 @@ test "dispatchInput swallows char and composition while menu session is active" 
     win.overlays = OverlayManager.init(std.testing.allocator);
     defer win.overlays.deinit();
     win.focus_owner = &sink.component;
+
+    var key_ev = awt.Event{ .payload = .{ .key = .{ .code = .x, .action = .press, .modifiers = .{} } } };
+    win.dispatchInput(&key_ev);
+    try std.testing.expect(key_ev.isConsumed());
+    try std.testing.expectEqual(@as(usize, 0), sink.keys);
 
     var char_ev = awt.Event{ .payload = .{ .char = .{ .codepoint = 'x' } } };
     win.dispatchInput(&char_ev);
