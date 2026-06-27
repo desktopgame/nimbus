@@ -1222,3 +1222,35 @@ SplitPane 分割線上のリサイズカーソルが初期需要。
 ### 完了条件
 テキストエリア上で I-beam、SplitPane 分割線上でリサイズカーソルになる。doc（component / awt の該当 spec）＋
 テスト（hit-test → cursor 種別決定は GPU 非依存の純ロジックで、実際のカーソル切替は実機確認）。
+
+## #33 アクセラレータ文字列のパース（`"Ctrl+O"` → KeyStroke）
+- 状態: 未着手
+- 優先度: 中
+- 影響範囲: framework の `keybinding.zig`（パース関数の追加）、将来のキーバインド設定 UI / 設定ファイル読み込み
+- 更新日: 2026-06-27
+- 依存: メニュー項目表示 spec（[menu_display.md](menu_display.md) §2.1）の `formatAccelerator` / `keyLabel`
+
+### 何
+`menu_display.md` #2 で足す整形器 `formatAccelerator`（`KeyStroke` → `"Ctrl+Shift+S"`）の **逆操作**。
+`"Ctrl+O"` のような文字列を `keybinding.KeyStroke` へパースする。修飾（`Ctrl` / `Shift` / `Alt`）＋ キー名を
+読み取り、`Mods` ＋ `KeyCode` を組み立てる。
+
+### なぜ（保留理由）
+現状アクセラレータはコードで `KeyStroke.cmd(.s)` 等を直書きしており（`examples/app_texteditor/main.zig:209-219`）、
+文字列からの構築は実需が無い（point-of-need 待ち）。実需はキーバインドのカスタマイズ
+（設定ダイアログ / 設定ファイル）で、それ自体がまだ無い。
+
+### 候補アプローチ
+- パースは整形の逆で、**両者が同じキー名テーブル（`keyLabel`）を共有する形が望ましい**
+  （`"F5"` ⇄ `.f5`、`"Left"` ⇄ `.arrow_left` の対応を 1 か所に閉じる）。整形側が正本のテーブルを持ち、
+  パース側はその逆引きにする。
+- 大小文字・区切り（`+`）の正規化、未知トークンのエラー表現（`?KeyStroke` で null か `!KeyStroke` でエラーか）を
+  着手時に決める。
+
+### 決めること
+- 表示形式（修飾順序 Ctrl→Shift→Alt・キー名テーブル）に整合させる（`menu_display.md` §2.1 と同一テーブル）。
+- 失敗時の表現（null / error）と、`command` の解釈（`"Ctrl"` を常に `Mods.command` へ寄せるか、
+  macOS Cmd 修飾ビット整備後に `"Cmd"` も受けるか）。
+
+### 完了条件
+`formatAccelerator` の逆変換が round-trip でき（`parse(format(s)) == s` を主要キーで満たす）、単体テストが緑。
