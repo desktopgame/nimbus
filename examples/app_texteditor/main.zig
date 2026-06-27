@@ -571,7 +571,7 @@ fn buildMenus(app: *nimbus.Application, editor: *Editor, menu_bar: *nimbus.MenuB
     try editor.save_action.bindMenuItem(app, file);
     editor.save_action.item.?.setMnemonic('S');
     try editor.save_as_action.bindMenuItem(app, file);
-    editor.save_as_action.item.?.setMnemonic('A');
+    editor.save_as_action.item.?.setMnemonicAt('A', 5);
     try file.addSeparator();
     try editor.exit_action.bindMenuItem(app, file);
     editor.exit_action.item.?.setMnemonic('X');
@@ -598,7 +598,7 @@ fn buildMenus(app: *nimbus.Application, editor: *Editor, menu_bar: *nimbus.MenuB
     const view = try app.menu("View");
     view.setMnemonic('V');
     try editor.word_wrap_action.bindCheckBoxMenuItem(app, view);
-    editor.word_wrap_action.check_item.?.component.mnemonic = 'w';
+    editor.word_wrap_action.check_item.?.setMnemonic('w');
     try menu_bar.add(view);
 }
 

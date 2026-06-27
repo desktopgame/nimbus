@@ -155,6 +155,11 @@ fn expectItemMnemonic(item: *nimbus.MenuItem, mnemonic: u8, index: usize) !void 
     try std.testing.expectEqual(index, item.mnemonic_index.?);
 }
 
+fn expectCheckItemMnemonic(item: *nimbus.CheckBoxMenuItem, mnemonic: u8, index: usize) !void {
+    try std.testing.expectEqual(mnemonic, item.component.mnemonic.?);
+    try std.testing.expectEqual(index, item.mnemonic_index.?);
+}
+
 test "app_texteditor smoke: shell regions appear and File menu opens" {
     const gpa = std.testing.allocator;
     const app = try newApp();
@@ -218,7 +223,7 @@ test "app_texteditor mnemonics: menu bar and items are wired" {
     try expectItemMnemonic(editor.new_action.item.?, 'n', 0);
     try expectItemMnemonic(editor.open_action.item.?, 'o', 0);
     try expectItemMnemonic(editor.save_action.item.?, 's', 0);
-    try expectItemMnemonic(editor.save_as_action.item.?, 'a', 1);
+    try expectItemMnemonic(editor.save_as_action.item.?, 'a', 5);
     try expectItemMnemonic(editor.exit_action.item.?, 'x', 1);
 
     try expectItemMnemonic(editor.undo_action.item.?, 'u', 0);
@@ -228,7 +233,7 @@ test "app_texteditor mnemonics: menu bar and items are wired" {
     try expectItemMnemonic(editor.paste_action.item.?, 'p', 0);
     try expectItemMnemonic(editor.select_all_action.item.?, 'a', 7);
 
-    try std.testing.expectEqual('w', editor.word_wrap_action.check_item.?.component.mnemonic.?);
+    try expectCheckItemMnemonic(editor.word_wrap_action.check_item.?, 'w', 0);
 
     var robot = nimbus.Robot.init(app, &frame.window);
     robot.pump();

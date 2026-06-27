@@ -13,6 +13,7 @@ const MenuItem = @import("MenuItem.zig");
 const Window = @import("Window.zig");
 const keybinding = @import("keybinding.zig");
 const log = @import("log.zig");
+const menu_paint = @import("menu_paint.zig");
 
 const Menu = @This();
 
@@ -225,6 +226,13 @@ pub fn doClick(self: *Menu) void {
 pub fn setMnemonic(self: *Menu, ch: u8) void {
     self.component.mnemonic = std.ascii.toLower(ch);
     self.mnemonic_index = std.ascii.indexOfIgnoreCase(self.text, &[1]u8{ch});
+    self.component.repaint();
+}
+
+/// Menu mnemonic with an explicit underline byte index into `text`.
+pub fn setMnemonicAt(self: *Menu, ch: u8, index: usize) void {
+    self.component.mnemonic = std.ascii.toLower(ch);
+    self.mnemonic_index = index;
     self.component.repaint();
 }
 
@@ -455,13 +463,13 @@ fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
             const tx = (sz.width - m.width) / 2;
             const ty = (sz.height - m.height) / 2;
             g.drawString(menu.text, tx, ty);
-            drawMnemonicUnderline(menu, g, tx, ty, m.height);
+            menu_paint.drawMnemonicUnderline(g, menu.font, menu.text, menu.mnemonic_index, tx, ty, m.height);
         },
         .item => {
             const tx = ROW_PADDING_X + MenuItem.ICON_SLOT_WIDTH;
             const ty = (sz.height - m.height) / 2;
             g.drawString(menu.text, tx, ty);
-            drawMnemonicUnderline(menu, g, tx, ty, m.height);
+            menu_paint.drawMnemonicUnderline(g, menu.font, menu.text, menu.mnemonic_index, tx, ty, m.height);
             // Submenu arrow on right.
             const ax = sz.width - ARROW_SLOT_W - ROW_PADDING_X / 2;
             const ay = (sz.height - 8) / 2;
@@ -472,17 +480,6 @@ fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
 
 fn lookPaintOver(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
 
-/// Underline the mnemonic letter (always shown in v1; Alt-reveal deferred).
-/// Uses the color currently set on `g` (= the label's text color).
-fn drawMnemonicUnderline(menu: *Menu, g: *awt.Graphics, tx: f32, ty: f32, text_h: f32) void {
-    const mi = menu.mnemonic_index orelse return;
-    if (mi >= menu.text.len) return;
-    const prefix_w = menu.font.measureString(menu.text[0..mi]).width;
-    const ch_w = menu.font.measureString(menu.text[mi .. mi + 1]).width;
-    g.fillRect(.{ .x = tx + prefix_w, .y = ty + text_h - 1, .width = ch_w, .height = 1 });
-}
-
-/// A simple right-pointing triangle approximated as 4 horizontal lines.
 fn drawArrow(g: *awt.Graphics, x: f32, y: f32, color: awt.Graphics.Color) void {
     g.setColor(color);
     const t: f32 = 1.5;

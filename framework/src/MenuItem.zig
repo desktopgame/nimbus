@@ -6,6 +6,7 @@ const Component = @import("Component.zig");
 const ChangeEvent = @import("listener.zig").ChangeEvent;
 const ButtonModel = @import("ButtonModel.zig");
 const keybinding = @import("keybinding.zig");
+const menu_paint = @import("menu_paint.zig");
 
 const MenuItem = @This();
 
@@ -164,6 +165,13 @@ pub fn setMnemonic(self: *MenuItem, ch: u8) void {
     self.component.repaint();
 }
 
+/// Menu-local mnemonic with an explicit underline byte index into `text`.
+pub fn setMnemonicAt(self: *MenuItem, ch: u8, index: usize) void {
+    self.component.mnemonic = std.ascii.toLower(ch);
+    self.mnemonic_index = index;
+    self.component.repaint();
+}
+
 // ── vtable impl ──────────────────────────────────────────────────────────
 
 fn a11yName(c: *const Component) ?[]const u8 {
@@ -223,19 +231,7 @@ fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
     const ty = (sz.height - m.height) / 2;
     g.drawString(item.text, tx, ty);
 
-    // Mnemonic underline (always shown in v1; Alt-reveal deferred).
-    if (item.mnemonic_index) |mi| {
-        if (mi < item.text.len) {
-            const prefix_w = item.font.measureString(item.text[0..mi]).width;
-            const ch_w = item.font.measureString(item.text[mi .. mi + 1]).width;
-            g.fillRect(.{
-                .x = tx + prefix_w,
-                .y = ty + m.height - 1,
-                .width = ch_w,
-                .height = 1,
-            });
-        }
-    }
+    menu_paint.drawMnemonicUnderline(g, item.font, item.text, item.mnemonic_index, tx, ty, m.height);
 }
 
 fn lookPaintOver(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}

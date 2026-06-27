@@ -6,6 +6,7 @@ const Component = @import("Component.zig");
 const ChangeEvent = @import("listener.zig").ChangeEvent;
 const ToggleButtonModel = @import("ToggleButtonModel.zig");
 const MenuItem = @import("MenuItem.zig");
+const menu_paint = @import("menu_paint.zig");
 
 const CheckBoxMenuItem = @This();
 
@@ -15,6 +16,8 @@ font: awt.Graphics.TextFont,
 color: awt.Graphics.Color,
 model: *ToggleButtonModel,
 owns_model: bool,
+/// Byte index into `text` of the mnemonic character (underline paint).
+mnemonic_index: ?usize,
 allocator: std.mem.Allocator,
 
 pub const vtable = Component.VTable{
@@ -74,6 +77,7 @@ fn createInternal(
         .color = color,
         .model = model,
         .owns_model = owns_model,
+        .mnemonic_index = null,
         .allocator = allocator,
     };
     item.component.role = .checkbox_menu_item;
@@ -130,6 +134,46 @@ pub fn doClick(self: *CheckBoxMenuItem) void {
     if (!self.model.button.enabled) return;
     self.model.setSelected(!self.model.isSelected());
     self.model.fireAction();
+}
+
+/// Menu-local mnemonic: while the parent menu is open, the plain letter
+/// `ch` activates this item (no Alt). The matching label letter is underlined.
+pub fn setMnemonic(self: *CheckBoxMenuItem, ch: u8) void {
+    self.component.mnemonic = std.ascii.toLower(ch);
+    self.mnemonic_index = std.ascii.indexOfIgnoreCase(self.text, &[1]u8{ch});
+    self.component.repaint();
+}
+
+/// Menu-local mnemonic with an explicit underline byte index into `text`.
+pub fn setMnemonicAt(self: *CheckBoxMenuItem, ch: u8, index: usize) void {
+    self.component.mnemonic = std.ascii.toLower(ch);
+    self.mnemonic_index = index;
+    self.component.repaint();
+}
+
+test "menu item mnemonics support explicit and automatic underline indexes" {
+    const Application = @import("Application.zig");
+    const app = Application.initHeadless(std.testing.allocator, std.testing.io) catch
+        return error.SkipZigTest;
+    defer app.deinit();
+
+    const item = try app.menuItem("Save As");
+    defer item.component.vtable.destroy(&item.component, std.testing.allocator);
+    item.setMnemonicAt('A', 5);
+    try std.testing.expectEqual('a', item.component.mnemonic.?);
+    try std.testing.expectEqual(@as(usize, 5), item.mnemonic_index.?);
+    item.setMnemonic('A');
+    try std.testing.expectEqual('a', item.component.mnemonic.?);
+    try std.testing.expectEqual(@as(usize, 1), item.mnemonic_index.?);
+
+    const check = try app.checkBoxMenuItem("Wrap Word");
+    defer check.component.vtable.destroy(&check.component, std.testing.allocator);
+    check.setMnemonic('w');
+    try std.testing.expectEqual('w', check.component.mnemonic.?);
+    try std.testing.expectEqual(@as(usize, 0), check.mnemonic_index.?);
+    check.setMnemonicAt('w', 5);
+    try std.testing.expectEqual('w', check.component.mnemonic.?);
+    try std.testing.expectEqual(@as(usize, 5), check.mnemonic_index.?);
 }
 
 // ── vtable impl ──────────────────────────────────────────────────────────
@@ -195,6 +239,7 @@ fn lookPaint(self: *Component, _: *anyopaque, g: *awt.Graphics) void {
     const tx = MenuItem.PADDING_X + MenuItem.ICON_SLOT_WIDTH;
     const ty = (sz.height - m.height) / 2;
     g.drawString(item.text, tx, ty);
+    menu_paint.drawMnemonicUnderline(g, item.font, item.text, item.mnemonic_index, tx, ty, m.height);
 }
 
 fn lookPaintOver(_: *Component, _: *anyopaque, _: *awt.Graphics) void {}
