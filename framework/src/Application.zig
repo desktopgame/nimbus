@@ -21,6 +21,7 @@ const TabbedPane = @import("TabbedPane.zig");
 const Slider = @import("Slider.zig");
 const Frame = @import("Frame.zig");
 const Dialog = @import("Dialog.zig");
+const PopupWindow = @import("PopupWindow.zig");
 const Window = @import("Window.zig");
 const Menu = @import("Menu.zig");
 const MenuItem = @import("MenuItem.zig");
@@ -50,6 +51,7 @@ const WindowEntry = struct {
     /// close request to `Dialog.close(.none)` instead of destroying (Dialogs
     /// are owned by the caller, not by Application).
     dialog: ?*Dialog = null,
+    reap_close: bool = true,
     /// Window geometry last synced with the OS. Compared against the Window's
     /// desired `win_pos`/`win_size` at each loop tail; a mismatch is pushed to
     /// the OS and recorded here. OS-driven resizes update this via
@@ -355,7 +357,7 @@ fn collectClosedWindows(self: *Application) void {
     var i: usize = 0;
     while (i < self.windows.items.len) {
         const entry = self.windows.items[i];
-        if (!entry.window.shouldClose()) {
+        if (!entry.reap_close or !entry.window.shouldClose()) {
             i += 1;
             continue;
         }
@@ -394,6 +396,18 @@ pub fn registerDialog(self: *Application, d: *Dialog) !void {
     });
     // Respect any modal currently in effect (block the freshly-shown window
     // unless it is itself the modal top).
+    self.refreshModalBlocking();
+}
+
+pub fn registerUnownedWindowNoReap(self: *Application, window: *Window, outer: *anyopaque) !void {
+    try self.windows.append(self.allocator, .{
+        .window = window,
+        .outer = outer,
+        .destroy = noopDestroy,
+        .reap_close = false,
+        .synced_pos = window.getPos(),
+        .synced_size = window.getSize(),
+    });
     self.refreshModalBlocking();
 }
 
@@ -641,6 +655,18 @@ pub fn dialog(self: *Application, owner: *Window, title: []const u8, w: u32, h: 
     d.window.container.component.theme = &self.theme;
     d.window.background = self.theme.surface_window;
     return d;
+}
+
+pub fn popupWindow(self: *Application, owner: *Window, title: []const u8, w: u32, h: u32) !*PopupWindow {
+    const p = try self.allocator.create(PopupWindow);
+    errdefer self.allocator.destroy(p);
+    p.* = try PopupWindow.init(self, owner, title, w, h, &self.device, &self.context);
+    errdefer p.deinit();
+
+    try Window.vtable.install(&p.window.container.component);
+    p.window.container.component.theme = &self.theme;
+    p.window.background = self.theme.surface_window;
+    return p;
 }
 
 pub fn fileChooser(self: *Application, owner: *Window) !*FileChooser {

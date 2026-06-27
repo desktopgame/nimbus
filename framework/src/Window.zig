@@ -119,6 +119,8 @@ drag_accepted: bool,
 allocator: std.mem.Allocator,
 dirty_notify: Component.DirtyNotify,
 focus_controller: Component.FocusController,
+focus_loss_ctx: ?*anyopaque,
+focus_loss_cb: ?*const fn (*anyopaque) void,
 
 pub const vtable = Component.VTable{
     .install = install,
@@ -143,10 +145,24 @@ pub fn init(
     device: *awt.Device,
     context: *awt.Graphics.Context,
 ) !Window {
+    return initWithFlags(allocator, app_ptr, event_queue, title, w, h, device, context, .{});
+}
+
+pub fn initWithFlags(
+    allocator: std.mem.Allocator,
+    app_ptr: *anyopaque,
+    event_queue: *awt.EventQueue,
+    title: []const u8,
+    w: u32,
+    h: u32,
+    device: *awt.Device,
+    context: *awt.Graphics.Context,
+    flags: awt.Window.WindowFlags,
+) !Window {
     const title_dup = try allocator.dupeZ(u8, title);
     errdefer allocator.free(title_dup);
 
-    var aw = try awt.Window.init(title_dup, w, h);
+    var aw = try awt.Window.initEx(title_dup, w, h, flags);
     errdefer aw.deinit();
 
     var sc = try awt.Swapchain.init(device.*, aw);
@@ -195,6 +211,8 @@ pub fn init(
         .allocator = allocator,
         .dirty_notify = undefined, // filled in install
         .focus_controller = undefined, // filled in install
+        .focus_loss_ctx = null,
+        .focus_loss_cb = null,
     };
     win.container.component.vtable = &vtable;
     win.container.component.ui = .{ .vtable = &look_vtable, .ctx = &Component.default_look_context };
@@ -266,6 +284,8 @@ pub fn initHeadless(
         .allocator = allocator,
         .dirty_notify = undefined,
         .focus_controller = undefined,
+        .focus_loss_ctx = null,
+        .focus_loss_cb = null,
     };
     win.container.component.vtable = &vtable;
     win.container.component.ui = .{ .vtable = &look_vtable, .ctx = &Component.default_look_context };
@@ -376,6 +396,11 @@ pub fn dispose(self: *Window) void {
     if (self.awt_window) |*aw| aw.setShouldClose(true) else {
         self.headless_close = true;
     }
+}
+
+pub fn onFocusLost(self: *Window, ctx: *anyopaque, cb: *const fn (*anyopaque) void) void {
+    self.focus_loss_ctx = ctx;
+    self.focus_loss_cb = cb;
 }
 
 /// Render one frame and clear paint_dirty. Called by Application.run().
@@ -626,6 +651,7 @@ fn install(self: *Component) !void {
         aw.setResizeCallback(onResize, @ptrCast(win));
         aw.setRefreshCallback(onRefresh, @ptrCast(win));
         aw.setMoveCallback(onWindowPos, @ptrCast(win));
+        aw.setFocusCallback(onFocus, @ptrCast(win));
         aw.setMouseButtonCallback(onMouseButton, @ptrCast(win));
         aw.setCursorPosCallback(onCursorPos, @ptrCast(win));
         aw.setScrollCallback(onScroll, @ptrCast(win));
@@ -1291,6 +1317,18 @@ fn onWindowPos(
     win.win_pos = .{ .x = @intCast(x), .y = @intCast(y) };
     const app: *Application = @ptrCast(@alignCast(win.app));
     app.noteOsGeometry(win);
+}
+
+fn onFocus(
+    _: ?*awt.c.struct_nmWindow,
+    focused: bool,
+    user_data: ?*anyopaque,
+) callconv(.c) void {
+    if (focused) return;
+    const win: *Window = @ptrCast(@alignCast(user_data.?));
+    if (win.focus_loss_cb) |cb| {
+        cb(win.focus_loss_ctx.?);
+    }
 }
 
 fn onRefresh(_: ?*awt.c.struct_nmWindow, user_data: ?*anyopaque) callconv(.c) void {

@@ -26,6 +26,8 @@ typedef struct nmWindowCallbacks {
     void*                   refresh_user;
     nmWindowMoveCallback    move_cb;
     void*                   move_user;
+    nmWindowFocusCallback   focus_cb;
+    void*                   focus_user;
     nmMouseButtonCallback   mouse_button_cb;
     void*                   mouse_button_user;
     nmCursorPosCallback     cursor_pos_cb;

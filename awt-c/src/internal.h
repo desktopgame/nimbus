@@ -34,7 +34,17 @@ void nmSetLogCallback(nmLogCallback cb, void* user_data);
 
 typedef struct nmWindow nmWindow;
 
+/* Window creation flags. Combine with bitwise OR. 0 == a normal decorated
+ * window (what nmCreateWindow makes). */
+typedef enum nmWindowFlags {
+    nmWindowFlagBorderless = 1 << 0,
+    nmWindowFlagNoActivate = 1 << 1,
+    nmWindowFlagFloating   = 1 << 2,
+    nmWindowFlagNoTaskbar  = 1 << 3,
+} nmWindowFlags;
+
 nmWindow* nmCreateWindow(const char* title, int width, int height);
+nmWindow* nmCreateWindowEx(const char* title, int width, int height, int flags);
 void nmDestroyWindow(nmWindow* self);
 /* Replace the window title shown by the OS (title bar, taskbar). Pushes the
  * new value immediately. `title` must be NUL-terminated UTF-8. */
@@ -51,6 +61,9 @@ typedef void (*nmWindowRefreshCallback)(nmWindow* window, void* user_data);
  * the same units nmGetWindowPos reports. Fires for OS-driven moves (user drag)
  * as well as programmatic nmSetWindowPos. */
 typedef void (*nmWindowMoveCallback)(nmWindow* window, int x, int y, void* user_data);
+/* Window gained / lost OS input focus. `focused` is true on gain, false on
+ * loss. A borderless popup uses the loss edge to dismiss itself. */
+typedef void (*nmWindowFocusCallback)(nmWindow* window, bool focused, void* user_data);
 
 typedef enum nmKeyAction {
     nmKeyActionRelease,
@@ -94,6 +107,7 @@ typedef void (*nmCharCallback)(nmWindow* window, uint32_t codepoint, void* user_
 void nmSetWindowResizeCallback(nmWindow* self, nmWindowResizeCallback cb, void* user_data);
 void nmSetWindowRefreshCallback(nmWindow* self, nmWindowRefreshCallback cb, void* user_data);
 void nmSetWindowMoveCallback(nmWindow* self, nmWindowMoveCallback cb, void* user_data);
+void nmSetWindowFocusCallback(nmWindow* self, nmWindowFocusCallback cb, void* user_data);
 void nmSetMouseButtonCallback(nmWindow* self, nmMouseButtonCallback cb, void* user_data);
 void nmSetCursorPosCallback(nmWindow* self, nmCursorPosCallback cb, void* user_data);
 void nmSetScrollCallback(nmWindow* self, nmScrollCallback cb, void* user_data);

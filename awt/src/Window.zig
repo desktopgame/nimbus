@@ -13,6 +13,35 @@ pub fn init(title: [:0]const u8, width: u32, height: u32) !Window {
     return .{ .handle = h };
 }
 
+pub const WindowFlags = packed struct {
+    borderless: bool = false,
+    no_activate: bool = false,
+    floating: bool = false,
+    no_taskbar: bool = false,
+
+    fn toCBits(self: WindowFlags) c_int {
+        var flags: c_int = 0;
+        if (self.borderless) flags |= c.nmWindowFlagBorderless;
+        if (self.no_activate) flags |= c.nmWindowFlagNoActivate;
+        if (self.floating) flags |= c.nmWindowFlagFloating;
+        if (self.no_taskbar) flags |= c.nmWindowFlagNoTaskbar;
+        return flags;
+    }
+};
+
+pub fn initEx(title: [:0]const u8, width: u32, height: u32, flags: WindowFlags) !Window {
+    const h = c.nmCreateWindowEx(title.ptr, @intCast(width), @intCast(height), flags.toCBits()) orelse return error.WindowCreateFailed;
+    return .{ .handle = h };
+}
+
+pub fn initBorderless(title: [:0]const u8, width: u32, height: u32) !Window {
+    return initEx(title, width, height, .{
+        .borderless = true,
+        .floating = true,
+        .no_taskbar = true,
+    });
+}
+
 pub fn deinit(self: *Window) void {
     c.nmDestroyWindow(self.handle);
     self.handle = undefined;
@@ -169,6 +198,7 @@ pub fn swapBuffers(self: Window) void {
 pub const ResizeCallback = c.nmWindowResizeCallback;
 pub const RefreshCallback = c.nmWindowRefreshCallback;
 pub const MoveCallback = c.nmWindowMoveCallback;
+pub const FocusCallback = c.nmWindowFocusCallback;
 pub const MouseButtonCallback = c.nmMouseButtonCallback;
 pub const CursorPosCallback = c.nmCursorPosCallback;
 pub const ScrollCallback = c.nmScrollCallback;
@@ -189,6 +219,10 @@ pub fn setRefreshCallback(self: Window, cb: RefreshCallback, user_data: ?*anyopa
 /// screen-position model in sync with the OS.
 pub fn setMoveCallback(self: Window, cb: MoveCallback, user_data: ?*anyopaque) void {
     c.nmSetWindowMoveCallback(self.handle, cb, user_data);
+}
+
+pub fn setFocusCallback(self: Window, cb: FocusCallback, user_data: ?*anyopaque) void {
+    c.nmSetWindowFocusCallback(self.handle, cb, user_data);
 }
 
 pub fn setMouseButtonCallback(self: Window, cb: MouseButtonCallback, user_data: ?*anyopaque) void {

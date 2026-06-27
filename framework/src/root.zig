@@ -55,6 +55,7 @@ pub const OverlayManager = @import("OverlayManager.zig");
 pub const ImeSession = @import("ImeSession.zig");
 pub const Frame = @import("Frame.zig");
 pub const Dialog = @import("Dialog.zig");
+pub const PopupWindow = @import("PopupWindow.zig");
 pub const Application = @import("Application.zig");
 pub const TextField = @import("TextField.zig");
 pub const TextArea = @import("TextArea.zig");

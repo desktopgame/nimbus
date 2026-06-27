@@ -49,6 +49,13 @@ static void on_window_pos(GLFWwindow* gw, int x, int y) {
     }
 }
 
+static void on_window_focus(GLFWwindow* gw, int focused) {
+    nmWindowCallbacks* cb = (nmWindowCallbacks*)glfwGetWindowUserPointer(gw);
+    if (cb && cb->focus_cb) {
+        cb->focus_cb((nmWindow*)gw, focused == GLFW_TRUE, cb->focus_user);
+    }
+}
+
 /* Map GLFW mouse button → nmMouseButton. Returns -1 for unsupported buttons. */
 static int map_mouse_button(int glfw_button) {
     switch (glfw_button) {
@@ -152,14 +159,35 @@ const char* nmAwtBackendVersion(void) {
 }
 
 nmWindow* nmCreateWindow(const char* title, int width, int height) {
+    return nmCreateWindowEx(title, width, height, 0);
+}
+
+nmWindow* nmCreateWindowEx(const char* title, int width, int height, int flags) {
     /* No OpenGL context: rendering is handled by the chosen backend (DX12 etc). */
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     /* Treat (width, height) as logical points: GLFW multiplies by the target
      * monitor's content scale so the window is created at the correct physical
      * pixel size. With this hint the framebuffer is also scaled accordingly. */
     glfwWindowHint(GLFW_SCALE_TO_MONITOR, GLFW_TRUE);
+    glfwWindowHint(GLFW_DECORATED, (flags & nmWindowFlagBorderless) ? GLFW_FALSE : GLFW_TRUE);
+    glfwWindowHint(GLFW_FOCUS_ON_SHOW, (flags & nmWindowFlagNoActivate) ? GLFW_FALSE : GLFW_TRUE);
+    glfwWindowHint(GLFW_FLOATING, (flags & nmWindowFlagFloating) ? GLFW_TRUE : GLFW_FALSE);
     GLFWwindow* w = glfwCreateWindow(width, height, title, NULL, NULL);
     if (!w) return NULL;
+
+#ifdef _WIN32
+    if (flags & (nmWindowFlagNoTaskbar | nmWindowFlagNoActivate)) {
+        HWND hwnd = nm_internal_get_hwnd((nmWindow*)w);
+        LONG_PTR ex_style = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
+        if (flags & nmWindowFlagNoTaskbar) {
+            ex_style |= WS_EX_TOOLWINDOW;
+        }
+        if (flags & nmWindowFlagNoActivate) {
+            ex_style |= WS_EX_NOACTIVATE;
+        }
+        SetWindowLongPtr(hwnd, GWL_EXSTYLE, ex_style);
+    }
+#endif
 
     nmWindowCallbacks* cb = (nmWindowCallbacks*)calloc(1, sizeof(nmWindowCallbacks));
     if (!cb) {
@@ -170,6 +198,7 @@ nmWindow* nmCreateWindow(const char* title, int width, int height) {
     glfwSetFramebufferSizeCallback(w, on_framebuffer_size);
     glfwSetWindowRefreshCallback(w, on_window_refresh);
     glfwSetWindowPosCallback(w, on_window_pos);
+    glfwSetWindowFocusCallback(w, on_window_focus);
     glfwSetMouseButtonCallback(w, on_mouse_button);
     glfwSetCursorPosCallback(w, on_cursor_pos);
     glfwSetScrollCallback(w, on_scroll);
@@ -349,6 +378,14 @@ void nmSetWindowMoveCallback(nmWindow* self, nmWindowMoveCallback cb, void* user
     if (!cbs) return;
     cbs->move_cb = cb;
     cbs->move_user = user_data;
+}
+
+void nmSetWindowFocusCallback(nmWindow* self, nmWindowFocusCallback cb, void* user_data) {
+    if (!self) return;
+    nmWindowCallbacks* cbs = (nmWindowCallbacks*)glfwGetWindowUserPointer((GLFWwindow*)self);
+    if (!cbs) return;
+    cbs->focus_cb = cb;
+    cbs->focus_user = user_data;
 }
 
 void nmSetMouseButtonCallback(nmWindow* self, nmMouseButtonCallback cb, void* user_data) {
