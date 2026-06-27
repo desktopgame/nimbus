@@ -26,6 +26,7 @@ const BAR_PADDING_X: f32 = 12;
 const ROW_PADDING_X: f32 = 8;
 const ROW_PADDING_Y: f32 = 6;
 const ARROW_SLOT_W: f32 = 16;
+const SUBMENU_GAP: i32 = 0;
 
 // Popup colors come from `component.theme`: surface_input (background) and
 // border (frame). See `framework/doc/theme.md`.
@@ -257,7 +258,7 @@ pub fn show(self: *Menu, w: *Window, anchor: Component.Point) !void {
     popup_w = @max(popup_w, 80);
     popup_h += 2; // border
 
-    const use_popup_window = self.mode == .bar and w.awt_window != null;
+    const use_popup_window = w.awt_window != null;
     var x = anchor.x;
     var y = anchor.y;
     if (!use_popup_window) {
@@ -295,7 +296,7 @@ pub fn show(self: *Menu, w: *Window, anchor: Component.Point) !void {
             .{ .width = @intFromFloat(@ceil(popup_w)), .height = @intFromFloat(@ceil(popup_h)) },
         );
         self.open = true;
-        w.beginMenuSession(self);
+        if (self.mode == .bar) w.beginMenuSession(self);
     } else {
         try w.overlays.add(&self.popup_root, @ptrCast(self), onOverlayDismiss);
         self.open = true;
@@ -338,13 +339,13 @@ fn finishDismiss(self: *Menu) void {
 }
 
 fn onItemAction(self: *Menu, _: *const ActionEvent) void {
-    if (self.popup_window) |popup| {
-        if (popup.isShown()) {
-            popup.dismissFromSelection();
+    if (self.window) |w| {
+        if (w.hasMenuSession()) {
+            w.dismissMenuSession();
             return;
         }
+        w.overlays.dismissAll();
     }
-    if (self.window) |w| w.overlays.dismissAll();
 }
 
 fn ensurePopupWindow(self: *Menu, owner: *Window) !*PopupWindow {
@@ -366,10 +367,43 @@ fn destroyPopupWindow(self: *Menu) void {
     self.popup_window = null;
 }
 
-pub fn processSessionKey(self: *Menu, ev: *Component.Event) void {
+pub fn deepestOpen(self: *Menu) *Menu {
     var target = self;
     while (target.open_child) |child| target = child;
+    return target;
+}
+
+pub fn processSessionKey(self: *Menu, ev: *Component.Event) void {
+    const target = self.deepestOpen();
     target.popup_root.vtable.processEvent(&target.popup_root, ev);
+}
+
+pub fn processSessionChar(self: *Menu, codepoint: u32) bool {
+    if (codepoint > 127) return false;
+    const ch = std.ascii.toLower(@as(u8, @intCast(codepoint)));
+    const target = self.deepestOpen();
+    for (target.items.items) |item| {
+        if (item.mnemonic) |m2| {
+            if (m2 == ch) {
+                activateItem(target, item);
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+pub fn dismissDeepestFromEscape(self: *Menu) void {
+    if (self.open_child) |child| {
+        if (child.open_child != null) {
+            child.dismissDeepestFromEscape();
+        } else {
+            child.hide();
+            self.open_child = null;
+        }
+    } else {
+        self.hide();
+    }
 }
 
 fn modelOf(c: *Component) ?*ButtonModel {
@@ -453,15 +487,84 @@ fn moveHighlight(self: *Menu, dir: i32) void {
 }
 
 /// Open submenu `sub` beside this popup. Shared geometry for every entry
-/// point: hover, menu-local mnemonic, ↁEand Enter.
+/// point: hover, menu-local mnemonic, arrow-right and Enter.
 fn openSubmenu(self: *Menu, sub: *Menu) void {
     if (sub.open) return;
     const w = self.window orelse return;
-    const ox = self.popup_root.position.x + self.popup_root.size.width;
-    const oy = self.popup_root.position.y + sub.component.position.y;
-    sub.show(w, .{ .x = ox, .y = oy }) catch |err|
-        log.warn("menu", "show (submenu) failed: {s}", .{@errorName(err)});
-    self.open_child = sub;
+    if (w.awt_window == null or self.popup_window == null) {
+        const ox = self.popup_root.position.x + self.popup_root.size.width;
+        const oy = self.popup_root.position.y + sub.component.position.y;
+        sub.show(w, .{ .x = ox, .y = oy }) catch |err|
+            log.warn("menu", "show (submenu) failed: {s}", .{@errorName(err)});
+        self.open_child = sub;
+        return;
+    }
+
+    sub.showSubmenuPopup(w, self) catch |err|
+        log.warn("menu", "show (submenu popup) failed: {s}", .{@errorName(err)});
+    if (sub.open) self.open_child = sub;
+}
+
+fn showSubmenuPopup(self: *Menu, w: *Window, parent: *Menu) !void {
+    if (self.open) return;
+    self.window = w;
+
+    var popup_w: f32 = 0;
+    var popup_h: f32 = 0;
+    for (self.items.items) |item| {
+        if (item.min_size.width > popup_w) popup_w = item.min_size.width;
+        popup_h += item.min_size.height;
+    }
+    popup_w = @max(popup_w, 80);
+    popup_h += 2;
+
+    self.popup_root.position = .{ .x = 0, .y = 0 };
+    self.popup_root.size = .{ .width = popup_w, .height = popup_h };
+
+    var cur_y: f32 = 1;
+    for (self.items.items) |item| {
+        item.parent = &self.popup_root;
+        item.setBounds(.{
+            .x = 0,
+            .y = cur_y,
+            .width = popup_w,
+            .height = item.min_size.height,
+        });
+        cur_y += item.min_size.height;
+    }
+
+    const popup = try self.ensurePopupWindow(w);
+    const parent_popup = parent.popup_window orelse return error.ParentPopupMissing;
+    const parent_pos = parent_popup.window.getPos();
+    const anchor = awt.Window.Rect{
+        .x = parent_pos.x + roundToI32(parent.popup_root.position.x + self.component.position.x),
+        .y = parent_pos.y + roundToI32(parent.popup_root.position.y + self.component.position.y),
+        .width = @max(0, roundToI32(self.component.size.width)),
+        .height = @max(0, roundToI32(self.component.size.height)),
+    };
+    const popup_size = awt.Window.Size{
+        .width = @intFromFloat(@ceil(popup_w)),
+        .height = @intFromFloat(@ceil(popup_h)),
+    };
+    const work = w.awt_window.?.monitorWorkarea();
+    try popup.showAtScreen(decideSubmenuPopupRect(anchor, popup_size, work), popup_size);
+    self.open = true;
+}
+
+fn decideSubmenuPopupRect(anchor: awt.Window.Rect, popup_size: awt.Window.Size, work_area: awt.Window.Rect) awt.Window.Rect {
+    const width = @max(0, popup_size.width);
+    const height = @max(0, popup_size.height);
+    const work_right = work_area.x + work_area.width;
+    const right_x = anchor.x + anchor.width + SUBMENU_GAP;
+    const left_x = anchor.x - width - SUBMENU_GAP;
+    const x = if (right_x + width <= work_right)
+        right_x
+    else if (left_x >= work_area.x)
+        left_x
+    else
+        clampStart(right_x, width, work_area.x, work_area.width);
+    const y = clampStart(anchor.y, height, work_area.y, work_area.height);
+    return .{ .x = x, .y = y, .width = width, .height = height };
 }
 
 /// Activate the highlighted row (Enter): leaves click (doClick carries the
@@ -473,6 +576,17 @@ fn activateHighlighted(self: *Menu) void {
 }
 
 // ── vtable: label / row ──────────────────────────────────────────────────
+
+fn clampStart(preferred: i32, size: i32, area_start: i32, area_size: i32) i32 {
+    if (area_size <= 0) return area_start;
+    if (size >= area_size) return area_start;
+    const max_start = area_start + area_size - size;
+    return @min(@max(preferred, area_start), max_start);
+}
+
+fn roundToI32(v: f32) i32 {
+    return @intFromFloat(@round(v));
+}
 
 fn a11yName(c: *const Component) ?[]const u8 {
     const menu: *const Menu = @fieldParentPtr("component", c);
@@ -791,4 +905,31 @@ fn activateItem(menu: *Menu, item: *Component) void {
         menu.openSubmenu(sub);
         if (sub.open) sub.highlightFirst();
     }
+}
+
+test "submenu popup rect opens right flips left then clamps" {
+    try std.testing.expectEqual(
+        awt.Window.Rect{ .x = 130, .y = 100, .width = 160, .height = 120 },
+        decideSubmenuPopupRect(
+            .{ .x = 80, .y = 100, .width = 50, .height = 24 },
+            .{ .width = 160, .height = 120 },
+            .{ .x = 0, .y = 0, .width = 400, .height = 300 },
+        ),
+    );
+    try std.testing.expectEqual(
+        awt.Window.Rect{ .x = 170, .y = 100, .width = 160, .height = 120 },
+        decideSubmenuPopupRect(
+            .{ .x = 330, .y = 100, .width = 50, .height = 24 },
+            .{ .width = 160, .height = 120 },
+            .{ .x = 0, .y = 0, .width = 400, .height = 300 },
+        ),
+    );
+    try std.testing.expectEqual(
+        awt.Window.Rect{ .x = 20, .y = 180, .width = 180, .height = 120 },
+        decideSubmenuPopupRect(
+            .{ .x = 80, .y = 260, .width = 50, .height = 24 },
+            .{ .width = 180, .height = 120 },
+            .{ .x = 20, .y = 10, .width = 180, .height = 290 },
+        ),
+    );
 }
