@@ -294,6 +294,12 @@ static LRESULT CALLBACK ime_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     WNDPROC prev = cbs ? cbs->prev_wndproc : NULL;
 
     switch (msg) {
+    case WM_MOUSEACTIVATE: {
+        const int no_activate =
+            (GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & WS_EX_NOACTIVATE) != 0;
+        if (no_activate) return MA_NOACTIVATE;
+        break;
+    }
     case WM_IME_STARTCOMPOSITION:
         /* Push the cached caret pos NOW so the IME picks it up for the
          * candidate / composition windows it is about to spawn. Without
