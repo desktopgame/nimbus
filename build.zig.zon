@@ -78,6 +78,10 @@
     .paths = .{
         "build.zig",
         "build.zig.zon",
+        // build.zig comptime-imports build/third_party.zig, so the build/
+        // directory must ship in the package tarball; otherwise external
+        // consumers hit FileNotFound at the top-level @import.
+        "build",
         "include",
         "framework",
         "awt",
