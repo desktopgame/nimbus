@@ -205,6 +205,7 @@ pub fn build(b: *std.Build) void {
     // ── examples ─────────────────────────────────────────────────
     addExample(b, "hello", framework_mod, null, target, optimize);
     addExample(b, "snapshot", framework_mod, scenes_mod, target, optimize);
+    addExample(b, "minimal", framework_mod, null, target, optimize);
     addExample(b, "widget_simple", framework_mod, null, target, optimize);
     addExample(b, "widget_metalbutton", framework_mod, null, target, optimize);
     addExample(b, "widget_showcase", framework_mod, null, target, optimize);
