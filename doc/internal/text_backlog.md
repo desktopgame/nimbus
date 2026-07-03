@@ -57,10 +57,10 @@ DisplayWidth は使わない（プロポーショナルでは実 advance が唯�
 ---
 
 ## #3 書記素クラスタ単位の編集・カーソル移動
-- 状態: 着手可能（unblock 済み）
+- 状態: 完了
 - 優先度: 中
 - 影響範囲: TextField / TextArea、テキストモデル
-- 更新日: 2026-06-22
+- 更新日: 2026-07-03
 - 依存: zg（Graphemes・vendor/zg-v0.16.2・feat/zg-graphemes で配線済み）
 
 ### 何
@@ -77,6 +77,15 @@ CLAUDE.md「書記素クラスタ」のとおり v1 は codepoint で、**バイ
 `Graphemes.iterator` / `reverseIterator` へ差し替える（局所変更）。backspace/delete もクラスタ単位へ。
 ただし caret x のドリフト（結合マークが per-codepoint advance でフル幅算入されてズレる。`glyphXAtByte`）は
 境界差し替えだけでは直らず、クラスタ単位の advance 測定が別途要る。
+
+### 完了メモ（2026-07-03）
+codepoint 単位の Backspace / Delete / 矢印移動を書記素クラスタ単位へ移行済み。まず TextArea を移行し
+（`fda8100`「TextArea を書記素クラスタ単位編集へ (text_backlog #3)」）、その後の編集コア共通化
+（framework_backlog #5 の `EditableText`）で境界歩行を `awt/src/grapheme.zig` の
+`prev/nextGraphemeBoundary` に一本化し、TextField / TextArea 双方がクラスタ単位で編集・カーソル移動する。
+「バイト位置に直接依存しない実装」の前提は維持。残る低優先 follow-up: 実装メモの caret x ドリフト
+（結合マークの per-codepoint advance によるズレ）は境界差し替えでは解けず、クラスタ単位の advance 測定が
+別途要る（本項目の編集・移動の完了とは独立の描画側 follow-up）。
 
 ---
 
@@ -97,10 +106,10 @@ word break 判定が前提で、ともに現状未実装（net-new）。Home/End
 ---
 
 ## #5 Undo / Redo（テキスト編集の undo ＝ framework UndoStack の最初の consumer）
-- 状態: 棚上げ
+- 状態: 完了
 - 優先度: 中
 - 影響範囲: TextField / TextArea、framework_backlog #5 編集コア（applyEdit）、framework の汎用 UndoStack
-- 更新日: 2026-06-24
+- 更新日: 2026-07-03
 - 依存: framework_backlog #31（汎用 UndoStack プリミティブ）/ framework_backlog #5 編集コア（applyEdit チョークポイント）
 
 ### 何
@@ -118,6 +127,14 @@ ReplaceRange command（pos・旧バイト・新バイト・caret / 選択の bef
 ### なぜ
 実装は重めだが、一般的なユースケースなので提供したい。地ならしで framework_backlog #31（汎用スタック）と
 #5 編集コア（applyEdit チョークポイント）が入れば、本項目は command 化と policy 決めに絞れる。
+
+### 完了メモ（2026-07-03）
+地ならし（framework_backlog #31 汎用 UndoStack ＝ `30647e5`／同 #5 編集コア `EditableText` ＝ `835e6d6`）が入り、
+本項目はその上で command 化と policy 決めとして完了。`EditableText` が `undo_stack: UndoStack` を持ち、各 edit を
+`ReplaceRange` command（pos・旧/新バイト・caret / 選択の before-after）として push、`pub fn undo` / `redo` を提供。
+coalescing policy は `ReplaceRange.tryMerge`（`canMergeInsertGroup` / `canMergeSingleInsert` ＝ 連続入力を 1 undo 単位に
+まとめる）として実装。TextField / TextArea 双方が共有 `EditableText` 経由で undo/redo する。bounded は #31 の
+UndoStack 側で担保。
 
 ---
 
@@ -174,15 +191,20 @@ plan.md #41。汎用 DnD 基盤は実装済み（[[project-dnd-design]]）。テ
 ---
 
 ## #10 カーソル変化機構（I-beam / リサイズ / スプリットペイン）
-- 状態: 未着手
+- 状態: 完了
 - 優先度: 中
 - 影響範囲: awt（GLFW SetCursor）、framework（hover でのカーソル切替）
-- 更新日: 2026-06-02
+- 更新日: 2026-07-03
 - 依存: なし
 
 ### 何
 plan.md #42。I-beam（テキスト hover）自体は v1 で配線しないが、**カーソル変化機構そのものはウィンドウ
 リサイズ／スプリットペインで必須**（テキスト専用ではない汎用機構）。GLFW の SetCursor は安価。
+
+### 完了メモ（2026-07-03）
+framework_backlog #32（カーソル形状の機構）で実装済み（`251a9a0`、修正 `1e56f1f`）。per-component cursor ＋
+mouse-move hit-test ＋ glfwSetCursor 配線が awt / awt-c まで縦に入り、テキストエリア上の I-beam・SplitPane 分割線上の
+リサイズカーソルが動く。詳細は framework_backlog #32 の完了メモを参照。
 
 ---
 

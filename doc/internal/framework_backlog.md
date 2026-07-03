@@ -259,10 +259,10 @@ snapshot 差分は予告どおり統一判断 2 件のみ（fixtures 再生成�
 narrative）に記載。C ABI への Theme 露出は capi バックログで別途（struct 引数対応に依存）。
 
 ## #5 TextField / TextArea の編集コア共通化
-- 状態: 未着手
+- 状態: 完了
 - 優先度: 中（テキストエディターのドッグフーディング着手で「高」に昇格する）
 - 影響範囲: framework の `TextField.zig` / `TextArea.zig`、`textfield.md` / `textarea.md`
-- 更新日: 2026-06-24
+- 更新日: 2026-07-03
 - 依存: なし（text#3 完了済み。旧「text#3 と同時実施」前提は失効。関連: #31 汎用 UndoStack / text#13 IME util）
 - 設計: [edit_core_design.md](edit_core_design.md)（#31 と共同設計・applyEdit / ReplaceRange / coalescing 継ぎ目）
 
@@ -322,6 +322,15 @@ styled / TextPane モデル（StyledDocument 相当）は #5 のスコープ外�
 キャレット・選択・クリップボード・編集操作のロジックが単一モジュールに存在し、TextField / TextArea
 双方がそれを使う。編集系の単体テストが共有コアに対して書かれ、既存の snapshot テスト・examples
 （widget_textfield / widget_textarea）の挙動が変わらないこと。
+
+### 完了メモ（2026-07-03）
+共有編集コア `framework/src/EditableText.zig` を新設し（`835e6d6`、OOM 経路の不可分化は `f882a15`）、
+TextField（`3ca5eb7` で載せ替え）・TextArea（`9dd4eaf` / `4212499` で公開編集 API と状態同期）双方を
+そこへ載せ替えた。キャレット移動・選択・クリップボード・編集操作・undo/redo が `EditableText` に集約され、
+両 widget が `root.zig` 経由で同一モジュールを使う。undo は #31 の汎用 `UndoStack` を消費する形で編集コアに
+実装（applyEdit → ReplaceRange command）。境界歩行は `awt/src/grapheme.zig` の grapheme boundary を共有。
+バッファ構造は確定どおり単一フラットバッファ ＋ 行は widget 派生。styled / TextPane（StyledDocument 相当）は
+スコープどおり将来項目のまま。
 
 ## #6 開いたメニューのキーボード操作の完結
 
@@ -579,10 +588,10 @@ Swing `JTree` 相当。階層モデル、展開 / 折りたたみ、インデン
 ファイラーの左ペインがツリーになり、展開 / 折りたたみ / クリック移動が動く。doc + テスト + example。
 
 ## #12 TabbedPane
-- 状態: 未着手
+- 状態: 完了
 - 優先度: 中
 - 影響範囲: framework 新規モジュール、example
-- 更新日: 2026-06-12
+- 更新日: 2026-07-03
 - 依存: なし
 
 ### 何
@@ -591,6 +600,13 @@ Swing `JTabbedPane` 相当。タブバー + 中身の切り替え、タブの追
 
 ### 完了条件
 タブの追加 / 切り替え / 削除が動き、どちらかのドッグフーディングアプリで実用されている。doc + テスト。
+
+### 完了メモ（2026-07-03）
+`framework/src/TabbedPane.zig` を新設（`57a509f`）。タブバー + 中身の切り替え・タブ追加 / 削除・
+change listener（型付き化は `df154c1`）・実行例とスナップショット（`cff9c5b`）を実装。LAF 移行で default Look へ
+統合（`39c36a9`）、Metal タブ枠（`a73a03f`）まで入っている。派生の繰り延べ機能（閉じるボタン #22 /
+ドラッグ並べ替え #23 / キーボード・端配置・overflow・アイコン #24）は本項目から分離して個別起票済みで、
+それらは本項目の完了に含めない（`be9e979`）。
 
 ## #13 グリッドビュー（アイコン / サムネイル表示）
 - 状態: 棚上げ
@@ -763,10 +779,10 @@ textlint の検出対象ではない内容バグなので、その場では触�
 （旧 `doc/internal/layout_helpers.md` から移設）
 
 ## #20 メニューのはみ出し対応（別ウィンドウ化）
-- 状態: 未着手
+- 状態: 実装中（メニューバー起点のメニューチェーンは別ウィンドウ化済み。PopupMenu / コンテキストメニューは未対応）
 - 優先度: 低
 - 影響範囲: メニュー系（popup の backend）、awt-c（GLFW フラグ）、`menu.md` / `narrative/menu_bar.md`
-- 更新日: 2026-06-13
+- 更新日: 2026-07-03
 - 依存: 既存のメニュー overlay 実装
 
 ### 何
@@ -778,6 +794,16 @@ GLFW の `GLFW_DECORATED` / `GLFW_FOCUS_ON_SHOW` / `GLFW_FLOATING` でほぼま�
 ### なぜ今やらない
 通常の画面サイズでは reposition / clip で足りる。 実需（小さい画面 / 端での大きいメニュー）が出てから。
 （旧 `doc/internal/menu-bar-requirements.md` の v2 記述から移設）
+
+### 進捗メモ（2026-07-03・部分完了）
+別ウィンドウ backend そのものは実装され、メニューバー起点のメニューチェーンは移行済み。装飾なし OS 子窓
+プリミティブ `framework/src/PopupWindow.zig`（`4532f51`）を足し、トップレベルメニューを OS 子窓化して
+hover-switch / stale open_menu を解消（Phase 2 A+B・`c6a1080`）、サブメニューまで含めたチェーン全体を
+OS 子窓で統一（Phase 2 C・`4d326c5`、HiDPI 配置・stale 化の構造的解消 `f22078e`、最終 `eb7fced`）。
+ComboBox ドロップダウンも同じ PopupWindow へ載せ替え済み（`9cc44af`）。OS 子窓はクライアント領域外へ
+はみ出せるため、メニューバー系メニューについては本項目の狙い（別ウィンドウ化）を満たす。
+残件: PopupMenu / コンテキストメニューは依然 in-window overlay（`PopupMenu.zig` の `w.overlays.add`）で、
+別ウィンドウ化されていない。ここが移行するまで本項目は完了にしない。関連: #34（PopupWindow のプール化）。
 
 ## #21 RadioButtonMenuItem
 - 状態: 完了（Codex ハンドオフ試行の初回題材）。実装・factory・export・テスト（doClick 冪等 / ButtonGroup 排他）入り、`zig build test` 緑
@@ -970,10 +996,10 @@ awt に線・三角・多角形のプリミティブが無いことが原因で�
 awt#9 の方針に沿って 3 関数の階段描画が解消され、スナップショットテストが緑。awt#9 の完了条件と一体で達成される。
 
 ## #28 ScrollPane のヘッダー領域とコーナー（JScrollPane パリティ：columnHeader / rowHeader / corner）
-- 状態: 未着手
+- 状態: 完了
 - 優先度: 中（columnHeader 部分は実バグ起点。rowHeader + corner は低・将来）
 - 影響範囲: framework の `ScrollPane.zig`（領域モデルの刷新 + レイアウト + ヘッダーのスクロール同期 + ヘッダー/コーナー view の所有）/ `scroll_pane.md`、`Table.zig`（自前ヘッダー pin の廃止）、将来の text editor（行番号 gutter）
-- 更新日: 2026-06-18
+- 更新日: 2026-07-03
 - 依存: なし（awt は既存の drawImage / clip / Container で組める見込み。不足が出たら awt_backlog.md にクロス参照）
 
 ### 何
@@ -1059,11 +1085,22 @@ rowHeader / corner を入れた場合はそのレイアウト・所有も doc + 
 - テスト: 領域計算・同期オフセットは GPU 非依存の純ロジック（`ScrollPane.create` は device / フォント不要）、ヘッダー実描画のみ snapshot / Robot ゲート。
 - リスク明記: `ScrollLayout` は埋め込み値なので deinit を付けない（invalid-free）、`TableHeader` は Table より長生きさせない、Table 移行で HEADER_HEIGHT 前提の既存テストは書き換え。
 
+### 完了メモ（2026-07-03）
+作者決定どおり案A（一括）で 3x3 領域モデルを実装済み。`ScrollPane.zig` に `setColumnHeaderView` /
+`setRowHeaderView` / `setCorner`（`corners: [4]?*Component`）と 3x3 レイアウト（vbar は columnHeader 帯の下、
+hbar は rowHeader 帯の右から始まりヘッダー帯を跨がない）が入り、ヘッダー / コーナー view は ScrollPane 所有。
+公開 API と領域モデルは `framework/doc/scrollpane.md`（`setColumnHeaderView` ほか 3 本の関数定義 + 3x3 の
+領域説明）へ昇格済み（機能要望からスペックへ移動）。Table は自前ヘッダー pin を廃し `Table.headerView()` /
+`TableHeader` 委譲で columnHeaderView としてヘッダーを出す形へ移行、`app_filer` 詳細ビューの DnD ハイライトも
+body-local 座標契約へ合わせた（移行後の欠陥修正 `8eb28f2`）。即時動機だったバグ（詳細ビューで縦スクロールバーが
+列ヘッダー帯へ被る）は vbar が columnHeader の下から始まることで解消。rowHeader / corner も同時に入ったため
+JScrollPane パリティ（columnHeader / rowHeader / corner）を満たし、本項目全体を完了とする。
+
 ## #29 フォーム整列用のレイアウトマネージャ（GridLayout / GridBagLayout 系）
-- 状態: 未着手
+- 状態: 完了（最小 GridLayout。GridBagLayout 相当は将来の additive 拡張として据え置き）
 - 優先度: 中（FileChooser / 設定ダイアログ等のフォーム整列で実需化済み）
 - 影響範囲: framework 新規 LayoutManager（GridLayout）、`Application` ファクトリ or 自由関数、`FileChooser.zig`（下部の整列箇所の書き直し）、`layout-design.md` / 新規 doc
-- 更新日: 2026-06-21
+- 更新日: 2026-07-03
 - 依存: なし（関連: #30 LAF×min_size footgun ＝この hack が踏んだ罠 / #19 レイアウトの便利ユーティリティ）
 
 ### 何
@@ -1099,11 +1136,19 @@ FileChooser 下部の `File Name:` / `Files of Type:` ラベルを等幅にそ�
 FileChooser 下部を新レイアウトで書き直し、`min_size` 直書き hack（#30）を撤去。
 LAF を後から当て直しても整列が崩れないことをテスト（列幅算出を GPU 非依存の純レイアウト計算で検証）。doc 追従。
 
+### 完了メモ（2026-07-03）
+推奨どおり案A の最小 GridLayout を実装（`ec98077`、`n_cols=0` UB 回避と回帰補強 `96671ec`）。
+`framework/src/GridLayout.zig` が列を意識した非均等列（各列幅 = その列セルの自然幅の最大）を算出する。
+FileChooser 下部の 2 列フォームをこの GridLayout へ移行し、ラベルの `min_size` 直書き hack を撤去
+（`7d75242`「2列フォームを GridLayout へ移行し min_size ハックを撤去」）。列幅がレイアウト時算出になったため
+#30 の footgun（LAF 再適用で非明示 min_size が消える）をフォーム整列側では踏まなくなった。GridBagLayout 相当
+（セル結合・weight・anchor・fill）は本項目の完了スコープ外で、将来 additive 拡張として据え置く。
+
 ## #30 footgun＝LAF 再適用が min_size を上書きする / min_size は setMinSize 経由必須
-- 状態: 未着手
+- 状態: 実装中（機構・LAF 再測定ガード・回帰テストは実装済み。規約の明文 doc 化と既存直書きの監査が残件）
 - 優先度: 中
 - 影響範囲: framework の `laf.zig`（applyLook の再測定条件）/ `Component.zig`（`min_size` / `min_size_explicit` / `setMinSize`）、関連 doc（`laf.md` か component 周り）、`min_size` を直書きしている既存箇所の監査
-- 更新日: 2026-06-21
+- 更新日: 2026-07-03
 - 依存: なし（関連: #29 ＝この罠の回避にレイアウトマネージャを使う本来解）
 
 ### 何
@@ -1141,11 +1186,22 @@ FileChooser 下部ラベルの等幅化を `min_size` 直書きでやったら L
 規約を doc 化し、`min_size` を触る既存箇所が `setMinSize` 経由かを監査。
 可能なら回帰テスト（`setMinSize` したノードが `applyLook` 後も `min_size` を保つ・直書きは上書きされる、を純ロジックで）。
 
+### 進捗メモ（2026-07-03・部分完了）
+機構と回帰テストは実装済み（`e4f50e0`「明示 min size を LAF 再適用から守る」）。`Component.setMinSize` が
+`min_size_explicit` を立て、`applyLook` の leaf 再測定は明示済み min_size を保持する。widget 内部の派生更新は
+`setMinSizeDerived` へ寄せ、List / TextArea / Table などが将来の LAF 変更で寸法凍結しないようにした。
+回帰は `laf_test`（GPU 非依存で `setMinSize` 済みノードが applyLook 後も残る・Metal 適用後も縦 Slider の
+明示 height=180 が残る）で押さえている。FileChooser 下部フォームの min_size 直書き hack は #29（`7d75242`）で撤去済み。
+残件（本項目を完了にしない理由）: (1) footgun の規約（「min_size は必ず `setMinSize` 経由。直書きは applyLook で
+黙って上書きされる」）の明文 doc 化（現状 `component.md` は `setMinSize` の存在を書くが罠と規約は明文化していない）。
+(2) `min_size` を直書きしている既存箇所の監査 — 少なくとも `FileChooser.zig` の `places_sp.container.component.min_size.width = 180`
+（サイドバー幅）が `setMinSize` を経由しない直書きとして残存。案②（debug 検知）は実装手段があれば追加。
+
 ## #31 汎用 Undo/Redo スタック（Command プリミティブ）
-- 状態: 未着手
+- 状態: 完了
 - 優先度: 中（テキストエディター地ならしで text#5 の土台として実需化）
 - 影響範囲: framework 新規モジュール（Command インターフェイス + UndoStack）、root.zig export、最初の consumer は text 層
-- 更新日: 2026-06-24
+- 更新日: 2026-07-03
 - 依存: なし（最初の利用者は text#5 テキスト編集 undo。#5 編集コアの applyEdit が Command を push する）
 - 設計: [edit_core_design.md](edit_core_design.md)（#5 と共同設計・Command / UndoStack / 可否変更リスナー / bounded）
 
@@ -1184,11 +1240,19 @@ coalescing / グルーピング（連続入力を 1 undo 単位に・複合操�
 Command + UndoStack が framework から export され、bounded と可否変更リスナーが動く。
 text#5 がこのスタックを消費して undo/redo を実装できる（最初の consumer で実証）。doc + テスト。
 
+### 完了メモ（2026-07-03）
+`framework/src/UndoStack.zig` を新設し（`30647e5`「汎用 UndoStack を追加」）、`root.zig` から `UndoStack` /
+`Command` を export。`Command` は redo / undo ＋ 任意 `tryMerge`、`UndoStack` は `canUndo` / `canRedo`・可否変更
+リスナー・bounded（`pushAssumeCapacity` + 上限）を備え、埋め込みテストで push / undo / redo / merge を検証。
+最初の consumer は text#5（`EditableText`）で、`ReplaceRange` command を push して undo/redo と coalescing を実現
+（本項目の「最初の consumer で実証」を満たす）。スコープ外とした間接層 / isSignificant / 再帰 CompoundEdit は
+入れていない。
+
 ## #32 カーソル形状の機構（per-component cursor ＋ hit-test ＋ glfwSetCursor 配線）
-- 状態: 着手済み（feat/cursor-shape・cursor_shape.md 参照）
+- 状態: 完了
 - 優先度: 中
 - 影響範囲: framework（Component の cursor プロパティ、Window の mouse-move hit-test）、awt（Window へのカーソル設定 API）、awt-c（glfwSetCursor / glfwCreateStandardCursor の薄いラッパー）
-- 更新日: 2026-06-27
+- 更新日: 2026-07-03
 - 依存: なし
 
 ### 何
@@ -1222,6 +1286,12 @@ SplitPane 分割線上のリサイズカーソルが初期需要。
 ### 完了条件
 テキストエリア上で I-beam、SplitPane 分割線上でリサイズカーソルになる。doc（component / awt の該当 spec）＋
 テスト（hit-test → cursor 種別決定は GPU 非依存の純ロジックで、実際のカーソル切替は実機確認）。
+
+### 完了メモ（2026-07-03）
+per-component cursor ＋ mouse-move hit-test ＋ glfwSetCursor 配線を実装（`251a9a0`「カーソル形状機構を実装」、
+設計 doc `f39da44`、起票 `2c44c4e`）。その後テストとモーダル時のカーソル復帰を修正（`1e56f1f`）。awt / awt-c まで
+縦に配線され（glfw 標準カーソルの薄いラッパー）、テキストエリア上の I-beam・SplitPane 分割線上のリサイズカーソルが
+初期需要どおり動く。text#10（カーソル変化機構）はこの機構で解決済み（text_backlog #10 参照）。
 
 ## #33 アクセラレータ文字列のパース（`"Ctrl+O"` → KeyStroke）
 - 状態: 未着手
