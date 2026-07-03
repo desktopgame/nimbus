@@ -17,12 +17,13 @@ v1 スコープ:
 ```zig
 pub const ComboBox = struct {
     component:        Component,
-    popup_root:       Component,                    // overlay の root (Window に登録)
+    popup_root:       Component,                    // popup の内容 root (open 時に PopupWindow のコンテナーに載る)
     items:            std.ArrayList([]const u8),   // 所有された UTF-8 dup
     selected_index:   usize,
     hovered_index:    ?usize,                       // popup 内の hover ハイライト用
     open:             bool,
     window:           ?*Window,                     // open 中は親 Window を持つ
+    popup_window:     ?*PopupWindow,                // ドロップダウンを載せる子ウィンドウ (初回 open で遅延生成)
     has_focus:        bool,
     enabled:          bool,
     font:             awt.Graphics.TextFont,
@@ -32,8 +33,10 @@ pub const ComboBox = struct {
 };
 ```
 
-`popup_root` は ComboBox 自身が抱える別 Component で、 open 時に `Window.addOverlay` で登録される。
-独立した vtable (`popup_vtable`) を持ち、 popup の描画 / マウス処理を担う。
+ドロップダウンは枠なしの子ウィンドウ `PopupWindow` (`popup_window.md` 参照) に載せる。
+`popup_root` は ComboBox 自身が抱える popup の内容 Component で、初回 open 時に `PopupWindow` のコンテナーへ `BorderLayout.add` で載せる。
+独立した vtable (`popup_vtable`) を持ち、popup の描画 / マウス処理を担う。
+`PopupWindow` はフォーカス喪失・Escape で自動的に閉じる (かつて Window overlay 層に載せていたのを 6 月に移行)。
 
 ## 生成
 ```zig

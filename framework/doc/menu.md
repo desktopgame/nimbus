@@ -19,7 +19,7 @@ pub const Mode = enum { bar, item };
 
 pub const Menu = struct {
     component:  Component,                     // バー/行として描画される本体
-    popup_root: Component,                     // 開いた popup の root (overlay として Window に登録)
+    popup_root: Component,                     // 開いた popup の内容 root (PopupWindow のコンテナーに載る)
     text:       []const u8,
     icon:       ?awt.Image,
     font:       awt.Graphics.TextFont,
@@ -30,7 +30,8 @@ pub const Menu = struct {
     mode:       Mode,                          // bar (バー上のラベル) / item (行ラベル + サブメニュー矢印)
     open:       bool,                          // popup 表示中か
     open_child: ?*Menu,                        // 開いているサブメニュー (なければ null)
-    window:     ?*Window,                      // overlay 登録先 (`setWindow` で配線)
+    window:     ?*Window,                      // 親 Window (`setWindow` で配線)
+    popup_window: ?*PopupWindow,               // popup を載せる子ウィンドウ (OS ウィンドウがあるとき。初回 open で遅延生成)
     allocator:  std.mem.Allocator,
 
     pub const vtable = Component.VTable{
@@ -43,7 +44,9 @@ pub const Menu = struct {
 };
 ```
 
-`popup_root` は通常コンポーネントツリーに含まれず、`show` 時に Window の overlays 層に登録される独立ルート。
+`popup_root` は通常コンポーネントツリーに含まれない独立ルートで、`show` 時に popup の内容として表示される。
+親 Window に OS ウィンドウがあるときは `PopupWindow` (`popup_window.md`) のコンテナーに載せる。
+headless (OS ウィンドウ無し) のときのみ、従来どおり `Window.overlays` 層へ載せる。
 `mode` は親コンテキスト (MenuBar / 親 Menu) が `setMode` でセットする。
 
 ## Menu の生成
@@ -70,7 +73,7 @@ fn destroy(self: *Component, allocator: std.mem.Allocator) void;
 ```
 
 `Menu.vtable.destroy` として登録される。
-保持している全 child item を destroy 経由で解放、`text` バッファ・`icon`（所有していれば）・`popup` Container（あれば）を解放する。
+保持している全 child item を destroy 経由で解放し、`text` バッファと `popup_root`、生成済みなら `PopupWindow`（`destroyPopupWindow`）を解放する。
 `owns_model` が true ならモデルを deinit + 解放し、最後に Menu 本体を free する。
 
 ## item の追加
@@ -142,8 +145,11 @@ pub fn show(self: *Menu, window: *Window, anchor: Component.Point) !void;
 * MenuBar から呼ばれる時は「Menu ラベルの左下」が anchor
 * サブメニューとして呼ばれる時は「親 Menu 行の右上」が anchor
 
-内部で popup 用 Container を生成（既存があれば再利用）、`items` を縦並び BoxLayout で配置、Window の overlays 層に登録する。
-画面端で popup が見切れる場合は反対側に反転（v1 はクライアント領域内に収まるよう reposition、`narrative/menu_bar.md`「目指したもの」参照）。
+内部で popup サイズ（幅 = item 最大幅、高さ = item 合計）を求め、`items` を `popup_root` 内に縦積みで配置する。
+親 Window に OS ウィンドウがあれば `PopupWindow` を生成（`ensurePopupWindow`）して `showAtLocal` で開く。
+bar モードのときは Window のメニューセッションを開始する（`beginMenuSession`）。
+OS ウィンドウが無い headless では従来どおり `Window.overlays` 層へ登録し、クライアント領域内に収まるよう位置をクランプする。
+画面端の反転（下に入らなければ上へ）は `PopupWindow` 側が決める（`popup_window.md`「配置」）。
 
 `open = true` にする。
 
@@ -155,9 +161,9 @@ pub fn show(self: *Menu, window: *Window, anchor: Component.Point) !void;
 pub fn hide(self: *Menu) void;
 ```
 
-popup を Window の overlays 層から外す。
+open 中のサブメニューを先に閉じ、`PopupWindow` があれば `dismiss`、headless overlay なら `Window.overlays` から外して閉じる。
 `open = false` にする。
-popup Container は破棄せず再利用のため保持する（次回 show 時に再表示）。
+`PopupWindow` は破棄せず再利用のため保持する（次回 show 時に再表示。破棄は Menu の destroy 時）。
 親が MenuBar の場合、MenuBar 側の `open` も連動して `null` に戻す（コールバック経由）。
 
 ## キーボード操作
@@ -172,7 +178,7 @@ popup Container は破棄せず再利用のため保持する（次回 show 時�
 | `Enter` | ハイライト行を起動 (サブメニューなら展開して先頭をハイライト) |
 | `→` | ハイライト中のサブメニューを展開して先頭をハイライト |
 | `←` | サブメニューなら 1 段戻る (最上段の popup では no-op) |
-| `Esc` | 1 段だけ閉じる (Window の `overlays.dismissTop`。最上段なら popup 全体が閉じる) |
+| `Esc` | 1 段だけ閉じる (PopupWindow モードは popup の Escape バインド、headless overlay は `overlays.dismissTop`。最上段なら全体が閉じる) |
 | 修飾なし文字 | メニューローカルニーモニック (`menu_item.md`「ニーモニックの設定」) |
 | 修飾付き和音 | popup を**全部閉じてから**アクセラレータを遂行 (Window 側。`narrative/keybinding.md`) |
 
@@ -182,7 +188,7 @@ popup Container は破棄せず再利用のため保持する（次回 show 時�
 ## ライフサイクル
 * MenuBar.add(menu) / Menu.add(submenu_as_component) で menu の所有権が親に移る
 * 親の destroy で連鎖的に menu も destroy される
-* popup の Container は menu が所有（hide 後も再利用）
+* popup を載せる `PopupWindow` は menu が遅延生成して所有（hide 後も再利用、destroy で破棄）
 * モデルは内部生成され menu が所有する（Menu は外部モデルを受け取らない）
 
 ## レイアウト属性

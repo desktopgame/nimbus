@@ -29,6 +29,21 @@ Menu の `paint` は親 Container を判定して 2 種類の描画を出し分�
 
 行内 hover で 200ms 程度の遅延を設けて誤展開を防ぐ実装余地あり（機能要望）。
 
+## popup のホスティング (PopupWindow と headless フォールバック)
+Menu の popup は親 Window の状態で 2 通りにホストする。判定は `show` 内の `w.awt_window != null` で行う。
+
+親 Window に OS ウィンドウがある通常時は、枠なし子ウィンドウ `PopupWindow` (`popup_window.md`) を遅延生成し、`popup_root` をそのコンテナーに載せる。
+親の矩形やクライアント領域に縛られず、モニターの端まで開けるのが狙いである。
+
+OS ウィンドウが無い headless では、従来どおり `Window.overlays` 層に `popup_root` を載せる。
+ヘッドレステスト (`focus_test.zig` など) が実ウィンドウなしにメニューの開閉・キーボード操作を検証できるようにするための経路である。
+`hide` / `destroy` も同じ分岐で、`PopupWindow.dismiss` か `Window.overlays` 除去のどちらかを通す。
+
+トップレベル popup (MenuBar 直下) は `showAtLocal` で「ラベルの下、入らなければ上」に開く。
+サブメニューは OS ウィンドウがあるとき `showSubmenuPopup` → `showAtScreen` で「親行の右、入らなければ左」に開く (`decideSubmenuPopupRect`)。
+どちらの反転判断も `PopupWindow` 側の純関数に閉じているので、ウィンドウを開かずにテストできる。
+bar モードの popup を開くと Window のメニューセッション (`beginMenuSession`) が始まり、キーやニーモニックが開いているメニュー階層へ配送される。
+
 ## leaf 項目の型分岐と共通化の保留
 Menu / PopupMenu は子の leaf 項目（MenuItem / CheckBoxMenuItem / RadioButtonMenuItem）を
 vtable identity で判定し、モデルの取得（`modelOf`）と起動（`activateItem`）を出し分ける。

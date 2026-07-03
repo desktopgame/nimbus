@@ -1361,3 +1361,34 @@ descriptor heap が律速。`NM_RTV_HEAP_SIZE` / `NM_DSV_HEAP_SIZE` は各 64 �
 ### 着手判断
 back buffer の GPU メモリがアイドル占有で実問題化する、または天井接近の兆候が出てから着手する。
 まず heap 定数を引き上げ、それでも GPU メモリが問題なら プール化（頻繁な再オープン向き）か 開閉ごと破棄（稀な再オープン向き）を選ぶ。
+
+## #35 専用 spec doc の無い公開 export の整備
+- 状態: 未着手
+- 優先度: 低
+- 影響範囲: framework の `root.zig` 公開 export のうち下記モジュール（`framework/doc/` への spec/narrative 追加要否の判断）
+- 更新日: 2026-07-03
+- 依存: なし
+
+### 何
+2026-07-03 の doc 追いつき作業（EditableText / UndoStack / GridLayout / PopupWindow の新規 doc 化）で、
+`root.zig` の `pub` export を一巡した際に「公開されているが専用 spec doc が無い」モジュールが残っていた。
+利用者向けかどうか（`doc-impl-sync` の「public だが基本フレームワーク内で完結なら doc 明記不要」に該当するか）を
+モジュールごとに判断し、要るものだけ doc を起こす。各行「何が未整備か / どこに部分記述があるか」:
+
+- `ImeSession`（`ImeSession.zig`）: 専用 spec 無し。IME preedit の挙動は `textfield.md` / `textarea.md`「IME 連携」に消費側視点の部分記述あり。
+- `laf`（`laf.zig` / `laf/metal.zig`）: 専用 spec 無し。「LAF = vtable 差し替え」の方針は #4 と `component.md`「個別の差し替えと一斉差し替え」に部分記述。
+- `Border`（`Border.zig`）: 専用 spec 無し（`border_layout.md` は別物 = BorderLayout）。
+- `Driver`（`Driver.zig`）: 専用 spec 無し。`robot.md` は Robot 単体のみで、その上の操作ヘルパ Driver に触れていない。
+- `listener`（`listener.zig`: ChangeEvent / ActionEvent / *ListenerList）: 専用 spec 無し。各ウィジェット doc と `model.md` に散在（型付きコールバックは別途計画）。
+- `lucide`（`lucide/icons.zig`）/ `noto`（`noto/fonts.zig`）: ビルトインのアイコン / フォント資産モジュール。専用 doc 無し。
+
+### なぜ（保留理由）
+いずれも「基本フレームワーク内で完結」寄りで、利用者が呼び順を誤ると壊れる類の緊急性は無い。
+`doc-impl-sync` 上は「実装が doc を追い越している」状態（doc に無いが実装にある）で、これは場合により許容される側。
+先回りで全部書くより、利用者面が固まった（または実需が出た）ものから起こすのが安い。
+
+### 決めること
+各モジュールについて「専用 doc を起こす / 既存 doc に一節足す / 内部完結として doc 不要と明記」のどれかを選ぶ。
+
+### 完了条件
+判断した結果を反映（doc 追加、または「内部完結ゆえ doc 不要」の明記）。追従監査で拾い直さないよう本項目に決着を記す。

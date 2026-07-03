@@ -17,7 +17,7 @@ ComboBox のレイアウト・描画・イベント処理・寿命管理。
 3. selected の item の文字 (左寄せ、 中央上下揃え)
 4. 右側に下向き chevron (▼) を 1px 縞の三角形で描画
 
-**popup (overlay)**:
+**popup (PopupWindow 上)**:
 1. 白背景
 2. 各 item を縦に並べる (行高 = `line_height + ITEM_PADDING_Y * 2`)
 3. hover している行は背景を青、 テキストを白に
@@ -43,19 +43,22 @@ popup のサイズ:
 |---|---|
 | マウス move (popup 内) | `hovered_index` 更新 + repaint |
 | マウス left press (popup 内、 item 上) | その index を確定 (`setSelectedIndex`) + close |
-| マウス left press (popup 外) | Window が `dismissAllOverlays` を呼ぶ → close (選択変更なし) |
+| popup 外クリック (フォーカス喪失) | `PopupWindow` が focus-lost を検知して close (選択変更なし) |
 | Escape | close (選択変更なし) |
 | ↓ / ↑ | `hovered_index` 移動 |
 | Enter / Space | `hovered_index` を確定 + close |
 
-popup は Menu / PopupMenu と同じ Window overlay 機構の上に乗っており、 cascade 等の管理は Window 側に任せている。
+popup は枠なし子ウィンドウ `PopupWindow` (`popup_window.md`) に載る。表示位置の決定と自動クローズは `PopupWindow` に任せている。
 
 ## 寿命
-ComboBox は `popup_root` を自身の中に embed しており、 open 時のみ Window の overlays リストにポインタが入る。
-`uninstall` / `destroy` 時に open 中なら自動で `hide()` (= `Window.removeOverlay`) を呼ぶので、 利用者が手動で close する必要はない。
+ComboBox は `popup_root` を自身の中に embed し、初回 open 時に `PopupWindow` を遅延生成して (`ensurePopupWindow`) そのコンテナーへ `popup_root` を載せる。
+`uninstall` / `destroy` 時に open 中なら自動で `hide()` を呼び、`hide()` は `PopupWindow.dismiss` を通すので、利用者が手動で close する必要はない。
 
-`popup_root` はどの Container にも属さない独立 Component なので、 ツリー側からは deinit されない。
-`Window.addOverlay` は初回 open 時に `popup_root` のプロパティマップ (DirtyNotify / FocusController) を遅延確保する。
-そのため `destroy` では本体 Component に加えて `popup_root` も明示的に deinit し、 このマップを解放する。
+`popup_root` はどの通常 Container にも属さない独立 Component なので、ツリー側からは deinit されない。
+`destroy` は `destroyPopupWindow` で `popup_root` を `PopupWindow` のコンテナーから外し、`PopupWindow` を破棄する。
+そのうえで `popup_root` 自身も明示的に deinit する。
+
+OS ウィンドウが無い headless では `PopupWindow.showAtLocal` が `error.OwnerHasNoOsWindow` を返し、ログに残して open しない。
+overlay へのフォールバックは持たず、ヒットテスト等の純ロジックは `PopupWindow` なしで単体テストできる。
 
 各 item の文字列は `items` (ArrayList of dup) として所有しており、 `destroy` で全部 free。
