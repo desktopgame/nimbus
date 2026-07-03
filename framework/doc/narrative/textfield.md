@@ -10,10 +10,10 @@ CLAUDE.md「文字コード」「書記素クラスタ」の方針に従って�
 
 * 単一行のみ (`TextArea` は別ウィジェット)
 * 左から右に書く言語のみ (RTL は未対応)
-* コードポイント単位での挿入・削除・キャレット移動 (書記素クラスタ単位は将来課題。詳細は「機能要望」)
+* 書記素クラスタ単位での挿入・削除・キャレット移動 (境界計算は `EditableText` 経由で `awt.grapheme` に委譲。詳細は「編集コアとアンドゥ/リドゥ」)
 * color emoji の表示は v1 では対象外 (フォントと描画パスの両方が要拡張、 詳細は「機能要望」)
 * IME composition の inline 表示は **Windows / macOS で実装済み**。Linux はバックエンド未対応 (詳細は「IME 連携」)
-* 標準編集ショートカット: `Backspace` / `Delete` / `Home` / `End` / 矢印 / `Shift+矢印` / `Ctrl+A,C,X,V`
+* 標準編集ショートカット: `Backspace` / `Delete` / `Home` / `End` / 矢印 / `Shift+矢印` / `Ctrl+A,C,X,V` / `Ctrl+Z,Y` (アンドゥ / リドゥ)
 
 単一行なので改行は挿入せず、 `Enter` は submit、 `Escape` は cancel のシグナルとして使う (「submit / cancel リスナー」参照)。
 `Tab` / `Shift+Tab` によるフォーカス遷移は Window のトラバーサルが処理する
@@ -24,18 +24,20 @@ CLAUDE.md「文字コード」「書記素クラスタ」の方針に従って�
 
 | キー | 動作 |
 |---|---|
-| `←` / `→` | キャレットを 1 コードポイント左右へ。`Shift` 押下なら mark を維持して選択拡張、未押下なら mark = caret |
+| `←` / `→` | キャレットを 1 書記素クラスタ左右へ。`Shift` 押下なら mark を維持して選択拡張、未押下なら mark = caret |
 | `Home` / `End` | キャレットを先頭 / 末尾へ。Shift 同上 |
-| `Backspace` | 選択あり → 削除。なし → キャレット直前 1 コードポイントを削除 |
-| `Delete` | 選択あり → 削除。なし → キャレット直後 1 コードポイントを削除 |
+| `Backspace` | 選択あり → 削除。なし → キャレット直前 1 書記素クラスタを削除 |
+| `Delete` | 選択あり → 削除。なし → キャレット直後 1 書記素クラスタを削除 |
 | `Ctrl+A` | 全選択 (`mark = 0`、`caret = text.len`) |
 | `Ctrl+C` | 選択範囲をクリップボードへコピー |
 | `Ctrl+X` | コピーしてから削除 |
 | `Ctrl+V` | クリップボードの内容をキャレット位置に挿入 (選択ありなら置換) |
+| `Ctrl+Z` / `Ctrl+Y` | `EditableText` のアンドゥ / リドゥ を呼ぶ。適用できたら consume する (「編集コアとアンドゥ/リドゥ」) |
 | `Enter` | submit リスナー発火 + consume (「submit / cancel リスナー」) |
 | `Escape` | cancel リスナー発火 + consume |
 
 `.char` イベント (`CharEvent`) は「選択があれば削除 → キャレット位置にコードポイントを UTF-8 で insert → キャレットを進める」。
+挿入自体はコードポイント単位で届くが、削除とキャレット移動は書記素クラスタ境界で行う。
 
 TODO: KeyStroke, InputMap, ActionMapなど整備される可能性あり。
 
@@ -46,7 +48,18 @@ TODO: KeyStroke, InputMap, ActionMapなど整備される可能性あり。
 | `.move` (capture 中) | キャレットを更新 (mark は維持) → 選択拡張 |
 | `.release` | capture 解除 (Window が自動でクリア) |
 
-ヒットテストはコードポイント単位で半分の幅を境に切り替える (グリフの左半分なら前、右半分なら次に置く)。
+ヒットテストはグリフ半分の幅を境に切り替え (左半分なら前、右半分なら次に置く)、結果を書記素クラスタ境界へスナップする。
+
+## 編集コアとアンドゥ/リドゥ
+テキスト本体・キャレット・選択・アンドゥ/リドゥ は `EditableText` (`editable_text.md`) が持ち、`TextField` は `core` フィールドとして 1 つ内包する。
+`TextArea` も同じ `EditableText` を共有するので、書記素クラスタ単位の境界計算・改行正規化・アンドゥコマンドのコアレッシングは両ウィジェットで同一実装になる。
+
+* 文字入力・削除・貼り付けは `core.insert` / `core.deleteBackward` / `core.deleteForward` / `core.paste` を通す。
+* 連続した 1 書記素クラスタずつの挿入は 1 つのアンドゥ単位へマージされる。
+* `Ctrl+Z` / `Ctrl+Y` は `core.undo()` / `core.redo()` を呼び、内容が戻ったときだけ change リスナーを発火して consume する。
+* キャレット移動・選択変更・クリック・IME クリアの節目で `core.breakCoalescing()` を呼び、以降の入力が別のアンドゥ単位になるよう区切る。
+
+単一行ウィジェットなので改行は挿入しないが、貼り付け時は `singleLineCopy` で改行を除いてから `core.paste` に渡す。
 
 ## キャレット点滅
 `install` で `Application.setInterval(500ms)` を仕込み、`blinkTick` が `caret_visible` をトグルして `component.repaint()` する。

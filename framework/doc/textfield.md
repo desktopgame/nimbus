@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 #  textfield
@@ -11,9 +11,7 @@ unsafe: false
 pub const TextField = struct {
     component:      Component,
     app:            *Application,            // タイマー / フォーカス連携で使う
-    text:           std.ArrayList(u8),       // UTF-8 内部表現
-    caret_byte:     usize,                   // キャレットのバイト位置 (内部)
-    mark_byte:      usize,                   // 選択範囲の他端 (caret == mark なら選択なし)
+    core:           EditableText,            // テキスト本体・キャレット・選択・undo/redo (共有コア)
     font:           awt.Graphics.TextFont,
     color:          awt.Graphics.Color,      // テキスト色
     background:     awt.Graphics.Color,      // 入力欄の背景色 (デフォルト白)
@@ -21,16 +19,20 @@ pub const TextField = struct {
     caret_visible:  bool,                    // タイマーが toggle する
     blink_timer_id: ?Application.TimerId,    // install で setInterval、uninstall で clearTimer
     has_focus:      bool,                    // focus_owner が自分なら true
+    dragging:       bool,                    // フィールド内での左ボタン押下から release までのあいだ true (選択ドラッグの gate)
     scroll_x:       f32,                     // 水平スクロール量 (px、テキスト先頭起点、>= 0)
-    preedit_text:         std.ArrayList(u8), // IME 変換中文字列 (UTF-8 コピー)
-    preedit_target_start: usize,             // preedit_text 内の変換中クローズ開始 byte offset
-    preedit_target_end:   usize,             // 同上、終了 byte offset
+    ime:            ImeSession,              // IME composition (preedit) セッション。未変換時は空
+    submit_listeners: ActionListenerList,    // Enter で発火
+    cancel_listeners: ActionListenerList,    // Escape で発火
+    change_listeners: ChangeListenerList,    // 内容変化で発火
     allocator:      std.mem.Allocator,
 };
 ```
 
-`caret_byte` / `mark_byte` は UTF-8 バイトオフセットだが、これは内部実装の詳細。
-将来書記素クラスタ単位に移行する際にも公開 API が破綻しないよう、外向きの API は codepoint index 単位 (もしくは「先頭」「末尾」「選択全体」のような抽象操作) で表現する方針。
+テキスト本体・キャレット・選択・アンドゥ/リドゥ は `EditableText` (`editable_text.md` 参照) に委譲する。
+`TextField` は描画・クリップボード・IME・横スクロールなど単一行ウィジェット固有の関心だけを持つ。
+`core.caret` / `core.mark` は UTF-8 バイトオフセットだが内部実装の詳細である。
+挿入・削除・キャレット移動はすべて書記素クラスタ境界で行う (`EditableText` が `awt.grapheme` の境界計算に委譲する)。
 
 ## TextField の生成
 ```zig
@@ -54,7 +56,7 @@ pub fn create(
 
 ## TextField の破棄
 `vtable.destroy(&tf.component, allocator)` で破棄する。
-内部で `vtable.uninstall` を呼んで blink タイマーを `clearTimer` し、フォーカスを解除し、`text` バッファを開放してから widget 自身を free する。
+内部で `vtable.uninstall` を呼んで blink タイマーを `clearTimer` し、フォーカスを解除し、`core`・IME・各リスナーを解放してからウィジェット自身を free する。
 
 利用者は `Container.deinit` 経由で間接的に呼ぶのが普通 (Container が子の destroy を担う)。
 
@@ -69,7 +71,7 @@ pub fn setText(self: *TextField, new_text: []const u8) !void;
 
 ## テキストの取得
 ```zig
-pub fn getText(self: TextField) []const u8;
+pub fn getText(self: *TextField) []const u8;
 ```
 
 内部 UTF-8 バッファの slice を返す。
@@ -120,22 +122,22 @@ pub fn removeChangeListener(self: *TextField, comptime T: type, comptime f: fn (
 * `setColumns(n: u32)` — `'M'` ベースの幅算出を桁数で外から指定
 * `setPlaceholder(text)` — 空のときに薄く表示するヒント
 * Linux 用 IME バックエンドの実装 (現状は Windows + macOS のみ。Linux は `awt-c/src/ime_stub.c` で no-op)
-* IME composition attribute の多段化 (現状は target 1 区間のみ。Windows IMM の CompAttr の TARGET_NOTCONVERTED / CONVERTED / INPUT 等を色分けして見せたい場合に必要)
+* IME composition attribute の多段化 (現状は target 1 区間のみ)。
+  Windows IMM の CompAttr の TARGET_NOTCONVERTED / CONVERTED / INPUT 等を色分けして見せたい場合に必要。
 * `Tab` / `Shift+Tab` traversal の標準対応
 * 部分再描画 (キャレット点滅で全画面再描画になるのを避ける)
 * パスワード入力モード (グリフを `•` で置換)
 
-### 棚上げ中 (書記素クラスタ + 絵文字)
-書記素クラスタ単位の編集と color emoji 対応は、 v1 スコープから外して将来課題に。
-背景と再開条件のメモ:
+### 棚上げ中 (color emoji)
+書記素クラスタ単位の挿入・削除・キャレット移動は実装済みで、`EditableText` が `awt.grapheme` の UAX #29 ベースの境界計算に委譲する。
+ZWJ シーケンス / 結合文字 / 肌色 modifier 等を 1 表示単位として扱う。
+残る棚上げは color emoji の表示のみ。 背景と再開条件のメモ:
 
-* **書記素クラスタ単位の編集** — ZWJ シーケンス / 結合文字 / 肌色 modifier 等で「複数 codepoint = 1 表示単位」になるものを正しく扱いたい。Zig 標準には UAX #29 実装が無く、 既存ライブラリ [ziglyph](https://github.com/jecolon/ziglyph) も 1〜2 年メンテが止まっている。 再開条件:
-  - 活発な代替 Unicode ライブラリが出る
-  - もしくは UAX #29 を自前実装する判断をする (それなりに大きい)
-* **絵文字 (color emoji)** — 単体では出ない。 必要な作業が 3 軸あり、 どれか欠けても完成しない:
-  1. 書記素クラスタ単位の編集 (上記)
-  2. emoji フォントの追加 (例: Noto Color Emoji。 ただしフォントサイズが数 MB〜数十 MB 規模)
-  3. カラー描画パス — 現状の `GlyphAtlas` は R8 (alpha mask only)、 `text_program` も grayscale 前提。 COLR/CPAL (v0/v1) / sbix / CBDT/CBLC のいずれかをサポートし、 RGBA8 atlas + RGBA tinted text program に拡張する必要がある
+* **絵文字 (color emoji)** — 編集単位としては書記素クラスタで扱えるが、 表示はまだ出ない。 表示に必要な作業が 2 軸あり、 どちらか欠けても完成しない:
+  1. emoji フォントの追加 (例: Noto Color Emoji。 ただしフォントサイズが数 MB〜数十 MB 規模)
+  2. カラー描画パス — 現状の `GlyphAtlas` は R8 (alpha mask only)、 `text_program` も grayscale 前提。
+     COLR/CPAL (v0/v1) / sbix / CBDT/CBLC のいずれかをサポートし、 RGBA8 atlas + RGBA tinted text program に拡張する必要がある。
 
-ユーザー視点では 「絵文字を入れると `□` が出る」 だが、 これは NotoSansJP に glyph が無いだけではなく、 描画パスとフォントの 2 重制約がかかっている (どちらか片方を直しても出ない)。
-今すぐ取り組まない判断は **2026-05-23**。
+ユーザー視点では 「絵文字を入れると `□` が出る」 だが、 これは NotoSansJP に glyph が無いだけではない。
+描画パスとフォントの 2 重制約がかかっている (どちらか片方を直しても出ない)。
+color emoji 表示に今すぐ取り組まない判断は **2026-05-23**。
