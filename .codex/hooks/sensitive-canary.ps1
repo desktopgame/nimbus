@@ -69,6 +69,11 @@ function Invoke-BetterLeaks([string]$Text) {
 
 $event = "Unknown"
 try {
+    # Hook JSON and scanner stdin use UTF-8, independent of the console code page.
+    $utf8 = [System.Text.UTF8Encoding]::new($false)
+    [Console]::InputEncoding = $utf8
+    [Console]::OutputEncoding = $utf8
+    $OutputEncoding = $utf8
     $raw = [Console]::In.ReadToEnd()
 
     if ([string]::IsNullOrWhiteSpace($raw)) {
