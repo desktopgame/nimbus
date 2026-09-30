@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # shader
@@ -29,7 +29,9 @@ awt の内部で定義された抽象化済みの型については保持して�
 複数言語の管理は呼び出し側 (awt 層) の責務。
 
 ## シェーダーのコンパイル
+```c
 nmShader* nmCompileShader(nmShaderStage stage, const char* source);
+```
 
 `source` のシェーダーをランタイムにコンパイルして生成する。
 失敗時は `NULL` を返す。
@@ -51,7 +53,9 @@ void nmDestroyShader(nmShader* self);
 * `self` に依存するパイプラインが残っていないこと。違反した場合の動作は UB。
 
 ## コンパイル済みバイナリからのロード
+```c
 nmShader* nmLoadShader(nmShaderStage stage, const void* binary, size_t size);
+```
 
 事前にコンパイルされたシェーダーバイトコード (DX12 なら DXBC) をロードして `nmShader` として保持する。
 起動時間の短縮や、配布バイナリの実行環境からシェーダーコンパイラ依存を切るために使う。

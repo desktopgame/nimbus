@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # model
@@ -43,7 +43,7 @@ pub const ActionListenerList = ListenerList(ActionEvent);
 ```
 
 `ChangeEvent` / `ActionEvent` は発火時に全リスナーへ渡る通知。`source` は発火した Model
-（Model は Component から独立し共有もされ得るので、source は widget ではなく Model。
+（Model は Component から独立し共有もされ得るので、ソース は ウィジェット ではなく Model。
 Swing の `EventObject.getSource` と同じ）。`awt.Event`（生の入力イベント）とは別物の高レベル通知で、
 リスナー呼び出し中のみ有効（ポインタを保持しないこと）。
 
@@ -194,5 +194,5 @@ try slider.model.addChangeListener(MyAppContext, onSliderChanged, &app_ctx);
 ## 機能要望
 * バッチ通知（複数 setter 呼び出しを 1 通知にまとめる `Model.beginUpdate` / `endUpdate`）
 * PropertyChangeListener 相当（プロパティ単位の細かい通知）
-* Model 間の bind ヘルパ（Model A の変化を Model B に反映する標準パターン）
+* Model 間の バインド ヘルパ（Model A の変化を Model B に反映する標準パターン）
 * `ActionEvent` への情報追加（action command 文字列など。現状は `source` のみ）

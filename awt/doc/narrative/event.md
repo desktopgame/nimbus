@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # event
@@ -24,7 +24,8 @@ return-bool 方式（消費 = 伝搬停止）と異なり、フィールド方�
 MouseEvent の `x` / `y` は **ウィンドウローカル座標**（ウィンドウの左上が `(0, 0)`、右下が `(window_width, window_height)`）で届く。
 ウィンドウの OS 絶対座標とは別物（OS 絶対座標は `framework.Window` の `component.position` 経由でアクセス可、`window.md` 参照）。
 
-コンポーネントの bounds は「親 Container 内のローカル座標」で表現されているので、深くネストされたコンポーネントがマウスイベントを受け取るときには、ウィンドウローカル座標から自身のローカル座標へ変換する必要がある。
+コンポーネントの bounds は「親 Container 内のローカル座標」で表現されているので、
+深くネストされたコンポーネントがマウスイベントを受け取るときには、ウィンドウローカル座標から自身のローカル座標へ変換する必要がある。
 
 ```
 window-local mouse pos (300, 250)
@@ -60,13 +61,14 @@ awt 層は座標計算ロジック自体を持たず、`Event.translated(offset)
 修飾キー自体の押下を検知したいときだけ `KeyCode.shift_left` 等を見る。
 
 ## マウスキャプチャ
-ドラッグ操作（Slider つまみのドラッグ、Button の押下中ドラッグ取り消し等）では、カーソルが widget の bounds 外に出ても `.move` / `.release` を受け取り続ける必要がある。
+ドラッグ操作（Slider つまみのドラッグ、Button の押下中ドラッグ取り消し等）では、
+カーソルが ウィジェット の bounds 外に出ても `.move` / `.release` を受け取り続ける必要がある。
 hit-test ベースの素朴な dispatch では、カーソルが外れた瞬間にイベントが届かなくなりドラッグが途切れる。
 
 これを解決するのが「マウスキャプチャ」。
 具体的な流れ：
 
-1. widget の `processEvent` が `.press` を受け取り、ドラッグ中の追跡が必要だと判断する
+1. ウィジェット の `processEvent` が `.press` を受け取り、ドラッグ中の追跡が必要だと判断する
 2. `ev.requestCapture(@ptrCast(self))` を呼ぶ（`self` は `*Component`）
 3. framework 側 dispatcher が press 終了後にこの値を読み取り、capture state に保存する
 4. 以降の `.move` イベントは hit-test を経由せず capture 先へ直接配送される
@@ -89,7 +91,7 @@ awt 層は OS から来た情報をそのまま MouseEvent に詰めるだけ。
 
 ## CharEvent と KeyEvent の使い分け
 `KeyEvent` は **物理キーの押下** を表す（`.code` は GLFW の `GLFW_KEY_*` 相当）。
-`CharEvent` は **入力された文字** を表す（`.codepoint` は OS のキーボードレイアウトを通過した後の Unicode codepoint）。
+`CharEvent` は **入力された文字** を表す（`.codepoint` は OS のキーボードレイアウトを通過した後の Unicode コードポイント）。
 
 | 用途 | 使うべきイベント |
 |---|---|
@@ -98,7 +100,7 @@ awt 層は OS から来た情報をそのまま MouseEvent に詰めるだけ。
 | カーソル移動・編集操作（矢印 / Home / Backspace / Del） | `KeyEvent` |
 | IME 変換中の文字列表示 | （将来）独立した composition イベント |
 
-両者は同じキー操作に対して**両方発火する**ことがある。
+両者は同じキー操作に対して両方発火することがある。
 たとえば `'a'` キーの押下では `KeyEvent{ .code = .a, .action = .press }` と `CharEvent{ .codepoint = 'a' }` が両方流れてくる（OS から見ると別系統のイベント）。
 
 `CharEvent.codepoint` に修飾キーフィールドは持たない。
@@ -120,11 +122,11 @@ IME（日本語・中国語・韓国語入力など）の **preedit (変換中�
 `text` は現在の preedit 文字列の借用 UTF-8（awt-c が所有、コールバックの有効期間のみ valid）。
 ハンドラ側が保持したいなら呼び出し直後に `allocator.dupe` で複製を取る。
 
-`target_start` / `target_end` は `text` 内の **byte offset** で、利用者が今変換中のクローズ（節）を指す。
+`target_start` / `target_end` は `text` 内の byte offset で、利用者が今変換中のクローズ（節）を指す。
 ウィジェットはこの範囲を太い下線・濃い背景などで強調表示するのが一般的。
 `target_start == target_end` のときは「変換中の特定範囲なし」を意味し、両者は preedit 内のキャレット位置として扱える。
 
-空文字列 (`text.len == 0`) は **composition cleared** のシグナル（キャンセル or 確定）。
+空文字列 (`text.len == 0`) は composition cleared のシグナル（キャンセル or 確定）。
 **確定文字列は CharEvent で別途届く**ので、ウィジェットは preedit overlay をクリアするだけでよい（commit を二重処理しない）。
 
 OS との連携:
@@ -137,12 +139,15 @@ OS との連携:
 * Linux: stub（no-op）。Wayland text-input v3 ベースの実装が将来追加される予定
 
 ## awt-c との関係
-awt-c は GLFW の C 関数ポインタ型でコールバックを受ける（`nmKeyCallback`、`nmCharCallback`、`nmMouseButtonCallback`、`nmCursorPosCallback`、`nmScrollCallback` 等）。
+awt-c は GLFW の C 関数ポインタ型でコールバックを受ける
+（`nmKeyCallback`、`nmCharCallback`、`nmMouseButtonCallback`、`nmCursorPosCallback`、`nmScrollCallback` 等）。
 これらのコールバックは個別の引数（コード / 文字 / ボタン / 座標 / スクロール量）を受け取る形になる。
 
 加えて、IME 用に `nmCompositionCallback`（GLFW にはなく awt-c 独自）がある。
-これは GLFW を経由せず、プラットフォーム別バックエンド（Windows: WNDPROC subclass、macOS: NSView runtime subclass + NSTextInputClient、Linux: Wayland text-input（予定））が直接 fire する。
+これは GLFW を経由しない。
+プラットフォーム別バックエンド
+（Windows: WNDPROC subclass、macOS: NSView runtime subclass + NSTextInputClient、Linux: Wayland text-input・予定）が直接 fire する。
 
 awt 層がそれらを Zig の `Event` 型に統合してから framework に渡す。
 `FocusEvent` は OS 由来ではなく framework が生成するため対応するコールバックは存在しない。
-このため awt-c では「Event」という統合型は存在せず、event.md は awt 層のみに存在する。
+このため awt-c では「Event」という統合型は存在せず、イベント.md は awt 層のみに存在する。

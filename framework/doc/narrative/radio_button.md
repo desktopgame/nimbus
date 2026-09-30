@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # radio_button
@@ -41,5 +41,5 @@ try group.add(rb3.getModel());
 
 これで「rb1 を選んだら rb2, rb3 が自動で off」 が成立する。
 
-**寿命の注意**: ButtonGroup は各 model の ChangeListener にハンドルを持つので、 「group.deinit() を model (= radio) の destroy より前」 に呼ぶ必要がある。
+**寿命の注意**: ButtonGroup は各 モデル の ChangeListener にハンドルを持つので、 「group.deinit() を モデル (= radio) の destroy より前」 に呼ぶ必要がある。
 example の `defer` 順序がそうなっていることを確認 (LIFO により、 group の defer を後に書くと先に実行される)。

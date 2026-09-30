@@ -1,10 +1,10 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # font
 フォントに関する設計ノート。
-freetype の薄いラッパー。指定 codepoint をビットマップにラスタライズする責務のみを持つ。
+freetype の薄いラッパー。指定 コードポイント をビットマップにラスタライズする責務のみを持つ。
 
 アトラス管理・テキスト用頂点バッファ構築・改行・描画は上位レイヤー (awt) で行う。
 awt-c はグリフ単体のラスタライズと、フォント・グリフのメトリクス提供までを担当する。
@@ -32,7 +32,8 @@ typedef struct nmFont nmFont;
 
 `nmGlyphMetrics` の各メンバの意味は以下。
 * `bitmap_width` / `bitmap_height`: 出力ビットマップの幅・高さ (pixel)
-* `bitmap_pitch`: ビットマップの行ストライド (バイト)。freetype の都合で `bitmap_width` より大きくなる (行末にパディングが入る) 場合があるため、行間移動には必ずこちらを使う
+* `bitmap_pitch`: ビットマップの行ストライド (バイト)。
+  freetype の都合で `bitmap_width` より大きくなる (行末にパディングが入る) 場合があるため、行間移動には必ずこちらを使う
 * `bearing_x`: pen 位置からビットマップ左端までのオフセット
 * `bearing_y`: baseline からビットマップ上端までのオフセット (上方向が正)
 * `advance_x`: このグリフ描画後の pen 進行量
@@ -52,7 +53,9 @@ typedef struct nmFont nmFont;
 全ての `nmFont` は `nmTerminateAwt` より前に破棄しておくこと。
 
 ## フォントの生成
+```c
 nmFont* nmCreateFont(const void* data, size_t size, int face_index);
+```
 
 メモリ上のフォントデータからフォントを生成する。
 * `data`: フォントファイル (TTF / OTF / TTC / OTC) のバイト列
@@ -68,7 +71,9 @@ freetype は内部で `data` ポインタを保持する。
 * `data` が `nmFont` の生存期間中、有効かつ不変であること。違反した場合の動作は UB。
 
 ## フォントの破棄
+```c
 void nmDestroyFont(nmFont* self);
+```
 
 フォントを破棄する。
 以後引数の `self` が使用可能であるかどうかは保証されない。
@@ -77,7 +82,9 @@ void nmDestroyFont(nmFont* self);
 * `self` が NULL のとき、なにも実行せずに終了する。
 
 ## ピクセルサイズの設定
+```c
 void nmSetFontPixelSize(nmFont* self, int pixel_size);
+```
 
 以降の操作で使用するピクセルサイズを設定する。
 `nmGetFontMetrics` / `nmRasterizeGlyph` / `nmGetGlyphAdvance` の結果はこのサイズに依存する。
@@ -87,7 +94,9 @@ void nmSetFontPixelSize(nmFont* self, int pixel_size);
 * `pixel_size` が 1 以上であること。違反した場合の動作は UB。
 
 ## フォントメトリクスの取得
+```c
 void nmGetFontMetrics(nmFont* self, nmFontMetrics* out);
+```
 
 現在のピクセルサイズにおけるフォント全体のメトリクスを `out` に書き込む。
 行送り (`line_height`) の計算等に使う。
@@ -96,9 +105,11 @@ void nmGetFontMetrics(nmFont* self, nmFontMetrics* out);
 * `self` に対して `nmSetFontPixelSize` が事前に呼ばれていること。違反した場合の動作は UB。
 
 ## グリフのラスタライズ
+```c
 int nmRasterizeGlyph(nmFont* self, uint32_t codepoint, nmGlyphMetrics* out_metrics, const uint8_t** out_bitmap);
+```
 
-指定 codepoint を現在のピクセルサイズでラスタライズする。
+指定 コードポイント を現在のピクセルサイズでラスタライズする。
 * `out_metrics`: グリフのメトリクス (ビットマップサイズ・行ストライド・bearing・advance)
 * `out_bitmap`: 8bit grayscale ビットマップへのポインタ (R8 配列、row major)。バッファ全長は `bitmap_pitch * bitmap_height` バイト
 
@@ -113,7 +124,9 @@ int nmRasterizeGlyph(nmFont* self, uint32_t codepoint, nmGlyphMetrics* out_metri
 * `self` に対して `nmSetFontPixelSize` が事前に呼ばれていること。違反した場合の動作は UB。
 
 ## グリフのアドバンスのみ取得
+```c
 float nmGetGlyphAdvance(nmFont* self, uint32_t codepoint);
+```
 
 ラスタライズを伴わずアドバンスのみ取得する。
 テキスト幅の事前測定・改行位置の判定等で、ビットマップが不要な場面に使う。
@@ -122,12 +135,14 @@ float nmGetGlyphAdvance(nmFont* self, uint32_t codepoint);
 * `self` に対して `nmSetFontPixelSize` が事前に呼ばれていること。違反した場合の動作は UB。
 
 ## グリフの有無確認
+```c
 bool nmFontHasGlyph(nmFont* self, uint32_t codepoint);
+```
 
-フォントが指定 codepoint のグリフを持つか確認する。
+フォントが指定 コードポイント のグリフを持つか確認する。
 
 ## 機能要望
 * 太字・斜体の合成 (`ftsynth` ベースで別 API として追加検討)
 * ヒンティングモードの選択 (現状はデフォルトの `FT_LOAD_DEFAULT` のみ)
 * LCD subpixel AA (現状は grayscale のみ)
-* CJK フォールバック (Latin フォントに無い codepoint を CJK フォントへ振る等の分岐に `nmFontHasGlyph` を活用)
+* CJK フォールバック (Latin フォントに無い コードポイント を CJK フォントへ振る等の分岐に `nmFontHasGlyph` を活用)

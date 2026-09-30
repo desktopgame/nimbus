@@ -1,11 +1,11 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # radio_button
 丸い indicator + ラベルからなる二状態ウィジェット。
 内部状態 (`ToggleButtonModel`) と入力ロジックは `CheckBox` と同じ。
-違いは描画 (丸 + 内側ドット) と「クリックは toggle ではなく常に on にする」 挙動。
+違いは描画 (丸 + 内側ドット) と「クリックは トグル ではなく常に on にする」 挙動。
 
 通常は `ButtonGroup` (詳細は `button_group.md`) と組み合わせて、 複数の RadioButton から 1 つだけ selected にする。
 
@@ -41,7 +41,7 @@ pub fn createWithModel(
 ```
 
 `create` は内部で `ToggleButtonModel` を新規生成 / 所有する。
-`createWithModel` は呼び出し側の所有する model を共有する。
+`createWithModel` は呼び出し側の所有する モデル を共有する。
 
 ファクトリ:
 ```zig
@@ -83,5 +83,5 @@ Tab がスキップする。フォーカス中は Space で `doClick`、フォ�
 
 ## 機能要望
 * 矢印キーでのグループ内ナビゲーション (上下キーで前 / 次の radio へ移動 + 自動 selection)
-* mnemonic 対応
+* ニーモニック 対応
 * フォーカスリング描画

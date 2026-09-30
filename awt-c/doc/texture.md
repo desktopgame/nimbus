@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # texture
@@ -31,7 +31,9 @@ awt の内部で定義された抽象化済みの型については保持して�
 * シェーダーリソースビュー (DX12 では SRV)
 
 ## テクスチャの生成
+```c
 nmTexture* nmCreateTexture(nmDevice* device, int width, int height, nmTextureFormat format);
+```
 
 指定サイズ / フォーマットのテクスチャを生成する。初期データは持たない。
 データ転送は `nmUploadTexture` または `nmUploadTextureRegion` で行う。
@@ -41,7 +43,9 @@ nmTexture* nmCreateTexture(nmDevice* device, int width, int height, nmTextureFor
 * `width` / `height` がいずれも 1 以上であること。違反した場合の動作は UB。
 
 ## テクスチャの破棄
+```c
 void nmDestroyTexture(nmTexture* self);
+```
 
 テクスチャを破棄する。
 以後引数の `self` が使用可能であるかどうかは保証されない。
@@ -50,7 +54,9 @@ void nmDestroyTexture(nmTexture* self);
 * `self` が NULL のとき、なにも実行せずに終了する。
 
 ## テクスチャ全体への書き込み
+```c
 void nmUploadTexture(nmTexture* self, const void* data, size_t size);
+```
 
 テクスチャ全体に CPU 側のデータを転送する。
 `data` はテクスチャの `format` に合わせたピクセル配列、`size` はそのバイト数。
@@ -62,8 +68,10 @@ void nmUploadTexture(nmTexture* self, const void* data, size_t size);
 * `size` が `width * height * bytes_per_pixel` と一致すること。違反した場合の動作は UB。
 
 ## テクスチャ部分への書き込み
+```c
 void nmUploadTextureRegion(nmTexture* self, int x, int y, int width, int height,
                            const void* data, size_t row_pitch);
+```
 
 テクスチャの指定矩形領域に CPU 側のデータを転送する。
 フォントアトラスの追加グリフ書き込み等、部分更新の用途に使う。
@@ -77,7 +85,9 @@ void nmUploadTextureRegion(nmTexture* self, int x, int y, int width, int height,
 * `row_pitch` が `width * bytes_per_pixel` 以上であること。違反した場合の動作は UB。
 
 ## テクスチャのバインド
+```c
 void nmBindTexture(nmCommandBuffer* self, nmTexture* texture, int slot);
+```
 
 記録中のコマンドバッファに対し、`texture` を `slot` 番にバインドする。
 
@@ -101,7 +111,8 @@ fragment float4 psMain(VsOut in [[stage_in]],
 }
 ```
 
-シェーダーリソースビューはテクスチャ生成時に device 内部の descriptor heap に登録されており、この関数はそのビューをルートシグネチャの `slot` 番から参照可能にする。
+シェーダーリソースビューはテクスチャ生成時に device 内部の descriptor heap に登録されており、
+この関数はそのビューをルートシグネチャの `slot` 番から参照可能にする。
 descriptor heap の構造は API には出ない (利用者が heap やスロット位置を意識する必要はない)。
 同じシェーダーで draw ごとに異なるテクスチャを使い分けるために使う。
 

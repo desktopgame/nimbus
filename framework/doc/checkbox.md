@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # checkbox
@@ -21,7 +21,7 @@ pub const CheckBox = struct {
 ```
 
 `ToggleButtonModel` を介して selected / pressed / rollover / enabled を管理する (詳細は `toggle_button_model.md`)。
-`owns_model` が true なら `destroy` 時に model を deinit / free する。
+`owns_model` が true なら `destroy` 時に モデル を deinit / free する。
 
 ## 生成
 ```zig
@@ -42,7 +42,7 @@ pub fn createWithModel(
 ```
 
 `create` は内部で `ToggleButtonModel` を新規生成して所有する。
-`createWithModel` は呼び出し側の所有する model を共有する形 (例: 同じ状態を別 widget からも反映したいときに使う)。
+`createWithModel` は呼び出し側の所有する モデル を共有する形 (例: 同じ状態を別 ウィジェット からも反映したいときに使う)。
 
 ファクトリ:
 ```zig
@@ -65,8 +65,8 @@ pub fn isSelected(self: CheckBox) bool;
 pub fn setSelected(self: *CheckBox, v: bool) void;
 ```
 
-内部 model への薄いラッパー。
-listener (`addChangeListener` / `addActionListener`) を仕込みたい場合は `getModel()` 経由で。
+内部 モデル への薄いラッパー。
+リスナー (`addChangeListener` / `addActionListener`) を仕込みたい場合は `getModel()` 経由で。
 
 ## Model の取得
 ```zig
@@ -86,6 +86,6 @@ pub fn doClick(self: *CheckBox) void;
 ## フォーカスとキー操作
 CheckBox は focusable (Tab トラバーサルの対象)。disabled の間は `FocusQuery` により
 Tab がスキップする。フォーカス中は Space で `doClick`、フォーカスリング (枠線) を描画する。
-* keyboard 操作の充実 (例: `Enter` でも toggle、 矢印キーでの「次の checkbox へ移動」)
-* mnemonic (アクセラレータ文字) 対応 — `_` プレフィックスで下線つきの文字を作って Alt+<char> で toggle
+* keyboard 操作の充実 (例: `Enter` でも トグル、 矢印キーでの「次の checkbox へ移動」)
+* ニーモニック (アクセラレータ文字) 対応 — `_` プレフィックスで下線つきの文字を作って Alt+<char> で トグル
 * アイコン付きチェックボックス

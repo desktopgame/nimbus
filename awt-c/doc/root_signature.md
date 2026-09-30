@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # root_signature
@@ -36,7 +36,9 @@ typedef struct nmRootSignature nmRootSignature;
 GUI 用途ではバインディングパターンが少数に収まるので、ルートシグネチャは数個で済む想定。
 
 ## ルートシグネチャの生成
+```c
 nmRootSignature* nmCreateRootSignature(nmDevice* device, const nmRootBinding* bindings, int count);
+```
 
 `bindings` 配列 (要素数 `count`) からルートシグネチャを生成する。
 失敗時は `NULL` を返す。
@@ -46,7 +48,9 @@ nmRootSignature* nmCreateRootSignature(nmDevice* device, const nmRootBinding* bi
 * `bindings` 配列内に `(type, stage, slot)` の組が完全に重複するエントリが含まれないこと。違反した場合の動作は UB。
 
 ## ルートシグネチャの破棄
+```c
 void nmDestroyRootSignature(nmRootSignature* self);
+```
 
 ルートシグネチャを破棄する。
 以後引数の `self` が使用可能であるかどうかは保証されない。

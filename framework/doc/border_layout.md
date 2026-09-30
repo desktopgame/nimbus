@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # border_layout
@@ -41,7 +41,7 @@ pub fn add(container: *Container, region: Region, child: *Component) !void;
 ```
 
 `container.addWithHint(child, region_marker, null)` の薄いラッパ。
-hint には region 識別用の static pointer が入る（allocator 不要）。
+hint には region 識別用の static pointer が入る（アロケーター 不要）。
 
 ### 事前条件
 * `container` の layout が `BorderLayout` であること（そうでない場合 hint は無視される）

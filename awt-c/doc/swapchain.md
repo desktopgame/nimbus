@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # swapchain
@@ -19,7 +19,9 @@ awt の内部で定義された抽象化済みの型については保持して�
 * IDXGISwapChain
 
 ## スワップチェインの生成
+```c
 nmSwapchain* nmCreateSwapchain(const nmDevice* device, const nmWindow* window);
+```
 
 `device` と `window` を関連付けるスワップチェインを生成する。
 失敗時は `NULL` を返す。
@@ -28,7 +30,9 @@ nmSwapchain* nmCreateSwapchain(const nmDevice* device, const nmWindow* window);
 * `device` / `window` がいずれも有効な (破棄されていない) オブジェクトであること。違反した場合の動作は UB。
 
 ## スワップチェインの破棄
+```c
 void nmDestroySwapchain(nmSwapchain* self);
+```
 
 スワップチェインを破棄する。
 以後引数の `self` が使用可能であるかどうかは保証されない。
@@ -37,7 +41,9 @@ void nmDestroySwapchain(nmSwapchain* self);
 * `self` が NULL のとき、なにも実行せずに終了する。
 
 ## ウィンドウサイズの変更
+```c
 int nmResizeSwapchain(nmSwapchain* self, int width, int height);
+```
 
 スワップチェインのサイズを変更する。
 内部的には GPU の完了待ち、バックバッファの解放、再確保、レンダーターゲットビューの再作成までを行う。
@@ -49,7 +55,9 @@ int nmResizeSwapchain(nmSwapchain* self, int width, int height);
 * `width` / `height` がいずれも 1 以上であること。違反した場合の動作は UB。
 
 ## 描画先の取得
+```c
 nmRenderTarget* nmGetSwapchainTarget(nmSwapchain* self);
+```
 
 スワップチェインの現フレームの描画先となるレンダーターゲットを返す。
 返されたポインタはスワップチェインが所有しており、`nmDestroyRenderTarget` で破棄してはならない。
@@ -57,7 +65,9 @@ nmRenderTarget* nmGetSwapchainTarget(nmSwapchain* self);
 詳細は `render_target.md` を参照。
 
 ## 画面への表示
+```c
 void nmPresentSwapchain(nmSwapchain* self);
+```
 
 記録済みコマンドの投入 (`nmSubmitCommandBuffer`) 後、現フレームのバックバッファを画面に提示する。
 内部的にはバックバッファのインデックスを次のフレーム分に進める。

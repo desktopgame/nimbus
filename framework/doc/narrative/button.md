@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # button
@@ -33,7 +33,7 @@ Button には 2 種類の通知系統がある。これは Swing の `JButton` �
 * この 2 つを混ぜると、利用者が「ユーザーがクリックした時だけ何かしたい」と書きづらくなる
 
 実装上は `state_listeners: ChangeListenerList`（`ChangeEvent` を配送）と
-`action_listeners: ActionListenerList`（`ActionEvent` を配送）の 2 本を持ち、
+`action_listeners: ActionListenerList`（`ActionEvent` を配送）の 2 本を持つ。
 `addChangeListener` / `addActionListener` という別エントリーポイントで登録する。
 イベント型自体が `ChangeEvent` / `ActionEvent` に分かれているので、ハンドラのシグネチャを見れば
 どちらの通知を受けるのかが分かる（`model.md`「ChangeEvent と ActionEvent」参照）。
@@ -54,7 +54,8 @@ Swing の `ButtonModel` と同じ意味。
 2. ChangeListener fire → `component.repaint()`（hover 状態の見た目に切替）
 3. マウスボタン押下 → `setPressed(true)`, `setArmed(true)`
 4. ChangeListener fire → `component.repaint()`（押下中の見た目に切替）
-5. マウスボタンを離す（カーソルが内側）→ `setPressed(false)`, `setArmed(false)` → ChangeListener fire → `component.repaint()`、その後 `fireAction()` → ActionListener fire → アプリのハンドラが呼ばれる
+5. マウスボタンを離す（カーソルが内側）→ `setPressed(false)`, `setArmed(false)` → ChangeListener fire → `component.repaint()`。
+   その後 `fireAction()` → ActionListener fire → アプリのハンドラが呼ばれる
 6. マウスボタンを離す（カーソルが外側）→ `setPressed(false)`, `setArmed(false)` → ChangeListener fire → `component.repaint()`（Action は発火しない）
 
 これにより「ドラッグで取り消し」ができる UX が実装される。

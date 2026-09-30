@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # render_target
@@ -28,7 +28,9 @@ awt の内部で定義された抽象化済みの型については保持して�
 デプスバッファは現時点では含まれない。
 
 ## レンダーターゲットの生成
+```c
 nmRenderTarget* nmCreateRenderTarget(nmDevice* device, int width, int height);
+```
 
 オフスクリーン用のレンダーターゲットを指定サイズで生成する。
 失敗時は `NULL` を返す。
@@ -37,7 +39,9 @@ nmRenderTarget* nmCreateRenderTarget(nmDevice* device, int width, int height);
 * `width` / `height` がいずれも 1 以上であること。違反した場合の動作は UB。
 
 ## レンダーターゲットの破棄
+```c
 void nmDestroyRenderTarget(nmRenderTarget* self);
+```
 
 レンダーターゲットを破棄する。
 以後引数の `self` が使用可能であるかどうかは保証されない。
@@ -47,13 +51,17 @@ void nmDestroyRenderTarget(nmRenderTarget* self);
 * `self` が `nmGetSwapchainTarget` の戻り値であってはならない。違反した場合の動作は UB。
 
 ## スワップチェインからの取得
+```c
 nmRenderTarget* nmGetSwapchainTarget(nmSwapchain* self);
+```
 
 スワップチェインの現フレームの描画先となるレンダーターゲットを返す。
 返されたポインタはスワップチェインが所有しており、寿命はスワップチェインに従う (スワップチェインのリサイズや破棄で無効になる)。
 
 ## レンダーターゲットのバインド
+```c
 void nmBindRenderTarget(nmCommandBuffer* self, nmRenderTarget* target);
+```
 
 以後の描画コマンドの出力先として `target` を設定する。
 内部的に必要なリソース状態遷移が自動で挿入される。
@@ -63,7 +71,9 @@ void nmBindRenderTarget(nmCommandBuffer* self, nmRenderTarget* target);
 * `self` に対して `nmBeginCommandBuffer` が呼ばれていること。違反した場合の動作は UB。
 
 ## ビューポートの設定
+```c
 void nmSetViewport(nmCommandBuffer* self, float x, float y, float width, float height);
+```
 
 現在バインドされているレンダーターゲットへの描画範囲を設定する。
 `nmBindRenderTarget` 直後の全域設定を上書きする場合に使う。
@@ -73,7 +83,9 @@ void nmSetViewport(nmCommandBuffer* self, float x, float y, float width, float h
 * この呼び出しの前に `nmBindRenderTarget` でレンダーターゲットがバインドされていること。違反した場合の動作は UB。
 
 ## シザー矩形の設定
+```c
 void nmSetScissor(nmCommandBuffer* self, int x, int y, int width, int height);
+```
 
 現在バインドされているレンダーターゲットのシザー矩形 (描画を制限する矩形クリップ) を設定する。
 ビューポートとは独立に上書きできる。
@@ -88,13 +100,16 @@ GUI でウィジェット単位のクリッピングを実装する典型用途�
 * 矩形クリップ → `nmSetScissor` (軽量、GPU 機能の直叩き)
 * 任意形状クリップ (角丸 / 曲線等) → ステンシルマスク
 
-`nmSetViewport` を呼ぶとシザー矩形がビューポートと同じ矩形にリセットされるため、シザー矩形を独立に保ちたい場合は **`nmSetViewport` の後** で `nmSetScissor` を呼ぶこと。
+`nmSetViewport` を呼ぶとシザー矩形がビューポートと同じ矩形にリセットされるため、
+シザー矩形を独立に保ちたい場合は **`nmSetViewport` の後** で `nmSetScissor` を呼ぶこと。
 
 ### 事前条件
 * この呼び出しの前に `nmBindRenderTarget` でレンダーターゲットがバインドされていること。違反した場合の動作は UB。
 
 ## カラーのクリア
+```c
 void nmClearRenderTarget(nmCommandBuffer* self, float r, float g, float b, float a);
+```
 
 現在バインドされているレンダーターゲットを指定色でクリアする。
 ステンシルバッファのクリアは `nmClearStencil` を使う。
@@ -103,7 +118,9 @@ void nmClearRenderTarget(nmCommandBuffer* self, float r, float g, float b, float
 * この呼び出しの前に `nmBindRenderTarget` でレンダーターゲットがバインドされていること。違反した場合の動作は UB。
 
 ## ステンシルのクリア
+```c
 void nmClearStencil(nmCommandBuffer* self, uint8_t value);
+```
 
 現在バインドされているレンダーターゲットのステンシルバッファを指定値でクリアする。
 通常は `0` を渡してマスクをリセットする。
@@ -112,7 +129,9 @@ void nmClearStencil(nmCommandBuffer* self, uint8_t value);
 * この呼び出しの前に `nmBindRenderTarget` でレンダーターゲットがバインドされていること。違反した場合の動作は UB。
 
 ## CPU への読み戻し
+```c
 int nmReadbackRenderTarget(nmRenderTarget* self, void* out_rgba, size_t out_size);
+```
 
 `self` の現在の内容を CPU メモリに読み戻す。
 描画結果の検証 / ゴールデン画像比較 / テストでの目視確認等の **オフライン用途** を主対象とし、 ホットパス (毎フレーム呼ぶ等) での使用は想定しない。
@@ -124,15 +143,18 @@ GPU 側で行ストライドにパディングが入る場合もあるが、 本
 成功時はゼロ、失敗時は非ゼロを返す。
 
 ### 事前条件
-* `self` が `nmCreateRenderTarget` で生成されたオフスクリーン由来であること。スワップチェイン由来 (`nmGetSwapchainTarget` の戻り値) は当面サポートしない。違反した場合の動作は UB。
+* `self` が `nmCreateRenderTarget` で生成されたオフスクリーン由来であること。
+  スワップチェイン由来 (`nmGetSwapchainTarget` の戻り値) は当面サポートしない。違反した場合の動作は UB。
 * `out_rgba` が NULL でないこと。違反した場合の動作は UB。
 * `out_size` が `self` の `width * height * 4` 以上であること。違反した場合の動作は UB。
-* 本呼び出しの時点で、`self` に書き込み中のコマンドバッファが存在しない (paint 用のコマンドバッファは `nmSubmitCommandBuffer` まで済ませているか、何もしていない状態であること)。違反した場合の動作は UB。
+* 本呼び出しの時点で、`self` に書き込み中のコマンドバッファが存在しない (paint 用のコマンドバッファは `nmSubmitCommandBuffer` まで済ませているか、
+  何もしていない状態であること)。違反した場合の動作は UB。
 
 ### 設計要件
 * オフライン用途専用なので、フル GPU 同期を取るブロッキング API で構わない。複雑な非同期パイプは不要。
 * チャネル順序 / 行ピッチの差異は API 内部で吸収し、利用者は PNG エンコーダ等にそのまま渡せる連続 RGBA8 配列を受け取る。
-* 内部で必要な一時リソース (readback heap / 中継コマンドバッファ等) はすべて本関数の呼び出し範囲内で確保・解放する。利用者は寿命管理の責任を負わない (`nmCreate` 系の失敗時セマンティクスと同様)。
+* 内部で必要な一時リソース (readback heap / 中継コマンドバッファ等) はすべて本関数の呼び出し範囲内で確保・解放する。
+  利用者は寿命管理の責任を負わない (`nmCreate` 系の失敗時セマンティクスと同様)。
 
 ## 機能要望
 * フォーマットを引数で指定する API (現状はオフスクリーンは標準的なカラーフォーマット固定、スワップチェイン由来はスワップチェインに従う)。

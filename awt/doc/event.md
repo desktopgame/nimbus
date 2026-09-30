@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # event
@@ -125,7 +125,7 @@ pub fn requestCapture(self: *Event, target: *anyopaque) void;
 
 `capture_target` に `target` を設定する。
 `.press` の dispatch 中に呼ばれることを想定。
-target は通常 `&self.component` を渡す（呼び出し元の widget 自身）。
+target は通常 `&self.component` を渡す（呼び出し元の ウィジェット 自身）。
 
 framework 側の dispatcher（`framework.Window`）はこのフラグを press 後に観測し、以降の `.move` / `.release` イベントを hit-test なしで `target` へ直接配送する。
 `.release` で自動的に解除される。

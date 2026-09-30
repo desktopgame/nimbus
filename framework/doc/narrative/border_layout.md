@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # border_layout
@@ -8,10 +8,10 @@ BorderLayout の配置アルゴリズム・min/max ポリシー・hint 表現・
 ## レイアウトアルゴリズム
 container の bounds を `(W, H)` とし、各 region の子を取り出す（存在しないものは無視）。
 
-1. **north 高さ** `nh` = `north.min_size.height`（無ければ 0）
-2. **south 高さ** `sh` = `south.min_size.height`（無ければ 0）
-3. **west 幅** `ww` = `west.min_size.width`（無ければ 0）
-4. **east 幅** `ew` = `east.min_size.width`（無ければ 0）
+1. north 高さ `nh` = `north.min_size.height`（無ければ 0）
+2. south 高さ `sh` = `south.min_size.height`（無ければ 0）
+3. west 幅 `ww` = `west.min_size.width`（無ければ 0）
+4. east 幅 `ew` = `east.min_size.width`（無ければ 0）
 5. 各 region に以下の bounds をセット:
 
 | region | x | y | width | height |

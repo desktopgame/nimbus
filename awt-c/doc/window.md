@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # window
@@ -60,7 +60,9 @@ typedef void (*nmCompositionCallback)(nmWindow* window,
 awt の内部で定義された抽象化済みの型については保持しても構わない。
 
 ## ウィンドウの生成
+```c
 nmWindow* nmCreateWindow(const char* title, int width, int height);
+```
 
 タイトル文字列、横幅、縦幅を指定してウィンドウを生成する。
 `width` / `height` は論理ポイント単位で解釈される。
@@ -71,7 +73,9 @@ nmWindow* nmCreateWindow(const char* title, int width, int height);
 * `width` / `height` がいずれも 1 以上であること。違反した場合の動作は UB。
 
 ## ウィンドウの破棄
+```c
 void nmDestroyWindow(nmWindow* self);
+```
 
 ウィンドウを破棄する。
 以後引数の `self` が使用可能であるかどうかは保証されない。
@@ -81,7 +85,9 @@ void nmDestroyWindow(nmWindow* self);
 * `self` に関連付けられたスワップチェインが残っていないこと。違反した場合の動作は UB。
 
 ## ウィンドウタイトルの変更
+```c
 void nmSetWindowTitle(nmWindow* self, const char* title);
+```
 
 OS のタイトルバー / タスクバーに表示される文字列を `title` に差し替える。即時反映。
 
@@ -90,19 +96,25 @@ OS のタイトルバー / タスクバーに表示される文字列を `title`
 * `title` が NUL 終端された UTF-8 文字列であること。違反した場合の動作は UB。
 
 ## ウィンドウを閉じるべきか
+```c
 bool nmShouldClose(nmWindow* self);
+```
 
 ウィンドウを閉じるべきであるなら `true` を返す。
 ウィンドウマネージャによる閉じる操作 (X ボタン押下、Alt+F4 等) で `true` に切り替わる。
 
 ## バッファのスワップ
+```c
 void nmSwapBuffers(nmWindow* self);
+```
 
 フロントバッファとバックバッファを入れ替え、最後に描画した内容を画面に反映する。
 内部的には GLFW のスワップ機構を呼ぶが、その知識は外部に漏らさない。
 
 ## ウィンドウサイズの取得
+```c
 void nmGetWindowSize(const nmWindow* self, int* width, int* height);
+```
 
 ウィンドウサイズを論理ポイント単位で取得する。
 `nmCreateWindow` で指定した値と概ね対応する (ウィンドウマネージャによっては微調整される)。
@@ -111,13 +123,17 @@ void nmGetWindowSize(const nmWindow* self, int* width, int* height);
 * `width` / `height` がいずれも NULL でないこと。違反した場合の動作は UB。
 
 ## ウィンドウサイズの変更
+```c
 void nmSetWindowSize(nmWindow* self, int width, int height);
+```
 
 ウィンドウサイズを論理ポイント単位で変更する。単位は `nmGetWindowSize` と同じ。
 フレームバッファも追従して変更され、登録済みのサイズ変更コールバックが発火する。
 
 ## フレームバッファサイズの取得
+```c
 void nmGetFramebufferSize(const nmWindow* self, int* width, int* height);
+```
 
 フレームバッファのサイズを実ピクセル単位で取得する。
 スワップチェインの初期サイズと一致し、`nmResizeSwapchain` に渡すべき値もこの単位。
@@ -126,7 +142,9 @@ void nmGetFramebufferSize(const nmWindow* self, int* width, int* height);
 * `width` / `height` がいずれも NULL でないこと。違反した場合の動作は UB。
 
 ## コンテンツスケールの取得
+```c
 void nmGetWindowContentScale(const nmWindow* self, float* xscale, float* yscale);
+```
 
 ウィンドウが配置されているモニタの DPR (device pixel ratio) を取得する。
 `物理 = 論理 × スケール` の関係を持つ比率で、plain 1x display で 1.0、Retina で 2.0、Windows 150% で 1.5 など。
@@ -138,29 +156,37 @@ void nmGetWindowContentScale(const nmWindow* self, float* xscale, float* yscale)
 * `xscale` / `yscale` がいずれも NULL でないこと。違反した場合の動作は UB。
 
 ## サイズ変更コールバックの登録
+```c
 void nmSetWindowResizeCallback(nmWindow* self, nmWindowResizeCallback cb, void* user_data);
+```
 
 ウィンドウのサイズが変更された時に呼ばれるコールバックを登録する。
-コールバックに渡される `width` / `height` は **フレームバッファサイズ (実ピクセル)** 。論理ポイントが必要ならコールバック内で `nmGetWindowSize` を呼んで取得する。
+コールバックに渡される `width` / `height` は **フレームバッファサイズ (実ピクセル)** 。
+論理ポイントが必要ならコールバック内で `nmGetWindowSize` を呼んで取得する。
 コールバックは `self` を生成 / 操作しているスレッドと同じスレッドから同期的に呼ばれる。
 `cb` に `NULL` を渡すと登録解除される。
 
 スワップチェインを使っている場合、通常はこのコールバックから `nmResizeSwapchain` を呼ぶ。
 
-なお、ウィンドウ作成直後にはこのコールバックは発火しない。初回フレームの描画前にサイズを取得したい場合は、`nmGetWindowSize` / `nmGetFramebufferSize` を直接呼ぶこと。
+なお、ウィンドウ作成直後にはこのコールバックは発火しない。
+初回フレームの描画前にサイズを取得したい場合は、`nmGetWindowSize` / `nmGetFramebufferSize` を直接呼ぶこと。
 
 ## 再描画コールバックの登録
+```c
 void nmSetWindowRefreshCallback(nmWindow* self, nmWindowRefreshCallback cb, void* user_data);
+```
 
 ウィンドウの内容を再描画すべき時に呼ばれるコールバックを登録する。
-Windows の modal sizing loop 中 (利用者が枠をドラッグしている間) など、通常のメインループが回らない状況でも発火する。
+Windows の モーダル sizing loop 中 (利用者が枠をドラッグしている間) など、通常のメインループが回らない状況でも発火する。
 コールバックは `self` を生成 / 操作しているスレッドと同じスレッドから同期的に呼ばれる。
 `cb` に `NULL` を渡すと登録解除される。
 
 リサイズ中も描画を継続したい場合、このコールバックから描画処理を呼ぶ。
 
 ## 移動コールバックの登録
+```c
 void nmSetWindowMoveCallback(nmWindow* self, nmWindowMoveCallback cb, void* user_data);
+```
 
 ウィンドウが移動した時に呼ばれるコールバックを登録する。
 コールバックに渡される `x` / `y` は移動後の左上隅を論理ポイント単位で表す。単位は `nmGetWindowPos` と同じ。
@@ -169,7 +195,9 @@ void nmSetWindowMoveCallback(nmWindow* self, nmWindowMoveCallback cb, void* user
 `cb` に `NULL` を渡すと登録解除される。
 
 ## マウスボタンコールバックの登録
+```c
 void nmSetMouseButtonCallback(nmWindow* self, nmMouseButtonCallback cb, void* user_data);
+```
 
 マウスボタン押下 / 解放時に呼ばれるコールバックを登録する。
 `action` は `nmKeyActionPress` または `nmKeyActionRelease`。
@@ -177,21 +205,27 @@ void nmSetMouseButtonCallback(nmWindow* self, nmMouseButtonCallback cb, void* us
 `cb` に `NULL` を渡すと登録解除される。
 
 ## カーソル位置コールバックの登録
+```c
 void nmSetCursorPosCallback(nmWindow* self, nmCursorPosCallback cb, void* user_data);
+```
 
 カーソル移動時に呼ばれるコールバックを登録する。
 `x` / `y` は **ウィンドウローカル座標 (論理ポイント)** で、ウィンドウの左上が `(0, 0)`、右下が `(width, height)` となる。
 `cb` に `NULL` を渡すと登録解除される。
 
 ## スクロールコールバックの登録
+```c
 void nmSetScrollCallback(nmWindow* self, nmScrollCallback cb, void* user_data);
+```
 
 マウスホイール / トラックパッド スクロール時に呼ばれるコールバックを登録する。
 `dx` / `dy` はスクロール量で、`dy` の正の値は上方向。
 `cb` に `NULL` を渡すと登録解除される。
 
 ## キーコールバックの登録
+```c
 void nmSetKeyCallback(nmWindow* self, nmKeyCallback cb, void* user_data);
+```
 
 キー押下 / 解放 / リピート時に呼ばれるコールバックを登録する。
 `key` は GLFW のキーコードに対応する整数値。
@@ -200,15 +234,19 @@ void nmSetKeyCallback(nmWindow* self, nmKeyCallback cb, void* user_data);
 `cb` に `NULL` を渡すと登録解除される。
 
 ## 文字入力コールバックの登録
+```c
 void nmSetCharCallback(nmWindow* self, nmCharCallback cb, void* user_data);
+```
 
-OS のキーボードレイアウトを通過した後の Unicode codepoint を 1 つずつ受け取るコールバックを登録する。
+OS のキーボードレイアウトを通過した後の Unicode コードポイント を 1 つずつ受け取るコールバックを登録する。
 `'a'` キー押下で `'a' = 0x61`、Shift+1 で `'!' = 0x21` のように、修飾キーの効果が反映された後の文字が届く。
 ショートカット検出やカーソル移動には `nmSetKeyCallback` を使い、テキスト入力にはこちらを使う。
 `cb` に `NULL` を渡すと登録解除される。
 
 ## IME composition コールバックの登録
+```c
 void nmSetCompositionCallback(nmWindow* self, nmCompositionCallback cb, void* user_data);
+```
 
 IME の preedit（変換中文字列）が更新された時に呼ばれるコールバックを登録する。
 コールバックには現在の preedit 文字列（UTF-8）と、変換中クローズの byte 範囲（`target_start` / `target_end`）が渡される。
@@ -226,21 +264,26 @@ IME の preedit（変換中文字列）が更新された時に呼ばれるコ�
 | Linux | stub（no-op）。Wayland text-input v3 ベースの実装は将来 |
 
 ## IME 候補ウィンドウ位置の設定
+```c
 void nmSetCompositionCursorPos(nmWindow* self, int x, int y, int height);
+```
 
 IME 候補ウィンドウの表示位置を、現在のテキストキャレット位置（ウィンドウローカル ピクセル）+ 行高で OS に伝える。
 TextField 等のキャレットが移動するたびに呼ぶ想定。
 処理は軽量で、毎キー入力ごとに呼んでもパフォーマンス影響は無視できる。
 
 * Windows: `ImmSetCompositionWindow` + `ImmSetCandidateWindow` で即時 push
-* macOS: 内部キャッシュに保存し、`NSTextInputContext.invalidateCharacterCoordinates` で OS に再 pull を促す。実際の座標応答は `firstRectForCharacterRange:` ハンドラで行う
+* macOS: 内部キャッシュに保存し、`NSTextInputContext.invalidateCharacterCoordinates` で OS に再 pull を促す。
+  実際の座標応答は `firstRectForCharacterRange:` ハンドラで行う
 * Linux: `zwp_text_input_v3.set_cursor_rectangle` で即時 push（予定）
 
 ### 事前条件
 * `self` が non-NULL であること。違反した場合の動作は UB。
 
 ## クリップボードからの読み出し
+```c
 const char* nmGetClipboardString(nmWindow* self);
+```
 
 システムクリップボードに格納されている UTF-8 文字列を返す。
 クリップボードが空、または UTF-8 テキスト以外を保持している場合は `NULL` を返す。
@@ -251,7 +294,9 @@ const char* nmGetClipboardString(nmWindow* self);
 * `self` が non-NULL であること。違反した場合の動作は UB。
 
 ## クリップボードへの書き込み
+```c
 void nmSetClipboardString(nmWindow* self, const char* utf8);
+```
 
 `utf8` の内容をシステムクリップボードに書き込む。
 内部で内容のコピーを取るので、関数戻り後に `utf8` が解放されても安全。

@@ -1,12 +1,14 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # backend_lifecycle
 バックエンドのライフサイクルに関する設計ノート。
 
 ## awtの初期化
+```c
 int nmInitAwt(void);
+```
 
 内部的なシステムを初期化する。
 * GLFW の初期化 (`glfwInit`)
@@ -17,7 +19,9 @@ GLFW / freetype を使用する知識は外部に漏らさない。
 リエントラントであることは保証しない。
 
 ## awtの終了
+```c
 void nmTerminateAwt(void);
+```
 
 内部的なシステムを終了する。
 * freetype の終了 (`FT_Done_FreeType`)
@@ -28,7 +32,9 @@ GLFW / freetype を使用する知識は外部に漏らさない。
 リエントラントであることは保証しない。
 
 ## awtのバージョン
+```c
 const char* nmAwtBackendVersion(void);
+```
 
 バージョン文字列を返す。
 デバッグ用なので、ユーザーフレンドリーである必要はない。

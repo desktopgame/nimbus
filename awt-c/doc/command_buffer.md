@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # command_buffer
@@ -21,7 +21,7 @@ awt の内部で定義された抽象化済みの型については保持して�
 * このバッファ専用のフェンス値
 
 `nmCommandBuffer` は単独で生成・破棄するのではなく、デバイスが管理するプールから取得・返却する形で利用する。
-DX12 における allocator と list の関係や、Metal の MTLCommandBuffer のような API ごとの差異はここに隠蔽される。
+DX12 における アロケーター と list の関係や、Metal の MTLCommandBuffer のような API ごとの差異はここに隠蔽される。
 
 ## ライフサイクル
 コマンドバッファは以下の順序で利用する。
@@ -36,7 +36,9 @@ DX12 における allocator と list の関係や、Metal の MTLCommandBuffer �
 各関数の事前条件は、このライフサイクルにおける呼び出し順序を前提とする。
 
 ## コマンドバッファの取得
+```c
 nmCommandBuffer* nmAcquireCommandBuffer(nmDevice* device);
+```
 
 デバイスが管理するプールから空いているコマンドバッファを 1 つ取得する。
 返されるバッファは、過去の GPU 実行が完了しているか、未使用のものが保証される。
@@ -44,7 +46,9 @@ nmCommandBuffer* nmAcquireCommandBuffer(nmDevice* device);
 失敗時は `NULL` を返す。
 
 ## コマンドバッファの返却
+```c
 void nmReleaseCommandBuffer(nmCommandBuffer* self);
+```
 
 プールに返却する。
 GPU で実行中であってもこの呼び出しは即座に戻り、ブロックしない。
@@ -54,7 +58,9 @@ GPU で実行中であってもこの呼び出しは即座に戻り、ブロッ�
 * `self` が NULL のとき、なにも実行せずに終了する。
 
 ## 記録の開始
+```c
 void nmBeginCommandBuffer(nmCommandBuffer* self);
+```
 
 このバッファへのコマンド記録を開始する。
 取得後はかならず一度この呼び出しが必要であり、それ以前の記録内容は破棄される。
@@ -64,7 +70,9 @@ void nmBeginCommandBuffer(nmCommandBuffer* self);
 * 同じ `self` に対して `nmBeginCommandBuffer` を 2 回連続で呼ばないこと。違反した場合の動作は UB。
 
 ## 記録の終了
+```c
 void nmEndCommandBuffer(nmCommandBuffer* self);
+```
 
 このバッファへのコマンド記録を終了する。
 これ以降の記録系操作は許可されない。
@@ -74,7 +82,9 @@ void nmEndCommandBuffer(nmCommandBuffer* self);
 * `self` に対して `nmBeginCommandBuffer` が呼ばれていること。違反した場合の動作は UB。
 
 ## コマンドの投入
+```c
 void nmSubmitCommandBuffer(nmCommandBuffer* self, nmDevice* device);
+```
 
 記録済みのコマンドを GPU に投入する。
 非同期で実行され、この呼び出し自体は完了を待たない。
@@ -85,7 +95,9 @@ void nmSubmitCommandBuffer(nmCommandBuffer* self, nmDevice* device);
 * `device` は `self` の取得元と同じデバイスであること。違反した場合の動作は UB。
 
 ## 完了待ち
+```c
 void nmWaitForCommandBuffer(nmCommandBuffer* self);
+```
 
 このバッファに含まれるコマンドが GPU 上で完了するまで呼び出しスレッドをブロックする。
 通常のフレームループでは呼ぶ必要はない（`nmAcquireCommandBuffer` が再取得時に内部で同期する）。
@@ -95,7 +107,9 @@ void nmWaitForCommandBuffer(nmCommandBuffer* self);
 * `self` に対して `nmSubmitCommandBuffer` が呼ばれていない場合、なにもせずに戻る。
 
 ## ドローコール（頂点バッファのみ）
+```c
 void nmDraw(nmCommandBuffer* self, int vertex_count, int start_vertex);
+```
 
 バインド済みのパイプライン・頂点バッファ・その他の状態を使い、`vertex_count` 個の頂点を描画する。
 `start_vertex` は頂点バッファ内の開始インデックス（バッファ先頭から描画するなら `0`）。
@@ -113,7 +127,9 @@ void nmDraw(nmCommandBuffer* self, int vertex_count, int start_vertex);
 違反した場合の動作は UB。
 
 ## ドローコール（インデックスバッファ使用）
+```c
 void nmDrawIndexed(nmCommandBuffer* self, int index_count, int start_index, int base_vertex);
+```
 
 バインド済みのパイプライン・頂点バッファ・インデックスバッファ・その他の状態を使い、`index_count` 個のインデックスを描画する。
 `start_index` はインデックスバッファ内の開始位置。

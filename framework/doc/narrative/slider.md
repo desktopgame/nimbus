@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # slider
@@ -19,7 +19,8 @@ Slider は次の連鎖で動く。
 
 ## install / uninstall で Model にリスナーを登録する
 vtable の `install` / `uninstall` で Model に自身を ChangeListener として登録 / 削除する。
-これにより L&F 差し替えのために `setVTable` した場合も、旧 vtable がリスナーを外して新 vtable が必要なリスナーを登録するという挙動が成立する（`model.md`「ウィジェットとの連携」参照）。
+これにより L&F 差し替えのために `setVTable` した場合も、
+旧 vtable がリスナーを外して新 vtable が必要なリスナーを登録するという挙動が成立する（`model.md`「ウィジェットとの連携」参照）。
 
 ## 入力処理
 `processEvent` で MouseEvent を受け、以下を行う。

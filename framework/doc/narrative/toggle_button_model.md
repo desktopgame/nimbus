@@ -1,12 +1,13 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # toggle_button_model
 button フィールドへの直接アクセス方針。
 
 ## button フィールドへの直接アクセス
-press / armed / rollover / enabled の操作 / 取得には、 ラッパーを介さず `model.button.setPressed(...)` / `model.button.isEnabled()` のように **直接アクセス**する。
+press / armed / rollover / enabled の操作 / 取得には、
+ ラッパーを介さず `model.button.setPressed(...)` / `model.button.isEnabled()` のように **直接アクセス**する。
 Zig の慣用 (`component.md`「派生型から Component メソッドへのアクセス」と同じ方針) で、 委譲メソッドを生やさないことでボイラープレートを避ける。
 
 ```zig

@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # pipeline
@@ -75,7 +75,7 @@ typedef struct nmPipeline nmPipeline;
 * `nmVertexLayoutVertex2D`: `(x, y)`
 * `nmVertexLayoutVertexTexCoord2D`: `(x, y, u, v)`
 
-利用者が任意の頂点フォーマットを定義することはできない。
+利用者が任意の頂点フォーマットを定義できない。
 新しいレイアウトが必要になったら enum に追加する。
 
 `nmBlendMode` の各値の用途は以下。
@@ -109,7 +109,9 @@ typedef struct nmPipeline nmPipeline;
 * ID3D12PipelineState
 
 ## パイプラインの生成
+```c
 nmPipeline* nmCreatePipeline(nmDevice* device, const nmPipelineDesc* desc);
+```
 
 `desc` の内容からパイプラインを生成する。
 失敗時は `NULL` を返す。
@@ -119,7 +121,9 @@ nmPipeline* nmCreatePipeline(nmDevice* device, const nmPipelineDesc* desc);
 * `desc->vertex_shader` の入力レイアウトが `desc->vertex_layout` と一致していること。違反した場合の動作は UB。
 
 ## パイプラインの破棄
+```c
 void nmDestroyPipeline(nmPipeline* self);
+```
 
 パイプラインを破棄する。
 以後引数の `self` が使用可能であるかどうかは保証されない。
@@ -128,7 +132,9 @@ void nmDestroyPipeline(nmPipeline* self);
 * `self` が NULL のとき、なにも実行せずに終了する。
 
 ## パイプラインのバインド
+```c
 void nmBindPipeline(nmCommandBuffer* self, nmPipeline* pipeline);
+```
 
 記録中のコマンドバッファに対し、`pipeline` をバインドする。
 以降のドローコールはバインドされたパイプラインで描画される。
@@ -137,7 +143,9 @@ void nmBindPipeline(nmCommandBuffer* self, nmPipeline* pipeline);
 * `self` に対して `nmBeginCommandBuffer` が呼ばれていること。違反した場合の動作は UB。
 
 ## ステンシル参照値の設定
+```c
 void nmSetStencilRef(nmCommandBuffer* self, uint32_t value);
+```
 
 記録中のコマンドバッファに対し、ステンシル参照値を設定する。
 `nmStencilOpReplace` で書き込む値、`nmCompareFuncEqual` 等で比較される値として使われる。

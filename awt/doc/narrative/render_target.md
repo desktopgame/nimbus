@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # render_target
@@ -47,5 +47,6 @@ try rt.readbackToPng(allocator, io, 800, 600, "tmp/snap.png");
 
 ## 設計要件
 * スワップチェイン借用と新規生成を同じ `RenderTarget` 型で扱える (描画 API 側は所有関係を意識しない)。
-* スナップショット (readback) は `Application` / `Window` / `Swapchain` を経由せずに完結できる (画面を出さない、 オフライン用途) こと。これによりテストや自動視覚確認のための無人実行が可能になる。
+* スナップショット (readback) は `Application` / `Window` / `Swapchain` を経由せずに完結できる (画面を出さない、 オフライン用途) こと。
+  これによりテストや自動視覚確認のための無人実行が可能になる。
 * PNG ヘルパは `zigimg` への依存を隠蔽し、 利用側が encoder の API を意識しないで済むこと。

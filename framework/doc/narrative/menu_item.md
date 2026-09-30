@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # menu_item
@@ -13,9 +13,9 @@ MenuItem の状態（enabled / armed / rollover）とクリック完了 semantic
 ## 描画レイアウト
 横並び 3 カラム（左から）：
 
-1. **icon slot**: 固定幅 `icon_slot_width`（≒ 24px）。`icon` が non-null ならそれを描画、null なら空白
-2. **label**: テキストを描画。左寄せ、cy は項目中央
-3. **accel slot**: 固定幅 `accel_slot_width`（≒ 60px）。v1 は未使用（空白）。将来 `Ctrl+S` 等を右寄せで描画
+1. icon スロット: 固定幅 `icon_slot_width`（≒ 24px）。`icon` が non-null ならそれを描画、null なら空白
+2. label: テキストを描画。左寄せ、cy は項目中央
+3. accel スロット: 固定幅 `accel_slot_width`（≒ 60px）。v1 は未使用（空白）。将来 `Ctrl+S` 等を右寄せで描画
 
 | 状態 | 背景 | 文字色 |
 |---|---|---|
@@ -24,7 +24,7 @@ MenuItem の状態（enabled / armed / rollover）とクリック完了 semantic
 | armed (押下中) | アクセント色（濃） | 反転 |
 | disabled | 透明 | グレー |
 
-slot 幅は親 Menu / PopupMenu が `computeMinSize` で全項目をスキャンして決める。
+スロット 幅は親 Menu / PopupMenu が `computeMinSize` で全項目をスキャンして決める。
 個別の MenuItem は単独描画では「ぴったり最小」で見えても、Menu の中に入ると左寄りに揃って描画される。
 
 TODO: KeyStrokeなど実装時に更新の可能性あり
@@ -37,6 +37,6 @@ TODO: KeyStrokeなど実装時に更新の可能性あり
 これにより MenuItem は popup の存在を知らずに済む。
 
 ## install / uninstall
-`install` で model に「再描画用 ChangeListener」を登録する。
+`install` で モデル に「再描画用 ChangeListener」を登録する。
 `uninstall` で外す。
 親 Menu / PopupMenu が `add` した時に install されるのではなく、`create` 時点で install される（Button と同じ）。

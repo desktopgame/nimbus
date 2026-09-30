@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # frame
@@ -17,7 +17,8 @@ framework.Window (抽象トップレベル)
 
 ## 委譲メソッドは生やさない
 `add` / `setTitle` / `repaint` 等の委譲メソッドは Frame に生やさない。
-Window のメソッドは `frame.window.add(...)` / `frame.window.setTitle(...)` のように親フィールド経由で直接呼ぶ（`component.md`「派生型から Component メソッドへのアクセス」と同じ方針）。
+Window のメソッドは `frame.window.add(...)` / `frame.window.setTitle(...)` のように親フィールド経由で直接呼ぶ
+（`component.md`「派生型から Component メソッドへのアクセス」と同じ方針）。
 
 理由は Label / Container と同じで、委譲はボイラープレートになる割に使われない。
 
@@ -43,7 +44,8 @@ Frame か Dialog のどちらかを必ず選ぶ設計にする。
 Swing の `Window` も直接 new する API は提供されていない（`new Window(owner)` という protected ctor のみ）。
 
 ## Application との連携
-Application のファクトリ `app.frame(title, w, h)` が Frame を生成し、`windows: ArrayList(WindowEntry)` に `*Window`（= `&frame.window`）を含む entry を登録する。
+Application のファクトリ `app.frame(title, w, h)` が Frame を生成し、
+`windows: ArrayList(WindowEntry)` に `*Window`（= `&frame.window`）を含む entry を登録する。
 Frame ポインタではなく Window ポインタを WindowEntry に入れるのは、Application のループが Frame と Dialog を区別せず一律で扱えるようにするため。
 
 詳細は `application.md` 参照。

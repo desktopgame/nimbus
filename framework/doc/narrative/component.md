@@ -1,9 +1,10 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # component
-Component のプラッガブル設計・プロパティ・レイアウト属性・メモリ解放・列挙/デバッグ・派生型アクセス方針・setter/getter・ライフサイクル・L&F 想定・フォーカス・ScrollController・install/uninstall。
+Component のプラッガブル設計・プロパティ・レイアウト属性・メモリ解放・
+列挙/デバッグ・派生型アクセス方針・setter/getter・ライフサイクル・L&F 想定・フォーカス・ScrollController・install/uninstall。
 
 ## プラッガブルな設計
 Component を継承した Button、Label などは VTable を独自に実装する。
@@ -25,19 +26,30 @@ VTable のカスタマイズポイントは以下の 5 つ。
 
 `destroy` だけは L&F の範疇ではなく、Zig の制約から必要な内部責務（後述「メモリ解放」を参照）。
 
-VTable には「サイズ変化フック」のような枠は意図的に置かない。サイズ変化に反応する必要があるウィジェット (折り返し `TextArea` 等) は、`Component.size_query: ?SizeQuery` (opt-in 能力構造体) で**親レイアウトに pure query 経路を提供する**形を採る。`DragSource` / `DropTarget` と同じパターン (`dnd.md` 参照)。詳細は `component.md`「SizeQuery」と `scrollpane.md`「height-for-width」参照。
+VTable には「サイズ変化フック」のような枠は意図的に置かない。
+サイズ変化に反応する必要があるウィジェット (折り返し `TextArea` 等) は、
+`Component.size_query: ?SizeQuery` (opt-in 能力構造体) で**親レイアウトに pure query 経路を提供する**形を採る。
+`DragSource` / `DropTarget` と同じパターン (`dnd.md` 参照)。
+詳細は `component.md`「SizeQuery」と `scrollpane.md`「height-for-width」参照。
 
 ### 却下案: VTable.reshape による push 型通知
-かつては `?*const fn (*Component, Size) void = null` を VTable に持ち、`setBounds` でサイズが変わると発火していた。`TextArea` がここで `reflow` を呼び `min_size` を更新し、ScrollPane が直後に読み戻すという 2 段モデル。
+かつては `?*const fn (*Component, Size) void = null` を VTable に持ち、`setBounds` でサイズが変わると発火していた。
+`TextArea` がここで `reflow` を呼び `min_size` を更新し、ScrollPane が直後に読み戻すという 2 段モデル。
 
 問題は:
 
-1. **観測可能な state を query 中に書き換える**: `setBounds` の中で `min_size` を更新 → `markLayoutDirty` で親の `min_cache` を invalidate、という副作用が走る。レイアウト計算中にこれが起きると親の cache 整合性が崩れる
-2. **暗黙の契約**: 「reshape が呼ばれたら `min_size` を更新し、呼び出し側はその直後に `effectiveMinSize` を読め」という順序前提が型では表現できない
-3. **VTable に枠を 1 個生やすコスト**: 全 Component に乗るが事実上 1 ウィジェット (`TextArea` wrap mode) しか使わない
-4. **ScrollPane 内部に閉じない**: 同じ height-for-width が必要なケース (vertical BoxLayout 内の折り返し Label など) では、「親が view の reshape 結果を読み戻す合意」がそもそも無いため救えない
+1. 観測可能な state を query 中に書き換える: `setBounds` の中で `min_size` を更新 → `markLayoutDirty` で親の `min_cache` を invalidate、という副作用が走る。
+   レイアウト計算中にこれが起きると親の cache 整合性が崩れる
+2. 暗黙の契約: 「reshape が呼ばれたら `min_size` を更新し、呼び出し側はその直後に `effectiveMinSize` を読め」という順序前提が型では表現できない
+3. VTable に枠を 1 個生やすコスト: 全 Component に乗るが事実上 1 ウィジェット (`TextArea` wrap mode) しか使わない
+4. ScrollPane 内部に閉じない: 同じ height-for-width が必要なケース (vertical BoxLayout 内の折り返し Label など) では、
+   「親が view の reshape 結果を読み戻す合意」がそもそも無いため救えない
 
-`SizeQuery` 路線は (1) pure query で副作用なし、(2) 呼び出しと結果が 1 行に閉じる、(3) opt-in なので必要なウィジェットだけ持つ、(4) ScrollPane に限らずどんな親レイアウトからも `if (child.size_query) |sq| sq.minHeightForWidth(child, w)` で使える、で 4 点とも解消する。
+`SizeQuery` 路線は次の 4 点とも解消する。
+(1) pure query で副作用なし。
+(2) 呼び出しと結果が 1 行に閉じる。
+(3) opt-in なので必要なウィジェットだけ持つ。
+(4) ScrollPane に限らずどんな親レイアウトからも `if (child.size_query) |sq| sq.minHeightForWidth(child, w)` で使える。
 
 ## プロパティ
 VTable の差し替えだけでは「コンポーネントが追加の独自状態を持ち、イベントで変化する」ような拡張に対応できない。
@@ -75,7 +87,7 @@ Container が子を解放するとき、`allocator.destroy(child)` で素直に 
 そのため VTable に `destroy` を持ち、各ウィジェットが `@fieldParentPtr` で外側に戻して正しいサイズで free する責務を負う。
 ファクトリー経由で生成されたウィジェットを利用者が自分で free する場合も `component.vtable.destroy(&comp, allocator)` を呼ぶのが正規ルート。
 
-`Component.deinit` 自体はメモリ解放を行わない（uninstall + properties cleanup まで）。
+`Component.deinit` 自体はメモリを解放しない（uninstall + properties cleanup まで）。
 メモリ解放は `vtable.destroy` の責務。
 
 ## コンポーネントの列挙
@@ -131,12 +143,12 @@ Label など leaf ウィジェットには `asComponent` はないが、`&label.
 | 書き換え（副作用あり） | `setXxx(...)` 必須。内部で dup / repaint / dirty フラグ更新 / (将来) PropertyChangeEvent 等を行う |
 | 読み（副作用なし） | `getXxx()` が公式。フィールド直接 read もショートカットとして許容（Zig 慣用） |
 
-Zig はフィールド単位の private 修飾子を持たないので、言語レベルでフィールド直接 write を禁止することはできない。
+Zig はフィールド単位の private 修飾子を持たないので、言語レベルでフィールド直接 write を禁止できない。
 しかし副作用を必要とする書き換えは setter 経由でないと壊れる（例: text の単純代入は旧 text が leak）。
 したがって read は getter / 直接 read どちらも可、write は setter 必須（直接 write 禁止は doc / レビューでカバー）。
 
 将来 `PropertyChangeListener`（Swing の PCE 相当）を導入する余地を残している。
-入った時に setter が listener 通知を担う。
+入った時に setter が リスナー 通知を担う。
 
 ## ライフサイクル
 factory（またはウィジェットの `create`）が次の手順をひとまとめに行う。
@@ -161,7 +173,8 @@ TextField / TextArea のようにテキスト入力を受けるウィジェッ�
 詳細は `window.md`「フォーカス」を参照。
 
 framework は Component と Window の直接依存を避けるため、`FocusController` プロパティを介して通知する設計を採る。
-Window が各ルートコンポーネント (`container.component`、`menu_bar`、各 overlay) にこのプロパティを install しておき、`Component.requestFocus` は親チェーンを遡ってルートで読み取り、コールバック経由で Window に届ける。
+Window が各ルートコンポーネント (`container.component`、`menu_bar`、各 overlay) にこのプロパティを install しておき、
+`Component.requestFocus` は親チェーンを遡ってルートで読み取り、コールバック経由で Window に届ける。
 `DirtyNotify` プロパティと同じパターン。
 
 ```zig
@@ -189,7 +202,7 @@ pub const ScrollController = struct {
 pub fn enclosingScrollController(self: *Component) ?*ScrollController;
 ```
 
-`ScrollPane` が自分の viewport コンポーネントにこのプロパティを install する (`scrollpane.md` 参照)。
+`ScrollPane` が自分の ビューポート コンポーネントにこのプロパティを install する (`scrollpane.md` 参照)。
 ビュー (例: `TextArea`) は `enclosingScrollController` で親方向に最も近いものを探し、キャレット矩形を渡してスクロールを依頼する。
 `ScrollPane` の外で使われている場合は `null` が返り、追従は no-op になる。
 `enclosingScrollController` は自分自身は対象に含めず、親から上を探す。
@@ -199,7 +212,8 @@ pub fn enclosingScrollController(self: *Component) ?*ScrollController;
 VTable を差し替えるときは古い vtable の `uninstall` → 新しい vtable の `install` の順（`setVTable` が内部で行う）。
 
 `install` は失敗し得る (`anyerror!void`)。
-リスナー登録 / プロパティ登録など allocator を使う処理を含むウィジェットの install が OOM 等で失敗した場合、`create` factory がその error を呼び出し元に伝搬する。
+リスナー登録 / プロパティ登録など アロケーター を使う処理を含むウィジェットの install が OOM 等で失敗した場合、
+`create` factory がその error を呼び出し元に伝搬する。
 利用者は通常通り `try app.button(...)` の形で受け取る。
 
 `uninstall` はデストラクタ風で、常に void を返す。

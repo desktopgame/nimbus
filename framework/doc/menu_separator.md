@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # menu_separator
@@ -31,7 +31,7 @@ state も外部 API もない。
 pub fn create(allocator: std.mem.Allocator) !*MenuSeparator;
 ```
 
-allocator で MenuSeparator を確保して初期化する。
+アロケーター で MenuSeparator を確保して初期化する。
 `component.min_size` を「上下 padding + 線の厚さ」に固定する。
 
 ### 失敗時の保証

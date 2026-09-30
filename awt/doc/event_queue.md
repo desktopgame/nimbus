@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # event_queue
@@ -43,7 +43,7 @@ const Item = union(enum) { task: Task, input: InputItem };
 pub fn init(allocator: std.mem.Allocator, io: std.Io) !*EventQueue;
 ```
 
-EventQueue を allocator で確保して初期化する。
+EventQueue を アロケーター で確保して初期化する。
 内部のミューテックスと condvar も初期化する (`io` を `std.Io.Mutex` / 条件変数のセットアップに使う)。
 
 ### 失敗時の保証
@@ -90,7 +90,8 @@ pub fn invokeAndWait(
 * **UI スレッドから呼んではいけない**（呼ぶとデッドロックする）。debug ビルドでは assert で弾く
 
 ### 診断情報
-* UI スレッドから呼ばれた場合、debug ビルドでは即 panic、release ビルドではログ `[ERROR] [event_queue] invokeAndWait called from UI thread (would deadlock)` を出して即 return する
+* UI スレッドから呼ばれた場合、
+  debug ビルドでは即 panic、release ビルドではログ `[ERROR] [event_queue] invokeAndWait called from UI thread (would deadlock)` を出して即 return する
 
 ## 入力イベントの post
 ```zig

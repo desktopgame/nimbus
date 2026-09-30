@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # log
@@ -89,7 +89,7 @@ pub fn warn(category: []const u8, comptime fmt: []const u8, args: anytype) void;
 典型例:
 * メニュー展開時の OOM (展開を諦めるが UI ループは継続)
 * 入力イベントキューへの post 失敗 (該当イベントを取り落とすが UI ループは継続)
-* リスナー登録の OOM (該当リスナーが無効化されるが widget 構築は完了)
+* リスナー登録の OOM (該当リスナーが無効化されるが ウィジェット 構築は完了)
 
 GUI フレームワーク慣習として、これらは握りつぶしてループを継続するのが正解で、その「沈黙」を観測可能にするのが本関数の主な役割。
 
@@ -133,7 +133,7 @@ framework.log.setCallback(onFwLog, null);
 awt.log.setCallback(@ptrCast(&onFwLog), null);  // 同じ shape なので登録可能
 ```
 
-ソースを識別したいなら user_data を分けるか、ログメッセージ側で source-tagged な category を使う。
+ソースを識別したいなら user_data を分けるか、ログメッセージ側で ソース-tagged な category を使う。
 
 開発中、まず stderr に流れるデフォルト挙動だけで十分なら `setCallback` を呼ばなくてよい。
 

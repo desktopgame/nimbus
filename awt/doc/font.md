@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # font
@@ -100,7 +100,7 @@ pub fn rasterize(self: Font, codepoint: u32) !struct {
 };
 ```
 
-指定 codepoint を現在のピクセルサイズでラスタライズする。
+指定 コードポイント を現在のピクセルサイズでラスタライズする。
 戻り値の `bitmap` は内部スクラッチバッファへのスライスで、長さは `bitmap_pitch * bitmap_height` バイトの R8 配列。
 **同じ `Font` への次の `rasterize` 呼び出しで上書きされる** ため、保持したい場合は呼び出し直後にコピーすること。
 コピーや行間移動の際は `bitmap_width` ではなく `bitmap_pitch` をストライドに使うこと (`awt-c/doc/font.md` 参照)。
@@ -126,7 +126,7 @@ pub fn glyphAdvance(self: Font, codepoint: u32) f32;
 pub fn hasGlyph(self: Font, codepoint: u32) bool;
 ```
 
-フォントが指定 codepoint のグリフを持つか確認する。
+フォントが指定 コードポイント のグリフを持つか確認する。
 
 ## 文字列幅の計測
 ```zig
@@ -142,11 +142,12 @@ UTF-8 文字列 `s` を指定ピクセルサイズで描画したときの単一
 戻り値の `height` は現在のフォントの `line_height`。
 
 ## 機能要望
-* 書記素クラスタ単位の `measureString` (現状は codepoint 単位。CLAUDE.md の文字コード方針における初版扱いに対応)。
+* 書記素クラスタ単位の `measureString` (現状は コードポイント 単位。CLAUDE.md の文字コード方針における初版扱いに対応)。
 * RTL / 双方向テキストへの対応 (Unicode Bidi アルゴリズムによる論理 → 表示順変換、キャレット移動方向の扱い等)。
 * 複数フォントフォールバック (CJK / 絵文字等; `awt-c` の `nmFontHasGlyph` を使って primary フォントに無いコードポイントを別フォントへ振る)。
 * 複数行レイアウト (`\n` での明示改行、`max_width` 指定での自動折り返し、行揃え)。
 * HarfBuzz 等によるテキストシェーピング (アラビア語の連結、インド系言語の合字、絵文字の ZWJ 合成等。RTL とは別概念のグリフレベル変換)。
 
-上記のうち書記素クラスタ以外は `Font` を直接拡張するのではなく、将来 awt 内に新モジュール (例: `TextRenderer`) を立てて、複数 `Font` + `GlyphAtlas` を所有させる想定。
+上記のうち書記素クラスタ以外は `Font` を直接拡張するのではなく、
+将来 awt 内に新モジュール (例: `TextRenderer`) を立てて、複数 `Font` + `GlyphAtlas` を所有させる想定。
 `Font` 自身は単一フォントの薄ラッパーに留める。

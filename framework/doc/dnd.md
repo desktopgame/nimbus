@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # dnd
@@ -7,13 +7,19 @@ unsafe: false
 
 ドラッグ&ドロップは実は 2 つの別物が混ざる。
 
-* **アプリ内 DnD** — リスト行の並べ替え、 ペイン間でのアイテム移動など。 マウスを追跡して落とし先を求め、 モデルを書き換えるだけ。 データのシリアライズも型交渉も要らない。
-* **OS からのドロップ** — エクスプローラ等から外部のファイルをウィンドウへ落とす。 こちらはプラットフォーム連携が要る。
+* アプリ内 DnD — リスト行の並べ替え、 ペイン間でのアイテム移動など。
+  マウスを追跡して落とし先を求め、 モデルを書き換えるだけ。 データのシリアライズも型交渉も要らない。
+* OS からのドロップ — エクスプローラ等から外部のファイルをウィンドウへ落とす。 こちらはプラットフォーム連携が要る。
 
-v1 では **アプリ内 DnD だけ**を実装する。 OS ドロップは後付け (`doc/build.md` のプラットフォーム方針に従い段階導入) だが、 **後から `DropTarget` / `DragSource` の署名を壊さず additive に足せる**ことを設計目標にする。 その鍵は、 受け側へ渡す「荷物」を生のポインタではなく `Transfer` という抽象にし、 ドラッグの司令塔の入口を発生源に依存させないこと。 この 2 点を以下で固定する。
+v1 では アプリ内 DnD だけを実装する。
+OS ドロップは後付け (`doc/build.md` のプラットフォーム方針に従い段階導入) だが、
+**後から `DropTarget` / `DragSource` の署名を壊さず additive に足せる**ことを設計目標にする。
+その鍵は、 受け側へ渡す「荷物」を生のポインタではなく `Transfer` という抽象にし、 ドラッグの司令塔の入口を発生源に依存させないこと。
+この 2 点を以下で固定する。
 
 ## 型定義
-運ぶデータの種類。 OS 由来の種別 (`files` / `text`) は v1 では使わないが、 後付けを additive にするため**今から予約**する。 受け側は自分が扱える `Flavor` 以外を素通しするので、 種別が増えても既存の受け側は壊れない。
+運ぶデータの種類。 OS 由来の種別 (`files` / `text`) は v1 では使わないが、 後付けを additive にするため今から予約する。
+受け側は自分が扱える `Flavor` 以外を素通しするので、 種別が増えても既存の受け側は壊れない。
 
 ```zig
 pub const Flavor = enum {
@@ -32,7 +38,8 @@ pub const Action = enum {
 };
 ```
 
-`object` フレーバの具体型を識別する不透明トークン。 **identity (アドレス) で比較**するだけで、 中身は持たない。 ドラッグ可能な型ごとに利用者が 1 つ鋳造する。 受け側は自分の受け入れ型のトークンと一致するかだけを見る。
+`object` フレーバの具体型を識別する不透明トークン。 **identity (アドレス) で比較**するだけで、 中身は持たない。
+ドラッグ可能な型ごとに利用者が 1 つ鋳造する。 受け側は自分の受け入れ型のトークンと一致するかだけを見る。
 
 ```zig
 pub const TypeTag = *const anyopaque;
@@ -62,7 +69,7 @@ pub const Transfer = struct {
 };
 ```
 
-受け側のコールバックに渡るイベント。 座標は**受け側ローカル**で、 司令塔がウィンドウ座標から変換して渡す。
+受け側のコールバックに渡るイベント。 座標は受け側ローカルで、 司令塔がウィンドウ座標から変換して渡す。
 
 ```zig
 pub const DragEvent = struct {
@@ -93,7 +100,7 @@ pub const DropTarget = struct {
 };
 ```
 
-送り出す能力。 OS 発のドラッグは送り手が外部なので、 これは**アプリ内 DnD 専用**。
+送り出す能力。 OS 発のドラッグは送り手が外部なので、 これはアプリ内 DnD 専用。
 
 ```zig
 pub const DragSource = struct {
@@ -189,22 +196,36 @@ const DropBox = struct {
 ```
 
 ### List の行並べ替え (自身への drop)
-`List` の行をドラッグして同じ `List` の別位置に落とし、 並べ替える。 **`List` ウィジェット本体 (`paint` / `processEvent` / 選択ロジック) は書き替えずに実装できる** — ドラッグ元能力をセルの root に、 ドロップ先能力を `List` の `Component` に、 それぞれ**外から付ける**だけ。 これは能力をフィールドで持つ設計 (「能力をフィールドに置く理由」) がコンポジションで素直に拡張できることの実証でもある。
+`List` の行をドラッグして同じ `List` の別位置に落とし、 並べ替える。
+**`List` ウィジェット本体 (`paint` / `processEvent` / 選択ロジック) は書き替えずに実装できる**
+— ドラッグ元能力をセルの ルート に、 ドロップ先能力を `List` の `Component` に、 それぞれ外から付けるだけ。
+これは能力をフィールドで持つ設計 (「能力をフィールドに置く理由」) がコンポジションで素直に拡張できることの実証でもある。
 
 非変更で済むことの内訳:
 
-* **ドラッグ元 / ドロップ先** — `list.asComponent().drag_source` と `drop_target` を**外から**設定する。 List のセルは container ツリーの外 (pool 管理) で司令塔のヒットテストから見えないため、 能力は **List 本体**に付ける。 `onDragStart` は press 位置 (List ローカル y) から開始行を算出する。
-* **並べ替え** — `onOver` が `getRowHeight` で挿入位置を算出して受理可否を返し、 `onDrop` がモデルを並べ替える。 source == target なので並べ替えは `onDrop` で完結する。
-* **ゴースト** — nimbus は描かないので、 `onDragStart` で passthrough overlay を登録し、 `onDrag` (ウィンドウ座標) で追従させ、 `onDragDone` で外す (「描画 (ゴースト / 挿入先)」)。
+* ドラッグ元 / ドロップ先 — `list.asComponent().drag_source` と `drop_target` を外から設定する。
+  List のセルは container ツリーの外 (pool 管理) で司令塔のヒットテストから見えないため、 能力は List 本体に付ける。
+  `onDragStart` は press 位置 (List ローカル y) から開始行を算出する。
+* 並べ替え — `onOver` が `getRowHeight` で挿入位置を算出して受理可否を返し、 `onDrop` がモデルを並べ替える。
+  ソース == target なので並べ替えは `onDrop` で完結する。
+* ゴースト — nimbus は描かないので、 `onDragStart` で passthrough overlay を登録し、
+  `onDrag` (ウィンドウ座標) で追従させ、 `onDragDone` で外す (「描画 (ゴースト / 挿入先)」)。
 
-非変更で済まないのは**モデルの順序変更**だけ — 行順を変えるので `ListModel` に順序変更 op (`move`) が要る。 モデル層の追加で、 現状 API の `clear` + `add` 再投入でも代用できる (`List` ウィジェットの挙動ではない)。
+非変更で済まないのはモデルの順序変更だけ — 行順を変えるので `ListModel` に順序変更 op (`move`) が要る。
+モデル層の追加で、 現状 API の `clear` + `add` 再投入でも代用できる (`List` ウィジェットの挙動ではない)。
 
 挿入線の描画は、 次のいずれでも `List` ソースを変えずに出せる:
 
-* **vtable 装飾 (推奨)** — `List.vtable` は public なので、 それを**コピーして `paint` だけ差し替える** (他メソッドは元のまま。 委譲 stub も退避も不要)。 拡張 `paint` は**先に元の `List.paint` を呼んでから**挿入線を描く。 線が `List` 本来の描画と同じ `Graphics` (同じ translate / clip) の上に乗るので **scroll / clip が自動で追従**する。 `ScrollPane` が使うのと同じ vtable substitution の手 (`scrollpane.md`)。 非公開 vtable を装飾する一般形 (元をグローバル退避 + 委譲 stub。 teardown 順の罠あり) は `reference: vtable decoration` を参照。
-* **passthrough overlay** — 薄い線を passthrough overlay として出し `onOver` で位置更新する (`overlay.md`)。 vtable に触らず単純だが、 線の位置を絶対座標で計算し overlay を別管理する必要がある。
+* vtable 装飾 (推奨) — `List.vtable` は public なので、 それをコピーして `paint` だけ差し替える (他メソッドは元のまま。 委譲 stub も退避も不要)。
+  拡張 `paint` は先に元の `List.paint` を呼んでから挿入線を描く。
+  線が `List` 本来の描画と同じ `Graphics` (同じ translate / clip) の上に乗るので scroll / clip が自動で追従する。
+  `ScrollPane` が使うのと同じ vtable substitution の手 (`scrollpane.md`)。
+  非公開 vtable を装飾する一般形 (元をグローバル退避 + 委譲 stub。 teardown 順の罠あり) は `reference: vtable decoration` を参照。
+* passthrough overlay — 薄い線を passthrough overlay として出し `onOver` で位置更新する (`overlay.md`)。
+  vtable に触らず単純だが、 線の位置を絶対座標で計算し overlay を別管理する必要がある。
 
-drop 位置 (`drop_at`) は `Reorder` コントローラに持たせ、 `onOver` が書き `onLeave` / `onDrop` でクリアする。 vtable 装飾の `paint` からは `self.getTyped(Reorder)` で引く。
+drop 位置 (`drop_at`) は `Reorder` コントローラに持たせ、 `onOver` が書き `onLeave` / `onDrop` でクリアする。
+vtable 装飾の `paint` からは `self.getTyped(Reorder)` で引く。
 
 ```zig
 // 前提: Component / Cell / CellContext / List / Label / Window / Application は
@@ -355,7 +376,13 @@ for (rows) |*r| try list.model.add(@ptrCast(r));
 ## 機能要望
 * ドロップ先の bubbling (最近傍が拒否したら祖先の受け側へ回す)
 * 受理アクションの細分 — 受け側が「copy なら受けるが move は不可」等を返し、 カーソルを copy / move で描き分ける
-* スナップショットゴーストのヘルパ — ドラッグ元のサブツリーを**明度↓・アルファ↓のスナップショット**にしてゴーストにする定型 (`overlays.addPassthrough` + `onDrag` の上に乗るヘルパ。 現状はアプリが自前で組む)。 前提として awt 側に汎用プリミティブが 2 つ要る: (1) Component サブツリーをオフスクリーンのテクスチャへ描く (既存の RenderTarget / Texture / Image program から組み立て可)、 (2) テクスチャを RGBA 変調 (tint) して描く (明度 = ×RGB / アルファ = ×A)。 どちらもゴースト専用でなく `setEnabled(false)` の灰色化やサムネイル等にも効く汎用機能。 見た目は開始時に凍結するスナップショット方式を想定 (ライブ再描画は座標 / 状態が絡み複雑)。
+* スナップショットゴーストのヘルパ — ドラッグ元のサブツリーを**明度↓・アルファ↓のスナップショット**にしてゴーストにする定型
+  (`overlays.addPassthrough` + `onDrag` の上に乗るヘルパ。 現状はアプリが自前で組む)。
+  前提として awt 側に汎用プリミティブが 2 つ要る:
+  (1) Component サブツリーをオフスクリーンのテクスチャへ描く (既存の RenderTarget / Texture / Image program から組み立て可)。
+  (2) テクスチャを RGBA 変調 (tint) して描く (明度 = ×RGB / アルファ = ×A)。
+  どちらもゴースト専用でなく `setEnabled(false)` の灰色化やサムネイル等にも効く汎用機能。
+  見た目は開始時に凍結するスナップショット方式を想定 (ライブ再描画は座標 / 状態が絡み複雑)。
 * OS ファイルドロップ — Phase 1 (glfw `.files`) / Phase 2 (native ホバー演出)。 awt の `.file_drop` イベント追加を伴う
 * ドラッグアウト (自アプリ → OS。 ファイル化してエクスプローラへ渡す)
 * 開いたフレーバ / 任意 MIME — アプリ間で独自フォーマットを運ぶ (現状の閉じた `Flavor` を超える範囲)

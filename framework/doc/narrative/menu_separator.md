@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # menu_separator
@@ -32,4 +32,4 @@ vtable の `processEvent` は no-op 実装。
 
 ## install / uninstall
 特に何もしない（no-op）。
-state も listener も持たないため。
+state も リスナー も持たないため。

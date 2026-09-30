@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # label
@@ -20,7 +20,8 @@ Label は `component.min_size` を「現在の text を現在の font で描画�
 * `setText` — 新しい text の寸法を測ってセット
 * `setFont` — 新しい font で現在の text の寸法を測ってセット
 
-利用者がさらに大きな下限を指定したい場合は `component.setMinSize(...)` で上書きできるが、その後 `setText` / `setFont` を呼ぶと Label が再計算した値で上書きされる。
+利用者がさらに大きな下限を指定したい場合は `component.setMinSize(...)` で上書きできるが、
+その後 `setText` / `setFont` を呼ぶと Label が再計算した値で上書きされる。
 `max_size` / `grow_x` / `grow_y` は Label からは触らない（利用者が `Component` の setter で設定する）。
 
 ## 描画
@@ -32,10 +33,11 @@ Label は `component.min_size` を「現在の text を現在の font で描画�
 
 ## install / uninstall
 ビルトイン Label の install / uninstall は no-op。
-Label の状態（text / font / color）はすべて `create` でセット済みであり、install hook は「カスタム vtable がプロパティに自前 state を登録したい」場合のための拡張点である（component.md 参照）。
+Label の状態（text / font / color）はすべて `create` でセット済みであり、
+install hook は「カスタム vtable がプロパティに自前 state を登録したい」場合のための拡張点である（component.md 参照）。
 
 ## ライフサイクル
-`create` が allocator 確保・init・vtable 登録・install をひとまとめに行う（component.md「ライフサイクル」と同じ pattern）。
+`create` が アロケーター 確保・init・vtable 登録・install をひとまとめに行う（component.md「ライフサイクル」と同じ pattern）。
 Application 経由のファクトリ `app.label(text)` は `create` をラップして default_font と黒色を注入する（application.md 参照）。
 
 破棄経路は `vtable.destroy` 経由（component.md「メモリ解放」参照）。
@@ -45,9 +47,9 @@ Application 経由のファクトリ `app.label(text)` は `create` をラップ
 ## 拡張ポイント
 ビルトイン Label の見た目を変えたい場合の選択肢（component.md / lookandfeel.md の方針に従う）。
 
-* **個別差替**: `lbl.component.setVTable(&my_label_vt)` で 1 個だけ paint を差替
-* **一斉差替**: `app.replaceVTable(&Label.vtable, &my_label_vt)` で全 Label を差替
-* **新型を作る**: `MyLabel = struct { label: Label, ... }` で struct embed して独自 paint
-* **setter で個別調整**: setColor / setFont で済む範囲
+* 個別差替: `lbl.component.setVTable(&my_label_vt)` で 1 個だけ paint を差替
+* 一斉差替: `app.replaceVTable(&Label.vtable, &my_label_vt)` で全 Label を差替
+* 新型を作る: `MyLabel = struct { label: Label, ... }` で struct embed して独自 paint
+* setter で個別調整: setColor / setFont で済む範囲
 
 framework としては Label 自身に theme / L&F 機構を入れない。

@@ -1,9 +1,9 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # checkbox_menu_item
-CheckBoxMenuItem のクリック挙動・icon slot 使用法・ButtonModel 流用の理由。
+CheckBoxMenuItem のクリック挙動・icon スロット 使用法・ButtonModel 流用の理由。
 
 ## クリック挙動
 `MenuItem` と同じ流れだが、`fireAction` の前に **checked のトグル**を挟む：
@@ -17,8 +17,8 @@ ChangeListener は selected が変化した時点で発火、ActionListener は�
 （多くの場合は ActionListener 1 つで十分）
 
 ## icon slot の使い方
-icon slot にはチェックマークを描画する（`model.selected == true` の時のみ）。
-`MenuItem` のような任意 Image はサポートしない（slot を占有しているため）。
+icon スロット にはチェックマークを描画する（`model.selected == true` の時のみ）。
+`MenuItem` のような任意 Image はサポートしない（スロット を占有しているため）。
 チェックマークの描画スタイル：
 
 | 状態 | 描画 |
@@ -27,8 +27,8 @@ icon slot にはチェックマークを描画する（`model.selected == true` 
 | checked=false | 空白 |
 
 ## 描画レイアウト
-基本は `MenuItem` と同じ 3 カラム構成（icon slot / label / accel slot）。
-icon slot はチェックマーク描画専用になる点だけ違う。
+基本は `MenuItem` と同じ 3 カラム構成（icon スロット / label / accel スロット）。
+icon スロット はチェックマーク描画専用になる点だけ違う。
 背景・文字色の state ルールも `MenuItem` と同じ。
 
 ## ButtonModel を流用する理由

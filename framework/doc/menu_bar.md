@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # menu_bar
@@ -40,7 +40,7 @@ pub fn create(
 ) !*MenuBar;
 ```
 
-allocator で MenuBar を確保して初期化する。
+アロケーター で MenuBar を確保して初期化する。
 `menus` は空、`open_menu` は null で開始する。
 `font` / `color` は配下の Menu ラベル描画用 (`add` した Menu は MenuBar の font / color を参照する想定)。
 vtable をセットして install まで実行する。

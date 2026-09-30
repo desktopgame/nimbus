@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # robot
@@ -7,20 +7,30 @@ Robot / Driver の意図・依存・前提・a11y ファセット・スナップ
 
 ## やりたいこと
 表示のチェックは awt の `RenderTarget` で済んでいる（Scene → オフスクリーン → PNG）。
-しかし「クリックしたらボタンが押下状態になる」「文字を打ったら TextField に反映される」のようなインタラクションの検証には、Component ツリーとイベントディスパッチ、すなわち framework の `Window` / `Application` を動かす必要がある。
+しかし「クリックしたらボタンが押下状態になる」「文字を打ったら TextField に反映される」のようなインタラクションの検証には、
+Component ツリーとイベントディスパッチ、すなわち framework の `Window` / `Application` を動かす必要がある。
 
 Robot は次の 2 チャネルを提供する。
 
-* **act（操作）**: マウス / キー / 文字 / IME イベントを合成し、実入力とまったく同じ経路（`EventQueue.postEvent` → `Window.dispatchInput`）に流す。ヒットテスト・mouse capture・focus・overlay が実入力と同一に駆動される
-* **observe（観測）**: Component ツリーを構造化スナップショットとして取り出す（role / text / 矩形 / focus 等）。AI はピクセルを読まずにこの構造化データで状態を判定できる。視覚バグ用にピクセル readback も併せて取れる
+* act（操作）: マウス / キー / 文字 / IME イベントを合成し、実入力とまったく同じ経路（`EventQueue.postEvent` → `Window.dispatchInput`）に流す。
+  ヒットテスト・mouse capture・focus・overlay が実入力と同一に駆動される
+* observe（観測）: Component ツリーを構造化スナップショットとして取り出す（role / text / 矩形 / focus 等）。
+  AI はピクセルを読まずにこの構造化データで状態を判定できる。
+  視覚バグ用にピクセル readback も併せて取れる
 
 この 2 チャネルを `pump`（イベントループの単一ステップ駆動）と仮想クロックで挟み、`inject → pump → snapshot → 検証` を決定的に繰り返す。
 
-操作と観測のプリミティブは意味を知らない `Robot` に集約し（act / drive / observe）、role + text で名指しする意味ラッパー `Driver` をその上に薄く重ねる（`Driver` は `*Robot` を持つだけで、解決して `Robot` のプリミティブへ委譲する。robot.md「意味レイヤー」）。「driver（駆動するもの）」と呼ぶのはこの `Driver` だけ。
+操作と観測のプリミティブは意味を知らない `Robot` に集約する（act / drive / observe）。
+role + text で名指しする意味ラッパー `Driver` をその上に薄く重ねる
+（`Driver` は `*Robot` を持つだけで、解決して `Robot` のプリミティブへ委譲する。robot.md「意味レイヤー」）。
+「driver（駆動するもの）」と呼ぶのはこの `Driver` だけ。
 
-さらに、人間が実ウィンドウでアプリを操作した入力列を記録し、再生可能なテストシナリオに変換する**レコーダー**を提供する（後述「入力の記録」）。記録は実ウィンドウ、再生はヘッドレス。
+さらに、人間が実ウィンドウでアプリを操作した入力列を記録し、再生可能なテストシナリオに変換する**レコーダー**を提供する（後述「入力の記録」）。
+記録は実ウィンドウ、再生はヘッドレス。
 
-最終的な利用形態は、操作と観測を JSON-lines の**シナリオ形式**で記述し、**シナリオランナー**が `Driver` / `Robot` に流して実行する形（後述「シナリオ形式とシナリオランナー」）。その土台となる Zig API（`Robot` / `Driver`）も同時に公開する。
+最終的な利用形態は、操作と観測を JSON-lines のシナリオ形式で記述し、
+シナリオランナーが `Driver` / `Robot` に流して実行する形（後述「シナリオ形式とシナリオランナー」）。
+その土台となる Zig API（`Robot` / `Driver`）も同時に公開する。
 
 ## 依存関係
 `framework` 層に属する。
@@ -30,11 +40,14 @@ GLFW（awt-c）には直接依存しない（ヘッドレスモードでは OS �
 
 ## 前提となる 3 つのケイパビリティ
 Robot は単独では成立せず、framework 側に次の 3 つが要る。
-**3 つとも実装済み (2026-06-07)**: ①は `Window.initHeadless` + `Application.frameHeadless`、②は `Robot.pump`（= `Application.tickOnce`）、③は framework 層の `Application.now` / `advanceClock`（`clock_mode = .virtual`）。設計は以下に残す。
+**3 つとも実装済み (2026-06-07)**: ①は `Window.initHeadless` + `Application.frameHeadless`、②は `Robot.pump`（= `Application.tickOnce`）。
+③は framework 層の `Application.now` / `advanceClock`（`clock_mode = .virtual`）。
+設計は以下に残す。
 
-1. **ヘッドレスサーフェス** — `Window` を Swapchain ではなくオフスクリーン `RenderTarget` に向ける。OS ウィンドウを開かず、ピクセル取得は readback で行う（後述「ヘッドレスサーフェス」）
-2. **決定的 pump** — `Application.run()` の OS ブロッキングループに対し、ブロックせず 1 反復だけ進める `pump` を用意する（後述「pump」）
-3. **仮想クロック** — タイマー / caret 点滅 / ダブルクリック判定の時間源を差し替え可能にし、`advanceClock` で時間を進められるようにする（後述「仮想クロック」）
+1. ヘッドレスサーフェス — `Window` を Swapchain ではなくオフスクリーン `RenderTarget` に向ける。
+   OS ウィンドウを開かず、ピクセル取得は readback で行う（後述「ヘッドレスサーフェス」）
+2. 決定的 pump — `Application.run()` の OS ブロッキングループに対し、ブロックせず 1 反復だけ進める `pump` を用意する（後述「pump」）
+3. 仮想クロック — タイマー / caret 点滅 / ダブルクリック判定の時間源を差し替え可能にし、`advanceClock` で時間を進められるようにする（後述「仮想クロック」）
 
 ## Component の a11y ファセット
 意味的クエリと構造化スナップショットのため、`Component` に「種別」と「アクセシブル名」を持たせる。
@@ -56,7 +69,10 @@ pub const Role = enum {
 各ウィジェットは `create` 内で自身の `role` をセットする（Button なら `.button` 等）。
 デフォルトは `.none`。
 
-アクセシブル名（ボタンのラベル等）と詳細ダンプは、`Component.VTable` を増やさず **opt-in の能力構造体**として持たせる。`drag_source` / `drop_target` / `size_query` と同じパターンで、`component.md`「VTable の関数はできるだけ増やすな」と整合する（全 widget に常時乗るのは VTable だけ、という方針）。テキストは各ウィジェット構造体（`Button.text` 等）が持つため、Component に重複保持しない。
+アクセシブル名（ボタンのラベル等）と詳細ダンプは、`Component.VTable` を増やさず **opt-in の能力構造体**として持たせる。
+`drag_source` / `drop_target` / `size_query` と同じパターンで、
+`component.md`「VTable の関数はできるだけ増やすな」と整合する（全 ウィジェット に常時乗るのは VTable だけ、という方針）。
+テキストは各ウィジェット構造体（`Button.text` 等）が持つため、Component に重複保持しない。
 
 ```zig
 pub const A11y = struct {
@@ -66,11 +82,23 @@ pub const A11y = struct {
 // Component に追加: a11y: ?A11y = null
 ```
 
-robot の**最小投入分は `role`（前述のフィールド）+ `A11y.name` だけ**。`name` は curated ツリーと意味的クエリ（`Driver.find` / `clickOn`）が使う軽いアクセサで、型消去された `*const Component` から comptime リフレクションでウィジェット実体に届かないため、具体型を知るこのアクセサ経由で引く（`@fieldParentPtr` で実体に戻して text を返す）。名前を持たないウィジェット（Filler / Separator 等）は `a11y = null` のままでよい。
-2026-06-14 時点では最小5種（Button / Label / CheckBox / RadioButton / TextField）に `A11y.name` を配線済み。メニュー4種（Menu / MenuItem / CheckBoxMenuItem / RadioButtonMenuItem）にも配線済み。Button / Label / CheckBox / RadioButton とメニュー項目系は表示テキストが空でなければそれを返し、Menu はバーのラベル兼サブメニュー見出しの text を返す。TextField は既存の `snapshotTree` 慣行に合わせて現在の入力内容を空文字でも返す。将来 `A11y.value` を additive に足す段階で、TextField の `name`（ラベル）と `value`（内容）を分離する。
-MenuBar / PopupMenu ルート / Menu popup ルートのような構造ノードは、名前ではなく `Component.tree_children` で専用 child list を automation tree に露出する。これにより `snapshotTree` と `Driver.find` は container / menu_bar / overlays を同じルート列で走査し、MenuBar と開いている popup menu の項目へ到達する。ComboBox / Slider / List / Table の a11y、`A11y.value`、`A11y.dump` は後段。
+robot の**最小投入分は `role`（前述のフィールド）+ `A11y.name` だけ**。
+`name` は curated ツリーと意味的クエリ（`Driver.find` / `clickOn`）が使う軽いアクセサで、
+型消去された `*const Component` から comptime リフレクションでウィジェット実体に届かない。
+そのため具体型を知るこのアクセサ経由で引く（`@fieldParentPtr` で実体に戻して text を返す）。
+名前を持たないウィジェット（Filler / Separator 等）は `a11y = null` のままでよい。
+2026-06-14 時点では最小5種（Button / Label / CheckBox / RadioButton / TextField）に `A11y.name` を配線済み。
+メニュー4種（Menu / MenuItem / CheckBoxMenuItem / RadioButtonMenuItem）にも配線済み。
+Button / Label / CheckBox / RadioButton とメニュー項目系は表示テキストが空でなければそれを返し、Menu はバーのラベル兼サブメニュー見出しの text を返す。
+TextField は既存の `snapshotTree` 慣行に合わせて現在の入力内容を空文字でも返す。
+将来 `A11y.value` を additive に足す段階で、TextField の `name`（ラベル）と `value`（内容）を分離する。
+MenuBar / PopupMenu ルート / Menu popup ルートのような構造ノードは、名前ではなく `Component.tree_children` で専用 child list を automation tree に露出する。
+これにより `snapshotTree` と `Driver.find` は container / menu_bar / overlays を同じルート列で走査し、MenuBar と開いている popup menu の項目へ到達する。
+ComboBox / Slider / List / Table の a11y、`A11y.value`、`A11y.dump` は後段。
 
-`A11y.dump` は詳細ビュー用のフックで、**段階として後回し**（最小投入は `role` + `name` のみ。詳細は後述「詳細ダンプのフィールド選別」と robot.md「機能要望」段階 3.5）。フック内では `name` と同じく `@fieldParentPtr` で実体に戻し、**診断に有用なフィールドを選んで** `sink.field(...)` で明示的に並べる。
+`A11y.dump` は詳細ビュー用のフックで、段階として後回し。
+（最小投入は `role` + `name` のみ。詳細は後述「詳細ダンプのフィールド選別」と robot.md「機能要望」段階 3.5）
+フック内では `name` と同じく `@fieldParentPtr` で実体に戻し、診断に有用なフィールドを選んで `sink.field(...)` で明示的に並べる。
 
 ```zig
 fn dump(self: *Component, sink: *Robot.DumpSink) void {
@@ -83,7 +111,9 @@ fn dump(self: *Component, sink: *Robot.DumpSink) void {
 
 旧案にあった `accessibleState`（押下 / 選択を別途返す）は廃止する。`pressed` / `selected` 等は `dump` が `field` で出すため。
 
-**本物のアクセシビリティとの関係**: ここで入れる `role` + `name` は、将来スクリーンリーダー対応をやるときにも最初に必要となる同じ核なので捨てにならない。その段では `A11y` に state / value / actions 等のアクセサを **additive に足す**だけで済む。OS の支援技術ブリッジ（UI Automation / NSAccessibility / AT-SPI）や通知・関係性は本 doc のスコープ外（後述「制約」）。
+本物のアクセシビリティとの関係: ここで入れる `role` + `name` は、将来スクリーンリーダー対応をやるときにも最初に必要となる同じ核なので捨てにならない。
+その段では `A11y` に state / value / actions 等のアクセサを additive に足すだけで済む。
+OS の支援技術ブリッジ（UI Automation / NSAccessibility / AT-SPI）や通知・関係性は本 doc のスコープ外（後述「制約」）。
 
 ## 詳細ダンプのフィールド選別
 （詳細ダンプ＝`A11y.dump` は最小投入には含めず、段階として後回し。以下はその設計。）
@@ -106,13 +136,15 @@ pub fn field(self: *DumpSink, name: []const u8, value: anytype) void;
 | struct（`Size` / `Rect` 等） | `object`（フィールドを再帰展開） |
 
 ### 機械的全件走査を採らない理由
-全フィールドを自動で吐くと、点滅フェーズ・アニメ進行度・キャッシュ済みレイアウト値・最終イベント時刻のような「正当に変動するが診断に無関係なフィールド」までダンプに乗り、スナップショット比較で偽陽性を生む。
+全フィールドを自動で吐くと、点滅フェーズ・アニメ進行度・キャッシュ済みレイアウト値・最終イベント時刻のような
+「正当に変動するが診断に無関係なフィールド」までダンプに乗り、
+スナップショット比較で偽陽性を生む。
 どのフィールドが意味を持つかはウィジェット作者が一番分かっているので、選別を作者に委ねる。
 新しい内部状態を足したときに `field` 呼び出しを追加する保守は要るが、ダンプの安定性と意図の明瞭さを優先する。
 
 ### 選別の指針
 * 生ポインタ / アドレス / 関数ポインタは `field` に渡さない（実行毎に変わり、ダンプ比較が成り立たなくなる。本 doc の決定性の主目的に反する）
-* 派生・キャッシュ値より、状態の source of truth となるフィールドを優先する
+* 派生・キャッシュ値より、状態の ソース of truth となるフィールドを優先する
 * 親子構造はダンプの責務ではない（`DumpNode.children` のツリー走査が担う）。`parent` / `container` を `field` に出さない
 
 ## 2 つのスナップショットモード
@@ -120,7 +152,7 @@ pub fn field(self: *DumpSink, name: []const u8, value: anytype) void;
 
 | モード | API | 内容 | 用途 |
 |---|---|---|---|
-| `tree`（curated） | `snapshotTree` | role / text / rect / focused | 「画面に何があるか」。container / menu_bar / overlays を描画順に見る。ナビゲーション・検証。コンパクトで安定 |
+| `tree`（curated） | `snapshotTree` | role / text / rect / focused | 「画面に何があるか」。描画順に走査。ナビゲーション・検証。コンパクトで安定 |
 | `dump`（詳細） | `dumpTree` / `dumpNode` | ウィジェットが選別した詳細プロパティ | 「なぜそうなっているか」。診断 |
 
 通常は `tree` でアサートし、状態が想定と食い違ったノードだけ `dumpNode` で深掘りする、という流れを想定する。
@@ -151,8 +183,9 @@ pub fn field(self: *DumpSink, name: []const u8, value: anytype) void;
 これにより実時間 sleep を一切挟まずに時間依存挙動を検証できる。
 
 ## シナリオ形式とシナリオランナー
-robot の最終的な利用形態は、操作と観測を **JSON-lines のシナリオ形式**で記述し、それを**シナリオランナー**が `Driver` / `Robot` に流して実行する形。
-「driver（実際にアプリを駆動するもの）」は in-proc の `Driver` / `Robot` であって、この JSON 層ではない。JSON 層は **シナリオの記述形式**と、それを解釈する薄いランナーに分かれる。
+robot の最終的な利用形態は、操作と観測を JSON-lines のシナリオ形式で記述し、それをシナリオランナーが `Driver` / `Robot` に流して実行する形。
+「driver（実際にアプリを駆動するもの）」は in-proc の `Driver` / `Robot` であって、この JSON 層ではない。
+JSON 層は **シナリオの記述形式**と、それを解釈する薄いランナーに分かれる。
 
 ### シナリオ形式（記述言語）
 1 行 1 ステップの JSON-lines。語彙は次の通り。
@@ -173,10 +206,13 @@ robot の最終的な利用形態は、操作と観測を **JSON-lines のシナ
 座標 / ピクセルは初版から使えるが、`target` による意味的指定は `role` + a11y 名が入って初めて機能する。
 
 ### シナリオランナー（2 モード）
-同じシナリオ形式・同じインタプリタを、入口だけ変えて 2 モードで使う。違いは「**次のステップを誰が決めるか**」だけで、どちらもランナー（シナリオ語彙 → `Driver` / `Robot` 呼び出し）を共有するので実行経路を二重実装しない。
+同じシナリオ形式・同じインタプリタを、入口だけ変えて 2 モードで使う。
+違いは「**次のステップを誰が決めるか**」だけで、どちらもランナー（シナリオ語彙 → `Driver` / `Robot` 呼び出し）を共有するので実行経路を二重実装しない。
 
-* **再生（バッチ）** — シナリオ全体（ファイル）を順に実行し、`checkpoint` を照合する。順序は事前固定（記録 or 手書き）。決定的ヘッドレスでの回帰テスト用（後述「シナリオの再生」= `replay`）。
-* **対話（stdin REPL）** — 1 行ずつ stdin で受け、即 stdout で応答する同期プロトコル。AI が直前の観測を見て次の 1 手を決める閉ループ。再ビルドなしにターン毎に駆動でき、MCP サーバー化も自然。
+* 再生（バッチ） — シナリオ全体（ファイル）を順に実行し、`checkpoint` を照合する。
+  順序は事前固定（記録 or 手書き）。決定的ヘッドレスでの回帰テスト用（後述「シナリオの再生」= `replay`）。
+* 対話（stdin REPL） — 1 行ずつ stdin で受け、即 stdout で応答する同期プロトコル。
+  AI が直前の観測を見て次の 1 手を決める閉ループ。再ビルドなしにターン毎に駆動でき、MCP サーバー化も自然。
 
 応答（対話モード）は `{"ok":true}` か、観測コマンドはペイロード（`tree` / `dump` / 画像パス）、失敗時は `{"error":"NotFound"}` 等。
 
@@ -274,14 +310,16 @@ pub fn writeJsonl(self: *Recorder, io: std.Io, path: []const u8) !void;
 `writeJsonl` は JSON-lines 形式（後述「シナリオ形式」）でファイルに書き出す。
 
 ### クリックの解決
-`.press` と `.release` が同一コンポーネント上で起きたクリックは、記録時にクリック地点をヒットテストして role + text + name に解決し、`click: Query` ステップとして残す（意味的指定。レイアウト変更に強い）。
+`.press` と `.release` が同一コンポーネント上で起きたクリックは、記録時にクリック地点をヒットテストして role + text + name に解決し、
+`click: Query` ステップとして残す（意味的指定。レイアウト変更に強い）。
 ヒットテストには Robot の `find` と同じ走査を使う。
 
 ドラッグ（press → move → … → release が別位置 / 別コンポーネント）や、解決先が曖昧なクリックは、解決を諦めて座標ベースの `down` / `move` / `up` ステップで残す。
 解決した `text` / `name` は元コンポーネントからの借用なので、`Recorder` 内に複製して保持する（コンポーネントが変化・破棄されても安全に）。
 
 ### チェックポイントの記録
-記録中に人間が予約キー（既定 `F12`。装着時に変更可）を押すと、その入力は**ステップとして記録せず**、代わりにその時点の curated tree を `snapshotTree` で取得して `Checkpoint` として積む。
+記録中に人間が予約キー（既定 `F12`。装着時に変更可）を押すと、その入力は**ステップとして記録せず**、
+代わりにその時点の curated tree を `snapshotTree` で取得して `Checkpoint` として積む。
 これが再生時の期待状態（アサート）になる。
 予約キーはアプリ本来の入力と衝突しないものを選ぶ（必要なら修飾キー併用）。
 
@@ -298,7 +336,9 @@ pub const ReplayResult = struct {
 };
 ```
 
-シナリオランナーの**再生モード**（前述「シナリオ形式とシナリオランナー」）。`Scenario` のステップを順に Robot / Driver 操作へ写して再生する。`target` 解決のため内部で `robot` を包む `Driver` を使う。
+シナリオランナーの**再生モード**（前述「シナリオ形式とシナリオランナー」）。
+`Scenario` のステップを順に Robot / Driver 操作へ写して再生する。
+`target` 解決のため内部で `robot` を包む `Driver` を使う。
 
 * `wait` → `advanceClock(ms)` の後 `pump`。再生クロックは仮想なので、人間の長い手休めもほぼ即座に消化される（実時間 sleep は挟まない）
 * `act` → `Driver.clickOn`（`click` の `target` 解決）/ `robot.moveMouse` / `keyDown`+`keyUp` / `typeText` / `scroll` の後 `pump`
@@ -324,18 +364,32 @@ JSON-lines。1 行 1 ステップで、前述「シナリオ形式とシナリ�
 `checkpoint` 行は期待 tree を埋め込み、ドライバは再生時にその行で現在の tree と比較する。
 
 ## ライフタイム
-* `Robot` は `Application` と `Window` を**借用**する。両者より先に破棄しなければならない（`Robot` → `Window` → `Application` の順は不可）
-* `snapshotTree` / `dumpTree` の返り値は呼び出し側が `freeTree` / `freeDump` で解放する。ノード内の文字列（`name` / `text` / dump の string 値）は元 Component の文字列を**借用**するので、対応する Component が生きている間だけ有効（snapshot 後に widget を destroy したらダングリング）。文字列の所有が必要なら呼び出し側で複製する
-* 合成イベントは `postEvent` でキューにコピーされるため、`inject` 系メソッドの引数（`utf8` 等）は呼び出し後すぐ解放してよい。ただし `.composition` の借用文字列だけは同期ディスパッチなので呼び出し中のみ有効
-* `Recorder` は `Application` / `Window` を**借用**し、`window.input_observer` に自身を装着する。`deinit` で必ずフックを外す。`Window` より先に `deinit` すること（さもないと dangling フックが残る）。解決済みの `text` / `name` は複製して保持するので、元コンポーネントが破棄されてもシナリオは安全
+* `Robot` は `Application` と `Window` を借用する。両者より先に破棄しなければならない（`Robot` → `Window` → `Application` の順は不可）
+* `snapshotTree` / `dumpTree` の返り値は呼び出し側が `freeTree` / `freeDump` で解放する。
+  ノード内の文字列（`name` / `text` / dump の string 値）は元 Component の文字列を借用するので、
+  対応する Component が生きている間だけ有効（スナップショット 後に ウィジェット を destroy したらダングリング）。
+  文字列の所有が必要なら呼び出し側で複製する
+* 合成イベントは `postEvent` でキューにコピーされるため、`inject` 系メソッドの引数（`utf8` 等）は呼び出し後すぐ解放してよい。
+  ただし `.composition` の借用文字列だけは同期ディスパッチなので呼び出し中のみ有効
+* `Recorder` は `Application` / `Window` を借用し、`window.input_observer` に自身を装着する。
+  `deinit` で必ずフックを外す。`Window` より先に `deinit` すること（さもないと dangling フックが残る）。
+  解決済みの `text` / `name` は複製して保持するので、元コンポーネントが破棄されてもシナリオは安全
 
 ## 制約 / 非機能要件
-* **単一 UI スレッド**: Robot のメソッドはすべて UI スレッドから呼ぶ前提（CLAUDE.md「スレッドモデル」）。`postEvent` 自体はスレッド安全だが、`pump` / `snapshotTree` は UI スレッド限定
-* **決定性が最優先**: 実時間・実 OS イベントに依存しないことを設計の主目的とする。これがフレーキーなテストとの分かれ目。詳細ダンプも生ポインタ / 関数ポインタ / アドレスを `field` に出さない（実行毎に変わり比較不能になる。「詳細ダンプのフィールド選別」参照）
-* **実入力との同一経路**: 合成イベントは独自の short-cut を作らず、必ず `postEvent` → `dispatchInput` を通す。Robot のためだけの分岐をディスパッチャに増やさない
-* **記録は実ウィンドウ / 再生はヘッドレス**: レコーダーは実ウィンドウに装着して人間の操作を採るが、再生は決定的なヘッドレス + 仮想クロックで行う。両者をイベント間のクロック差分が橋渡しする
-* **2 層構造と命名**: 意味を知らないプリミティブ `Robot`（act / drive / observe）と、その上の意味ラッパー `Driver`（`find` / `clickOn`）に分ける。`Driver` は `*Robot` を持つだけ。「driver（駆動するもの）」と呼ぶのは `Driver` だけで、JSON 層は driver ではなく**シナリオ形式 + シナリオランナー**（前述）
-* **スコープ外（v1）**: OS レベルのイベント注入（実ウィンドウへの本物のクリック）、複数プロセス分散、本物のアクセシビリティ（スクリーンリーダー / OS の支援技術ブリッジ）。いずれも本 doc の意味的ファセット（`role` + `name`）/ シナリオ形式を土台に後付けできる形にしておく
+* 単一 UI スレッド: Robot のメソッドはすべて UI スレッドから呼ぶ前提（CLAUDE.md「スレッドモデル」）。
+  `postEvent` 自体はスレッド安全だが、`pump` / `snapshotTree` は UI スレッド限定
+* 決定性が最優先: 実時間・実 OS イベントに依存しないことを設計の主目的とする。
+  これがフレーキーなテストとの分かれ目。
+  詳細ダンプも生ポインタ / 関数ポインタ / アドレスを `field` に出さない（実行毎に変わり比較不能になる。「詳細ダンプのフィールド選別」参照）
+* 実入力との同一経路: 合成イベントは独自の short-cut を作らず、必ず `postEvent` → `dispatchInput` を通す。Robot のためだけの分岐をディスパッチャに増やさない
+* 記録は実ウィンドウ / 再生はヘッドレス: レコーダーは実ウィンドウに装着して人間の操作を採るが、再生は決定的なヘッドレス + 仮想クロックで行う。
+  両者をイベント間のクロック差分が橋渡しする
+* 2 層構造と命名: 意味を知らないプリミティブ `Robot`（act / drive / observe）と、その上の意味ラッパー `Driver`（`find` / `clickOn`）に分ける。
+  `Driver` は `*Robot` を持つだけ。
+  「driver（駆動するもの）」と呼ぶのは `Driver` だけで、JSON 層は driver ではなく**シナリオ形式 + シナリオランナー**（前述）
+* スコープ外（v1）: OS レベルのイベント注入（実ウィンドウへの本物のクリック）、複数プロセス分散、
+  本物のアクセシビリティ（スクリーンリーダー / OS の支援技術ブリッジ）。
+  いずれも本 doc の意味的ファセット（`role` + `name`）/ シナリオ形式を土台に後付けできる形にしておく
 
 ## 関連 doc
 * `component.md` — Component。`role` フィールドと a11y 能力構造体（`A11y { name, dump }`）の追加先（VTable は増やさない）

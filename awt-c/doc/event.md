@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # event
@@ -11,7 +11,9 @@ awt-c では「イベントループ」自体を型として持たない。
 内部的には GLFW のイベント機構およびタイマーを使用するが、その知識は外部に漏らさない。
 
 ## イベントのポーリング
+```c
 void nmPollEvents(void);
+```
 
 キューに溜まっているイベントを全て処理して即座に戻る。
 ブロックしないため、定期的に呼ぶ必要がある。
@@ -21,7 +23,9 @@ void nmPollEvents(void);
 * `nmInitAwt()` が事前に呼び出されていること。違反した場合の動作は UB。
 
 ## イベントの待機
+```c
 void nmWaitEvents(void);
+```
 
 少なくとも 1 つのイベントが届くまで呼び出しスレッドをブロックする。
 イベント駆動のアプリケーションで CPU 使用率を抑えたいときに使う。
@@ -31,7 +35,9 @@ void nmWaitEvents(void);
 * `nmInitAwt()` が事前に呼び出されていること。違反した場合の動作は UB。
 
 ## 空イベントのポスト
+```c
 void nmPostEmptyEvent(void);
+```
 
 イベントキューに空イベントを 1 個ポストする。
 別スレッドから UI スレッドを `nmWaitEvents` のブロックから起こす唯一の正規手段。
@@ -42,7 +48,9 @@ EventQueue (Zig 層) の `invokeLater` 実装などで利用される。
 任意スレッドから安全に呼べる。
 
 ## 時刻の取得
+```c
 double nmGetTime(void);
+```
 
 `nmInitAwt` 呼び出しからの経過時間を秒で返す。
 単調増加 (monotonic) で、システムの壁時計の変更には影響されない。

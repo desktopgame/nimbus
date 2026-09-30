@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # button_group
@@ -19,7 +19,8 @@ pub const ButtonGroup = struct {
 `add` 時に各 member の `ToggleButtonModel` に group hook (`setGroupHook`) を仕込む。
 これにより member が group より先に破棄されても、 member の `deinit` から group が通知を受けて自分の参照を外せる (後述の「寿命」参照)。
 
-`prev_selected` は内部実装の詳細 (`ChangeListener` の signature が source model を渡さないので、 「false → true へ transition した member」 を判定するために spec snapshot を持つ)。
+`prev_selected` は内部実装の詳細 (`ChangeListener` の signature が ソース モデル を渡さないので、
+「false → true へ transition した member」 を判定するために spec スナップショット を持つ)。
 
 ## 生成
 ```zig
@@ -42,11 +43,14 @@ pub fn deinit(self: *ButtonGroup) void;
 
 まだ生きている各 member から `ChangeListener` を解除し、 group hook を外し、 内部の `members` / `prev_selected` を解放する。
 
-**寿命**: group と member (= owning RadioButton / CheckBox / model) の破棄順序はどちらが先でも安全。
-- group が先: `deinit` が生きている member の listener を解除する。
-- member が先: member の `deinit` が group hook 経由で group に通知し、 group は自分の `members` からその member を取り除く。 そのため後で走る group の `deinit` は freed なモデルに触れない。
+**寿命**: group と member (= owning RadioButton / CheckBox / モデル) の破棄順序はどちらが先でも安全。
+- group が先: `deinit` が生きている member の リスナー を解除する。
+- member が先: member の `deinit` が group hook 経由で group に通知し、 group は自分の `members` からその member を取り除く。
+  そのため後で走る group の `deinit` は freed なモデルに触れない。
 
-これは特に重要で、 GUI アプリでは典型的に `Application.run` がウィンドウ close 時にウィジェットツリー (= radio とそのモデル) を破棄する一方、 `ButtonGroup` は呼び出し側のスタックに残って `run` 復帰後の defer で破棄される。 つまり member が先に死ぬのが普通であり、 hook なしでは use-after-free になっていた。
+これは特に重要で、 GUI アプリでは典型的に `Application.run` がウィンドウ close 時にウィジェットツリー (= radio とそのモデル) を破棄する一方、
+`ButtonGroup` は呼び出し側のスタックに残って `run` 復帰後の defer で破棄される。
+つまり member が先に死ぬのが普通であり、 hook なしでは use-after-free になっていた。
 
 ## メンバーの追加
 ```zig
@@ -61,8 +65,8 @@ pub fn add(self: *ButtonGroup, model: *ToggleButtonModel) !void;
 pub fn remove(self: *ButtonGroup, model: *ToggleButtonModel) void;
 ```
 
-指定 model をグループから外す (idempotent)。
-listener も解除する。
+指定 モデル をグループから外す (idempotent)。
+リスナー も解除する。
 
 ## 現在の選択取得
 ```zig
@@ -73,5 +77,5 @@ pub fn getSelected(self: ButtonGroup) ?*ToggleButtonModel;
 
 ## 機能要望
 * グループに「最低 1 個 selected を強制する」 モード (Swing JButtonGroup の挙動)
-* グループの ActionListener (どの member が選ばれても 1 個の listener で通知)
-* ChangeListener の signature 拡張で `prev_selected` snapshot を不要に
+* グループの ActionListener (どの member が選ばれても 1 個の リスナー で通知)
+* ChangeListener の signature 拡張で `prev_selected` スナップショット を不要に

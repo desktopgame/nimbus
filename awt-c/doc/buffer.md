@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # buffer
@@ -34,7 +34,9 @@ awt の内部で定義された抽象化済みの型については保持して�
 同じバッファを頂点バッファかつ定数バッファとして使うなど、複数用途を持つ場合に指定する。
 
 ## バッファの生成
+```c
 nmBuffer* nmCreateBuffer(nmDevice* device, size_t size, nmBufferUsage usage);
+```
 
 指定サイズのバッファを生成する。
 失敗時は `NULL` を返す。
@@ -43,7 +45,9 @@ nmBuffer* nmCreateBuffer(nmDevice* device, size_t size, nmBufferUsage usage);
 * `size` が 0 、または `usage` が 0 のとき、UB
 
 ## バッファの破棄
+```c
 void nmDestroyBuffer(nmBuffer* self);
+```
 
 バッファを破棄する。
 以後引数の `self` が使用可能であるかどうかは保証されない。
@@ -52,7 +56,9 @@ void nmDestroyBuffer(nmBuffer* self);
 * `self` が NULL のとき、なにも実行せずに終了する。
 
 ## バッファへの書き込み
+```c
 void nmUploadBuffer(nmBuffer* self, const void* data, size_t size, size_t offset);
+```
 
 CPU 側のデータをバッファに転送する。
 `offset` バイト目から `size` バイトの領域に `data` の内容を書き込む。
@@ -62,7 +68,9 @@ CPU 側のデータをバッファに転送する。
 * `offset` + `size` が バッファサイズを超える時、ログ出力して終了する。
 
 ## 頂点バッファのバインド
+```c
 void nmBindVertexBuffer(nmCommandBuffer* self, nmBuffer* buf, int slot, size_t stride, size_t offset);
+```
 
 記録中のコマンドバッファに対し、`buf` を頂点バッファとして `slot` 番にバインドする。
 `stride` は 1 頂点あたりのバイト数。
@@ -79,7 +87,9 @@ nimbus 内部では現時点で使用していない。
 * `offset` が `buf` のサイズ以上のとき `[ERROR] [buffer] nmBindVertexBuffer: offset out of bounds` を出力して何もしない。
 
 ## インデックスバッファのバインド
+```c
 void nmBindIndexBuffer(nmCommandBuffer* self, nmBuffer* buf, nmIndexFormat fmt, size_t offset);
+```
 
 記録中のコマンドバッファに対し、`buf` をインデックスバッファとしてバインドする。
 `fmt` はインデックス値の型 (u16 / u32)。
@@ -93,7 +103,9 @@ void nmBindIndexBuffer(nmCommandBuffer* self, nmBuffer* buf, nmIndexFormat fmt, 
 * `offset` が `buf` のサイズ以上のとき `[ERROR] [buffer] nmBindIndexBuffer: offset out of bounds` を出力して何もしない。
 
 ## 定数バッファのバインド
+```c
 void nmBindConstantBuffer(nmCommandBuffer* self, nmBuffer* buf, int slot, size_t offset, size_t size);
+```
 
 記録中のコマンドバッファに対し、`buf` のうち `offset` から `size` バイトの領域を、定数バッファとして `slot` 番にバインドする。
 バッファ全体をバインドしたい場合は `offset = 0`、`size = バッファ全体のサイズ` を渡す。
@@ -121,13 +133,14 @@ fragment float4 psMain(VsOut in [[stage_in]],
 ### 事前条件
 * `buf` の `usage` に `nmBufferUsageConstant` が含まれること。含まれない場合の動作は UB。
 * この呼び出しの前に `nmBindPipeline` でパイプラインがバインドされていること
-  （バインドされたパイプラインの root signature を参照してスロットを解決するため）
+  （バインドされたパイプラインの ルート signature を参照してスロットを解決するため）
 * `offset` が 256 の倍数であること。違反した場合の動作は UB。
 
 ### 診断情報
 * `nmBindPipeline` 未呼び出しの状態で呼ぶと `[ERROR] [buffer] nmBindConstantBuffer: no pipeline bound` を出して何もしない
 * `offset + size` がバッファサイズを超える場合は `[ERROR] [buffer] ... range out of bounds ...` を出して何もしない
-* `slot` が現在のパイプラインの root signature に存在しない場合（型違いを含む）は `[WARN] [buffer] no ConstantBuffer binding for slot N ...` を出して何もしない
+* `slot` が現在のパイプラインの ルート signature に存在しない場合（型違いを含む）は
+  `[WARN] [buffer] no ConstantBuffer binding for slot N ...` を出して何もしない
   * このときシェーダー側がそのスロットを参照すると undefined behavior になるので、debug layer が draw call 時にさらに警告を出すはず
 * `offset` が 256 の倍数でない場合は `[ERROR] [buffer] nmBindConstantBuffer: offset not aligned to 256` を出して何もしない
 

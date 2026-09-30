@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # scrollpane
@@ -19,16 +19,22 @@ ScrollPane の構成・サイズ決定とビューの契約・イベント処理
                               corner (小さな filler)
 ```
 
-* `viewport` / `hbar` / `vbar` は**互いに重ならない矩形**を占める。 これにより `ScrollPane` のイベント配送は領域ごとにきれいに分かれ、 はみ出したビューへの誤クリックは起きない (重なりを避けるために viewport を独立させている)。
-* バーは `as_needed` のとき必要な軸だけ表示する。 非表示の軸では gutter を畳んで viewport がその分広がる。
-* スクロールの単一の真実は **バーの `BoundedRangeModel`**。 ホイールやプログラム設定はバーの `value` を更新し、 その `ChangeListener` で `viewport` 内のビュー位置 (`view.position = {-h.value, -v.value}`) を更新して repaint する。
+* `viewport` / `hbar` / `vbar` は**互いに重ならない矩形**を占める。
+  これにより `ScrollPane` のイベント配送は領域ごとにきれいに分かれ、
+  はみ出したビューへの誤クリックは起きない (重なりを避けるために ビューポート を独立させている)。
+* バーは `as_needed` のとき必要な軸だけ表示する。 非表示の軸では gutter を畳んで ビューポート がその分広がる。
+* スクロールの単一の真実は **バーの `BoundedRangeModel`**。
+  ホイールやプログラム設定はバーの `value` を更新し、
+  その `ChangeListener` で `viewport` 内のビュー位置 (`view.position = {-h.value, -v.value}`) を更新して repaint する。
 
 メニュー系のようなオーバーレイ / dismiss / 専用 dispatch は一切使わない。 `ScrollBar` も `viewport` も通常のコンポーネントツリーの一部である。
 
 ## サイズ決定とビューの契約
 レイアウト時、 軸ごとにビューのサイズを次のように決める:
 
-* `view.scrollable` が `null` (既定): その軸は **ビューの自然サイズ** (`effectiveMinSize`) を使う。 自然サイズ > ビューポートならスクロールバーを出す。 自然サイズがビューポート以下ならビューをビューポートいっぱいに広げる (`max(自然, ビューポート)`)。
+* `view.scrollable` が `null` (既定): その軸は ビューの自然サイズ (`effectiveMinSize`) を使う。
+  自然サイズ > ビューポートならスクロールバーを出す。
+  自然サイズがビューポート以下ならビューをビューポートいっぱいに広げる (`max(自然, ビューポート)`)。
 * `scrollable.tracks_viewport_width = true`: ビューの**幅をビューポート内幅に固定**し、 その軸はスクロールしない。
 * `scrollable.tracks_viewport_height = true` も同様 (縦方向)。
 
@@ -40,11 +46,13 @@ ScrollPane の構成・サイズ決定とビューの契約・イベント処理
 2. ビューに `SizeQuery.minHeightForWidth(w)` を呼んで、 その幅での最小高さを取得する。
 3. 取得した高さで垂直スクロール範囲を決め、 ビューに `setBounds` で位置とサイズを与える。
 
-このときビュー側に課す契約は **「`size_query` が non-null なら、 `minHeightForWidth(w)` は与えられた幅 `w` でその瞬間に必要な最小高さを返す pure query であること」** (`component.md`「SizeQuery」参照)。
+このときビュー側に課す契約は
+**「`size_query` が non-null なら、 `minHeightForWidth(w)` は与えられた幅 `w` でその瞬間に必要な最小高さを返す pure query であること」**
+(`component.md`「SizeQuery」参照)。
 ビュー自身の `min_size` を書き換えてはならず、 同じ `w` を渡せば常に同じ値を返す (内部 cache の更新は許される)。
 通常の (折り返さない) ビューはサイズが幅に依存しないので、 `size_query` は null のままでよい。 ScrollPane は `effectiveMinSize` をそのまま使う。
 
-これにより `TextArea` の 2 モードが**公開 API を変えずに**載る:
+これにより `TextArea` の 2 モードが公開 API を変えずに載る:
 
 | `TextArea` モード | 宣言 | 挙動 |
 |---|---|---|

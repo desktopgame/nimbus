@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # device
@@ -30,7 +30,9 @@ descriptor heap の存在は API には出さない。
 個々のテクスチャやレンダーターゲットが「自分のスロット位置」を持っているのではなく、device が一元管理する不透明なスロット識別子を保持する形になる。
 
 ## デバイスの生成
+```c
 nmDevice* nmCreateDevice(void);
+```
 
 デバイスはウィンドウに依存せず、ウィンドウより先に生成可能であることが保証される。
 失敗時は `NULL` を返す。
@@ -39,7 +41,9 @@ nmDevice* nmCreateDevice(void);
 * `nmInitAwt()` が事前に呼び出されていること。違反した場合の動作は UB。
 
 ## デバイスの破棄
+```c
 void nmDestroyDevice(nmDevice* self);
+```
 
 デバイスを破棄する。
 以後引数の `self` が使用可能であるかどうかは保証されない。
@@ -48,7 +52,9 @@ void nmDestroyDevice(nmDevice* self);
 * `self` が NULL のとき、なにも実行せずに終了する。
 
 ## GPU 完了待ち
+```c
 void nmWaitDeviceIdle(nmDevice* self);
+```
 
 デバイス上で投入済みのすべての作業 (コマンドバッファ submit、フェンス signal 等) が完了するまで CPU をブロックする。
 シャットダウン直前 (Application.deinit 系) や、リソース再構築 (resize 等) の前に「使用中の GPU リソースが安全に破棄できる状態」を保証するために使う。

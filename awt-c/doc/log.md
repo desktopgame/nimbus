@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # log
@@ -25,7 +25,9 @@ typedef void (*nmLogCallback)(nmLogLevel level, const char* category, const char
 コールバック呼び出しの間のみ有効で、それ以降の参照を保持したい場合は呼び出し側で複製する。
 
 ## ログコールバックの設定
+```c
 void nmSetLogCallback(nmLogCallback cb, void* user_data);
+```
 
 ログ出力を受け取るコールバックを登録する。
 コールバックは同期的に呼ばれ、ログを発生させたスレッドと同じスレッドから実行される。

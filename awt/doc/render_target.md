@@ -1,5 +1,5 @@
 ---
-unsafe: false
+unsafe: true
 ---
 
 # render_target
@@ -20,7 +20,8 @@ pub const RenderTarget = struct {
 ```
 
 `RenderTarget` は薄いハンドルラッパー。
-**「借用」 (`Swapchain.getTarget` の戻り値)** と **「所有」 (`create` で生成)** の 2 種があり、所有のみ `deinit` を呼ぶ。
+**「借用」 (`Swapchain.getTarget` の戻り値)** と
+**「所有」 (`create` で生成)** の 2 種があり、所有のみ `deinit` を呼ぶ。
 借用に対する `deinit` 呼び出しは UB (`nmDestroyRenderTarget` のセマンティクスに従う)。
 
 ## オフスクリーンレンダーターゲットの生成
