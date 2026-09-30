@@ -6,8 +6,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "pwsh -NoProfile -File .codex/hooks/sensitive-canary.ps1",
-            "commandWindows": "powershell -NoProfile -ExecutionPolicy Bypass -File .codex/hooks/sensitive-canary.ps1",
+            "command": "pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \"& (Join-Path (git rev-parse --show-toplevel) '.codex/hooks/sensitive-canary.ps1')\"",
+            "commandWindows": "pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \"& (Join-Path (git rev-parse --show-toplevel) '.codex/hooks/sensitive-canary.ps1')\"",
             "timeout": 10,
             "statusMessage": "Scanning prompt for secrets..."
           }
@@ -20,8 +20,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "pwsh -NoProfile -File .codex/hooks/sensitive-canary.ps1",
-            "commandWindows": "powershell -NoProfile -ExecutionPolicy Bypass -File .codex/hooks/sensitive-canary.ps1",
+            "command": "pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \"& (Join-Path (git rev-parse --show-toplevel) '.codex/hooks/sensitive-canary.ps1')\"",
+            "commandWindows": "pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \"& (Join-Path (git rev-parse --show-toplevel) '.codex/hooks/sensitive-canary.ps1')\"",
             "timeout": 10,
             "statusMessage": "Checking command for sensitive data..."
           }
