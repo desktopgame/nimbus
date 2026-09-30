@@ -1,12 +1,16 @@
 # Repository-local Codex command rules for nimbus.
 #
-# Ported from .claude/settings.json where command-level approval is the right
-# fit. File read/write restrictions live in .codex/config.toml permissions.
+# Filesystem isolation is provided by the workspace-write sandbox.
+# Project-specific behavioral constraints (for example, do not edit docs)
+# are described in CODEX.md.
+#
+# These rules control command-level approval for common local operations and
+# operations that may affect remote or existing work.
 
 prefix_rule(
     pattern = ["git", "status"],
     decision = "allow",
-    justification = "Working tree inspection is safe and frequently needed for reviews.",
+    justification = "Working tree inspection is safe and frequently needed.",
     match = [
         "git status",
         "git status --short",
@@ -16,7 +20,7 @@ prefix_rule(
 prefix_rule(
     pattern = ["git", "diff"],
     decision = "allow",
-    justification = "Diff inspection is safe and needed for code review.",
+    justification = "Diff inspection is read-only and routinely needed.",
     match = [
         "git diff",
         "git diff --stat",
@@ -25,9 +29,9 @@ prefix_rule(
 )
 
 prefix_rule(
-    pattern = ["git", "log", "-n"],
+    pattern = ["git", "log"],
     decision = "allow",
-    justification = "Recent commit inspection is safe and read-only.",
+    justification = "Commit history inspection is read-only.",
     match = [
         "git log -n 5",
         "git log -n 20 --oneline",
@@ -37,7 +41,7 @@ prefix_rule(
 prefix_rule(
     pattern = ["git", "add"],
     decision = "allow",
-    justification = "Staging changes is part of the normal local workflow.",
+    justification = "Staging local changes is part of the normal workflow.",
     match = [
         "git add build.zig",
         "git add framework/src/Component.zig",
@@ -47,9 +51,17 @@ prefix_rule(
 prefix_rule(
     pattern = ["git", "commit"],
     decision = "allow",
-    justification = "Local commits are allowed by the existing Claude policy.",
+    justification = "Creating local commits is part of the normal workflow.",
     match = [
         "git commit -m update",
+    ],
+)
+
+prefix_rule(
+    pattern = ["git", "commit", "--amend"],
+    decision = "prompt",
+    justification = "Amending rewrites the current local commit.",
+    match = [
         "git commit --amend --no-edit",
     ],
 )
@@ -57,19 +69,31 @@ prefix_rule(
 prefix_rule(
     pattern = ["zig", "build"],
     decision = "allow",
-    justification = "Zig build and test commands are the standard verification flow for this repository.",
+    justification = "Zig build, formatting, and test commands are standard verification steps.",
     match = [
         "zig build",
+        "zig build fmt",
+        "zig build fmt-check",
         "zig build test",
         "zig build run-widget_simple",
     ],
 )
 
 prefix_rule(
+    pattern = ["npm", "run"],
+    decision = "allow",
+    justification = "Repository npm scripts are used for local verification.",
+    match = [
+        "npm run lint",
+    ],
+)
+
+prefix_rule(
     pattern = ["git", "push"],
     decision = "prompt",
-    justification = "Pushing changes affects the remote repository and should be confirmed.",
+    justification = "Pushing changes affects the remote repository.",
     match = [
+        "git push",
         "git push origin main",
     ],
 )
@@ -77,9 +101,19 @@ prefix_rule(
 prefix_rule(
     pattern = ["git", "pull"],
     decision = "prompt",
-    justification = "Pulling can modify the working tree and should be confirmed.",
+    justification = "Pulling can modify the working tree.",
     match = [
         "git pull",
         "git pull --rebase",
+    ],
+)
+
+prefix_rule(
+    pattern = ["git", "reset", "--hard"],
+    decision = "prompt",
+    justification = "Hard reset can destroy uncommitted local work.",
+    match = [
+        "git reset --hard",
+        "git reset --hard HEAD",
     ],
 )

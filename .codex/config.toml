@@ -1,37 +1,15 @@
 # Repository-local Codex configuration for nimbus.
 #
-# This layer is loaded only when the project is trusted. Keep machine-local
-# provider/auth settings in ~/.codex/config.toml, not here.
+# Keep machine-local provider/auth settings in ~/.codex/config.toml.
+# Secrets should not live in the repository.
 
 approval_policy = "on-request"
-default_permissions = "nimbus_workspace"
+sandbox_mode = "workspace-write"
 
-[permissions.nimbus_workspace.filesystem]
-":minimal" = "read"
-glob_scan_max_depth = 3
-
-[permissions.nimbus_workspace.filesystem.":workspace_roots"]
-"." = "write"
-".git" = "read"
-"debug.log" = "deny"
-".env" = "deny"
-".env.*" = "deny"
-"secrets/**" = "deny"
-# codexは実装担当のため、ドキュメントを変更してはいけない（ドキュメントの腐敗防止）
-# 現在はサンドボックス設定できてないので、ちゃんとこの設定が効いていない。
-"awt/doc/**"       = "read"
-"awt-c/doc/**"     = "read"
-"framework/doc/**" = "read"
-"doc/**" = "read"
-# 設定を勝手に緩めるのもダメ
-".codex/**"   = "read"
-"lefthook.yml" = "read"
-
-[permissions.nimbus_workspace.network]
-enabled = false
+[sandbox_workspace_write]
+network_access = false
 
 [shell_environment_policy]
 inherit = "all"
 ignore_default_excludes = false
 set = { EDITOR = "code --wait", VISUAL = "code --wait" }
-
