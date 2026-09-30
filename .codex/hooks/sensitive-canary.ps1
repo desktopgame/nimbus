@@ -40,49 +40,21 @@ function Invoke-BetterLeaks([string]$Text) {
         throw "betterleaks is not installed or is not on PATH."
     }
 
-    # Keep the scanner's own output away from Codex.
-    # We only care whether BetterLeaks reports findings.
-    $temp = New-TemporaryFile
+    $Text | & $betterLeaks.Source stdin --redact *> $null
+    $exitCode = $LASTEXITCODE
 
-    try {
-        $Text |
-            & $betterLeaks.Source stdin `
-                --report-path $temp.FullName `
-                --report-format json `
-                --redact *> $null
-
-        if (-not (Test-Path $temp.FullName)) {
+    switch ($exitCode) {
+        0 {
             return $false
         }
 
-        $content = Get-Content $temp.FullName -Raw
-
-        if ([string]::IsNullOrWhiteSpace($content)) {
-            return $false
+        1 {
+            return $true
         }
 
-        try {
-            $report = $content | ConvertFrom-Json
+        default {
+            throw "betterleaks failed with exit code $exitCode."
         }
-        catch {
-            # Fail closed if BetterLeaks generated an unreadable report.
-            throw "Could not parse BetterLeaks report."
-        }
-
-        # BetterLeaks' JSON report is expected to contain findings.
-        if ($report -is [System.Array]) {
-            return $report.Count -gt 0
-        }
-
-        # Be tolerant of a future object-shaped report.
-        if ($null -ne $report.findings) {
-            return @($report.findings).Count -gt 0
-        }
-
-        return $false
-    }
-    finally {
-        Remove-Item $temp.FullName -Force -ErrorAction SilentlyContinue
     }
 }
 
