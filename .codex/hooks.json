@@ -1,0 +1,30 @@
+{
+  "description": "Secret leak canary for Codex using BetterLeaks.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "commandWindows": "powershell -NoProfile -ExecutionPolicy Bypass -File .codex/hooks/sensitive-canary.ps1",
+            "timeout": 10,
+            "statusMessage": "Scanning prompt for secrets..."
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "commandWindows": "powershell -NoProfile -ExecutionPolicy Bypass -File .codex/hooks/sensitive-canary.ps1",
+            "timeout": 10,
+            "statusMessage": "Checking command for sensitive data..."
+          }
+        ]
+      }
+    ]
+  }
+}
