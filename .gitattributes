@@ -1,3 +1,6 @@
+# Keep tracked text LF on every platform, independent of core.autocrlf.
+* text=auto eol=lf
+
 # Binary asset types. De-LFS'd in v0.1.1 so that plain source tarballs
 # (git archive / GitHub auto-generated tarballs) carry the real bytes and
 # external `zig fetch` consumers can @embedFile them. `binary` expands to
@@ -14,4 +17,11 @@
 *.ico binary
 *.icns binary
 *.webp binary
+*.exe binary
+*.dll binary
+*.lib binary
+*.pdb binary
+*.zip binary
+*.gz binary
+*.pdf binary
 *.zig text eol=lf
